@@ -1,0 +1,85 @@
+#include "EditorSettings.h"
+
+#include <motor/core/Log.h>
+#include <motor/core/Paths.h>
+
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
+
+namespace editor {
+
+using json = nlohmann::ordered_json;
+using motor::PathFromUtf8;
+using motor::ToUtf8;
+
+std::filesystem::path EditorSettings::FilePath() {
+#ifdef _WIN32
+    if (const wchar_t* appData = _wgetenv(L"APPDATA")) {  // versão wide: a ANSI estraga acentos
+        return std::filesystem::path(appData) / "Motor" / "editor.json";
+    }
+#else
+    if (const char* home = std::getenv("HOME")) {
+        return std::filesystem::path(home) / ".config" / "motor" / "editor.json";
+    }
+#endif
+    return "editor.json";
+}
+
+EditorSettings EditorSettings::Load() {
+    EditorSettings settings;
+    std::ifstream in(FilePath(), std::ios::binary);
+    if (!in) return settings;  // primeira execução
+
+    std::stringstream ss;
+    ss << in.rdbuf();
+    try {
+        const json root = json::parse(ss.str());
+        settings.lastProject = PathFromUtf8(root.value("lastProject", std::string()));
+        settings.lastScene = PathFromUtf8(root.value("lastScene", std::string()));
+        for (const auto& p : root.value("recentProjects", json::array())) {
+            if (p.is_string()) settings.recentProjects.push_back(PathFromUtf8(p.get<std::string>()));
+        }
+        settings.projectGridView = root.value("projectGridView", settings.projectGridView);
+        settings.projectIconSize = std::clamp(root.value("projectIconSize", settings.projectIconSize), 40.0f, 160.0f);
+    } catch (const json::exception& e) {
+        motor::log::Warn("Configurações do editor ignoradas ({}): {}", ToUtf8(FilePath()), e.what());
+    }
+    return settings;
+}
+
+void EditorSettings::Save() const {
+    json root;
+    root["lastProject"] = ToUtf8(lastProject);
+    root["lastScene"] = ToUtf8(lastScene);
+    json recent = json::array();
+    for (const auto& p : recentProjects) recent.push_back(ToUtf8(p));
+    root["recentProjects"] = std::move(recent);
+    root["projectGridView"] = projectGridView;
+    root["projectIconSize"] = projectIconSize;
+
+    const std::filesystem::path file = FilePath();
+    std::error_code ec;
+    std::filesystem::create_directories(file.parent_path(), ec);
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);
+    if (!out || !(out << root.dump(2, ' ', false, json::error_handler_t::replace) << '\n')) {
+        motor::log::Warn("Não foi possível salvar as configurações do editor em {}", ToUtf8(file));
+    }
+}
+
+void EditorSettings::AddRecentProject(const std::filesystem::path& projectFile) {
+    RemoveRecentProject(projectFile);
+    recentProjects.insert(recentProjects.begin(), projectFile);
+    if (recentProjects.size() > kMaxRecent) recentProjects.resize(kMaxRecent);
+}
+
+void EditorSettings::RemoveRecentProject(const std::filesystem::path& projectFile) {
+    std::erase_if(recentProjects, [&](const std::filesystem::path& p) {
+        return p.lexically_normal() == projectFile.lexically_normal();
+    });
+}
+
+} // namespace editor

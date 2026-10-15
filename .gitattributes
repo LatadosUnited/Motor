@@ -1,0 +1,4 @@
+# Fontes sempre com LF, em qualquer cópia (mesmo com core.autocrlf=true).
+* text=auto eol=lf
+*.png binary
+*.jpg binary

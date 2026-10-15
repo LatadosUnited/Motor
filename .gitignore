@@ -1,0 +1,12 @@
+build/
+out/
+.vs/
+.vscode/
+*.user
+compile_commands.json
+
+# Layout de janelas do editor (pessoal de cada um)
+imgui.ini
+
+# Configuração local do Claude Code
+.claude/settings.local.json

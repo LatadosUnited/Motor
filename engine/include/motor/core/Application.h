@@ -1,0 +1,62 @@
+#pragma once
+
+#include "motor/core/Window.h"
+
+#include <memory>
+#include <string>
+
+namespace motor {
+
+class Renderer;
+class ImGuiLayer;
+
+struct ApplicationDesc {
+    WindowDesc window;
+    double fixedTimestep = 1.0 / 60.0;  // passo da simulação (física, lógica determinística)
+    bool enableImGui = false;
+};
+
+// Ciclo de vida:
+//   OnInit -> [ OnFixedUpdate* -> OnUpdate -> OnRender -> OnImGui ]* -> OnShutdown
+class Application {
+public:
+    explicit Application(const ApplicationDesc& desc = {});
+    virtual ~Application();
+
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
+
+    void Run();
+    void Quit();  // encerra sem passar por OnCloseRequested
+
+    // Título base da janela; a Application acrescenta FPS e estatísticas.
+    void SetWindowTitle(const std::string& title);
+
+    Window& GetWindow() { return *m_window; }
+    Renderer& GetRenderer() { return *m_renderer; }
+    ImGuiLayer* GetImGui() { return m_imgui.get(); }  // nulo se enableImGui == false
+
+    double ElapsedTime() const { return m_elapsed; }  // segundos desde o início do Run()
+    float FramesPerSecond() const { return m_fps; }
+
+protected:
+    virtual void OnInit() {}
+    virtual void OnFixedUpdate(float /*dt*/) {}
+    virtual void OnUpdate(float /*dt*/) {}
+    virtual void OnRender(Renderer& /*renderer*/) {}
+    virtual void OnImGui() {}  // só chamado com enableImGui
+    virtual void OnShutdown() {}
+    // Chamado quando o usuário fecha a janela. Retorne false para cancelar (ex.: alterações não salvas).
+    virtual bool OnCloseRequested() { return true; }
+
+private:
+    ApplicationDesc m_desc;
+    std::unique_ptr<Window> m_window;
+    std::unique_ptr<Renderer> m_renderer;
+    std::unique_ptr<ImGuiLayer> m_imgui;
+    double m_elapsed = 0.0;
+    float m_fps = 0.0f;
+    bool m_running = false;
+};
+
+} // namespace motor
