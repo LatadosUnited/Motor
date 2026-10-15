@@ -1,6 +1,6 @@
 // Operações de arquivo do editor: cenas, projetos, menu Arquivo e diálogos relacionados.
 
-#include "EditorApp.h"
+#include "SceneDocument.h"
 
 #include "FileDialog.h"
 
@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <format>
+#include <utility>
 
 namespace editor {
 
@@ -68,25 +69,16 @@ fs::path FindAnyScene(const fs::path& dir) {
 }
 } // namespace
 
+SceneDocument::SceneDocument(EditorContext& ctx, UndoHistory& history, EditorSettings& settings,
+                             ProjectPanel& projectPanel, Host host)
+    : m_ctx(ctx), m_history(history), m_settings(settings), m_projectPanel(projectPanel), m_host(std::move(host)) {}
+
 // ---------------------------------------------------------------------------
 // Ações (com confirmação de alterações não salvas)
 // ---------------------------------------------------------------------------
 
-bool EditorApp::OnCloseRequested() {
-    StopPlay();  // o que importa é a cena de antes do Play
-    if (!HasUnsavedChanges()) return true;
-    RequestFileAction(FileAction::Quit);
-    return false;
-}
-
-void EditorApp::OnShutdown() {
-    m_settings.projectGridView = m_projectPanel.View().grid;
-    m_settings.projectIconSize = m_projectPanel.View().iconSize;
-    m_settings.Save();
-}
-
-void EditorApp::RequestFileAction(FileAction action, const fs::path& path) {
-    StopPlay();  // trocar de cena ou de projeto encerra o Play (e a pergunta de salvar é sobre a cena original)
+void SceneDocument::RequestFileAction(FileAction action, const fs::path& path) {
+    m_host.stopPlay();  // trocar de cena ou de projeto encerra o Play (e a pergunta de salvar é sobre a cena original)
     if (HasUnsavedChanges()) {
         m_pendingAction = action;
         m_pendingPath = path;
@@ -96,7 +88,7 @@ void EditorApp::RequestFileAction(FileAction action, const fs::path& path) {
     PerformFileAction(action, path);
 }
 
-void EditorApp::PerformFileAction(FileAction action, const fs::path& path) {
+void SceneDocument::PerformFileAction(FileAction action, const fs::path& path) {
     switch (action) {
         case FileAction::NewScene:
             ReplaceScene(Scene{}, {});
@@ -122,7 +114,7 @@ void EditorApp::PerformFileAction(FileAction action, const fs::path& path) {
             OpenProjectAt(path, true);
             break;
         case FileAction::Quit:
-            Quit();
+            m_host.quit();
             break;
         case FileAction::None:
             break;
@@ -133,7 +125,7 @@ void EditorApp::PerformFileAction(FileAction action, const fs::path& path) {
 // Cenas
 // ---------------------------------------------------------------------------
 
-fs::path EditorApp::DefaultSceneDir() const {
+fs::path SceneDocument::DefaultSceneDir() const {
     if (!m_scenePath.empty()) return m_scenePath.parent_path();
     if (m_project) {
         std::error_code ec;
@@ -143,8 +135,8 @@ fs::path EditorApp::DefaultSceneDir() const {
     return {};
 }
 
-bool EditorApp::SaveScene(bool saveAs) {
-    if (m_play.IsActive()) {
+bool SceneDocument::SaveScene(bool saveAs) {
+    if (m_host.isPlaying()) {
         // Salvar agora gravaria o estado do jogo, que é descartado ao parar.
         ShowError("Pare o Play antes de salvar (Ctrl+P). Alterações feitas durante o Play são descartadas.");
         return false;
@@ -179,7 +171,7 @@ bool EditorApp::SaveScene(bool saveAs) {
     return true;
 }
 
-bool EditorApp::OpenSceneAt(const fs::path& path) {
+bool SceneDocument::OpenSceneAt(const fs::path& path) {
     Scene loaded;
     std::string error;
     if (!SceneSerializer::Load(path, loaded, m_ctx.assets, &error)) {
@@ -191,7 +183,7 @@ bool EditorApp::OpenSceneAt(const fs::path& path) {
     return true;
 }
 
-void EditorApp::ReplaceScene(Scene&& scene, const fs::path& path) {
+void SceneDocument::ReplaceScene(Scene&& scene, const fs::path& path) {
     m_ctx.scene = std::move(scene);
     m_ctx.selected = kNullEntity;
     m_ctx.pendingDelete = kNullEntity;
@@ -201,13 +193,13 @@ void EditorApp::ReplaceScene(Scene&& scene, const fs::path& path) {
     MarkSaved();
 }
 
-void EditorApp::MarkSaved() {
+void SceneDocument::MarkSaved() {
     m_savedSnapshot = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false});
     m_dirty = false;
     UpdateWindowTitle();
 }
 
-bool EditorApp::HasUnsavedChanges() {
+bool SceneDocument::HasUnsavedChanges() {
     const bool dirty = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false}) != m_savedSnapshot;
     if (dirty != m_dirty) {
         m_dirty = dirty;
@@ -216,13 +208,23 @@ bool EditorApp::HasUnsavedChanges() {
     return dirty;
 }
 
-void EditorApp::RememberScene() {
+void SceneDocument::PollChanges(float dt) {
+    // Compara o JSON da cena com o salvo a cada meio segundo (cenas pequenas, custo baixo).
+    // No Play a cena é a do jogo (descartada ao parar): não conta.
+    m_dirtyCheckTimer += dt;
+    if (m_dirtyCheckTimer >= 0.5f && !m_host.isPlaying()) {
+        m_dirtyCheckTimer = 0.0f;
+        HasUnsavedChanges();
+    }
+}
+
+void SceneDocument::RememberScene() {
     if (!m_project || !IsInside(m_scenePath, m_project->RootDir())) return;
     m_settings.lastScene = m_scenePath;
     m_settings.Save();
 }
 
-bool EditorApp::CreateEmptySceneFile(const fs::path& path) {
+bool SceneDocument::CreateEmptySceneFile(const fs::path& path) {
     Scene empty;
     std::string error;
     if (!SceneSerializer::Save(path, empty, m_ctx.assets, &error)) {
@@ -236,7 +238,7 @@ bool EditorApp::CreateEmptySceneFile(const fs::path& path) {
 // Projetos
 // ---------------------------------------------------------------------------
 
-bool EditorApp::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastScene) {
+bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastScene) {
     std::string error;
     auto project = Project::Open(fileOrDir, &error);
     if (!project) {
@@ -272,7 +274,7 @@ bool EditorApp::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastScene) 
     return true;
 }
 
-void EditorApp::CreateProject(const fs::path& location, const std::string& name) {
+void SceneDocument::CreateProject(const fs::path& location, const std::string& name) {
     std::string error;
     auto project = Project::Create(location, name, &error);
     if (!project) {
@@ -293,7 +295,7 @@ void EditorApp::CreateProject(const fs::path& location, const std::string& name)
     OpenProjectAt(project->ProjectFile(), false);
 }
 
-void EditorApp::OnPathMoved(const fs::path& from, const fs::path& to) {
+void SceneDocument::OnPathMoved(const fs::path& from, const fs::path& to) {
     // O .meta foi junto: o GUID é o mesmo, só o caminho mudou. Atualiza o banco para a cena salvar o caminho novo.
     m_ctx.assets.Database().Refresh();
     m_scenePath = RebasePath(m_scenePath, from, to);
@@ -311,7 +313,7 @@ void EditorApp::OnPathMoved(const fs::path& from, const fs::path& to) {
     UpdateWindowTitle();
 }
 
-void EditorApp::OnPathDeleted(const fs::path& path) {
+void SceneDocument::OnPathDeleted(const fs::path& path) {
     m_ctx.assets.Database().Refresh();
     if (IsInside(m_scenePath, path)) {
         // A cena continua aberta na memória, mas sem arquivo: vira "Sem título" com alterações pendentes.
@@ -332,23 +334,23 @@ void EditorApp::OnPathDeleted(const fs::path& path) {
 // UI
 // ---------------------------------------------------------------------------
 
-void EditorApp::UpdateWindowTitle() {
+void SceneDocument::UpdateWindowTitle() {
     const std::string scene = m_scenePath.empty() ? kUntitled : ToUtf8(m_scenePath.filename());
     const std::string dirty = m_dirty ? "*" : "";
     if (m_project) {
-        SetWindowTitle(std::format("Motor Editor - {} - {}{}", m_project->Name(), scene, dirty));
+        m_host.setWindowTitle(std::format("Motor Editor - {} - {}{}", m_project->Name(), scene, dirty));
     } else {
-        SetWindowTitle(std::format("Motor Editor - {}{}", scene, dirty));
+        m_host.setWindowTitle(std::format("Motor Editor - {}{}", scene, dirty));
     }
 }
 
-void EditorApp::ShowError(std::string message) {
+void SceneDocument::ShowError(std::string message) {
     log::Error("{}", message);
     m_errorMessage = std::move(message);
     m_openErrorPopup = true;
 }
 
-void EditorApp::DrawFileMenu() {
+void SceneDocument::DrawFileMenu() {
     if (!ImGui::BeginMenu("Arquivo")) return;
 
     if (ImGui::MenuItem("Novo projeto...")) RequestFileAction(FileAction::NewProject);
@@ -367,35 +369,12 @@ void EditorApp::DrawFileMenu() {
     if (ImGui::MenuItem("Salvar cena", "Ctrl+S")) SaveScene(false);
     if (ImGui::MenuItem("Salvar cena como...", "Ctrl+Shift+S")) SaveScene(true);
     ImGui::Separator();
-    if (ImGui::MenuItem("Sair", "Alt+F4")) GetWindow().RequestClose();  // passa por OnCloseRequested
+    if (ImGui::MenuItem("Sair", "Alt+F4")) m_host.requestClose();  // passa por OnCloseRequested
 
     ImGui::EndMenu();
 }
 
-void EditorApp::DrawProjectPanel() {
-    ProjectPanel::Callbacks callbacks;
-    callbacks.createProject = [this] { RequestFileAction(FileAction::NewProject); };
-    callbacks.openProject = [this] { RequestFileAction(FileAction::OpenProject); };
-    callbacks.openScene = [this](const fs::path& p) { RequestFileAction(FileAction::OpenScenePath, p); };
-    callbacks.createSceneFile = [this](const fs::path& p) { return CreateEmptySceneFile(p); };
-    callbacks.pathMoved = [this](const fs::path& from, const fs::path& to) { OnPathMoved(from, to); };
-    callbacks.pathDeleted = [this](const fs::path& p) { OnPathDeleted(p); };
-    callbacks.addMeshToScene = [this](const fs::path& p) { m_ctx.CreateFromMeshFile(p); };
-    callbacks.applyTexture = [this](const fs::path& p) {
-        if (m_ctx.scene.Find(m_ctx.selected)) {
-            m_ctx.ApplyTextureFile(m_ctx.selected, p);
-        } else {
-            ShowError("Selecione uma entidade para aplicar a textura.");
-        }
-    };
-
-    // Arquivos arrastados do Explorer para a janela são importados pelo painel.
-    if (auto dropped = GetWindow().TakeDroppedFiles(); !dropped.empty()) m_projectPanel.QueueImport(std::move(dropped));
-
-    m_projectPanel.Draw(m_project ? &*m_project : nullptr, m_scenePath, callbacks);
-}
-
-void EditorApp::DrawFilePopups() {
+void SceneDocument::DrawPopups() {
     const char* unsavedTitle = "Alterações não salvas";
     const char* errorTitle = "Erro";
     if (m_openUnsavedPopup) {
@@ -455,7 +434,7 @@ void EditorApp::DrawFilePopups() {
     }
 }
 
-void EditorApp::DrawNewProjectPopup() {
+void SceneDocument::DrawNewProjectPopup() {
     const char* title = "Novo projeto";
     if (m_openNewProjectPopup) {
         ImGui::OpenPopup(title);

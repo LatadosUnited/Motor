@@ -2,14 +2,16 @@ add_executable(MotorEditor
     src/main.cpp
     src/EditorApp.cpp
     src/EditorContext.cpp
-    src/EditorFile.cpp
     src/EditorSettings.cpp
     src/FileDialog.cpp
     src/HierarchyPanel.cpp
     src/InspectorPanel.cpp
+    src/PlayController.cpp
     src/PlayMode.cpp
     src/ProjectPanel.cpp
+    src/SceneDocument.cpp
     src/ScenePanel.cpp
+    src/SceneViewport.cpp
     src/UndoHistory.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor MotorScripts imguizmo nlohmann_json::nlohmann_json)

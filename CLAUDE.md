@@ -28,9 +28,12 @@ ctest --test-dir build --output-on-failure
   - `scene/`: `Scene` (entidades, hierarquia, cópia profunda e `operator==`), `SceneSerializer` (`.mscene`).
   - `project/`: `Project` (pasta + `.mproject`). `core/Paths.h`: conversões UTF-8.
   - `renderer/GL.h`: loader OpenGL próprio (X-macro). Função GL nova = adicionar na lista de lá.
-- `editor/` — `MotorEditor`. `EditorApp` (loop, viewport, gizmos, atalhos), `EditorFile.cpp` (cenas,
-  projetos, menu Arquivo), um arquivo por painel, `EditorContext` (estado compartilhado), `UndoHistory`.
+- `editor/` — `MotorEditor`. `EditorApp` só monta as peças (loop, layout, barra de menus, atalhos,
+  desfazer); `SceneViewport` (câmera livre, gizmo, seleção, arquivos soltos), `PlayController` (menu Jogo,
+  botões e pedidos de Play), `SceneDocument` (cena/projeto abertos, menu Arquivo, popups, título).
+  Um arquivo por painel, `EditorContext` (estado compartilhado), `UndoHistory`.
   `PlayMode` (cópia/restauração da cena no Play; o loop de jogo é `motor::SceneRuntime`).
+  Recurso novo do editor vai na peça da sua área, não no `EditorApp`.
 - `scripts/` — scripts de jogo em C++ (`motor::Script`, biblioteca `MotorScripts`, registrados em `RegisterAll`).
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
