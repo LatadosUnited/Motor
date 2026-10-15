@@ -4,6 +4,9 @@
 #include "EditorSettings.h"
 #include "PlayMode.h"
 #include "ProjectPanel.h"
+#include "ScriptBuilder.h"
+#include "ScriptHost.h"
+#include "ScriptProject.h"
 #include "UndoHistory.h"
 
 #include <motor/Motor.h>
@@ -17,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace editor {
 
@@ -83,6 +87,18 @@ private:
     void DrawNewProjectPopup();
     void DrawProjectPanel();
 
+    // --- Scripts do projeto (EditorScripts.cpp) ---
+    void OpenProjectScripts();   // ao abrir um projeto: carrega a DLL já compilada e compila de novo
+    void CloseProjectScripts();  // descarrega (troca de projeto, sair)
+    void UpdateScripts(float dt);  // vigia a pasta Scripts, acompanha a compilação e recarrega
+    void RequestScriptBuild();   // compila agora (ou logo que a compilação em andamento terminar)
+    void ReloadScripts();        // carrega a DLL compilada; só fora do Play
+    ScriptHost::ForEachScene AllScenes();  // cena aberta e fotos do desfazer
+    void DrawScriptsMenu();
+    void DrawScriptsPanel();
+    void DrawScriptsStatus();    // aviso na barra de menus quando a compilação falha
+    void DrawNewScriptPopup();
+
     EditorContext m_ctx;
     motor::Camera m_camera;
     motor::FlyCameraController m_cameraController{m_camera};
@@ -116,6 +132,21 @@ private:
     ProjectPanel m_projectPanel;
     UndoHistory m_history;
     int m_historyRequest = 0;  // -1 desfazer, +1 refazer (executado no início do próximo frame)
+
+    ScriptBuilder m_scriptBuilder;
+    ScriptHost m_scriptHost;
+    std::optional<ScriptProject::Toolchain> m_toolchain;
+    std::string m_toolchainError;
+    std::string m_scriptSignature;       // estado da pasta Scripts na última verificação
+    std::filesystem::file_time_type m_loadedDllTime{};  // data da DLL carregada (recompilou sem mudar = não recarrega)
+    float m_scriptWatchTimer = 0.0f;
+    bool m_scriptBuildQueued = false;    // a pasta mudou durante a compilação: compila de novo ao terminar
+    bool m_scriptReloadPending = false;  // compilou durante o Play: recarrega ao parar
+    std::string m_scriptLog;             // cópia da saída da compilação para o painel
+    std::vector<ScriptProject::Diagnostic> m_scriptDiagnostics;
+    bool m_focusScriptsPanel = false;
+    bool m_openNewScriptPopup = false;
+    std::string m_newScriptName;
 
     PlayMode m_play;
     PlayRequest m_playRequest = PlayRequest::None;  // aplicado no início do próximo frame, como o desfazer

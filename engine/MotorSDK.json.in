@@ -1,0 +1,11 @@
+{
+  "format": "motor-sdk",
+  "version": 1,
+  "cmake": "@CMAKE_COMMAND@",
+  "generator": "@CMAKE_GENERATOR@",
+  "makeProgram": "@CMAKE_MAKE_PROGRAM@",
+  "cCompiler": "@CMAKE_C_COMPILER@",
+  "cxxCompiler": "@CMAKE_CXX_COMPILER@",
+  "buildType": "@CMAKE_BUILD_TYPE@",
+  "sdkCMake": "@MOTOR_SDK_DIR@/MotorSDK.cmake"
+}

@@ -1,4 +1,6 @@
-add_library(Motor STATIC
+# Biblioteca compartilhada (libMotor.dll): o editor e a DLL de scripts de cada projeto ligam nela, e assim
+# compartilham o registro de componentes, o Input, o log e o ImGui.
+add_library(Motor SHARED
     src/assets/AssetDatabase.cpp
     src/assets/AssetLibrary.cpp
     src/assets/AssetLoaders.cpp
@@ -24,12 +26,18 @@ add_library(Motor STATIC
 )
 
 target_include_directories(Motor
-    PUBLIC  include
+    PUBLIC  include ${MOTOR_IMGUI_INCLUDE_DIRS}
     PRIVATE src ${stb_image_SOURCE_DIR})
 
+# imgui é uma biblioteca de objetos: os objetos entram na DLL (os headers são publicados acima).
 target_link_libraries(Motor
-    PUBLIC  glm::glm imgui
-    PRIVATE glfw nlohmann_json::nlohmann_json)
+    PUBLIC  glm::glm
+    PRIVATE imgui glfw nlohmann_json::nlohmann_json)
+
+# Sem __declspec(dllexport) no código: exporta todos os símbolos (engine, ImGui e GLFW).
+if(MINGW)
+    target_link_options(Motor PRIVATE -Wl,--export-all-symbols)
+endif()
 
 target_compile_definitions(Motor
     PUBLIC  GLM_FORCE_RADIANS
@@ -43,3 +51,23 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 elseif(MSVC)
     target_compile_options(Motor PRIVATE /W4)
 endif()
+
+# ---------------------------------------------------------------------------
+# SDK para os scripts dos projetos: o editor gera um CMakeLists por projeto que inclui MotorSDK.cmake (alvo
+# importado Motor::Motor) e lê MotorSDK.json para saber qual toolchain usar (o mesmo deste build).
+# ---------------------------------------------------------------------------
+set(MOTOR_SDK_DIR ${CMAKE_BINARY_DIR}/bin/sdk)
+set(MOTOR_SDK_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include ${glm_SOURCE_DIR} ${MOTOR_IMGUI_INCLUDE_DIRS})
+file(GENERATE OUTPUT ${MOTOR_SDK_DIR}/MotorSDK.cmake CONTENT
+"# Gerado pelo build do Motor. Não edite.
+if(NOT TARGET Motor::Motor)
+    add_library(Motor::Motor SHARED IMPORTED)
+    set_target_properties(Motor::Motor PROPERTIES
+        IMPORTED_LOCATION \"$<TARGET_FILE:Motor>\"
+        IMPORTED_IMPLIB \"$<TARGET_LINKER_FILE:Motor>\"
+        INTERFACE_INCLUDE_DIRECTORIES \"${MOTOR_SDK_INCLUDE_DIRS}\"
+        INTERFACE_COMPILE_DEFINITIONS \"GLM_FORCE_RADIANS\"
+        INTERFACE_COMPILE_FEATURES \"cxx_std_20\")
+endif()
+")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/MotorSDK.json.in ${MOTOR_SDK_DIR}/MotorSDK.json @ONLY)

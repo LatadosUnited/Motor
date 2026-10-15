@@ -58,7 +58,9 @@ FetchContent_Declare(stb_image
 
 FetchContent_MakeAvailable(glfw glm imgui imguizmo json stb_image)
 
-add_library(imgui STATIC
+# Objetos do ImGui (e o GLFW) entram na libMotor.dll: o editor e a DLL de scripts usam a mesma cópia (um
+# único contexto do ImGui e uma única janela do GLFW no processo).
+add_library(imgui OBJECT
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_demo.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -67,17 +69,30 @@ add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
-target_include_directories(imgui PUBLIC
-    ${imgui_SOURCE_DIR}
-    ${imgui_SOURCE_DIR}/backends
-    ${imgui_SOURCE_DIR}/misc/cpp)
+set(MOTOR_IMGUI_INCLUDE_DIRS ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${imgui_SOURCE_DIR}/misc/cpp)
+target_include_directories(imgui PUBLIC ${MOTOR_IMGUI_INCLUDE_DIRS})
 target_link_libraries(imgui PUBLIC glfw)
 
-# O CMakeLists do ImGuizmo cria o alvo "imguizmo" mas só liga ao ImGui no modo standalone.
-target_link_libraries(imguizmo PUBLIC imgui)
+# O CMakeLists do ImGuizmo cria o alvo "imguizmo" mas só liga ao ImGui no modo standalone. Ligamos ao Motor,
+# que traz os headers e os símbolos do ImGui (ligar ao alvo imgui duplicaria os objetos).
+target_link_libraries(imguizmo PUBLIC Motor)
+
+# Executáveis e DLLs na mesma pasta (build/bin): no Windows uma DLL é procurada ao lado do .exe.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# O runtime do C++ é dinâmico (libstdc++-6.dll...): o editor, a libMotor.dll e a DLL de scripts do jogo
+# precisam compartilhar alocação, exceções e RTTI. Copiamos as DLLs do toolchain para build/bin para os
+# executáveis rodarem fora do shell do MSYS2.
+if(MINGW)
+    get_filename_component(MOTOR_TOOLCHAIN_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    foreach(dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
+        if(EXISTS "${MOTOR_TOOLCHAIN_BIN}/${dll}")
+            file(COPY "${MOTOR_TOOLCHAIN_BIN}/${dll}" DESTINATION "${CMAKE_BINARY_DIR}/bin")
+        endif()
+    endforeach()
+endif()
 
 add_subdirectory(engine)
-add_subdirectory(scripts)
 add_subdirectory(sandbox)
 add_subdirectory(editor)
 

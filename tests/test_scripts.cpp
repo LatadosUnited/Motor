@@ -1,4 +1,5 @@
-// Scripts e loop de jogo (SceneRuntime): ciclo de vida, API dos scripts, scripts de exemplo e câmera.
+// Scripts e loop de jogo (SceneRuntime): ciclo de vida, API dos scripts, entrada e câmera. Os scripts são
+// definidos aqui mesmo (os de exemplo ficam nos modelos de projeto; ver test_script_project).
 // Não usa OpenGL nem janela; o teclado é simulado só no estado interno do Input.
 #include "TestUtil.h"
 
@@ -9,7 +10,6 @@
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneRuntime.h>
 #include <motor/scene/SceneSerializer.h>
-#include <scripts/Scripts.h>
 
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -65,6 +65,15 @@ struct Diretor : Script {
     void OnDestroy() override { g_events.push_back("diretor:destroy"); }
 };
 
+// Anda no eixo X com D/A (testa a entrada vista pelos scripts).
+struct Andar : Script {
+    float velocidade = 2.0f;
+    void OnUpdate(float dt) override {
+        if (IsKeyDown(Key::D)) GetTransform().position.x += velocidade * dt;
+        if (IsKeyDown(Key::A)) GetTransform().position.x -= velocidade * dt;
+    }
+};
+
 bool Near(const glm::vec3& a, const glm::vec3& b, float eps = 1e-3f) {
     return glm::length(a - b) < eps;
 }
@@ -75,8 +84,7 @@ void Register() {
         .Field("tag", "Tag", &Contador::tag)
         .Field("passos", "Passos", &Contador::passos);
     registry.Register<Diretor>("Diretor", "Diretor");
-    scripts::RegisterAll(registry);
-    scripts::RegisterAll(registry);  // segunda chamada não registra de novo
+    registry.Register<Andar>("Andar", "Andar").Field("velocidade", "Velocidade", &Andar::velocidade);
 }
 } // namespace
 
@@ -88,9 +96,8 @@ int main() {
     CHECK(registry.Find("Contador") && registry.Find("Contador")->IsScript());
     CHECK(registry.Find("MeshRenderer") && !registry.Find("MeshRenderer")->IsScript());
     CHECK(registry.Find("Camera") && !registry.Find("Camera")->IsScript());
-    CHECK(registry.Find("Girar") && registry.Find("MoverWASD") && registry.Find("Seguir"));
-    CHECK(std::count_if(registry.Types().begin(), registry.Types().end(),
-                        [](const auto& t) { return t->name == "Girar"; }) == 1);
+    CHECK(ComponentRegistry::TypeOf<Contador>() == registry.Find("Contador"));
+    CHECK(ComponentRegistry::TypeOf<MeshRenderer>() == registry.Find("MeshRenderer"));
 
     SECTION("Ciclo de vida: Start, Update, FixedUpdate, Stop");
     {
@@ -199,66 +206,25 @@ int main() {
         CHECK(runtime.Time().delta == 0.5f && runtime.Time().fixedDelta == 0.02f);
     }
 
-    SECTION("Script de exemplo: Girar");
-    {
-        Scene scene;
-        Entity& e = scene.CreateEntity("Pião");
-        scripts::Girar& g = e.Add<scripts::Girar>();
-        g.velocidade = 90.0f;
-        const EntityId id = e.id;
-        SceneRuntime runtime(scene);
-        runtime.Start();
-        for (int i = 0; i < 10; ++i) runtime.Update(0.1f);  // 1 s = 90°
-        const glm::vec3 forward = scene.Find(id)->transform.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
-        CHECK(Near(forward, {-1.0f, 0.0f, 0.0f}));  // -Z girou 90° em Y (anti-horário visto de cima) -> -X
-    }
-
-    SECTION("Script de exemplo: Mover com WASD (teclas simuladas só no Input interno)");
+    SECTION("Entrada nos scripts (teclas simuladas só no Input interno)");
     {
         Scene scene;
         Entity& e = scene.CreateEntity("Jogador");
-        e.Add<scripts::MoverWasd>().velocidade = 2.0f;
+        e.Add<Andar>();
         const EntityId id = e.id;
         SceneRuntime runtime(scene);
         runtime.Start();
         runtime.Update(0.5f);
         CHECK(Near(scene.Find(id)->transform.position, glm::vec3(0.0f)));  // nada apertado
 
-        Input::SetKeyState(Key::W, true);
-        runtime.Update(0.5f);
-        CHECK(Near(scene.Find(id)->transform.position, {0.0f, 0.0f, -1.0f}));
-        const glm::vec3 forward = scene.Find(id)->transform.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
-        CHECK(Near(forward, {0.0f, 0.0f, -1.0f}));
-
-        Input::SetKeyState(Key::W, false);
         Input::SetKeyState(Key::D, true);
         runtime.Update(0.5f);
-        CHECK(Near(scene.Find(id)->transform.position, {1.0f, 0.0f, -1.0f}));
-        const glm::vec3 right = scene.Find(id)->transform.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
-        CHECK(Near(right, {1.0f, 0.0f, 0.0f}));
+        CHECK(Near(scene.Find(id)->transform.position, {1.0f, 0.0f, 0.0f}));
 
         runtime.SetInputEnabled(false);  // jogo sem foco: teclas ignoradas
         runtime.Update(0.5f);
-        CHECK(Near(scene.Find(id)->transform.position, {1.0f, 0.0f, -1.0f}));
+        CHECK(Near(scene.Find(id)->transform.position, {1.0f, 0.0f, 0.0f}));
         Input::SetKeyState(Key::D, false);
-    }
-
-    SECTION("Script de exemplo: Seguir");
-    {
-        Scene scene;
-        const EntityId jogador = scene.CreateEntity("Jogador").id;
-        scene.Find(jogador)->transform.position = {3.0f, 0.0f, 0.0f};
-        Entity& cam = scene.CreateEntity("Câmera");
-        scripts::Seguir& s = cam.Add<scripts::Seguir>();
-        s.suavidade = 0.0f;
-        s.deslocamento = {0.0f, 0.0f, 5.0f};
-        const EntityId camId = cam.id;
-        SceneRuntime runtime(scene);
-        runtime.Start();
-        runtime.Update(0.1f);
-        CHECK(Near(scene.Find(camId)->transform.position, {3.0f, 0.0f, 5.0f}));
-        const glm::vec3 forward = scene.Find(camId)->transform.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
-        CHECK(Near(forward, {0.0f, 0.0f, -1.0f}));
     }
 
     SECTION("Câmera principal");
@@ -293,20 +259,19 @@ int main() {
     {
         Scene scene;
         Entity& e = scene.CreateEntity("Pião");
-        scripts::Girar& g = e.Add<scripts::Girar>();
-        g.eixo = {1.0f, 0.0f, 0.0f};
-        g.velocidade = -45.0f;
-        g.local = false;
+        Contador& c = e.Add<Contador>();
+        c.tag = "pião";
+        c.passos = -45;
         e.Add<CameraComponent>().farPlane = 80.0f;
         AssetLibrary assets;
         const std::string text = SceneSerializer::ToJson(scene, assets);
-        CHECK(text.find("\"type\": \"Girar\"") != std::string::npos);
+        CHECK(text.find("\"type\": \"Contador\"") != std::string::npos);
         Scene loaded;
         std::string error;
         CHECK(SceneSerializer::FromJson(text, loaded, assets, &error));
         CHECK(loaded == scene);
-        const scripts::Girar* lg = loaded.Entities().empty() ? nullptr : loaded.Entities()[0]->Get<scripts::Girar>();
-        CHECK(lg && lg->velocidade == -45.0f && !lg->local && lg->eixo == glm::vec3(1.0f, 0.0f, 0.0f));
+        const Contador* lc = loaded.Entities().empty() ? nullptr : loaded.Entities()[0]->Get<Contador>();
+        CHECK(lc && lc->tag == "pião" && lc->passos == -45 && !lc->HasStarted());
     }
 
     return TestResult();

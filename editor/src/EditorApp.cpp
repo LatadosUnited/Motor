@@ -5,7 +5,6 @@
 #include <imgui.h>
 #include <imgui_internal.h>  // DockBuilder
 #include <ImGuizmo.h>
-#include <scripts/Scripts.h>
 
 #include <glm/geometric.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -40,8 +39,6 @@ EditorApp::EditorApp(std::filesystem::path projectToOpen)
     : Application(MakeDesc()), m_startupProject(std::move(projectToOpen)) {}
 
 void EditorApp::OnInit() {
-    // Antes de abrir qualquer cena: os scripts precisam estar registrados para serem lidos.
-    scripts::RegisterAll(ComponentRegistry::Instance());
     m_viewport = std::make_unique<Framebuffer>(1280, 720, 4);
 
     AssetLibrary& assets = m_ctx.assets;
@@ -86,7 +83,6 @@ void EditorApp::BuildDefaultScene() {
 
     Entity& sphere = m_ctx.CreatePrimitive(Primitive::Sphere);
     sphere.name = "Jogador";
-    sphere.Add<scripts::MoverWasd>();
     sphere.transform.position = {0.0f, 0.6f, 0.0f};
     sphere.transform.scale = glm::vec3(1.2f);
     sphere.Get<MeshRenderer>()->material.color = {0.30f, 0.60f, 0.95f, 1.0f};
@@ -95,7 +91,6 @@ void EditorApp::BuildDefaultScene() {
     Entity& group = m_ctx.CreatePrimitive(Primitive::Empty);
     group.name = "Torre";
     group.transform.position = {2.8f, 0.0f, -0.5f};
-    group.Add<scripts::Girar>().velocidade = 45.0f;
     const EntityId groupId = group.id;
 
     struct Part { const char* name; Primitive type; glm::vec3 pos; float scale; glm::vec4 color; };
@@ -112,11 +107,10 @@ void EditorApp::BuildDefaultScene() {
         e.Get<MeshRenderer>()->material.color = p.color;
     }
 
-    // Câmera do jogo seguindo o jogador (ver "Seguir" no Inspector).
+    // Sem projeto não há scripts (eles ficam na pasta Scripts/ de cada projeto).
     Entity& camera = m_ctx.CreatePrimitive(Primitive::Camera);
     camera.transform.position = {0.0f, 4.6f, 7.0f};
     camera.transform.SetEulerDegrees({-30.0f, 0.0f, 0.0f});
-    camera.Add<scripts::Seguir>().deslocamento = {0.0f, 4.0f, 7.0f};
 
     scene.light.direction = {-0.5f, -1.0f, -0.35f};
     m_ctx.selected = kNullEntity;
@@ -132,6 +126,7 @@ void EditorApp::OnUpdate(float dt) {
         runtime->SetInputEnabled(InGameView() && m_viewportFocused && !ImGui::GetIO().WantTextInput);
     }
     m_play.Update(dt);
+    UpdateScripts(dt);
 
     // Detecção de alterações: compara o JSON da cena com o salvo a cada meio segundo (cenas pequenas, custo baixo).
     // No Play a cena é a do jogo (descartada ao parar): não conta.
@@ -204,10 +199,11 @@ void EditorApp::OnImGui() {
     const ImGuiID dockspaceId = ImGui::GetID("EditorDockSpace");
     if (m_resetLayout) {
         // Só sobrescreve se não houver layout salvo (imgui.ini) ou se o usuário pediu para restaurar.
-        // Também reconstrói quando o layout salvo é de uma versão sem o painel "Projeto".
+        // Também reconstrói quando o layout salvo é de uma versão sem os painéis "Projeto" ou "Scripts".
         ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockspaceId);
-        const bool hasProjectPanel = ImGui::FindWindowSettingsByID(ImHashStr("Projeto")) != nullptr;
-        if (!node || !node->IsSplitNode() || !hasProjectPanel) BuildDockLayout(dockspaceId);
+        const bool hasPanels = ImGui::FindWindowSettingsByID(ImHashStr("Projeto")) != nullptr &&
+                               ImGui::FindWindowSettingsByID(ImHashStr("Scripts")) != nullptr;
+        if (!node || !node->IsSplitNode() || !hasPanels) BuildDockLayout(dockspaceId);
         m_resetLayout = false;
     }
     ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport());
@@ -217,12 +213,14 @@ void EditorApp::OnImGui() {
     DrawInspectorPanel(m_ctx);
     DrawViewport();
     DrawProjectPanel();
+    DrawScriptsPanel();
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
 
     // Atalhos antes dos popups: o Esc que fecha um popup não deve também limpar a seleção.
     HandleShortcuts();
     if (!m_ctx.pendingError.empty()) ShowError(std::exchange(m_ctx.pendingError, {}));
     DrawFilePopups();
+    DrawNewScriptPopup();
     m_ctx.ApplyPendingDelete();
     // Depois de todas as alterações do frame: se a cena mudou e o usuário terminou a interação, vira um passo.
     // No Play, não: ao parar a cena volta a ser igual à última foto do histórico.
@@ -257,6 +255,7 @@ void EditorApp::StopPlay() {
     m_ctx.pendingDelete = kNullEntity;
     m_ctx.eulerEntity = kNullEntity;  // o Inspector recalcula os ângulos da cena restaurada
     m_looking = false;
+    if (m_scriptReloadPending) ReloadScripts();  // scripts recompilados durante o Play
 }
 
 void EditorApp::BuildDockLayout(unsigned int dockspaceId) {
@@ -275,7 +274,8 @@ void EditorApp::BuildDockLayout(unsigned int dockspaceId) {
     ImGui::DockBuilderDockWindow("Cena", leftBottom);
     ImGui::DockBuilderDockWindow("Inspector", right);
     ImGui::DockBuilderDockWindow("Viewport", center);
-    ImGui::DockBuilderDockWindow("Projeto", bottom);
+    ImGui::DockBuilderDockWindow("Scripts", bottom);
+    ImGui::DockBuilderDockWindow("Projeto", bottom);  // por último: fica como aba ativa
     ImGui::DockBuilderFinish(dockspaceId);
 }
 
@@ -322,6 +322,7 @@ void EditorApp::DrawMenuBar() {
         if (ImGui::MenuItem("Ver pela câmera do jogo", "F8", m_gameView, active)) m_gameView = !m_gameView;
         ImGui::EndMenu();
     }
+    DrawScriptsMenu();
     if (m_play.IsActive()) {
         ImGui::Spacing();
         const ImU32 color = m_play.IsPaused() ? kPauseColor : kPlayColor;
@@ -330,6 +331,7 @@ void EditorApp::DrawMenuBar() {
         ImGui::PopStyleColor();
         ImGui::TextDisabled("(alterações feitas agora são descartadas ao parar)");
     }
+    DrawScriptsStatus();
     ImGui::EndMainMenuBar();
 }
 
@@ -591,6 +593,7 @@ void EditorApp::HandleShortcuts() {
         }
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F8, false) && m_play.IsActive()) m_gameView = !m_gameView;
+    if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) RequestScriptBuild();
     // Jogando com o viewport em foco, as teclas são do jogo (WASD não troca o gizmo, Del não exclui...).
     if (InGameView() && m_viewportFocused) return;
     // Com o painel Projeto em foco, Del/F2/Enter pertencem a ele (arquivos), não às entidades.

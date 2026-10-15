@@ -57,4 +57,10 @@ void UndoHistory::Restore(State&& state, motor::Scene& scene, motor::EntityId& s
     m_current.selected = selected;
 }
 
+void UndoHistory::ForEachScene(const std::function<void(motor::Scene&)>& fn) {
+    fn(m_current.scene);
+    for (State& s : m_undo) fn(s.scene);
+    for (State& s : m_redo) fn(s.scene);
+}
+
 } // namespace editor

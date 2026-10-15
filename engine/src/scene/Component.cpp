@@ -19,6 +19,33 @@ const ComponentType* ComponentRegistry::Find(std::string_view name) const {
     return nullptr;
 }
 
+const ComponentType* ComponentRegistry::FindCppType(const std::type_info& info) const {
+    // type_info::operator== compara pelo nome do tipo, então funciona entre a engine e as DLLs de scripts.
+    for (const auto& type : m_types) {
+        if (type->cppType && *type->cppType == info) return type.get();
+    }
+    if (info == typeid(MissingComponent)) return &MissingType();
+    return nullptr;
+}
+
+void ComponentRegistry::Unregister(const ComponentType* type) {
+    std::erase_if(m_types, [&](const auto& t) { return t.get() == type; });
+    ++m_generation;
+}
+
+const ComponentType& ComponentRegistry::MissingType() {
+    static const ComponentType type = [] {
+        ComponentType t;
+        Describe<MissingComponent>(t, "MissingComponent", "Componente desconhecido");
+        // Campos só para cópia e comparação (desfazer); o serializador grava o JSON guardado, não estes.
+        ComponentBuilder<MissingComponent>(t)
+            .Field("type", "Tipo", &MissingComponent::type)
+            .Field("json", "Dados", &MissingComponent::json);
+        return t;
+    }();
+    return type;
+}
+
 bool ComponentsEqual(const ComponentType& type, const void* a, const void* b) {
     for (const FieldInfo& f : type.fields) {
         bool same = true;

@@ -13,10 +13,14 @@ export PATH=/c/msys64/ucrt64/bin:/c/msys64/usr/bin:$PATH
 cmake -S . -B build -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j8
 ctest --test-dir build --output-on-failure   # testes (sem janela)
-./build/sandbox/Sandbox.exe       # demo
-./build/editor/MotorEditor.exe    # editor (reabre o último projeto)
-./build/editor/MotorEditor.exe "C:/caminho/MeuJogo"   # abre um projeto específico
+./build/bin/Sandbox.exe       # demo
+./build/bin/MotorEditor.exe    # editor (reabre o último projeto)
+./build/bin/MotorEditor.exe "C:/caminho/MeuJogo"   # abre um projeto específico
 ```
+
+Executáveis e DLLs ficam juntos em `build/bin`: a engine é a `libMotor.dll` (com ImGui e GLFW dentro), e
+o runtime do C++ (`libstdc++-6.dll`, `libgcc_s_seh-1.dll`, `libwinpthread-1.dll`) é copiado do toolchain
+para lá. `build/bin/sdk/` tem o que o editor usa para compilar os scripts dos projetos (ver "Scripts").
 
 ## Estrutura
 
@@ -30,10 +34,10 @@ engine/
     scene/         Scene, componentes (Component.h: registro e campos), SceneSerializer (.mscene), Transform
   src/             implementação (+ GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine
-editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play
-scripts/           scripts do jogo em C++ (biblioteca MotorScripts, compilada junto com o editor)
+editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play, scripts
+  templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, MoverWASD, Seguir)
 sandbox/           app de demonstração
-tests/             testes ctest (projeto, assets, GUIDs, componentes, desfazer, scripts, Play)
+tests/             testes ctest (projeto, assets, GUIDs, componentes, desfazer, scripts, Play, recarga)
 ```
 
 ## Controles do Sandbox
@@ -101,9 +105,14 @@ MeuJogo/
   Assets/
     Scenes/
       Principal.mscene
+  Scripts/             scripts do jogo em C++ (ver "Scripts")
+    Girar.cpp
+  .motor/              gerado pelo editor (compilação dos scripts); pode apagar, fica fora do git
+  .gitignore
 ```
 
-- **Novo projeto** cria essa estrutura (em Documentos, por padrão) com uma cena inicial (chão + cubo).
+- **Novo projeto** cria essa estrutura (em Documentos, por padrão) com uma cena inicial: chão, um cubo que
+  gira com o script de exemplo `Scripts/Girar.cpp` e a câmera do jogo.
 - O editor lembra o último projeto e a última cena aberta em `%APPDATA%/Motor/editor.json`
   e os reabre ao iniciar. Sem projeto, abre a cena de exemplo.
 - A primeira cena salva num projeto sem cena inicial vira a `startupScene`.
@@ -223,12 +232,15 @@ entity.Remove<Girar>();
 
 ## Scripts (C++)
 
-Um script é um componente que herda de `motor::Script`: os campos registrados aparecem no Inspector (em
-"Adicionar componente" > Scripts), são salvos na cena e entram no desfazer como qualquer componente; os
-métodos `On*` só rodam no Play.
+Os scripts são de cada projeto: ficam em `MeuJogo/Scripts/` (`.cpp`/`.h` do usuário) e o editor os compila
+numa DLL que carrega e **recarrega sem fechar**. Um script é um componente que herda de `motor::Script`: os
+campos registrados aparecem no Inspector (em "Adicionar componente" > Scripts), são salvos na cena e
+entram no desfazer como qualquer componente; os métodos `On*` só rodam no Play.
 
 ```cpp
-// scripts/include/scripts/Scripts.h
+// MeuJogo/Scripts/Girar.cpp
+#include <motor/scene/ScriptModule.h>
+
 struct Girar : motor::Script {
     glm::vec3 eixo{0.0f, 1.0f, 0.0f};
     float velocidade = 90.0f;  // graus por segundo
@@ -238,10 +250,12 @@ struct Girar : motor::Script {
     }
 };
 
-// scripts/src/Scripts.cpp, em RegisterAll():
-registry.Register<Girar>("Girar", "Girar")
-    .Field("eixo", "Eixo", &Girar::eixo)
-    .Field("velocidade", "Velocidade", &Girar::velocidade);
+// Registro: roda quando a DLL é carregada. O nome ("Girar") é o que vai no arquivo da cena.
+MOTOR_SCRIPT(Girar) {
+    registry.Register<Girar>("Girar", "Girar")
+        .Field("eixo", "Eixo", &Girar::eixo)
+        .Field("velocidade", "Velocidade", &Girar::velocidade);
+}
 ```
 
 | O que | API (dentro do script) |
@@ -260,14 +274,39 @@ registry.Register<Girar>("Girar", "Girar")
 - Campos não registrados são estado interno (não salvos, não comparados). Copiar um script (Play, duplicar)
   copia os campos, mas a cópia começa "não iniciada".
 - Não remova o componente de um script de dentro dele mesmo durante o Play; use `Destroy` na entidade.
+- Componentes da engine podem ser usados normalmente (`GetEntity().Get<motor::MeshRenderer>()`).
 
-Scripts de exemplo (`scripts/src/`): **Girar**, **Mover com WASD** (plano XZ, Shift corre, vira para onde
-anda) e **Seguir** (segue uma entidade pelo nome mantendo um deslocamento — bom para a câmera). A cena de
-exemplo do editor (sem projeto aberto) já usa os três: dê Play e mova a esfera "Jogador" com WASD.
+### Compilar e recarregar
 
-Para criar um script: declare a struct em `Scripts.h`, implemente num `.cpp` em `scripts/src/`, registre em
-`RegisterAll` e adicione o arquivo em `scripts/CMakeLists.txt`. Os scripts são compilados junto com o editor
-(é preciso recompilar e reabrir o editor); recarregar por DLL sem fechar o editor é o próximo passo (ROADMAP).
+- O editor compila a pasta `Scripts/` **ao abrir o projeto**, **ao salvar, criar ou apagar** um arquivo
+  dela (verifica a pasta a cada ~1 s) e pelo menu **Scripts > Recompilar scripts** (F7). Todos os `.cpp`
+  da pasta (e subpastas) entram; não há lista de arquivos para manter.
+- O painel **Scripts** (aba ao lado de Projeto) mostra a situação, os erros e avisos do compilador (clique
+  abre o arquivo) e a saída completa da compilação. Com erro, a barra de menus mostra "Scripts: N erro(s)"
+  e os scripts carregados continuam sendo os da última compilação boa.
+- **Recarga sem fechar**: os campos de todos os componentes de script são guardados (pelo JSON dos campos
+  registrados), os tipos antigos saem do registro, a DLL antiga é descarregada, a nova é carregada e os
+  campos são restaurados. Campo novo fica com o valor padrão; campo removido é ignorado. O desfazer continua
+  funcionando. **Durante o Play** a recarga espera: acontece ao parar.
+- **Script removido ou renomeado** (o nome passado para `Register`): os componentes dele não somem — ficam
+  como "script não carregado" no Inspector, com os dados guardados, são salvos de volta iguais na cena e
+  voltam a funcionar quando o tipo reaparecer. O mesmo acontece ao abrir uma cena antes de os scripts
+  compilarem.
+- **Scripts > Novo script...** cria `Scripts/<Nome>.cpp` com o esqueleto; **Adicionar exemplo** copia
+  **Girar**, **Mover com WASD** (plano XZ, Shift corre, vira para onde anda) ou **Seguir** (segue uma
+  entidade pelo nome — bom para a câmera). **Abrir pasta de scripts** abre no Explorer.
+
+Como funciona: o editor gera `MeuJogo/.motor/scripts/cmake/CMakeLists.txt` (uma `GameScripts.dll` com
+todos os `.cpp` de `Scripts/` mais um ponto de entrada que exporta `MotorRegisterScripts`), que inclui
+`build/bin/sdk/MotorSDK.cmake` (alvo importado `Motor::Motor`: headers e `libMotor.dll`) e usa o mesmo
+CMake, compilador e make com que o Motor foi compilado (`build/bin/sdk/MotorSDK.json`). O editor carrega
+uma **cópia** da DLL (em `.motor/scripts/loaded/`), para o linker poder reescrever a original na próxima
+compilação. A engine é uma DLL compartilhada e o runtime do C++ é dinâmico: o editor e a DLL de scripts
+usam o mesmo registro de componentes, o mesmo heap, as mesmas exceções/RTTI, o mesmo `Input` e o mesmo log.
+
+Limites atuais: os scripts precisam do Motor compilado na mesma máquina (o SDK aponta para a pasta de
+build); um erro grave dentro de um script (ponteiro inválido) derruba o editor; sem projeto aberto não há
+scripts.
 
 ## Cenas (`.mscene`)
 
@@ -308,7 +347,8 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
   `.meta`, com o caminho junto só para leitura e como plano B. Asset não encontrado ou com erro gera aviso
   no log e o componente fica sem ele (a cena carrega mesmo assim).
 - Componentes vão em `"components"`, cada um com `"type"` e os seus campos. Campo ausente = valor padrão;
-  componente de tipo desconhecido é ignorado com aviso no log.
+  componente de tipo desconhecido (script removido ou ainda não compilado) é **mantido** como está e
+  gravado de volta igual (aviso no log).
 - Cenas antigas continuam abrindo: versão 1 (assets por caminho) e 2 (`"meshRenderer"` fixo na entidade).
   Ao salvar, viram versão 3.
 - Os ids são reatribuídos ao carregar; campos ausentes usam o valor padrão.

@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <format>
+#include <fstream>
 
 namespace editor {
 
@@ -33,8 +34,9 @@ fs::path DefaultProjectsDir() {
     return fs::current_path(ec);
 }
 
-// Cena inicial de um projeto novo: chão, um cubo e a câmera do jogo.
-void BuildStarterScene(Scene& scene, const AssetLibrary& assets) {
+// Cena inicial de um projeto novo: chão, um cubo e a câmera do jogo. `withScript`: o cubo gira com o script
+// de exemplo Scripts/Girar.cpp.
+void BuildStarterScene(Scene& scene, const AssetLibrary& assets, bool withScript) {
     Entity& floor = scene.CreateEntity("Chão");
     floor.transform.scale = {40.0f, 1.0f, 40.0f};
     MeshRenderer& floorRenderer = floor.Add<MeshRenderer>();
@@ -47,6 +49,15 @@ void BuildStarterScene(Scene& scene, const AssetLibrary& assets) {
     MeshRenderer& cubeRenderer = cube.Add<MeshRenderer>();
     cubeRenderer.mesh = assets.FindMesh("Cubo");
     cubeRenderer.material.color = {0.30f, 0.60f, 0.95f, 1.0f};
+    if (withScript) {
+        // O script ainda não foi compilado: entra como componente desconhecido (só o JSON) e é ligado ao
+        // tipo Girar quando a DLL de scripts do projeto carregar.
+        ComponentPtr girar(ComponentRegistry::MissingType());
+        auto& missing = *static_cast<MissingComponent*>(girar.Data());
+        missing.type = "Girar";
+        missing.json = R"({"type": "Girar", "velocidade": 45.0})";
+        cube.components.push_back(std::move(girar));
+    }
 
     Entity& camera = scene.CreateEntity("Câmera");
     camera.transform.position = {0.0f, 3.0f, 7.0f};
@@ -80,6 +91,8 @@ bool EditorApp::OnCloseRequested() {
 }
 
 void EditorApp::OnShutdown() {
+    StopPlay();
+    CloseProjectScripts();  // nenhum objeto da DLL de scripts pode sobrar depois de descarregá-la
     m_settings.projectGridView = m_projectPanel.View().grid;
     m_settings.projectIconSize = m_projectPanel.View().iconSize;
     m_settings.Save();
@@ -246,6 +259,7 @@ bool EditorApp::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastScene) 
         return false;
     }
 
+    if (m_project) CloseProjectScripts();
     m_project = std::move(*project);
     m_settings.lastProject = m_project->ProjectFile();
     m_settings.AddRecentProject(m_project->ProjectFile());
@@ -264,6 +278,7 @@ bool EditorApp::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastScene) 
 
     ReplaceScene(Scene{}, {});
     m_ctx.assets.SetRoot(m_project->RootDir());  // assets de arquivo são relativos ao projeto
+    OpenProjectScripts();  // antes da cena: com a DLL já carregada, os componentes de script abrem ligados
     if (!scene.empty()) OpenSceneAt(scene);
 
     m_settings.Save();
@@ -280,8 +295,18 @@ void EditorApp::CreateProject(const fs::path& location, const std::string& name)
         return;
     }
 
+    // Pasta de scripts com um exemplo, e a pasta gerada pelo editor fora do controle de versão.
+    const ScriptProject::Paths scripts = ScriptProject::PathsFor(project->RootDir());
+    std::string templateError;
+    const bool withScript = ScriptProject::CopyTemplate(ScriptProject::DefaultTemplatesDir(), "Girar",
+                                                        scripts.scriptsDir, &templateError);
+    if (!withScript) log::Warn("Projeto criado sem o script de exemplo: {}", templateError);
+    if (std::ofstream ignore(project->RootDir() / ".gitignore", std::ios::binary); ignore) {
+        ignore << "# Gerado pelo Motor Editor (compilação dos scripts): pode ser apagado.\n.motor/\n";
+    }
+
     Scene starter;
-    BuildStarterScene(starter, m_ctx.assets);
+    BuildStarterScene(starter, m_ctx.assets, withScript);
     const fs::path scenePath = project->AssetsDir() / "Scenes" / "Principal.mscene";
     if (SceneSerializer::Save(scenePath, starter, m_ctx.assets, &error)) {
         project->SetStartupScene(scenePath);
