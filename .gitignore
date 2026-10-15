@@ -10,3 +10,6 @@ imgui.ini
 
 # Configuração local do Claude Code
 .claude/settings.local.json
+
+# Grafo de conhecimento gerado pelo graphify (recriável com /graphify)
+graphify-out/

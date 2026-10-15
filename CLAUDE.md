@@ -71,6 +71,13 @@ ctest --test-dir build --output-on-failure
 - O que depende de cliques (menus, arrastar, atalhos) fica como "não testado" no relatório, com passos
   para o usuário conferir.
 
+## Grafo de conhecimento (graphify)
+
+- `graphify-out/` (fora do git) tem o grafo do código: `GRAPH_REPORT.md` (resumo), `graph.json`, `graph.html`.
+- Para perguntas de arquitetura ("quem chama X?", "como Y chega em Z?"), consulte antes de varrer arquivos:
+  `graphify query "<pergunta>"`, `graphify path "A" "B"`, `graphify explain "X"`.
+- Depois de mudanças grandes, atualize com `/graphify . --update`. O que não indexar fica em `.graphifyignore`.
+
 ## Armadilhas do ambiente
 
 - No Bash deste ambiente, sequências como `\0` e `\n` dentro de comandos/heredocs chegam já convertidas
