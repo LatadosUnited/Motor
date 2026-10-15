@@ -77,6 +77,7 @@ target_link_libraries(imgui PUBLIC glfw)
 target_link_libraries(imguizmo PUBLIC imgui)
 
 add_subdirectory(engine)
+add_subdirectory(scripts)
 add_subdirectory(sandbox)
 add_subdirectory(editor)
 

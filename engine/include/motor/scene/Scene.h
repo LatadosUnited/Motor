@@ -15,6 +15,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -81,6 +82,13 @@ public:
 
     Entity* Find(EntityId id);
     const Entity* Find(EntityId id) const;
+    Entity* FindByName(std::string_view name);  // a primeira com esse nome, na ordem da cena
+
+    // Câmera do jogo: a primeira entidade ativa com Câmera marcada como principal (senão, a primeira ativa
+    // com Câmera). kNullEntity se não houver.
+    EntityId FindMainCamera() const;
+    // Posiciona `camera` no lugar da entidade e copia fov/near/far do componente (aspect fica como está).
+    bool ApplyCamera(EntityId id, Camera& camera) const;
 
     const std::vector<std::unique_ptr<Entity>>& Entities() const { return m_entities; }
     std::vector<EntityId> Children(EntityId parent) const;  // kNullEntity => raízes

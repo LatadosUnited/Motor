@@ -78,6 +78,11 @@ void Input::IgnoreNextMouseDelta() {
     g.ignoreDeltaRequested = true;
 }
 
+void Input::SetKeyState(Key key, bool down) {
+    const int k = static_cast<int>(key);
+    if (ValidKey(k)) g.keys[k] = down;
+}
+
 bool Input::IsKeyDown(Key key) {
     const int k = static_cast<int>(key);
     return ValidKey(k) && g.keys[k];

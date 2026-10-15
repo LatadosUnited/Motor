@@ -20,6 +20,12 @@ motor_add_test(test_assets)
 motor_add_test(test_guid)
 motor_add_test(test_components)
 
-# O histórico de desfazer é do editor; compilamos só ele junto com o teste.
+motor_add_test(test_scripts)
+target_link_libraries(test_scripts PRIVATE MotorScripts)
+
+# O histórico de desfazer e o modo Play são do editor; compilamos só eles junto com os testes.
 motor_add_test(test_undo ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)
 target_include_directories(test_undo PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+motor_add_test(test_play ${PROJECT_SOURCE_DIR}/editor/src/PlayMode.cpp)
+target_include_directories(test_play PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_play PRIVATE MotorScripts)

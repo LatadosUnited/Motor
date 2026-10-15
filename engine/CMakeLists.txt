@@ -18,6 +18,7 @@ add_library(Motor STATIC
     src/scene/FlyCameraController.cpp
     src/scene/Component.cpp
     src/scene/Scene.cpp
+    src/scene/SceneRuntime.cpp
     src/scene/SceneSerializer.cpp
     src/project/Project.cpp
 )

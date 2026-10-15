@@ -23,6 +23,7 @@ namespace motor {
 
 class AssetLibrary;
 class Mesh;
+class Script;
 class Texture2D;
 
 enum class FieldType { Bool, Int, Float, Vec2, Vec3, Vec4, String, Mesh, Texture };
@@ -73,6 +74,9 @@ struct ComponentType {
     std::function<void*(const void*)> clone;
     std::function<void(void*)> destroy;
     std::function<void(void*, AssetLibrary&)> onAdd;  // opcional: valores iniciais ao adicionar pelo editor
+    std::function<Script*(void*)> asScript;           // só para tipos que herdam de Script (Script.h)
+
+    bool IsScript() const { return static_cast<bool>(asScript); }
 };
 
 // Mesmos valores em todos os campos registrados (estado não registrado não entra na comparação).
@@ -156,6 +160,10 @@ public:
         type->create = [] { return static_cast<void*>(new T()); };
         type->clone = [](const void* p) { return static_cast<void*>(new T(*static_cast<const T*>(p))); };
         type->destroy = [](void* p) { delete static_cast<T*>(p); };
+        // Script só precisa estar completo aqui se T herdar dele (e aí, por herança, já está).
+        if constexpr (std::is_base_of_v<Script, T>) {
+            type->asScript = [](void* p) -> Script* { return static_cast<T*>(p); };
+        }
         ComponentType& ref = *type;
         m_types.push_back(std::move(type));
         Slot<T>() = &ref;

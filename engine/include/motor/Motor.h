@@ -27,5 +27,7 @@
 #include "motor/scene/Components.h"
 #include "motor/scene/FlyCameraController.h"
 #include "motor/scene/Scene.h"
+#include "motor/scene/SceneRuntime.h"
 #include "motor/scene/SceneSerializer.h"
+#include "motor/scene/Script.h"
 #include "motor/scene/Transform.h"

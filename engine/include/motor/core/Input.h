@@ -37,6 +37,7 @@ public:
     static void Attach(GLFWwindow* window);
     static void BeginFrame();  // chamar antes de processar os eventos do frame
     static void IgnoreNextMouseDelta();
+    static void SetKeyState(Key key, bool down);  // testes: simula a tecla só no estado interno, não no sistema
 };
 
 } // namespace motor

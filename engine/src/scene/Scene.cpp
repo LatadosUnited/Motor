@@ -6,6 +6,7 @@
 #include <glm/gtx/matrix_decompose.hpp>
 
 #include <glm/common.hpp>
+#include <glm/geometric.hpp>
 #include <glm/matrix.hpp>
 
 #include <algorithm>
@@ -138,6 +139,40 @@ Entity* Scene::Find(EntityId id) {
 const Entity* Scene::Find(EntityId id) const {
     auto it = m_byId.find(id);
     return it != m_byId.end() ? it->second : nullptr;
+}
+
+Entity* Scene::FindByName(std::string_view name) {
+    for (const auto& e : m_entities) {
+        if (e->name == name) return e.get();
+    }
+    return nullptr;
+}
+
+EntityId Scene::FindMainCamera() const {
+    EntityId fallback = kNullEntity;
+    for (const auto& e : m_entities) {
+        const CameraComponent* cam = e->Get<CameraComponent>();
+        if (!cam || !IsActiveInHierarchy(e->id)) continue;
+        if (cam->main) return e->id;
+        if (fallback == kNullEntity) fallback = e->id;
+    }
+    return fallback;
+}
+
+bool Scene::ApplyCamera(EntityId id, Camera& camera) const {
+    const Entity* e = Find(id);
+    const CameraComponent* cam = e ? e->Get<CameraComponent>() : nullptr;
+    if (!cam) return false;
+
+    const glm::mat4 world = WorldMatrix(id);
+    const glm::vec3 forward = -glm::vec3(world[2]);
+    if (glm::length(forward) < 1e-6f) return false;  // escala zero: sem direção
+    camera.position = glm::vec3(world[3]);
+    camera.LookAt(camera.position + glm::normalize(forward));
+    camera.fovY = cam->fov;
+    camera.nearPlane = cam->nearPlane;
+    camera.farPlane = cam->farPlane;
+    return true;
 }
 
 std::vector<EntityId> Scene::Children(EntityId parent) const {
