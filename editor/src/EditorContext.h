@@ -14,7 +14,7 @@ namespace editor {
 using motor::EntityId;
 using motor::kNullEntity;
 
-enum class Primitive { Empty, Cube, Sphere, Plane };
+enum class Primitive { Empty, Cube, Sphere, Plane, Camera };
 
 // Arquivos arrastados do painel Projeto (payload do ImGui): caminhos UTF-8 um por linha.
 inline constexpr const char* kPathPayload = "MOTOR_PATH";

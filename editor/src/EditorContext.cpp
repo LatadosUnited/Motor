@@ -66,10 +66,16 @@ std::vector<fs::path> AcceptAnyPathDrop() {
 }
 
 motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
-    const char* names[] = {"Entidade", "Cubo", "Esfera", "Plano"};
+    const char* names[] = {"Entidade", "Cubo", "Esfera", "Plano", "Câmera"};
     motor::Entity& e = scene.CreateEntity(names[static_cast<int>(type)], parent);
 
-    if (type != Primitive::Empty) {
+    if (type == Primitive::Camera) {
+        e.Add<motor::CameraComponent>();
+        if (parent == kNullEntity) {
+            e.transform.position = {0.0f, 2.0f, 6.0f};
+            e.transform.SetEulerDegrees({-12.0f, 0.0f, 0.0f});
+        }
+    } else if (type != Primitive::Empty) {
         e.Add<motor::MeshRenderer>().mesh = assets.FindMesh(names[static_cast<int>(type)]);
         if (type != Primitive::Plane && parent == kNullEntity) e.transform.position.y = 0.5f;
     }
@@ -134,6 +140,8 @@ void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent) {
     if (ImGui::MenuItem("Cubo")) ctx.CreatePrimitive(Primitive::Cube, parent);
     if (ImGui::MenuItem("Esfera")) ctx.CreatePrimitive(Primitive::Sphere, parent);
     if (ImGui::MenuItem("Plano")) ctx.CreatePrimitive(Primitive::Plane, parent);
+    ImGui::Separator();
+    if (ImGui::MenuItem("Câmera")) ctx.CreatePrimitive(Primitive::Camera, parent);
 }
 
 } // namespace editor

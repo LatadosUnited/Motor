@@ -30,9 +30,10 @@ engine/
     scene/         Scene, componentes (Component.h: registro e campos), SceneSerializer (.mscene), Transform
   src/             implementação (+ GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine
-editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking)
+editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play
+scripts/           scripts do jogo em C++ (biblioteca MotorScripts, compilada junto com o editor)
 sandbox/           app de demonstração
-tests/             testes ctest (projeto, assets, GUIDs, desfazer)
+tests/             testes ctest (projeto, assets, GUIDs, componentes, desfazer, scripts, Play)
 ```
 
 ## Controles do Sandbox
@@ -60,6 +61,9 @@ tests/             testes ctest (projeto, assets, GUIDs, desfazer)
 | Novo / Abrir projeto | Arquivo > Novo projeto... / Abrir projeto... / Projetos recentes |
 | Nova / Abrir cena | Arquivo > Nova cena (Ctrl+N) / Abrir cena... (Ctrl+O) |
 | Salvar cena | Arquivo > Salvar cena (Ctrl+S) / Salvar cena como... (Ctrl+Shift+S) |
+| Play / Parar | botão ▶ / ⏹ no topo do viewport, Ctrl+P ou menu Jogo |
+| Pausa / Avançar um quadro | botões ⏸ / ⏭ (ou Ctrl+Shift+P) |
+| Câmera do jogo ↔ do editor no Play | botão "Câmera: jogo/editor" ou F8 |
 
 **Desfazer** vale para tudo que muda a cena: transform (gizmo ou Inspector), criar, excluir, duplicar,
 reparentar, renomear, trocar malha/textura/cor, luz e ambiente. Cada interação vira **um** passo: um
@@ -70,6 +74,21 @@ texto, Ctrl+Z desfaz o texto digitado.
 
 O título da janela mostra a cena aberta e um `*` quando há alterações não salvas. Novo, Abrir e
 fechar a janela perguntam antes de descartar alterações (Salvar / Não salvar / Cancelar).
+
+### Modo Play
+
+- **Play** guarda uma cópia da cena e liga o loop de jogo: os scripts recebem `OnStart`, `OnUpdate`
+  (todo frame) e `OnFixedUpdate` (passo fixo de 1/60 s). Fora do Play nenhum script roda.
+- O viewport passa a mostrar a cena pela **câmera principal** (componente Câmera; ver abaixo), sem gizmo
+  nem contorno de seleção. Sem câmera na cena, mostra pela câmera do editor com um aviso. F8 (ou o botão
+  "Câmera") alterna para a câmera livre do editor sem parar o jogo.
+- O jogo só recebe teclado e mouse com o **viewport em foco** (o Play já dá o foco a ele) e sem campo de
+  texto ativo. Nesse estado as teclas de atalho do editor (W/E/R, Del...) ficam com o jogo.
+- Indicação: borda azul no viewport e "JOGANDO" na barra de menus (laranja/"EM PAUSA" na pausa).
+- **Pausa** congela o jogo; "Avançar um quadro" roda um passo de cada vez.
+- **Parar** chama `OnDestroy` e devolve a cena exatamente como estava: tudo que mudou no Play (pelos
+  scripts ou pelo Inspector) é descartado. Desfazer fica desligado durante o Play, salvar pede para parar
+  antes, e abrir/criar cena ou projeto e fechar o editor param o Play primeiro.
 
 ## Projetos
 
@@ -198,7 +217,57 @@ entity.Remove<Girar>();
   depois de ter cenas salvas. Campos que não estão registrados não são salvos nem comparados (bom para
   estado interno).
 - No Inspector, o X do cabeçalho remove o componente; clique direito no cabeçalho tem "Redefinir valores".
-- Componentes da engine hoje: **Mesh Renderer** (malha, textura, cor, especular, brilho).
+- Componentes da engine hoje: **Mesh Renderer** (malha, textura, cor, especular, brilho) e **Câmera**
+  (campo de visão, planos perto/longe, principal). A câmera olha para o -Z local da entidade; no Play vale
+  a primeira câmera ativa marcada como principal (senão, a primeira ativa). Entidade > Câmera cria uma.
+
+## Scripts (C++)
+
+Um script é um componente que herda de `motor::Script`: os campos registrados aparecem no Inspector (em
+"Adicionar componente" > Scripts), são salvos na cena e entram no desfazer como qualquer componente; os
+métodos `On*` só rodam no Play.
+
+```cpp
+// scripts/include/scripts/Scripts.h
+struct Girar : motor::Script {
+    glm::vec3 eixo{0.0f, 1.0f, 0.0f};
+    float velocidade = 90.0f;  // graus por segundo
+
+    void OnUpdate(float dt) override {
+        GetTransform().rotation *= glm::angleAxis(glm::radians(velocidade * dt), eixo);
+    }
+};
+
+// scripts/src/Scripts.cpp, em RegisterAll():
+registry.Register<Girar>("Girar", "Girar")
+    .Field("eixo", "Eixo", &Girar::eixo)
+    .Field("velocidade", "Velocidade", &Girar::velocidade);
+```
+
+| O que | API (dentro do script) |
+|---|---|
+| Ciclo de vida | `OnStart()`, `OnUpdate(dt)`, `OnFixedUpdate(dt)`, `OnDestroy()` (virtuais, todas opcionais) |
+| Dono | `GetEntity()`, `GetId()`, `GetTransform()`, `GetScene()` |
+| Cena | `FindEntity("nome")`, `CreateEntity("nome", pai)`, `Destroy(id)`, `DestroySelf()` |
+| Tempo | `Time().delta`, `Time().fixedDelta`, `Time().elapsed` (s desde o Play, sem pausas), `Time().frame` |
+| Entrada | `IsKeyDown(Key::W)`, `WasKeyPressed(...)`, `IsMouseDown(...)`, `MouseDelta()` |
+| Log | `Log("vidas = {}", vidas)` — sai no log com o nome da entidade |
+
+- `OnStart` roda antes do primeiro `OnUpdate`; entidades inativas só iniciam quando ficam ativas, e
+  entidades criadas durante um quadro começam no seguinte.
+- `Destroy` é adiado para o fim do passo e leva os filhos junto (todos recebem `OnDestroy`).
+- A entrada dos scripts é falsa/zero quando o jogo não tem o foco; `motor::Input` direto não tem esse filtro.
+- Campos não registrados são estado interno (não salvos, não comparados). Copiar um script (Play, duplicar)
+  copia os campos, mas a cópia começa "não iniciada".
+- Não remova o componente de um script de dentro dele mesmo durante o Play; use `Destroy` na entidade.
+
+Scripts de exemplo (`scripts/src/`): **Girar**, **Mover com WASD** (plano XZ, Shift corre, vira para onde
+anda) e **Seguir** (segue uma entidade pelo nome mantendo um deslocamento — bom para a câmera). A cena de
+exemplo do editor (sem projeto aberto) já usa os três: dê Play e mova a esfera "Jogador" com WASD.
+
+Para criar um script: declare a struct em `Scripts.h`, implemente num `.cpp` em `scripts/src/`, registre em
+`RegisterAll` e adicione o arquivo em `scripts/CMakeLists.txt`. Os scripts são compilados junto com o editor
+(é preciso recompilar e reabrir o editor); recarregar por DLL sem fechar o editor é o próximo passo (ROADMAP).
 
 ## Cenas (`.mscene`)
 

@@ -30,6 +30,8 @@ ctest --test-dir build --output-on-failure
   - `renderer/GL.h`: loader OpenGL próprio (X-macro). Função GL nova = adicionar na lista de lá.
 - `editor/` — `MotorEditor`. `EditorApp` (loop, viewport, gizmos, atalhos), `EditorFile.cpp` (cenas,
   projetos, menu Arquivo), um arquivo por painel, `EditorContext` (estado compartilhado), `UndoHistory`.
+  `PlayMode` (cópia/restauração da cena no Play; o loop de jogo é `motor::SceneRuntime`).
+- `scripts/` — scripts de jogo em C++ (`motor::Script`, biblioteca `MotorScripts`, registrados em `RegisterAll`).
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções

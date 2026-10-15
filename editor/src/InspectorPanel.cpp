@@ -264,11 +264,15 @@ void DrawInspectorPanel(EditorContext& ctx) {
     ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - buttonWidth) * 0.5f));
     if (ImGui::Button("Adicionar componente", ImVec2(buttonWidth, 0.0f))) ImGui::OpenPopup("AddComponent");
     if (ImGui::BeginPopup("AddComponent")) {
-        // Todos os tipos registrados; os que a entidade já tem aparecem desativados (um de cada).
-        for (const auto& type : motor::ComponentRegistry::Instance().Types()) {
-            if (ImGui::MenuItem(type->label.c_str(), nullptr, false, !e->Get(*type))) {
-                void* data = e->Add(*type);
-                if (type->onAdd) type->onAdd(data, ctx.assets);
+        // Todos os tipos registrados, scripts por último; os que a entidade já tem aparecem desativados (um de cada).
+        for (const bool scripts : {false, true}) {
+            if (scripts) ImGui::SeparatorText("Scripts");
+            for (const auto& type : motor::ComponentRegistry::Instance().Types()) {
+                if (type->IsScript() != scripts) continue;
+                if (ImGui::MenuItem(type->label.c_str(), nullptr, false, !e->Get(*type))) {
+                    void* data = e->Add(*type);
+                    if (type->onAdd) type->onAdd(data, ctx.assets);
+                }
             }
         }
         ImGui::EndPopup();

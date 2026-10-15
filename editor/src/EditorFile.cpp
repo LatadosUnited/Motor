@@ -33,7 +33,7 @@ fs::path DefaultProjectsDir() {
     return fs::current_path(ec);
 }
 
-// Cena inicial de um projeto novo: chão e um cubo.
+// Cena inicial de um projeto novo: chão, um cubo e a câmera do jogo.
 void BuildStarterScene(Scene& scene, const AssetLibrary& assets) {
     Entity& floor = scene.CreateEntity("Chão");
     floor.transform.scale = {40.0f, 1.0f, 40.0f};
@@ -47,6 +47,11 @@ void BuildStarterScene(Scene& scene, const AssetLibrary& assets) {
     MeshRenderer& cubeRenderer = cube.Add<MeshRenderer>();
     cubeRenderer.mesh = assets.FindMesh("Cubo");
     cubeRenderer.material.color = {0.30f, 0.60f, 0.95f, 1.0f};
+
+    Entity& camera = scene.CreateEntity("Câmera");
+    camera.transform.position = {0.0f, 3.0f, 7.0f};
+    camera.transform.SetEulerDegrees({-20.0f, 0.0f, 0.0f});
+    camera.Add<CameraComponent>();
 
     scene.light.direction = {-0.5f, -1.0f, -0.35f};
 }
@@ -68,6 +73,7 @@ fs::path FindAnyScene(const fs::path& dir) {
 // ---------------------------------------------------------------------------
 
 bool EditorApp::OnCloseRequested() {
+    StopPlay();  // o que importa é a cena de antes do Play
     if (!HasUnsavedChanges()) return true;
     RequestFileAction(FileAction::Quit);
     return false;
@@ -80,6 +86,7 @@ void EditorApp::OnShutdown() {
 }
 
 void EditorApp::RequestFileAction(FileAction action, const fs::path& path) {
+    StopPlay();  // trocar de cena ou de projeto encerra o Play (e a pergunta de salvar é sobre a cena original)
     if (HasUnsavedChanges()) {
         m_pendingAction = action;
         m_pendingPath = path;
@@ -137,6 +144,11 @@ fs::path EditorApp::DefaultSceneDir() const {
 }
 
 bool EditorApp::SaveScene(bool saveAs) {
+    if (m_play.IsActive()) {
+        // Salvar agora gravaria o estado do jogo, que é descartado ao parar.
+        ShowError("Pare o Play antes de salvar (Ctrl+P). Alterações feitas durante o Play são descartadas.");
+        return false;
+    }
     fs::path path = m_scenePath;
     if (saveAs || path.empty()) {
         const fs::path suggestion = path.empty() ? DefaultSceneDir() / "Nova cena.mscene" : path;

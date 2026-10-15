@@ -2,6 +2,7 @@
 
 #include "EditorContext.h"
 #include "EditorSettings.h"
+#include "PlayMode.h"
 #include "ProjectPanel.h"
 #include "UndoHistory.h"
 
@@ -26,6 +27,7 @@ public:
 
 private:
     void OnInit() override;
+    void OnFixedUpdate(float dt) override;
     void OnUpdate(float dt) override;
     void OnRender(motor::Renderer& renderer) override;
     void OnImGui() override;
@@ -46,6 +48,13 @@ private:
     bool IsInteracting() const;  // arrastando/editando algo: a alteração ainda não terminou
     void Undo();
     void Redo();
+
+    // --- Modo Play ---
+    enum class PlayRequest { None, Play, Pause, Stop, Step };
+    void ApplyPlayRequest(PlayRequest request);
+    void StopPlay();  // volta à edição (nada acontece se já estiver editando)
+    bool InGameView() const { return m_play.IsActive() && m_gameView; }  // viewport pela câmera do jogo
+    void DrawPlayControls(const ImVec2& origin);
 
     // --- Arquivos de cena e projeto (EditorFile.cpp) ---
     enum class FileAction { None, NewScene, OpenScene, OpenScenePath, NewProject, OpenProject, OpenProjectPath, Quit };
@@ -107,6 +116,13 @@ private:
     ProjectPanel m_projectPanel;
     UndoHistory m_history;
     int m_historyRequest = 0;  // -1 desfazer, +1 refazer (executado no início do próximo frame)
+
+    PlayMode m_play;
+    PlayRequest m_playRequest = PlayRequest::None;  // aplicado no início do próximo frame, como o desfazer
+    bool m_gameView = true;          // no Play: true = câmera do jogo, false = câmera livre do editor
+    bool m_viewportFocused = false;  // o jogo só recebe teclado/mouse com o viewport em foco
+    bool m_focusViewport = false;
+    bool m_missingGameCamera = false;  // no Play sem câmera na cena: mostra pela câmera do editor
     bool m_openNewProjectPopup = false;
     std::string m_newProjectName;
     std::string m_newProjectLocation;  // UTF-8

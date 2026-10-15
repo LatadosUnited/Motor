@@ -11,6 +11,8 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Renderização básica (Blinn-Phong, 1 luz direcional, neblina, MSAA) | ✅ pronto |
 | Cena (entidades, hierarquia, transform) | ✅ pronto |
 | Sistema de componentes (registro, Inspector/serialização/desfazer automáticos) | ✅ pronto (Fase 1) |
+| Modo Play (Play/Pausa/Parar, câmera do jogo, cena restaurada ao parar) | ✅ pronto (Fase 2) |
+| Scripts C++ compilados com o editor (Girar, Mover com WASD, Seguir) | ✅ pronto (Fase 3; hot reload pendente) |
 | Git + testes `ctest` | ✅ pronto (Fase 0) |
 | Editor (hierarquia, inspector, viewport, gizmos, desfazer) | ✅ pronto |
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
@@ -41,33 +43,45 @@ Trocar o `std::optional<MeshRenderer>` fixo por componentes registráveis.
 **Pronto quando:** criar um componente novo é escrever uma struct + uma linha de registro, e ele já
 aparece no Inspector, é salvo na cena e entra no desfazer sem tocar em mais nada.
 
-## Fase 2 — Modo Play
+## Fase 2 — Modo Play ✅
 
-- Botões ▶ Play / ⏸ Pausa / ⏹ Parar na barra do viewport (e Ctrl+P).
-- Ao dar Play, a cena é copiada (a cópia profunda de `Scene` já existe); ao parar, volta como estava.
-- Loop de jogo separado do editor: `OnStart`, `OnUpdate(dt)`, `OnFixedUpdate` só rodam em Play.
-- Componente **Câmera**: o Play renderiza pela câmera da cena (o editor continua com a câmera livre).
-- Aviso visual de que está em Play (borda/tingimento), e alterações durante o Play são descartadas.
+- Botões ▶ Play / ⏸ Pausa / ⏭ Avançar quadro / ⏹ Parar no topo do viewport, menu Jogo e Ctrl+P.
+- Ao dar Play, a cena é copiada; ao parar, volta como estava (`editor/src/PlayMode`).
+- Loop de jogo separado do editor (`motor::SceneRuntime`): `OnStart`, `OnUpdate(dt)`, `OnFixedUpdate` só rodam em Play.
+- Componente **Câmera** (fov, perto, longe, principal): o Play renderiza pela câmera principal da cena;
+  F8 alterna para a câmera livre do editor sem parar.
+- Borda azul (laranja em pausa) no viewport e aviso na barra de menus; desfazer desligado e salvar bloqueado
+  durante o Play; alterações feitas no Play são descartadas.
 
-**Pronto quando:** dá para dar Play, ver a cena pela câmera do jogo, pausar e parar voltando ao estado original.
+Limitações conhecidas: a câmera do jogo ignora a rotação em torno do próprio eixo (roll); o viewport é um
+só (não há janelas "Cena" e "Jogo" lado a lado).
 
-## Fase 3 — Scripts
+## Fase 3 — Scripts ✅ (hot reload pendente)
 
-- Componente **Script** em C++: classe com `OnStart`, `OnUpdate`, `OnDestroy`, acesso à entidade,
-  ao transform, ao `Input` e ao tempo.
-- Campos do script aparecem no Inspector (usa a reflexão da Fase 1).
-- Scripts do jogo ficam numa pasta do projeto e são compilados numa DLL, recarregada sem fechar o editor
-  (hot reload). Alternativa mais simples para começar: scripts compilados junto com o editor.
-- API mínima: encontrar entidade por nome, criar/destruir entidades, log.
-- Depois (opcional): Lua como linguagem de script leve.
+- `motor::Script` em C++: `OnStart`, `OnUpdate`, `OnFixedUpdate`, `OnDestroy`, acesso à entidade, ao
+  transform, à entrada (filtrada pelo foco do jogo) e ao tempo do jogo.
+- Scripts são componentes registrados: campos no Inspector, na cena e no desfazer sem código extra.
+- API mínima: achar entidade por nome, criar/destruir (adiado para o fim do passo, com filhos), log.
+- Scripts compilados junto com o editor (`scripts/`, biblioteca `MotorScripts`): Girar, Mover com WASD, Seguir.
 
-**Pronto quando:** um script "gira o objeto" e um "move o jogador com WASD" funcionam no Play.
+**Próximo passo — hot reload por DLL:**
+
+1. `scripts/` vira uma DLL (`MotorScripts.dll`) que exporta `RegisterAll` e `UnregisterAll`; a engine
+   passa a ser uma DLL também (ou exporta o registro), para os dois lados usarem o mesmo `ComponentRegistry`.
+2. O editor observa a pasta de scripts do projeto, recompila em segundo plano (CMake) e, só fora do Play:
+   salva a cena em JSON na memória, remove os componentes dos tipos da DLL, descarrega a DLL antiga
+   (copiada antes com outro nome, para o compilador poder sobrescrever a original), carrega a nova,
+   registra de novo e relê a cena do JSON.
+3. `ComponentRegistry` precisa de `Unregister(name)` e os `ComponentType` da DLL não podem ser referenciados
+   depois de descarregada (desfazer guarda cópias da cena: limpar o histórico ou serializá-lo).
+
+Depois (opcional): Lua como linguagem de script leve.
 
 ## Fase 4 — Luzes e câmera completas
 
 - Componentes **Luz**: direcional, pontual e spot; várias por cena (o shader passa a aceitar N luzes).
 - A luz direcional sai do painel "Cena" e vira um componente (cenas antigas convertidas ao abrir).
-- Ícones no viewport para luzes e câmeras (selecionáveis, com gizmo).
+- Ícones no viewport para luzes e câmeras (selecionáveis, com gizmo). O componente Câmera já existe (Fase 2).
 
 **Pronto quando:** uma cena noturna com várias lâmpadas pontuais é montada só pelo editor.
 
