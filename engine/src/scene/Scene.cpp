@@ -16,20 +16,42 @@
 namespace motor {
 
 namespace {
-bool SameMaterial(const Material& a, const Material& b) {
-    return a.color == b.color && a.albedo == b.albedo && a.specular == b.specular && a.shininess == b.shininess;
-}
-
 bool SameEntity(const Entity& a, const Entity& b) {
     if (a.id != b.id || a.name != b.name || a.active != b.active || a.parent != b.parent) return false;
     const Transform &ta = a.transform, &tb = b.transform;
     if (ta.position != tb.position || ta.rotation != tb.rotation || ta.scale != tb.scale) return false;
-    if (a.meshRenderer.has_value() != b.meshRenderer.has_value()) return false;
-    if (!a.meshRenderer) return true;
-    return a.meshRenderer->mesh == b.meshRenderer->mesh &&
-           SameMaterial(a.meshRenderer->material, b.meshRenderer->material);
+    if (a.components.size() != b.components.size()) return false;
+    for (size_t i = 0; i < a.components.size(); ++i) {
+        const ComponentPtr &ca = a.components[i], &cb = b.components[i];
+        if (&ca.Type() != &cb.Type() || !ComponentsEqual(ca.Type(), ca.Data(), cb.Data())) return false;
+    }
+    return true;
 }
 } // namespace
+
+// --- Entity -----------------------------------------------------------------------
+
+void* Entity::Get(const ComponentType& type) {
+    for (ComponentPtr& c : components) {
+        if (&c.Type() == &type) return c.Data();
+    }
+    return nullptr;
+}
+
+const void* Entity::Get(const ComponentType& type) const {
+    return const_cast<Entity*>(this)->Get(type);
+}
+
+void* Entity::Add(const ComponentType& type) {
+    if (void* existing = Get(type)) return existing;
+    return components.emplace_back(type).Data();
+}
+
+void Entity::Remove(const ComponentType& type) {
+    std::erase_if(components, [&](const ComponentPtr& c) { return &c.Type() == &type; });
+}
+
+// --- Scene ------------------------------------------------------------------------
 
 Scene::Scene(const Scene& other) : light(other.light), environment(other.environment), m_nextId(other.m_nextId) {
     m_entities.reserve(other.m_entities.size());
@@ -98,7 +120,7 @@ EntityId Scene::CloneRecursive(const Entity& source, EntityId newParent) {
     Entity& clone = CreateEntity(source.name, newParent);
     clone.active = source.active;
     clone.transform = source.transform;
-    clone.meshRenderer = source.meshRenderer;
+    clone.components = source.components;
     const EntityId cloneId = clone.id;
 
     for (EntityId child : children) {
@@ -189,8 +211,9 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
 
 void Scene::SubmitTo(Renderer& renderer) const {
     for (const auto& e : m_entities) {
-        if (!e->meshRenderer || !e->meshRenderer->mesh || !IsActiveInHierarchy(e->id)) continue;
-        renderer.Submit(*e->meshRenderer->mesh, e->meshRenderer->material, WorldMatrix(e->id));
+        const MeshRenderer* mr = e->Get<MeshRenderer>();
+        if (!mr || !mr->mesh || !IsActiveInHierarchy(e->id)) continue;
+        renderer.Submit(*mr->mesh, mr->material, WorldMatrix(e->id));
     }
 }
 
@@ -219,14 +242,15 @@ std::optional<float> RayAabb(const glm::vec3& o, const glm::vec3& d, const glm::
 std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec3& direction) const {
     std::optional<RaycastHit> best;
     for (const auto& e : m_entities) {
-        if (!e->meshRenderer || !e->meshRenderer->mesh || !IsActiveInHierarchy(e->id)) continue;
+        const MeshRenderer* mr = e->Get<MeshRenderer>();
+        if (!mr || !mr->mesh || !IsActiveInHierarchy(e->id)) continue;
 
         // Leva o raio para o espaço local; como a transformação é linear, o t vale nos dois espaços.
         const glm::mat4 inv = glm::inverse(WorldMatrix(e->id));
         const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
         const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
 
-        const Mesh& mesh = *e->meshRenderer->mesh;
+        const Mesh& mesh = *mr->mesh;
         if (auto t = RayAabb(o, d, mesh.BoundsMin(), mesh.BoundsMax())) {
             if (!best || *t < best->distance) best = RaycastHit{e->id, *t};
         }

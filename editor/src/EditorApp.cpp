@@ -71,19 +71,19 @@ void EditorApp::BuildDefaultScene() {
     Entity& floor = m_ctx.CreatePrimitive(Primitive::Plane);
     floor.name = "Chão";
     floor.transform.scale = {40.0f, 1.0f, 40.0f};
-    floor.meshRenderer->material.albedo = m_ctx.assets.FindTexture("Xadrez");
-    floor.meshRenderer->material.specular = 0.1f;
+    floor.Get<MeshRenderer>()->material.albedo = m_ctx.assets.FindTexture("Xadrez");
+    floor.Get<MeshRenderer>()->material.specular = 0.1f;
 
     Entity& cube = m_ctx.CreatePrimitive(Primitive::Cube);
     cube.transform.position = {-2.5f, 0.5f, 0.0f};
     cube.transform.SetEulerDegrees({0.0f, 30.0f, 0.0f});
-    cube.meshRenderer->material.color = {0.95f, 0.35f, 0.30f, 1.0f};
+    cube.Get<MeshRenderer>()->material.color = {0.95f, 0.35f, 0.30f, 1.0f};
 
     Entity& sphere = m_ctx.CreatePrimitive(Primitive::Sphere);
     sphere.transform.position = {0.0f, 0.6f, 0.0f};
     sphere.transform.scale = glm::vec3(1.2f);
-    sphere.meshRenderer->material.color = {0.30f, 0.60f, 0.95f, 1.0f};
-    sphere.meshRenderer->material.shininess = 64.0f;
+    sphere.Get<MeshRenderer>()->material.color = {0.30f, 0.60f, 0.95f, 1.0f};
+    sphere.Get<MeshRenderer>()->material.shininess = 64.0f;
 
     Entity& group = m_ctx.CreatePrimitive(Primitive::Empty);
     group.name = "Torre";
@@ -101,7 +101,7 @@ void EditorApp::BuildDefaultScene() {
         e.name = p.name;
         e.transform.position = p.pos;
         e.transform.scale = glm::vec3(p.scale);
-        e.meshRenderer->material.color = p.color;
+        e.Get<MeshRenderer>()->material.color = p.color;
     }
 
     scene.light.direction = {-0.5f, -1.0f, -0.35f};
@@ -151,9 +151,10 @@ void EditorApp::OnRender(Renderer& renderer) {
 
     // Contorno em wireframe da seleção (e de seus descendentes).
     for (const auto& e : scene.Entities()) {
-        if (!e->meshRenderer || !e->meshRenderer->mesh) continue;
+        const MeshRenderer* mr = e->Get<MeshRenderer>();
+        if (!mr || !mr->mesh) continue;
         if (e->id != m_ctx.selected && !scene.IsDescendantOf(e->id, m_ctx.selected)) continue;
-        renderer.SubmitWireframe(*e->meshRenderer->mesh, scene.WorldMatrix(e->id), kSelectionColor);
+        renderer.SubmitWireframe(*mr->mesh, scene.WorldMatrix(e->id), kSelectionColor);
     }
     renderer.EndScene();
 }
@@ -482,7 +483,7 @@ void EditorApp::HandleViewportDrop(const ImVec2& origin) {
     float offset = 0.0f;
     for (const auto& file : meshes) {
         if (Entity* e = m_ctx.CreateFromMeshFile(file)) {
-            const Mesh& mesh = *e->meshRenderer->mesh;
+            const Mesh& mesh = *e->Get<MeshRenderer>()->mesh;
             // Apoia a base da malha no ponto (a origem do OBJ nem sempre fica embaixo).
             e->transform.position = point + glm::vec3(offset, -mesh.BoundsMin().y, 0.0f);
             offset += std::max(1.0f, mesh.BoundsMax().x - mesh.BoundsMin().x) * 1.2f;

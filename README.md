@@ -27,7 +27,7 @@ engine/
     renderer/      Renderer, Shader, Mesh, Texture2D, Framebuffer, Camera, Material
     assets/        AssetLibrary (malhas/texturas), AssetDatabase (GUIDs em .meta), AssetLoaders (OBJ, PNG/JPG)
     project/       Project (pasta do projeto + arquivo .mproject)
-    scene/         Scene, SceneSerializer (.mscene), Transform, FlyCameraController
+    scene/         Scene, componentes (Component.h: registro e campos), SceneSerializer (.mscene), Transform
   src/             implementação (+ GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine
 editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking)
@@ -160,6 +160,46 @@ As cenas apontam para o GUID, não para o caminho. Por isso dá para **renomear 
   só o encontram se ele continuar no caminho antigo (plano B, com aviso no log).
 - Versione os `.meta` junto com os assets (no git, por exemplo).
 
+## Componentes
+
+Toda entidade tem nome, ativa/inativa, pai e **Transform**. O resto vem de **componentes**: structs comuns,
+registradas uma vez com a lista dos seus campos. A partir disso a engine e o editor fazem sozinhos o resto:
+o componente aparece em "Adicionar componente" no Inspector, com os campos editáveis, é salvo e carregado
+na cena, copiado ao duplicar a entidade e entra no desfazer.
+
+```cpp
+#include <motor/Motor.h>
+
+struct Girar {
+    float velocidade = 90.0f;          // graus por segundo
+    glm::vec3 eixo{0.0f, 1.0f, 0.0f};
+    bool ligado = true;
+};
+
+// Uma vez, na inicialização (os da engine ficam em engine/src/scene/Component.cpp):
+motor::ComponentRegistry::Instance().Register<Girar>("Girar", "Girar")
+    .Field("velocidade", "Velocidade", &Girar::velocidade, {.slider = true, .min = 0.0f, .max = 720.0f})
+    .Field("eixo", "Eixo", &Girar::eixo)
+    .Field("ligado", "Ligado", &Girar::ligado);
+
+// Uso:
+entity.Add<Girar>().velocidade = 180.0f;
+if (Girar* g = entity.Get<Girar>()) g->ligado = false;
+entity.Remove<Girar>();
+```
+
+- Tipos de campo: `bool`, `int`, `float`, `glm::vec2/3/4`, `std::string`, malha e textura
+  (`std::shared_ptr<Mesh>` / `std::shared_ptr<Texture2D>`, com o seletor de assets do projeto).
+- Opções de exibição (`FieldOptions`): `color` (vec3/vec4 como cor), `slider` + `min`/`max`, `logarithmic`,
+  `speed`, `format`, `tooltip`.
+- Campo dentro de outra struct: `.FieldRef("cor", "Cor", [](MeshRenderer& m) -> auto& { return m.material.color; })`.
+- Valores iniciais ao adicionar pelo editor: `.OnAdd([](T& c, AssetLibrary& assets) { ... })`.
+- Um componente de cada tipo por entidade. O nome registrado ("Girar") é o que vai no arquivo: não mude
+  depois de ter cenas salvas. Campos que não estão registrados não são salvos nem comparados (bom para
+  estado interno).
+- No Inspector, o X do cabeçalho remove o componente; clique direito no cabeçalho tem "Redefinir valores".
+- Componentes da engine hoje: **Mesh Renderer** (malha, textura, cor, especular, brilho).
+
 ## Cenas (`.mscene`)
 
 Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via nlohmann/json):
@@ -167,23 +207,28 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
 ```json
 {
   "format": "motor-scene",
-  "version": 2,
+  "version": 3,
   "environment": { "skyColor": [0.53, 0.7, 0.88], "fogDensity": 0.012 },
   "light": { "direction": [-0.5, -1.0, -0.35], "color": [1.0, 0.97, 0.9], "intensity": 1.0, "ambient": [...] },
   "entities": [
     {
       "id": 1, "name": "Chão", "active": true, "parent": 0,
       "transform": { "position": [0, 0, 0], "rotation": [x, y, z, w], "scale": [40, 1, 40] },
-      "meshRenderer": { "mesh": "Plano", "texture": "Xadrez", "color": [1, 1, 1, 1], "specular": 0.1, "shininess": 32 }
+      "components": [
+        { "type": "MeshRenderer", "mesh": "Plano", "texture": "Xadrez", "color": [1, 1, 1, 1], "specular": 0.1, "shininess": 32 }
+      ]
     },
     {
       "id": 2, "name": "Carro", "active": true, "parent": 0,
       "transform": { ... },
-      "meshRenderer": {
-        "mesh": { "guid": "9f2c...e41a", "path": "Assets/Modelos/carro.obj" },
-        "texture": { "guid": "07b1...c9d0", "path": "Assets/Texturas/pintura.png" },
-        ...
-      }
+      "components": [
+        {
+          "type": "MeshRenderer",
+          "mesh": { "guid": "9f2c...e41a", "path": "Assets/Modelos/carro.obj" },
+          "texture": { "guid": "07b1...c9d0", "path": "Assets/Texturas/pintura.png" },
+          ...
+        }
+      ]
     }
   ]
 }
@@ -193,7 +238,10 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
 - Malhas e texturas embutidas são referenciadas pelo **nome** (`"Cubo"`); as de arquivo, pelo **GUID** do
   `.meta`, com o caminho junto só para leitura e como plano B. Asset não encontrado ou com erro gera aviso
   no log e o componente fica sem ele (a cena carrega mesmo assim).
-- Cenas da versão 1 (assets por caminho) continuam abrindo; ao salvar, viram versão 2.
+- Componentes vão em `"components"`, cada um com `"type"` e os seus campos. Campo ausente = valor padrão;
+  componente de tipo desconhecido é ignorado com aviso no log.
+- Cenas antigas continuam abrindo: versão 1 (assets por caminho) e 2 (`"meshRenderer"` fixo na entidade).
+  Ao salvar, viram versão 3.
 - Os ids são reatribuídos ao carregar; campos ausentes usam o valor padrão.
 - O salvamento escreve em `arquivo.tmp` e depois substitui o original, para não corromper a cena se falhar no meio.
 - Os diálogos de arquivo são nativos do Windows; em outras plataformas ainda não estão implementados.

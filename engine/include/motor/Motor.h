@@ -23,6 +23,8 @@
 
 #include "motor/project/Project.h"
 
+#include "motor/scene/Component.h"
+#include "motor/scene/Components.h"
 #include "motor/scene/FlyCameraController.h"
 #include "motor/scene/Scene.h"
 #include "motor/scene/SceneSerializer.h"

@@ -42,8 +42,12 @@ ctest --test-dir build --output-on-failure
 - Gravação de arquivos importantes: escreve `.tmp` e renomeia (ver `SceneSerializer::Save`).
 - Assets de arquivo são referenciados por **GUID** (`.meta` ao lado). Quem move/renomeia/exclui arquivo
   no editor leva o `.meta` junto (`ProjectPanel`). Exclusão vai sempre para a **Lixeira**, nunca definitiva.
-- Desfazer é automático: `UndoHistory::Track` compara a cena a cada frame. Dado novo na cena precisa
-  entrar na cópia e no `operator==` de `Scene`, senão não é desfeito.
+- **Recurso novo de entidade = componente registrado** (`motor/scene/Component.h`, exemplos no README e em
+  `engine/src/scene/Component.cpp`). Não adicione campos soltos em `Entity`: Inspector, serialização,
+  cópia e desfazer saem de graça dos campos registrados. Tipo de campo novo exige tratar o `FieldType` em
+  `ComponentsEqual`, no `SceneSerializer` (`FieldToJson`/`FieldFromJson`) e no Inspector (`DrawField`).
+- Desfazer é automático: `UndoHistory::Track` compara a cena a cada frame (`Scene::operator==`). Dado de
+  cena fora dos componentes (luz, ambiente) precisa entrar na cópia e no `operator==` de `Scene`.
 - Estilo: o do código vizinho (4 espaços, `m_` em membros, comentários curtos explicando o porquê).
 
 ## Testes

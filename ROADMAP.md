@@ -9,17 +9,18 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 |---|---|
 | Núcleo (janela, input, loop, log) | ✅ pronto |
 | Renderização básica (Blinn-Phong, 1 luz direcional, neblina, MSAA) | ✅ pronto |
-| Cena (entidades, hierarquia, transform) | ✅ pronto, mas só com **um** tipo de componente fixo (`MeshRenderer`) |
+| Cena (entidades, hierarquia, transform) | ✅ pronto |
+| Sistema de componentes (registro, Inspector/serialização/desfazer automáticos) | ✅ pronto (Fase 1) |
+| Git + testes `ctest` | ✅ pronto (Fase 0) |
 | Editor (hierarquia, inspector, viewport, gizmos, desfazer) | ✅ pronto |
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
 
-O gargalo para tudo que vem depois (scripts, física, câmera, luzes) é o item da cena: hoje cada novo
-recurso exigiria mexer à mão na `Entity`, no Inspector, no serializador e no desfazer. Por isso a
-Fase 1 vem antes do modo Play.
+Com as Fases 0 e 1 prontas, as fases seguintes podem andar em paralelo (cada uma no seu branch):
+um recurso novo é um componente registrado, sem mexer em `Entity`, Inspector, serializador ou desfazer.
 
 ---
 
-## Fase 0 — Controle de versão *(meio dia)*
+## Fase 0 — Controle de versão ✅
 
 A pasta ainda não é um repositório git. Antes das refatorações grandes:
 
@@ -28,7 +29,7 @@ A pasta ainda não é um repositório git. Antes das refatorações grandes:
 
 **Pronto quando:** `ctest` roda todos os testes e cada fase seguinte vira um commit (ou branch).
 
-## Fase 1 — Sistema de componentes *(base de tudo)*
+## Fase 1 — Sistema de componentes ✅
 
 Trocar o `std::optional<MeshRenderer>` fixo por componentes registráveis.
 

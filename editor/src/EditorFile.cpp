@@ -37,18 +37,16 @@ fs::path DefaultProjectsDir() {
 void BuildStarterScene(Scene& scene, const AssetLibrary& assets) {
     Entity& floor = scene.CreateEntity("Chão");
     floor.transform.scale = {40.0f, 1.0f, 40.0f};
-    MeshRenderer floorRenderer;
+    MeshRenderer& floorRenderer = floor.Add<MeshRenderer>();
     floorRenderer.mesh = assets.FindMesh("Plano");
     floorRenderer.material.albedo = assets.FindTexture("Xadrez");
     floorRenderer.material.specular = 0.1f;
-    floor.meshRenderer = floorRenderer;
 
     Entity& cube = scene.CreateEntity("Cubo");
     cube.transform.position = {0.0f, 0.5f, 0.0f};
-    MeshRenderer cubeRenderer;
+    MeshRenderer& cubeRenderer = cube.Add<MeshRenderer>();
     cubeRenderer.mesh = assets.FindMesh("Cubo");
     cubeRenderer.material.color = {0.30f, 0.60f, 0.95f, 1.0f};
-    cube.meshRenderer = cubeRenderer;
 
     scene.light.direction = {-0.5f, -1.0f, -0.35f};
 }

@@ -14,7 +14,7 @@ int main() {
     Entity& child = a.CreateEntity("Filho", rootId);
     const EntityId childId = child.id;
     child.transform.position = {1, 2, 3};
-    child.meshRenderer = MeshRenderer{};
+    child.Add<MeshRenderer>();
 
     Scene b = a;
     CHECK(b == a);
@@ -28,7 +28,7 @@ int main() {
     b.light.intensity = 2;
     CHECK(!(b == a));
     b = a;
-    b.Find(childId)->meshRenderer->material.specular = 0.9f;
+    b.Find(childId)->Get<MeshRenderer>()->material.specular = 0.9f;
     CHECK(!(b == a));
     // A cópia continua criando ids novos sem colidir.
     Scene c = a;

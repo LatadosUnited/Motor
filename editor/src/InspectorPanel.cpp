@@ -10,6 +10,7 @@
 #include <cfloat>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace editor {
@@ -115,44 +116,112 @@ std::optional<std::string> AssetCombo(EditorContext& ctx, const char* id, motor:
     return chosen;
 }
 
-void DrawMeshRenderer(EditorContext& ctx, motor::MeshRenderer& mr) {
-    if (!BeginProperties("##meshrenderer")) return;
-
+// Combo de malha/textura ligado direto ao campo do componente.
+template <class Asset>
+void AssetField(EditorContext& ctx, const char* id, motor::AssetType type, std::shared_ptr<Asset>& value) {
+    const auto ref = ctx.assets.RefOf(value.get());
+    const auto key = AssetCombo(ctx, id, type, ref ? &ref->name : nullptr, true);
+    if (!key) return;
+    if (key->empty()) {
+        value = nullptr;
+        return;
+    }
     std::string error;
-    Property("Malha");
-    const auto meshRef = ctx.assets.RefOf(mr.mesh.get());
-    if (auto key = AssetCombo(ctx, "##mesh", motor::AssetType::Mesh, meshRef ? &meshRef->name : nullptr, false)) {
-        if (auto mesh = ctx.assets.GetMesh(*key, &error)) {
-            mr.mesh = std::move(mesh);
-        } else {
-            ctx.pendingError = error;
-        }
+    std::shared_ptr<Asset> loaded;
+    if constexpr (std::is_same_v<Asset, motor::Mesh>) {
+        loaded = ctx.assets.GetMesh(*key, &error);
+    } else {
+        loaded = ctx.assets.GetTexture(*key, &error);
     }
-
-    motor::Material& mat = mr.material;
-
-    Property("Cor");
-    ImGui::ColorEdit4("##color", &mat.color.x, ImGuiColorEditFlags_AlphaBar);
-
-    Property("Textura");
-    const auto texRef = ctx.assets.RefOf(mat.albedo.get());
-    if (auto key = AssetCombo(ctx, "##texture", motor::AssetType::Texture, texRef ? &texRef->name : nullptr, true)) {
-        if (key->empty()) {
-            mat.albedo = nullptr;
-        } else if (auto texture = ctx.assets.GetTexture(*key, &error)) {
-            mat.albedo = std::move(texture);
-        } else {
-            ctx.pendingError = error;
-        }
+    if (loaded) {
+        value = std::move(loaded);
+    } else {
+        ctx.pendingError = error;
     }
+}
 
-    Property("Especular");
-    ImGui::SliderFloat("##specular", &mat.specular, 0.0f, 2.0f, "%.2f");
+// Um campo de componente, com o widget certo para o tipo (descrição em motor/scene/Component.h).
+void DrawField(EditorContext& ctx, const motor::FieldInfo& f, void* component) {
+    using motor::FieldType;
+    const motor::FieldOptions& o = f.options;
+    Property(f.label.c_str());
+    ImGui::PushID(f.key.c_str());
+    const bool limited = o.min < o.max;
+    const ImGuiSliderFlags sliderFlags = o.logarithmic ? ImGuiSliderFlags_Logarithmic : ImGuiSliderFlags_None;
+    const ImGuiSliderFlags dragFlags = limited ? ImGuiSliderFlags_AlwaysClamp : ImGuiSliderFlags_None;
+    const char* floatFormat = o.format ? o.format : "%.2f";
 
-    Property("Brilho");
-    ImGui::SliderFloat("##shininess", &mat.shininess, 1.0f, 256.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+    switch (f.type) {
+        case FieldType::Bool: ImGui::Checkbox("##v", &f.As<bool>(component)); break;
+        case FieldType::Int: {
+            int& v = f.As<int>(component);
+            const char* format = o.format ? o.format : "%d";
+            if (o.slider && limited) {
+                ImGui::SliderInt("##v", &v, static_cast<int>(o.min), static_cast<int>(o.max), format, sliderFlags);
+            } else {
+                ImGui::DragInt("##v", &v, std::max(o.speed, 0.1f), static_cast<int>(o.min), static_cast<int>(o.max),
+                               format, dragFlags);
+            }
+            break;
+        }
+        case FieldType::Float: {
+            float& v = f.As<float>(component);
+            if (o.slider && limited) {
+                ImGui::SliderFloat("##v", &v, o.min, o.max, floatFormat, sliderFlags);
+            } else {
+                ImGui::DragFloat("##v", &v, o.speed, o.min, o.max, floatFormat, dragFlags);
+            }
+            break;
+        }
+        case FieldType::Vec2:
+            ImGui::DragFloat2("##v", &f.As<glm::vec2>(component).x, o.speed, o.min, o.max, floatFormat, dragFlags);
+            break;
+        case FieldType::Vec3:
+            if (o.color) {
+                ImGui::ColorEdit3("##v", &f.As<glm::vec3>(component).x);
+            } else {
+                ImGui::DragFloat3("##v", &f.As<glm::vec3>(component).x, o.speed, o.min, o.max, floatFormat, dragFlags);
+            }
+            break;
+        case FieldType::Vec4:
+            if (o.color) {
+                ImGui::ColorEdit4("##v", &f.As<glm::vec4>(component).x, ImGuiColorEditFlags_AlphaBar);
+            } else {
+                ImGui::DragFloat4("##v", &f.As<glm::vec4>(component).x, o.speed, o.min, o.max, floatFormat, dragFlags);
+            }
+            break;
+        case FieldType::String: ImGui::InputText("##v", &f.As<std::string>(component)); break;
+        case FieldType::Mesh:
+            AssetField(ctx, "##v", motor::AssetType::Mesh, f.As<std::shared_ptr<motor::Mesh>>(component));
+            break;
+        case FieldType::Texture:
+            AssetField(ctx, "##v", motor::AssetType::Texture, f.As<std::shared_ptr<motor::Texture2D>>(component));
+            break;
+    }
+    if (o.tooltip) ImGui::SetItemTooltip("%s", o.tooltip);
+    ImGui::PopID();
+}
 
-    ImGui::EndTable();
+// Cabeçalho + campos de um componente. Devolve false se o usuário pediu para removê-lo.
+bool DrawComponent(EditorContext& ctx, motor::ComponentPtr& component) {
+    const motor::ComponentType& type = component.Type();
+    ImGui::PushID(type.name.c_str());
+    bool keep = true;
+    const bool open = ImGui::CollapsingHeader(type.label.c_str(), &keep, ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("##component_ctx")) {
+        if (ImGui::MenuItem("Redefinir valores")) {
+            component = motor::ComponentPtr(type);
+            if (type.onAdd) type.onAdd(component.Data(), ctx.assets);
+        }
+        if (ImGui::MenuItem("Remover componente")) keep = false;
+        ImGui::EndPopup();
+    }
+    if (open && keep && BeginProperties("##fields")) {
+        for (const motor::FieldInfo& f : type.fields) DrawField(ctx, f, component.Data());
+        ImGui::EndTable();
+    }
+    ImGui::PopID();
+    return keep;
 }
 } // namespace
 
@@ -181,13 +250,11 @@ void DrawInspectorPanel(EditorContext& ctx) {
         DrawTransform(ctx, *e);
     }
 
-    if (e->meshRenderer) {
-        bool keep = true;
-        if (ImGui::CollapsingHeader("Mesh Renderer", &keep, ImGuiTreeNodeFlags_DefaultOpen)) {
-            DrawMeshRenderer(ctx, *e->meshRenderer);
-        }
-        if (!keep) e->meshRenderer.reset();
+    const motor::ComponentType* toRemove = nullptr;  // removido depois do laço, para não invalidar a lista
+    for (motor::ComponentPtr& component : e->components) {
+        if (!DrawComponent(ctx, component)) toRemove = &component.Type();
     }
+    if (toRemove) e->Remove(*toRemove);
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -197,10 +264,12 @@ void DrawInspectorPanel(EditorContext& ctx) {
     ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - buttonWidth) * 0.5f));
     if (ImGui::Button("Adicionar componente", ImVec2(buttonWidth, 0.0f))) ImGui::OpenPopup("AddComponent");
     if (ImGui::BeginPopup("AddComponent")) {
-        if (ImGui::MenuItem("Mesh Renderer", nullptr, false, !e->meshRenderer)) {
-            motor::MeshRenderer mr;
-            mr.mesh = ctx.assets.FindMesh("Cubo");
-            e->meshRenderer = mr;
+        // Todos os tipos registrados; os que a entidade já tem aparecem desativados (um de cada).
+        for (const auto& type : motor::ComponentRegistry::Instance().Types()) {
+            if (ImGui::MenuItem(type->label.c_str(), nullptr, false, !e->Get(*type))) {
+                void* data = e->Add(*type);
+                if (type->onAdd) type->onAdd(data, ctx.assets);
+            }
         }
         ImGui::EndPopup();
     }

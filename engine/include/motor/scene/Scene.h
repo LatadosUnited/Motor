@@ -3,6 +3,8 @@
 #include "motor/renderer/Material.h"
 #include "motor/renderer/Mesh.h"
 #include "motor/renderer/Renderer.h"
+#include "motor/scene/Component.h"
+#include "motor/scene/Components.h"
 #include "motor/scene/Transform.h"
 
 #include <glm/mat4x4.hpp>
@@ -11,6 +13,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -23,18 +26,34 @@ class Framebuffer;
 using EntityId = uint32_t;
 inline constexpr EntityId kNullEntity = 0;
 
-struct MeshRenderer {
-    std::shared_ptr<Mesh> mesh;
-    Material material;
-};
-
 struct Entity {
     EntityId id = kNullEntity;
     std::string name;
     bool active = true;
     EntityId parent = kNullEntity;
-    Transform transform;  // relativo ao pai
-    std::optional<MeshRenderer> meshRenderer;
+    Transform transform;  // relativo ao pai; toda entidade tem
+
+    // No máximo um componente de cada tipo, na ordem em que foram adicionados (é a ordem do Inspector).
+    std::vector<ComponentPtr> components;
+
+    template <class T> T* Get() { return static_cast<T*>(Get(*TypeOf<T>())); }
+    template <class T> const T* Get() const { return static_cast<const T*>(Get(*TypeOf<T>())); }
+    template <class T> bool Has() const { return Get<T>() != nullptr; }
+    template <class T> T& Add() { return *static_cast<T*>(Add(*TypeOf<T>())); }
+    template <class T> void Remove() { Remove(*TypeOf<T>()); }
+
+    void* Get(const ComponentType& type);
+    const void* Get(const ComponentType& type) const;
+    void* Add(const ComponentType& type);  // se já existir, devolve o existente
+    void Remove(const ComponentType& type);
+
+private:
+    template <class T>
+    static const ComponentType* TypeOf() {
+        const ComponentType* type = ComponentRegistry::TypeOf<T>();
+        if (!type) throw std::logic_error("componente não registrado no ComponentRegistry");
+        return type;
+    }
 };
 
 struct RaycastHit {

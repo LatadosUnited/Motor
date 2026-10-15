@@ -70,9 +70,7 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
     motor::Entity& e = scene.CreateEntity(names[static_cast<int>(type)], parent);
 
     if (type != Primitive::Empty) {
-        motor::MeshRenderer mr;
-        mr.mesh = assets.FindMesh(names[static_cast<int>(type)]);
-        e.meshRenderer = mr;
+        e.Add<motor::MeshRenderer>().mesh = assets.FindMesh(names[static_cast<int>(type)]);
         if (type != Primitive::Plane && parent == kNullEntity) e.transform.position.y = 0.5f;
     }
     selected = e.id;
@@ -94,9 +92,7 @@ motor::Entity* EditorContext::CreateFromMeshFile(const fs::path& file, EntityId 
     }
 
     motor::Entity& e = scene.CreateEntity(motor::ToUtf8(file.stem()), parent);
-    motor::MeshRenderer mr;
-    mr.mesh = std::move(mesh);
-    e.meshRenderer = mr;
+    e.Add<motor::MeshRenderer>().mesh = std::move(mesh);
     selected = e.id;
     return &e;
 }
@@ -111,12 +107,12 @@ bool EditorContext::ApplyTextureFile(EntityId id, const fs::path& file) {
         pendingError = std::move(error);
         return false;
     }
-    if (!e->meshRenderer) {
-        motor::MeshRenderer mr;
-        mr.mesh = assets.FindMesh("Cubo");
-        e->meshRenderer = mr;
+    motor::MeshRenderer* mr = e->Get<motor::MeshRenderer>();
+    if (!mr) {
+        mr = &e->Add<motor::MeshRenderer>();
+        mr->mesh = assets.FindMesh("Cubo");
     }
-    e->meshRenderer->material.albedo = std::move(texture);
+    mr->material.albedo = std::move(texture);
     selected = id;
     return true;
 }

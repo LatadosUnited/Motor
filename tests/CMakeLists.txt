@@ -18,6 +18,7 @@ endfunction()
 motor_add_test(test_project)
 motor_add_test(test_assets)
 motor_add_test(test_guid)
+motor_add_test(test_components)
 
 # O histórico de desfazer é do editor; compilamos só ele junto com o teste.
 motor_add_test(test_undo ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)

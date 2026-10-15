@@ -21,7 +21,8 @@ using json = nlohmann::ordered_json;
 
 namespace {
 constexpr const char* kFormatName = "motor-scene";
-constexpr int kFormatVersion = 2;  // 2: assets de arquivo referenciados por GUID
+// 2: assets de arquivo referenciados por GUID. 3: lista genérica "components" (antes, "meshRenderer" fixo).
+constexpr int kFormatVersion = 3;
 
 // float -> double passando pela representação decimal mais curta, para o arquivo ter "0.6" e não
 // "0.6000000238418579".
@@ -41,7 +42,6 @@ void ReadFloats(const json& obj, const char* key, float* out) {
 }
 
 void Read(const json& obj, const char* key, glm::vec3& v) { ReadFloats<3>(obj, key, &v.x); }
-void Read(const json& obj, const char* key, glm::vec4& v) { ReadFloats<4>(obj, key, &v.x); }
 
 void Read(const json& obj, const char* key, glm::quat& q) {
     float xyzw[4] = {q.x, q.y, q.z, q.w};
@@ -139,6 +139,106 @@ std::shared_ptr<Asset> ResolveRef(const json& value, ByKey byKey, ByGuid byGuid,
     }
     return nullptr;
 }
+
+// Lê N floats de um array JSON; formato errado mantém o valor atual.
+bool FloatsFrom(const json& value, float* out, size_t n) {
+    if (!value.is_array() || value.size() != n) return false;
+    for (size_t i = 0; i < n; ++i) {
+        if (!value[i].is_number()) return false;
+    }
+    for (size_t i = 0; i < n; ++i) out[i] = value[i].get<float>();
+    return true;
+}
+
+// --- Componentes: salvos e lidos a partir da descrição dos campos (Component.h) ---------------------
+
+json FieldToJson(const FieldInfo& f, const void* c, const AssetLibrary& assets, const JsonOptions& options,
+                 const std::string& owner) {
+    switch (f.type) {
+        case FieldType::Bool: return f.As<bool>(c);
+        case FieldType::Int: return f.As<int>(c);
+        case FieldType::Float: return Num(f.As<float>(c));
+        case FieldType::Vec2: {
+            const glm::vec2& v = f.As<glm::vec2>(c);
+            return json::array({Num(v.x), Num(v.y)});
+        }
+        case FieldType::Vec3: return Vec(f.As<glm::vec3>(c));
+        case FieldType::Vec4: return Vec(f.As<glm::vec4>(c));
+        case FieldType::String: return f.As<std::string>(c);
+        case FieldType::Mesh: {
+            const auto& mesh = f.As<std::shared_ptr<Mesh>>(c);
+            const auto ref = assets.RefOf(mesh.get());
+            if (mesh && !ref) log::Warn("Salvar cena: malha de '{}' não está no AssetLibrary", owner);
+            return RefToJson(ref, options);
+        }
+        case FieldType::Texture: {
+            const auto& texture = f.As<std::shared_ptr<Texture2D>>(c);
+            const auto ref = assets.RefOf(texture.get());
+            if (texture && !ref) log::Warn("Salvar cena: textura de '{}' não está no AssetLibrary", owner);
+            return RefToJson(ref, options);
+        }
+    }
+    return nullptr;
+}
+
+void FieldFromJson(const FieldInfo& f, void* c, const json& value, AssetLibrary& assets, const std::string& owner) {
+    std::string problem;
+    switch (f.type) {
+        case FieldType::Bool:
+            if (value.is_boolean()) f.As<bool>(c) = value.get<bool>();
+            break;
+        case FieldType::Int:
+            if (value.is_number()) f.As<int>(c) = value.get<int>();
+            break;
+        case FieldType::Float:
+            if (value.is_number()) f.As<float>(c) = value.get<float>();
+            break;
+        case FieldType::Vec2: FloatsFrom(value, &f.As<glm::vec2>(c).x, 2); break;
+        case FieldType::Vec3: FloatsFrom(value, &f.As<glm::vec3>(c).x, 3); break;
+        case FieldType::Vec4: FloatsFrom(value, &f.As<glm::vec4>(c).x, 4); break;
+        case FieldType::String:
+            if (value.is_string()) f.As<std::string>(c) = value.get<std::string>();
+            break;
+        case FieldType::Mesh: {
+            auto& mesh = f.As<std::shared_ptr<Mesh>>(c);
+            mesh = nullptr;
+            if (value.is_null()) break;
+            mesh = ResolveRef<Mesh>(
+                value, [&](std::string_view k, std::string* err) { return assets.GetMesh(k, err); },
+                [&](std::string_view g, std::string* err) { return assets.GetMeshByGuid(g, err); }, problem);
+            if (!mesh) log::Warn("Cena: malha de '{}' não carregada: {}", owner, problem);
+            break;
+        }
+        case FieldType::Texture: {
+            auto& texture = f.As<std::shared_ptr<Texture2D>>(c);
+            texture = nullptr;
+            if (value.is_null()) break;
+            texture = ResolveRef<Texture2D>(
+                value, [&](std::string_view k, std::string* err) { return assets.GetTexture(k, err); },
+                [&](std::string_view g, std::string* err) { return assets.GetTextureByGuid(g, err); }, problem);
+            if (!texture) log::Warn("Cena: textura de '{}' não carregada: {}", owner, problem);
+            break;
+        }
+    }
+}
+
+json ComponentToJson(const ComponentPtr& component, const AssetLibrary& assets, const JsonOptions& options,
+                     const std::string& owner) {
+    json j;
+    j["type"] = component.Type().name;
+    for (const FieldInfo& f : component.Type().fields) {
+        j[f.key] = FieldToJson(f, component.Data(), assets, options, owner);
+    }
+    return j;
+}
+
+// Campos ausentes no arquivo ficam com o valor padrão do componente.
+void ComponentFromJson(const ComponentType& type, const json& obj, Entity& e, AssetLibrary& assets) {
+    void* data = e.Add(type);
+    for (const FieldInfo& f : type.fields) {
+        if (auto it = obj.find(f.key); it != obj.end()) FieldFromJson(f, data, *it, assets, e.name);
+    }
+}
 } // namespace
 
 std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOptions& options) {
@@ -172,20 +272,10 @@ std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOpt
             }},
         };
 
-        if (e->meshRenderer) {
-            const MeshRenderer& mr = *e->meshRenderer;
-            const auto meshRef = assets.RefOf(mr.mesh.get());
-            const auto texRef = assets.RefOf(mr.material.albedo.get());
-            if (mr.mesh && !meshRef) log::Warn("Salvar cena: malha de '{}' não está no AssetLibrary", e->name);
-            if (mr.material.albedo && !texRef) log::Warn("Salvar cena: textura de '{}' não está no AssetLibrary", e->name);
-
-            je["meshRenderer"] = {
-                {"mesh", RefToJson(meshRef, options)},
-                {"texture", RefToJson(texRef, options)},
-                {"color", Vec(mr.material.color)},
-                {"specular", Num(mr.material.specular)},
-                {"shininess", Num(mr.material.shininess)},
-            };
+        if (!e->components.empty()) {
+            json components = json::array();
+            for (const ComponentPtr& c : e->components) components.push_back(ComponentToJson(c, assets, options, e->name));
+            je["components"] = std::move(components);
         }
         entities.push_back(std::move(je));
     }
@@ -234,26 +324,23 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
                 Read(*t, "scale", e.transform.scale);
             }
 
+            // Versões 1 e 2: o único componente era o "meshRenderer", com os mesmos nomes de campo de hoje.
             if (auto m = je.find("meshRenderer"); m != je.end() && m->is_object()) {
-                MeshRenderer mr;
-                std::string problem;
-                if (auto ref = m->find("mesh"); ref != m->end() && !ref->is_null()) {
-                    mr.mesh = ResolveRef<Mesh>(
-                        *ref, [&](std::string_view k, std::string* err) { return assets.GetMesh(k, err); },
-                        [&](std::string_view g, std::string* err) { return assets.GetMeshByGuid(g, err); }, problem);
-                    if (!mr.mesh) log::Warn("Cena: malha de '{}' não carregada: {}", e.name, problem);
+                ComponentFromJson(*ComponentRegistry::TypeOf<MeshRenderer>(), *m, e, assets);
+            }
+            if (auto list = je.find("components"); list != je.end() && list->is_array()) {
+                for (const json& jc : *list) {
+                    if (!jc.is_object()) continue;
+                    const std::string typeName = jc.value("type", std::string());
+                    const ComponentType* type = ComponentRegistry::Instance().Find(typeName);
+                    if (!type) {
+                        log::Warn("Cena: componente desconhecido '{}' em '{}' foi ignorado", typeName, e.name);
+                    } else if (e.Get(*type)) {
+                        log::Warn("Cena: componente '{}' repetido em '{}' foi ignorado", typeName, e.name);
+                    } else {
+                        ComponentFromJson(*type, jc, e, assets);
+                    }
                 }
-                if (auto ref = m->find("texture"); ref != m->end() && !ref->is_null()) {
-                    mr.material.albedo = ResolveRef<Texture2D>(
-                        *ref, [&](std::string_view k, std::string* err) { return assets.GetTexture(k, err); },
-                        [&](std::string_view g, std::string* err) { return assets.GetTextureByGuid(g, err); },
-                        problem);
-                    if (!mr.material.albedo) log::Warn("Cena: textura de '{}' não carregada: {}", e.name, problem);
-                }
-                Read(*m, "color", mr.material.color);
-                Read(*m, "specular", mr.material.specular);
-                Read(*m, "shininess", mr.material.shininess);
-                e.meshRenderer = mr;
             }
 
             const EntityId oldId = je.value("id", EntityId{kNullEntity});
