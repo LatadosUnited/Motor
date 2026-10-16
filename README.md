@@ -38,7 +38,7 @@ engine/            camadas, de baixo para cima (cada uma só usa as de baixo; co
 editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play, scripts
   templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, MoverWASD, Seguir)
 sandbox/           app de demonstração
-tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga)
+tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes)
 ```
 
 ## Controles do Sandbox
@@ -236,6 +236,13 @@ entity.Remove<Girar>();
 - Componentes da engine hoje: **Mesh Renderer** (malha, textura, cor, especular, brilho) e **Câmera**
   (campo de visão, planos perto/longe, principal). A câmera olha para o -Z local da entidade; no Play vale
   a primeira câmera ativa marcada como principal (senão, a primeira ativa). Entidade > Câmera cria uma.
+- **Luz**: tipo (direcional, pontual ou spot), cor, intensidade, alcance (pontual e spot) e ângulos interno/
+  externo do cone (spot). Como a câmera, aponta para o -Z local: direcional e spot se giram com o gizmo de
+  rotação; a posição só importa para pontual e spot. Várias por cena (até 32 acesas ao mesmo tempo).
+  Entidade > Luz direcional / pontual / spot cria uma. Céu, neblina e **luz ambiente** ficam no painel Cena.
+- No viewport, luzes e câmeras aparecem como **ícones** clicáveis (selecionam a entidade e mostram o
+  gizmo). Selecionada, a luz mostra o alcance (pontual), o cone (spot) ou a direção (direcional), e a
+  câmera, a pirâmide de visão.
 
 ## Scripts (C++)
 
@@ -322,9 +329,8 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
 ```json
 {
   "format": "motor-scene",
-  "version": 3,
-  "environment": { "skyColor": [0.53, 0.7, 0.88], "fogDensity": 0.012 },
-  "light": { "direction": [-0.5, -1.0, -0.35], "color": [1.0, 0.97, 0.9], "intensity": 1.0, "ambient": [...] },
+  "version": 4,
+  "environment": { "skyColor": [0.53, 0.7, 0.88], "fogDensity": 0.012, "ambient": [0.12, 0.14, 0.18] },
   "entities": [
     {
       "id": 1, "name": "Chão", "active": true, "parent": 0,
@@ -344,6 +350,13 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
           ...
         }
       ]
+    },
+    {
+      "id": 3, "name": "Lâmpada", "active": true, "parent": 0,
+      "transform": { ... },
+      "components": [
+        { "type": "Light", "kind": "Point", "color": [1, 0.8, 0.5], "intensity": 2, "range": 6, "innerAngle": 25, "outerAngle": 35 }
+      ]
     }
   ]
 }
@@ -356,8 +369,9 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
 - Componentes vão em `"components"`, cada um com `"type"` e os seus campos. Campo ausente = valor padrão;
   componente de tipo desconhecido (script removido ou ainda não compilado) é **mantido** como está e
   gravado de volta igual (aviso no log).
-- Cenas antigas continuam abrindo: versão 1 (assets por caminho) e 2 (`"meshRenderer"` fixo na entidade).
-  Ao salvar, viram versão 3.
+- Cenas antigas continuam abrindo: versão 1 (assets por caminho), 2 (`"meshRenderer"` fixo na entidade) e
+  1 a 3 (luz direcional fixa da cena, `"light"`: vira uma entidade "Luz direcional" com o componente Luz, e
+  o ambiente vai para `"environment"`). Ao salvar, viram versão 4.
 - Os ids são reatribuídos ao carregar; campos ausentes usam o valor padrão.
 - O salvamento escreve em `arquivo.tmp` e depois substitui o original, para não corromper a cena se falhar no meio.
 - Os diálogos de arquivo são nativos do Windows; em outras plataformas ainda não estão implementados.
