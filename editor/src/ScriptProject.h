@@ -53,7 +53,11 @@ bool WriteBuildFiles(const Paths& paths, const Toolchain& toolchain, std::string
 // Linhas de comando (argumentos já separados) para configurar e compilar.
 std::vector<std::string> ConfigureCommand(const Paths& paths, const Toolchain& toolchain);
 std::vector<std::string> BuildCommand(const Paths& paths, const Toolchain& toolchain);
-bool NeedsConfigure(const Paths& paths);  // ainda não há cache do CMake
+bool NeedsConfigure(const Paths& paths);  // sem cache do CMake, ou cache sem o build gerado (configuração interrompida)
+void ResetConfigure(const Paths& paths);  // apaga o cache antes de configurar de novo
+// Aviso quando a pasta do projeto é funda demais: os arquivos que o CMake e o GCC criam dentro de
+// .motor/scripts/build passariam do limite de 260 caracteres do Windows (o GCC falha sem explicar). "" se ok.
+std::string LongPathWarning(const Paths& paths);
 // Pastas a pôr no PATH do processo de build (compilador e make, com as DLLs de que dependem).
 std::vector<std::filesystem::path> ToolchainPathDirs(const Toolchain& toolchain);
 

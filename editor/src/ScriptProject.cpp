@@ -207,7 +207,32 @@ std::vector<std::string> BuildCommand(const Paths& paths, const Toolchain& toolc
 
 bool NeedsConfigure(const Paths& paths) {
     std::error_code ec;
-    return !fs::is_regular_file(paths.binaryDir / "CMakeCache.txt", ec);
+    if (!fs::is_regular_file(paths.binaryDir / "CMakeCache.txt", ec)) return true;
+    // Cache sem o build gerado: configuração interrompida (editor fechado no meio) ou que falhou. Só o
+    // "cmake --build" não sai disso ("make: Makefile: No such file").
+    for (const char* file : {"Makefile", "build.ninja"}) {
+        if (fs::is_regular_file(paths.binaryDir / file, ec)) return false;
+    }
+    return true;
+}
+
+std::string LongPathWarning(const Paths& paths) {
+    // O mais longo é o teste do compilador do CMake: build/CMakeFiles/CMakeScratch/TryCompile-xxxxxx/CMakeFiles/
+    // cmTC_xxxxx.dir/testCXXCompiler.cxx.obj (~92 a mais). Os objetos dos scripts o CMake já encurta com um hash.
+    constexpr size_t kMaxPath = 260;
+    if (paths.binaryDir.native().size() + 92 < kMaxPath) return {};
+    const fs::path project = paths.scriptsDir.parent_path();
+    return std::format("o caminho da pasta do projeto é longo demais ({} caracteres): os arquivos da compilação "
+                       "passariam do limite de {} do Windows e o compilador falha. Mova o projeto para uma pasta "
+                       "mais curta (ex.: C:\\Jogos\\{}).",
+                       project.native().size(), kMaxPath, ToUtf8(project.filename()));
+}
+
+void ResetConfigure(const Paths& paths) {
+    // Começa do zero: um cache pela metade pode ter outro gerador ou compilador e fazer a configuração falhar.
+    std::error_code ec;
+    fs::remove(paths.binaryDir / "CMakeCache.txt", ec);
+    fs::remove_all(paths.binaryDir / "CMakeFiles", ec);
 }
 
 std::vector<fs::path> ToolchainPathDirs(const Toolchain& toolchain) {
