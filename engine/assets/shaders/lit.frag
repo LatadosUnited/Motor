@@ -47,7 +47,7 @@ out vec4 oColor;
 float RangeAttenuation(float dist, float range) {
     float ratio = dist / range;
     float window = clamp(1.0 - ratio * ratio * ratio * ratio, 0.0, 1.0);
-    return window * window / (1.0 + 25.0 * ratio * ratio);
+    return window * window / (1.0 + 4.0 * ratio * ratio);
 }
 
 void main() {
