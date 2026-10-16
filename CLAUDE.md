@@ -151,10 +151,14 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 |---|---|---|---|
 | 4 Luzes | componentes de luz em `scene/`, `renderer/` (N luzes), shaders | `Scene` e `SceneSerializer` (a luz da cena vira componente; cenas antigas convertidas), `SceneViewport` (ícones), painel Cena | 7 |
 | 5 Física | camada nova `physics/` | **pré-requisito:** sistemas no `SceneRuntime` (abaixo); biblioteca nova | — |
-| 6 Materiais/prefabs | `assets/`, `ProjectPanel` | `SceneSerializer` (prefab), Inspector | — |
+| 6 Materiais/prefabs | `assets/`, `ProjectPanel` | `SceneSerializer` (prefab), Inspector | 11 |
 | 7 Render avançado | `renderer/`, shaders | `Renderer` (mesmo arquivo da 4) | 4 |
 | 8 Áudio | camada nova `audio/` | sistemas no `SceneRuntime`; biblioteca nova (miniaudio) | — |
 | 9 HUD | camada nova `ui/` | `renderer/` (desenho 2D) | 7 |
+| 11 Modelos 3D/animação | `assets/` (importador glTF), `renderer/` (`Mesh` na CPU, skinning) | prefabs da 6, collider de malha (`physics/`) | 6, 7 |
+| 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
+
+Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 9, 6, 11, 12.
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com
