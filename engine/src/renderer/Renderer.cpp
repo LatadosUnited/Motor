@@ -4,9 +4,12 @@
 #include "motor/renderer/Framebuffer.h"
 #include "renderer/GL.h"
 
+#include <GLFW/glfw3.h>
 #include <glm/exponential.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+
+#include <stdexcept>
 
 namespace motor {
 
@@ -34,6 +37,13 @@ void APIENTRY OnGlDebug(GLenum, GLenum type, GLuint id, GLenum severity, GLsizei
 } // namespace
 
 Renderer::Renderer() {
+    // O contexto foi criado (e tornado atual) pela Window; aqui carregamos as funções que o renderer usa.
+    if (!gl::Load([](const char* name) { return reinterpret_cast<void*>(glfwGetProcAddress(name)); })) {
+        throw std::runtime_error("Falha ao carregar as funções do OpenGL");
+    }
+    log::Info("OpenGL {} | {}", reinterpret_cast<const char*>(glGetString(GL_VERSION)),
+              reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
+
     GLint flags = 0;
     glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
     if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {

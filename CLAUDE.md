@@ -22,11 +22,17 @@ ctest --test-dir build --output-on-failure
 
 ## Estrutura
 
-- `engine/` — biblioteca `Motor`. API pública em `include/motor/`, implementação em `src/`.
+- `engine/` — biblioteca `Motor`, dividida em camadas: **core → renderer → project → assets → scene → app**.
+  Cada camada tem `include/motor/<camada>/`, `src/<camada>/` e o seu `CMakeLists.txt` (alvo `motor_<camada>`).
+  Uma camada só inclui headers dela e das camadas de baixo; o `test_layers` falha se isso for quebrado.
+  Arquivo novo entra no `CMakeLists.txt` da sua camada. Camada nova (física, áudio...): pasta própria e
+  entrada em `MOTOR_LAYERS` (`engine/CMakeLists.txt`). Precisa subir uma dependência? Mova o código para
+  baixo ou inverta a dependência (callback, constante na camada de baixo), nunca inclua para cima.
   - `assets/`: `AssetLibrary` (malhas/texturas embutidas e de arquivo), `AssetDatabase` (GUIDs em `.meta`),
     `AssetLoaders` (OBJ próprio, imagens via stb_image).
   - `scene/`: `Scene` (entidades, hierarquia, cópia profunda e `operator==`), `SceneSerializer` (`.mscene`).
   - `project/`: `Project` (pasta + `.mproject`). `core/Paths.h`: conversões UTF-8.
+  - `app/`: `Application` (loop principal). O `Renderer` carrega as funções do OpenGL; a `Window` só cria o contexto.
   - `renderer/GL.h`: loader OpenGL próprio (X-macro). Função GL nova = adicionar na lista de lá.
 - `editor/` — `MotorEditor`. `EditorApp` só monta as peças (loop, layout, barra de menus, atalhos,
   desfazer); `SceneViewport` (câmera livre, gizmo, seleção, arquivos soltos), `PlayController` (menu Jogo,

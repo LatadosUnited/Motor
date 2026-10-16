@@ -1,7 +1,6 @@
 #include "motor/assets/AssetLoaders.h"
 
 #include "motor/core/Paths.h"
-#include "motor/scene/SceneSerializer.h"
 
 #include <glm/geometric.hpp>
 
@@ -133,7 +132,7 @@ struct VertexKeyHash {
 
 AssetType AssetTypeFromPath(const fs::path& path) {
     const std::string ext = LowerExtension(path);
-    if (ext == SceneSerializer::kFileExtension) return AssetType::Scene;
+    if (ext == kSceneFileExtension) return AssetType::Scene;
     if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") return AssetType::Texture;
     if (ext == ".obj") return AssetType::Mesh;
     return AssetType::Unknown;

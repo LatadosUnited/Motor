@@ -21,19 +21,20 @@ ctest --test-dir build --output-on-failure   # testes (sem janela)
 ## Estrutura
 
 ```
-engine/
+engine/            camadas, de baixo para cima (cada uma só usa as de baixo; conferido pelo test_layers):
   include/motor/   API pública
-    core/          Application (game loop c/ fixed timestep), Window, Input, Log, ImGuiLayer
+    core/          Window, Input, Log, Paths (UTF-8), ImGuiLayer
     renderer/      Renderer, Shader, Mesh, Texture2D, Framebuffer, Camera, Material
-    assets/        AssetLibrary (malhas/texturas), AssetDatabase (GUIDs em .meta), AssetLoaders (OBJ, PNG/JPG)
     project/       Project (pasta do projeto + arquivo .mproject)
+    assets/        AssetLibrary (malhas/texturas), AssetDatabase (GUIDs em .meta), AssetLoaders (OBJ, PNG/JPG)
     scene/         Scene, componentes (Component.h: registro e campos), SceneSerializer (.mscene), Transform
-  src/             implementação (+ GL.h: loader OpenGL privado)
+    app/           Application (game loop c/ fixed timestep)
+  src/<camada>/    implementação + CMakeLists.txt da camada (+ renderer/GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine
 editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play
 scripts/           scripts do jogo em C++ (biblioteca MotorScripts, compilada junto com o editor)
 sandbox/           app de demonstração
-tests/             testes ctest (projeto, assets, GUIDs, componentes, desfazer, scripts, Play)
+tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play)
 ```
 
 ## Controles do Sandbox

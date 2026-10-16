@@ -6,7 +6,7 @@
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/AssetLoaders.h"
 
-#include "motor/core/Application.h"
+#include "motor/app/Application.h"
 #include "motor/core/ImGuiLayer.h"
 #include "motor/core/Input.h"
 #include "motor/core/Log.h"

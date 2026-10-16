@@ -1,5 +1,7 @@
 #pragma once
 
+#include "motor/assets/AssetLoaders.h"
+
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -14,7 +16,7 @@ class Scene;
 // As funções retornam false e preenchem `error` (se não for nulo) quando falham.
 namespace SceneSerializer {
 
-inline constexpr const char* kFileExtension = ".mscene";
+inline constexpr const char* kFileExtension = kSceneFileExtension;
 
 struct JsonOptions {
     // Grava "path" ao lado do GUID. Desligado na comparação de "alterações não salvas": mover um arquivo

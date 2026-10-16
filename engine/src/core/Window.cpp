@@ -3,7 +3,6 @@
 #include "motor/core/Input.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
-#include "renderer/GL.h"
 
 #include <GLFW/glfw3.h>
 
@@ -41,11 +40,8 @@ Window::Window(const WindowDesc& desc) {
     }
     ++g_windowCount;
 
+    // As funções do OpenGL são carregadas pelo Renderer, que é quem usa o contexto.
     glfwMakeContextCurrent(m_window);
-    if (!gl::Load([](const char* name) { return reinterpret_cast<void*>(glfwGetProcAddress(name)); })) {
-        throw std::runtime_error("Falha ao carregar as funções do OpenGL");
-    }
-
     glfwGetFramebufferSize(m_window, &m_width, &m_height);
 
     SetVSync(desc.vsync);
@@ -53,10 +49,7 @@ Window::Window(const WindowDesc& desc) {
     glfwSetWindowUserPointer(m_window, this);
     glfwSetDropCallback(m_window, OnDrop);
 
-    log::Info("Janela criada: {}x{} | OpenGL {} | {}",
-              m_width, m_height,
-              reinterpret_cast<const char*>(glGetString(GL_VERSION)),
-              reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
+    log::Info("Janela criada: {}x{}", m_width, m_height);
 }
 
 Window::~Window() {

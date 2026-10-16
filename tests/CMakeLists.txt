@@ -20,6 +20,12 @@ motor_add_test(test_assets)
 motor_add_test(test_guid)
 motor_add_test(test_components)
 
+# Confere nos #include a ordem das camadas da engine (engine/CMakeLists.txt).
+motor_add_test(test_layers)
+string(JOIN "," motor_layer_list ${MOTOR_LAYERS})
+target_compile_definitions(test_layers PRIVATE
+    MOTOR_ENGINE_DIR="${PROJECT_SOURCE_DIR}/engine" MOTOR_LAYERS="${motor_layer_list}")
+
 motor_add_test(test_scripts)
 target_link_libraries(test_scripts PRIVATE MotorScripts)
 

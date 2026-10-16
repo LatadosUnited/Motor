@@ -35,7 +35,7 @@ struct RenderStats {
 
 class Renderer {
 public:
-    Renderer();
+    Renderer();  // exige um contexto OpenGL atual (criado pela Window); carrega as funções do OpenGL
     ~Renderer();
 
     Renderer(const Renderer&) = delete;
