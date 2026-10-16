@@ -5,3 +5,4 @@
 
 #include "motor/scene/CameraComponent.h"
 #include "motor/scene/MeshRenderer.h"
+#include "motor/scene/LightComponent.h"
