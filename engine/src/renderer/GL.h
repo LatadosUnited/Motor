@@ -22,6 +22,7 @@
     X(PFNGLPOLYGONMODEPROC, glPolygonMode)                            \
     X(PFNGLPOLYGONOFFSETPROC, glPolygonOffset)                        \
     X(PFNGLDRAWELEMENTSPROC, glDrawElements)                          \
+    X(PFNGLBLENDFUNCSEPARATEPROC, glBlendFuncSeparate)                \
     /* Debug */                                                       \
     X(PFNGLDEBUGMESSAGECALLBACKPROC, glDebugMessageCallback)          \
     X(PFNGLDEBUGMESSAGECONTROLPROC, glDebugMessageControl)            \

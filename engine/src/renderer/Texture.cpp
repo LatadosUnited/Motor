@@ -9,7 +9,7 @@
 namespace motor {
 
 Texture2D::Texture2D(int width, int height, const uint8_t* pixels, TextureFilter filter, TextureColorSpace colorSpace)
-    : m_width(width), m_height(height) {
+    : m_width(width), m_height(height), m_colorSpace(colorSpace) {
     const auto largest = static_cast<unsigned>(std::max(width, height));
     const GLsizei levels = static_cast<GLsizei>(std::bit_width(largest));  // 1 + floor(log2)
 
