@@ -110,7 +110,8 @@ public:
     void Render(Renderer& renderer, const Camera& camera, const Framebuffer* target = nullptr) const;
     void SubmitTo(Renderer& renderer) const;
 
-    // Raio contra as caixas (AABB locais) das malhas visíveis. direction não precisa ser normalizada.
+    // Raio contra os triângulos das malhas visíveis (cópia na CPU da Mesh; malhas com pele, na pose de repouso).
+    // direction não precisa ser normalizada; `distance` é medida em unidades de direction.
     std::optional<RaycastHit> Raycast(const glm::vec3& origin, const glm::vec3& direction) const;
 
     // Céu, neblina e luz ambiente. As luzes com direção são entidades com o componente Luz.

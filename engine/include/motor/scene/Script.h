@@ -27,6 +27,7 @@
 
 namespace motor {
 
+struct Animator;
 struct Entity;
 struct Transform;
 class Scene;
@@ -103,6 +104,10 @@ protected:
         static_assert(std::is_base_of_v<RuntimeSystem, T>, "GetSystem: T precisa herdar de motor::RuntimeSystem");
         return static_cast<T*>(FindSystem(typeid(T)));
     }
+
+    // --- Animação (Animator.h) ---
+    // Animator desta entidade ou do primeiro descendente que tiver um (ex.: o modelo filho do jogador), ou nullptr.
+    Animator* GetAnimator();
 
     // --- Log com o nome da entidade: Log("vidas = {}", vidas) ---
     template <class... Args>

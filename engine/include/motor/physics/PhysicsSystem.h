@@ -36,7 +36,8 @@ class Mesh;
 struct MeshData;
 class AssetLibrary;
 
-// Dados na CPU da malha de um Collider de forma Malha (a Mesh só guarda os dados na GPU). true se preencheu.
+// Fonte opcional dos triângulos de um Collider de forma Malha. true se preencheu. Sem fonte (ou se ela devolver
+// false), vale a cópia na CPU que toda Mesh guarda (Mesh::Positions/Indices), inclusive Cubo e Plano.
 using MeshDataSource = std::function<bool(const Mesh& mesh, MeshData& out)>;
 
 // Configuração global da física, lida a cada Play (cada PhysicsSystem copia ao iniciar).
@@ -46,15 +47,11 @@ struct PhysicsSettings {
     glm::vec3 gravity{0.0f, -9.81f, 0.0f};
     // Subpassos de colisão por FixedUpdate: um a cada `maxSubstep` segundos (passos grandes atravessam paredes).
     float maxSubstep = 1.0f / 60.0f;
-    // Sem fonte (ou se ela falhar), o Collider de malha vira a caixa dos limites da malha.
+    // Troca os triângulos do Collider de malha (testes); normalmente vazio (usa a cópia na CPU da Mesh).
     MeshDataSource meshData;
 
     static PhysicsSettings& Global();
 };
-
-// Fonte de malhas que relê da AssetLibrary os arquivos (OBJ) das malhas que vieram de arquivo.
-// Malhas embutidas (Cubo, Plano...) não têm arquivo: ficam com a caixa dos limites.
-MeshDataSource MeshDataFromAssets(const AssetLibrary& assets);
 
 struct PhysicsRaycastHit {
     EntityId entity = kNullEntity;

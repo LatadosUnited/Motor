@@ -10,3 +10,4 @@
 #include "motor/scene/RigidbodyComponent.h"
 #include "motor/scene/CharacterControllerComponent.h"
 #include "motor/scene/PrefabInstance.h"
+#include "motor/scene/Animator.h"

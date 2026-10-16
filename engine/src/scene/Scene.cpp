@@ -249,9 +249,26 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
 }
 
 void Scene::SubmitTo(Renderer& renderer) const {
+    std::vector<glm::mat4> joints;
     for (const auto& e : m_entities) {
         const MeshRenderer* mr = e->Get<MeshRenderer>();
         if (!mr || !mr->mesh || !IsActiveInHierarchy(e->id)) continue;
+        if (mr->mesh->IsSkinned()) {
+            // Pose do Animator mais próximo (a própria entidade ou acima) que anima o esqueleto desta pele;
+            // sem ele, a pose de repouso. As juntas ficam no espaço da entidade da malha.
+            const Skin& skin = *mr->mesh->GetSkin();
+            std::span<const glm::mat4> globals = skin.skeleton->restGlobal;
+            for (const Entity* a = e.get(); a; a = Find(a->parent)) {
+                const Animator* animator = a->Get<Animator>();
+                if (animator && animator->PoseSkeleton() == skin.skeleton.get() && !animator->GlobalPose().empty()) {
+                    globals = animator->GlobalPose();
+                    break;
+                }
+            }
+            skin.JointMatrices(globals, joints);
+            renderer.SubmitSkinned(*mr->mesh, mr->Resolved(), WorldMatrix(e->id), joints);
+            continue;
+        }
         renderer.Submit(*mr->mesh, mr->Resolved(), WorldMatrix(e->id));
     }
 }
@@ -276,6 +293,42 @@ std::optional<float> RayAabb(const glm::vec3& o, const glm::vec3& d, const glm::
     }
     return tmin;
 }
+
+// Raio contra triângulo (Möller-Trumbore), dos dois lados. Retorna o t, se houver.
+std::optional<float> RayTriangle(const glm::vec3& o, const glm::vec3& d, const glm::vec3& a, const glm::vec3& b,
+                                 const glm::vec3& c) {
+    const glm::vec3 e1 = b - a, e2 = c - a;
+    const glm::vec3 p = glm::cross(d, e2);
+    const float det = glm::dot(e1, p);
+    if (std::abs(det) < 1e-12f) return std::nullopt;  // paralelo ao triângulo
+    const float inv = 1.0f / det;
+    const glm::vec3 s = o - a;
+    const float u = glm::dot(s, p) * inv;
+    if (u < 0.0f || u > 1.0f) return std::nullopt;
+    const glm::vec3 q = glm::cross(s, e1);
+    const float v = glm::dot(d, q) * inv;
+    if (v < 0.0f || u + v > 1.0f) return std::nullopt;
+    const float t = glm::dot(e2, q) * inv;
+    return t >= 0.0f ? std::optional<float>(t) : std::nullopt;
+}
+
+// Primeiro triângulo da malha atingido (espaço local). Sem a cópia na CPU, a caixa dos limites.
+std::optional<float> RayMesh(const glm::vec3& o, const glm::vec3& d, const Mesh& mesh) {
+    const auto box = RayAabb(o, d, mesh.BoundsMin(), mesh.BoundsMax());
+    if (!box) return std::nullopt;
+    const auto& positions = mesh.Positions();
+    const auto& indices = mesh.Indices();
+    if (positions.empty() || indices.size() < 3) return box;
+    std::optional<float> best;
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        if (indices[i] >= positions.size() || indices[i + 1] >= positions.size() || indices[i + 2] >= positions.size()) {
+            continue;
+        }
+        const auto t = RayTriangle(o, d, positions[indices[i]], positions[indices[i + 1]], positions[indices[i + 2]]);
+        if (t && (!best || *t < *best)) best = t;
+    }
+    return best;
+}
 } // namespace
 
 std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec3& direction) const {
@@ -289,8 +342,7 @@ std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec
         const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
         const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
 
-        const Mesh& mesh = *mr->mesh;
-        if (auto t = RayAabb(o, d, mesh.BoundsMin(), mesh.BoundsMax())) {
+        if (auto t = RayMesh(o, d, *mr->mesh)) {
             if (!best || *t < best->distance) best = RaycastHit{e->id, *t};
         }
     }
