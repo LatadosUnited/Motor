@@ -121,7 +121,7 @@ int main() {
     CHECK(le && le->Get<MeshRenderer>() && le->Get<MeshRenderer>()->material.color == glm::vec4(0.5f, 0.6f, 0.7f, 1.0f));
     CHECK(SceneSerializer::ToJson(loaded, assets) == text);  // ida e volta estável
 
-    SECTION("Campos ausentes ficam com o padrão; desconhecidos e repetidos são ignorados");
+    SECTION("Campos ausentes ficam com o padrão; repetidos são ignorados; desconhecidos ficam guardados");
     const char* partial = R"({"format": "motor-scene", "version": 3, "entities": [
         {"id": 1, "name": "A", "components": [
             {"type": "Tudo", "vidas": 9},
@@ -132,9 +132,12 @@ int main() {
     Scene p;
     CHECK(SceneSerializer::FromJson(partial, p, assets, &error));
     const Entity* pe = p.Entities().empty() ? nullptr : p.Entities().front().get();
-    CHECK(pe && pe->components.size() == 2);
+    CHECK(pe && pe->components.size() == 3);
     CHECK(pe && pe->Get<Tudo>() && pe->Get<Tudo>()->vidas == 9 && pe->Get<Tudo>()->velocidade == 1.5f);
     CHECK(pe && pe->Get<MeshRenderer>() && pe->Get<MeshRenderer>()->material.specular == 0.5f);
+    const auto* faltando = pe ? static_cast<const MissingComponent*>(pe->Get(ComponentRegistry::MissingType())) : nullptr;
+    CHECK(faltando && faltando->type == "NaoExiste");
+    CHECK(faltando && faltando->json == R"({"type":"NaoExiste","x":1})");
 
     SECTION("Cena da versão 2 (\"meshRenderer\" fixo) continua abrindo");
     const char* v2 = R"({"format": "motor-scene", "version": 2, "entities": [

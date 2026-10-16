@@ -152,6 +152,8 @@ ScriptHost::Result ScriptHost::Load(const fs::path& dll, const fs::path& loadDir
     m_types = added;
     m_typeNames.clear();
     for (const motor::ComponentType* t : added) m_typeNames.push_back(t->name);
+    // A ordem de registro segue a inicialização estática dos .cpp, que não é garantida: lista em ordem alfabética.
+    std::sort(m_typeNames.begin(), m_typeNames.end());
     RemoveStaleCopies(loadDir, copy);
 
     // 5. Religa os componentes guardados (de antes da recarga, ou lidos da cena antes de a DLL existir).

@@ -257,7 +257,10 @@ int main(int argc, char** argv) {
     {
         // Só a cópia em uso fica na pasta de cópias.
         size_t copies = 0;
-        for (const auto& entry : fs::directory_iterator(paths.loadDir)) copies += entry.path().extension() == ".dll";
+        std::error_code ec;
+        for (fs::directory_iterator it(paths.loadDir, ec), end; !ec && it != end; it.increment(ec)) {
+            copies += it->path().extension() == ".dll";
+        }
         CHECK(copies == 1);
     }
 
