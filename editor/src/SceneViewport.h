@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorContext.h"
+#include "UiEditor.h"
 
 #include <motor/Motor.h>
 
@@ -19,6 +20,8 @@ class PlayController;
 
 // Janela "Viewport": câmera livre do editor, imagem da cena, gizmo de transform, seleção por clique e
 // arquivos soltos do painel Projeto. No Play mostra a cena pela câmera do jogo (ver PlayController).
+// A UI do jogo (camada ui/) é desenhada por cima da cena; fora da visão do jogo, os elementos têm contorno,
+// são selecionados com o clique e arrastados (UiViewportTool). Na visão do jogo, o mouse vai para o UiSystem.
 class SceneViewport {
 public:
     void Init();
@@ -61,6 +64,9 @@ private:
     motor::Camera m_camera;
     motor::FlyCameraController m_cameraController{m_camera};
     std::unique_ptr<motor::Framebuffer> m_framebuffer;
+    std::unique_ptr<motor::UiRenderer> m_ui;
+    UiViewportTool m_uiTool;
+    bool m_showUi = true;
 
     enum class GizmoTool { None, Translate, Rotate, Scale };
     GizmoTool m_gizmoTool = GizmoTool::Translate;

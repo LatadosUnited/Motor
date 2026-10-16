@@ -1,4 +1,5 @@
 #include "EditorContext.h"
+#include "UiEditor.h"
 
 #include <motor/core/Paths.h>
 
@@ -284,6 +285,11 @@ void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent) {
     if (ImGui::MenuItem("Luz direcional")) ctx.CreatePrimitive(Primitive::DirectionalLight, parent);
     if (ImGui::MenuItem("Luz pontual")) ctx.CreatePrimitive(Primitive::PointLight, parent);
     if (ImGui::MenuItem("Luz spot")) ctx.CreatePrimitive(Primitive::SpotLight, parent);
+    ImGui::Separator();
+    if (ImGui::BeginMenu("Interface (UI)")) {
+        DrawCreateUiMenuItems(ctx, parent);
+        ImGui::EndMenu();
+    }
 }
 
 } // namespace editor

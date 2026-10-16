@@ -32,7 +32,7 @@ Próximas fases, nesta ordem de importância:
 
 | # | Fase | Por quê | Pode rodar junto com |
 |---|---|---|---|
-| 1 | **Fase 9 — Interface do jogo (HUD)** | sem texto e botões na tela não há jogo (vida, pontos, menus) | 11 |
+| 1 | ~~Fase 9 — Interface do jogo (HUD)~~ ✅ | sem texto e botões na tela não há jogo (vida, pontos, menus) | 11 |
 | 2 | ~~Fase 6 — Materiais e prefabs~~ ✅ | reaproveitar objetos e materiais; base dos modelos 3D | — |
 | 3 | **Fase 11 — Modelos 3D (glTF) e animação** | personagens e cenários de verdade, além de OBJ | 9 (a 6 já está pronta) |
 | 4 | ~~Fase 12 — Documentação de scripts~~ ✅ | quem faz o jogo precisa saber escrever scripts sem ler o código da engine | — |
@@ -150,7 +150,7 @@ não instanciam prefabs.
 - Biblioteca: miniaudio (um único header, como o stb_image).
 - Arquivos `.wav`/`.ogg`/`.mp3` como assets com GUID.
 
-## Fase 9 — Interface do jogo (HUD) ⭐ prioridade 1
+## Fase 9 — Interface do jogo (HUD) ✅
 
 - Texto e imagens na tela durante o jogo (independente do ImGui do editor).
 - Botões simples, âncoras na tela, fontes como asset.
@@ -160,6 +160,13 @@ não instanciam prefabs.
 
 **Pronto quando:** um jogo de exemplo mostra vida e pontuação atualizadas por script e um menu com botão
 "Jogar" que troca de cena.
+
+Feito: camada `ui/` (componentes `UiRect`, `UiText`, `UiImage`, `UiButton`; layout com âncoras numa tela de
+referência de 1080 de altura; fontes `.ttf`/`.otf` como asset, em atlas SDF pelo `imstb_truetype.h` do
+ImGui; `UiRenderer` com o `Renderer2D` novo: um VBO dinâmico, lotes por textura e geometria em cache),
+`UiSystem` (cliques, `SetText`, `SetVisible`, `WasClicked`) e `Script::LoadScene` (troca de cena no Play).
+No editor, a UI aparece por cima do viewport, com seleção e arraste. Exemplos `docs/examples/Hud.cpp` e
+`MenuPrincipal.cpp`, rodados pelo `test_script_docs`; testes em `tests/test_ui.cpp`.
 
 ## Fase 10 — Exportar o jogo
 

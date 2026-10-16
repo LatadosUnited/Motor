@@ -2,13 +2,15 @@
 
 Tudo que um script do Motor pode usar, conferido com os headers da engine. Para aprender passo a passo, leia
 primeiro o [guia](scripts.md). Fontes, se quiser ir além: `engine/include/motor/scene/Script.h`,
-`ScriptModule.h`, `Scene.h`, `Component.h` e `engine/include/motor/physics/PhysicsSystem.h`.
+`ScriptModule.h`, `Scene.h`, `Component.h`, `engine/include/motor/physics/PhysicsSystem.h` e
+`engine/include/motor/ui/UiSystem.h`.
 
-O teste `test_script_docs` confere que esta página cita todos os métodos públicos de `motor::Script` e de
-`motor::PhysicsSystem`, todas as opções de campo e os campos de `GameTime` e `Collision`. Mudou um desses
+O teste `test_script_docs` confere que esta página cita todos os métodos públicos de `motor::Script`, de
+`motor::PhysicsSystem` e de `motor::UiSystem`, todas as opções de campo e os campos de `GameTime`,
+`Collision` e `UiPointer`. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 6 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 7 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -18,6 +20,7 @@ recompilar os scripts).
 |---|---|
 | `<motor/scene/ScriptModule.h>` | o necessário para qualquer script: `motor::Script`, `MOTOR_SCRIPT`, `Scene`, `Entity`, `Transform`, os componentes da engine, `Key`, GLM (vetores, matrizes, quaternions) |
 | `<motor/physics/PhysicsSystem.h>` | `motor::PhysicsSystem` (forças, personagem, raios) |
+| `<motor/ui/UiSystem.h>` | `motor::UiSystem` (texto, mostrar/esconder, botões) e os componentes de UI |
 | `<glm/geometric.hpp>` | `glm::length`, `glm::normalize`, `glm::dot`, `glm::cross` (inclua para não depender de includes indiretos) |
 | `<glm/gtc/quaternion.hpp>` | `glm::angleAxis`, `glm::quatLookAt` |
 
@@ -46,8 +49,8 @@ Um `Register` sem `.Field` é válido: script sem campos.
 ### Tipos de campo
 
 `bool`, `int`, `float`, `glm::vec2`, `glm::vec3`, `glm::vec4`, `std::string`, `std::shared_ptr<motor::Mesh>`,
-`std::shared_ptr<motor::Texture2D>`, e os enums da engine com editor: `motor::ColliderShape`,
-`motor::LightType`. Outro tipo não compila (`static assertion failed: tipo de campo não suportado`).
+`std::shared_ptr<motor::Texture2D>`, e os tipos da engine com editor: `motor::ColliderShape`,
+`motor::LightType`, `motor::UiAnchor`, `motor::UiTextAlign` e `motor::UiFont`. Outro tipo não compila (`static assertion failed: tipo de campo não suportado`).
 
 ### Opções de campo: `motor::FieldOptions`
 
@@ -101,6 +104,7 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 | `Entity& CreateEntity(std::string name, EntityId parent = 0)` | cria uma entidade vazia (na raiz, ou filha de `parent`); os scripts dela começam no próximo passo |
 | `void Destroy(EntityId id)` | destrói a entidade e os descendentes no fim do passo (`OnDestroy` antes) |
 | `void DestroySelf()` | `Destroy(GetId())` |
+| `void LoadScene(std::string_view scene)` | troca de cena no fim do passo: a atual para (`OnDestroy` de todos) e a nova começa do zero. `scene` é o nome (`"Fase1"`) ou o caminho relativo ao projeto (`"Assets/Cenas/Fase1.mscene"`, a extensão é opcional). Cena não encontrada: erro no console e o jogo continua. No editor, Parar volta à cena de antes do Play |
 
 ### Tempo e entrada
 
@@ -243,6 +247,40 @@ passo fixo) devolvem `false`/zero.
 
 Configuração global (`motor::PhysicsSettings::Global()`: `gravity`, `workerThreads`, `maxSubstep`) é lida a
 cada Play; é para a aplicação, não para scripts.
+
+## Interface do jogo: `motor::UiSystem`
+
+`#include <motor/ui/UiSystem.h>` e `auto* ui = GetSystem<motor::UiSystem>();`. Os elementos são achados pelo
+nome da entidade (a primeira com esse nome) ou pelo id. O sistema roda depois dos scripts (ordem
+`kSystemOrderUi`): o clique detectado num frame é lido pelos scripts no `OnUpdate` seguinte.
+
+| Método | Efeito |
+|---|---|
+| `bool SetText(entity, std::string_view text)` | muda o texto do UI: Texto; `false` se a entidade não existe ou não tem o componente. Texto igual não refaz nada |
+| `std::string GetText(std::string_view entity) const` | o texto atual, ou `""` |
+| `bool SetVisible(entity, bool visible)` | mostra ou esconde o elemento e os filhos (`UiRect::visible`; cria o UI: Retângulo se faltar) |
+| `bool IsVisible(std::string_view entity) const` | visível de fato: entidade ativa e ela e os pais com `visible` |
+| `bool WasClicked(entity) const` | o botão foi clicado (soltou o clique nele) no frame anterior; leia no `OnUpdate` |
+| `EntityId HoveredButton() const` | o botão sob o mouse, ou 0 |
+| `bool ScreenRect(EntityId entity, UiBox& out) const` | retângulo do elemento na tela (pixels de verdade, `out.min`/`out.max`) no último passo; `false` se não estava visível |
+| `void SetPointer(const UiPointer& pointer)`, `const UiPointer& Pointer() const` | o mouse em relação à imagem do jogo; quem chama é o editor (ou o jogo exportado), não um script |
+| `OnStart`, `OnUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
+
+`motor::UiPointer`: `screenSize` (pixels da imagem do jogo), `position` (mouse, a partir do canto superior
+esquerdo), `inside` (o mouse está sobre o jogo) e `down` (botão esquerdo apertado).
+
+Os componentes (`motor/ui/UiComponents.h`) também podem ser lidos e mudados direto, com `Get<T>()`:
+
+| Componente | Campos |
+|---|---|
+| `motor::UiRect` | `anchor` (`motor::UiAnchor`: `TopLeft`, `Top`, `TopRight`, `Left`, `Center`, `Right`, `BottomLeft`, `Bottom`, `BottomRight`, `Stretch`), `position`, `size` (`glm::vec2`, pixels de uma tela de 1080 de altura), `order` (`int`), `visible` (`bool`) |
+| `motor::UiText` | `text` (`std::string`, UTF-8, `\n` quebra a linha), `font` (`motor::UiFont`: `guid` e `path` do `.ttf`; vazio = padrão), `fontSize` (`float`), `color` (`glm::vec4`), `align` (`motor::UiTextAlign`: `Left`, `Center`, `Right`) |
+| `motor::UiImage` | `texture` (`std::shared_ptr<motor::Texture2D>`, nula = cor sólida), `color` |
+| `motor::UiButton` | `normalColor`, `hoverColor`, `pressedColor`, `interactable` (`bool`); estado do jogo: `hovered`, `pressed`, `clicked` |
+
+Na âncora, o ponto da tela e o ponto do elemento coincidem (`TopRight` prende o canto superior direito do
+elemento no canto superior direito do pai). Com `Stretch`, `position` são as margens esquerda e de cima e
+`size` as margens direita e de baixo.
 
 ## Teclas
 

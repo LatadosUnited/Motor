@@ -2,8 +2,9 @@
 
 Engine 3D em C++20 + OpenGL 4.5, escrita do zero. Dependências externas mínimas:
 **GLFW** (janela/input), **GLM** (matemática), **Dear ImGui** (UI do editor, branch docking),
-**ImGuizmo** (gizmos de transform), **nlohmann/json** (cenas e projetos) e **stb_image** (PNG/JPG),
-baixadas automaticamente pelo CMake. O leitor de OBJ é próprio.
+**ImGuizmo** (gizmos de transform), **nlohmann/json** (cenas e projetos), **stb_image** (PNG/JPG) e
+**Jolt Physics** (física), baixadas automaticamente pelo CMake. O leitor de OBJ é próprio; as fontes da UI do
+jogo usam o `imstb_truetype.h` que já vem com o Dear ImGui.
 O carregador de OpenGL é próprio (`engine/src/renderer/GL.h`).
 
 ## Compilar (Windows, MSYS2 UCRT64)
@@ -34,13 +35,15 @@ engine/            camadas, de baixo para cima (cada uma só usa as de baixo; co
     scene/         Scene, componentes (Component.h: registro e campos), SceneSerializer (.mscene), Transform
     app/           Application (game loop c/ fixed timestep)
     physics/       PhysicsSystem (Jolt Physics): corpos, personagem, eventos, raios; contorno dos colliders
+    ui/            interface do jogo: componentes Ui*, layout com âncoras, fontes SDF, UiRenderer, UiSystem
   src/<camada>/    implementação + CMakeLists.txt da camada (+ renderer/GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine
+  assets/fonts/    fonte padrão da UI do jogo (Roboto Medium, Apache 2.0)
 docs/              guia e referência dos scripts (scripts.md, scripts-api.md) e exemplos compilados pelo ctest
 editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play, scripts
   templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, Jogador, MoverWASD, Seguir)
 sandbox/           app de demonstração
-tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física)
+tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física, UI)
 ```
 
 ## Controles do Sandbox
@@ -159,6 +162,7 @@ Arquivos dentro do projeto podem ser usados direto nas cenas:
 | Malha | `.obj` | `v`, `vt`, `vn`, `f` (polígonos viram triângulos). Sem normais no arquivo, são calculadas. Materiais `.mtl` são ignorados |
 | Material | `.mmat` | do Motor: cor, textura, especular e brilho (abaixo) |
 | Prefab | `.mprefab` | do Motor: entidade com filhos (abaixo) |
+| Fonte | `.ttf` `.otf` | fonte dos textos da UI do jogo (ver "Interface do jogo") |
 
 Como usar:
 
@@ -410,6 +414,38 @@ empilhando, média de 600 passos de 1/60 s do `FixedUpdate` inteiro):
 | 1000 | 3.6 ms | 2.0 ms |
 | 2000 | 6.5 ms | 2.7 ms |
 | 4000 | 14.3 ms | 6.7 ms |
+
+## Interface do jogo (HUD)
+
+Texto, imagens e botões na tela durante o jogo, desenhados por cima da cena e independentes do ImGui do
+editor (camada `engine/.../ui/`). São componentes comuns, então aparecem no Inspector, vão para a cena e têm
+desfazer:
+
+| Componente | Campos |
+|---|---|
+| **UI: Retângulo** (`UiRect`) | Âncora (9 pontos ou **Esticar**), Posição, Tamanho, Ordem, Visível |
+| **UI: Texto** (`UiText`) | Texto (UTF-8, `\n` quebra a linha), Fonte, Tamanho da fonte, Cor, Alinhamento |
+| **UI: Imagem** (`UiImage`) | Textura (vazia = cor sólida), Cor |
+| **UI: Botão** (`UiButton`) | Cor normal, com o mouse em cima e pressionado; Clicável |
+
+- **Criar:** Entidade > Interface (UI) > Texto, Imagem, Botão ou Painel (também no "+ Criar" da Hierarquia).
+- **Unidades:** pixels de uma tela de 1080 de altura, escalados pela altura real (o HUD fica igual no
+  viewport do editor e em tela cheia). Filho de um elemento de UI se posiciona dentro do pai; esconder o pai
+  esconde os filhos. Entre irmãos, maior **Ordem** desenha por cima e recebe o clique primeiro.
+- **No editor:** a UI aparece por cima do viewport (botão **UI** da barra liga/desliga). Fora da visão do
+  jogo, os elementos têm contorno; um clique seleciona e arrastar move (um arraste = um passo de desfazer).
+  Na visão do jogo (Play), o mouse vai para os botões do jogo.
+- **Scripts:** `GetSystem<motor::UiSystem>()` com `SetText`, `SetVisible`, `IsVisible`, `WasClicked` (pelo
+  nome da entidade ou pelo id) e `Script::LoadScene("Fase1")` para trocar de cena. Ver a seção 11 do
+  [guia de scripts](docs/scripts.md) e os exemplos `docs/examples/Hud.cpp` e `MenuPrincipal.cpp`.
+- **Fontes:** `.ttf` e `.otf` do projeto são assets (com GUID); o campo Fonte vazio usa a padrão, **Roboto
+  Medium** (`engine/assets/fonts/`, Apache License 2.0, ver `LICENSE-Roboto.txt` na mesma pasta). Cada fonte
+  vira um atlas **SDF** (campo de distância, gerado pelo `imstb_truetype.h` que vem com o Dear ImGui), nítido
+  em qualquer tamanho; o atlas tem ASCII, Latin-1 (acentos) e algumas pontuações.
+- **Desempenho:** todo o texto e as imagens vão num VBO dinâmico só, em uma chamada de desenho por troca de
+  textura (retângulos sólidos usam o atlas da fonte: um HUD de texto e painéis é 1 chamada; a barra do
+  viewport mostra "UI: N draws"). A geometria de cada elemento só é refeita quando o texto, o tamanho, a
+  fonte, a cor ou o retângulo mudam; frame sem mudança não envia nada para a GPU.
 
 ## Cenas (`.mscene`)
 

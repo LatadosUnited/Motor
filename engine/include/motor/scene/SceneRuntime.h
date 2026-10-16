@@ -8,14 +8,17 @@
 #include "motor/scene/Script.h"
 
 #include <cstddef>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace motor {
 
+class AssetLibrary;
 class Scene;
 struct Entity;
 
@@ -44,6 +47,13 @@ public:
     Entity* FindEntity(std::string_view name);
     Entity& CreateEntity(std::string name, EntityId parent);
     void Destroy(EntityId id);  // adiada para o fim do passo atual
+
+    // Troca de cena pedida por um script (Script::LoadScene). O runtime só guarda o pedido: quem roda o jogo
+    // (o Play do editor, o jogo exportado) confere depois de cada passo, para este runtime e começa a cena
+    // nova com um runtime novo. Vários pedidos no mesmo passo: vale o último.
+    void RequestSceneLoad(std::string scene) { m_sceneRequest = std::move(scene); }
+    bool HasSceneRequest() const { return !m_sceneRequest.empty(); }
+    std::string TakeSceneRequest() { return std::exchange(m_sceneRequest, {}); }
 
     // Sistema do tipo T deste runtime, ou nullptr (não registrado, ou runtime parado).
     template <class T>
@@ -75,6 +85,11 @@ private:
     std::vector<SystemSlot> m_systems;  // na ordem de RegisteredRuntimeSystems(); vazio fora do Play
     bool m_running = false;
     bool m_inputEnabled = true;
+    std::string m_sceneRequest;
 };
+
+// Arquivo de cena de um pedido de LoadScene: caminho relativo ao projeto ("Assets/Cenas/Fase1.mscene", a
+// extensão é opcional) ou só o nome ("Fase1"), procurado em todas as cenas do projeto. Vazio se não achar.
+std::filesystem::path FindSceneFile(const AssetLibrary& assets, std::string_view scene);
 
 } // namespace motor

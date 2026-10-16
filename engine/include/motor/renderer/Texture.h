@@ -26,6 +26,7 @@ public:
     int Width() const { return m_width; }
     int Height() const { return m_height; }
     unsigned int NativeHandle() const { return m_id; }  // nome OpenGL (ex.: para ImGui::Image)
+    TextureColorSpace ColorSpace() const { return m_colorSpace; }  // a UI (Renderer2D) devolve as sRGB para sRGB
 
     static std::shared_ptr<Texture2D> CreateSolid(glm::u8vec4 color);
     static std::shared_ptr<Texture2D> CreateChecker(int size, int cells, glm::u8vec4 a, glm::u8vec4 b);
@@ -34,6 +35,7 @@ private:
     unsigned int m_id = 0;
     int m_width = 0;
     int m_height = 0;
+    TextureColorSpace m_colorSpace = TextureColorSpace::Srgb;
 };
 
 } // namespace motor

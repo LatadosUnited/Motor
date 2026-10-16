@@ -78,3 +78,8 @@ target_compile_definitions(test_script_docs PRIVATE
     MOTOR_TEST_DOCS_DIR="${PROJECT_SOURCE_DIR}/docs"
     MOTOR_TEST_ENGINE_INCLUDE="${PROJECT_SOURCE_DIR}/engine/include")
 set_tests_properties(test_script_docs PROPERTIES TIMEOUT 600)
+
+# Interface do jogo (camada ui/): âncoras, fontes SDF, cache da lista de desenho, cliques pelo UiSystem, API dos
+# scripts, serialização e a troca de cena pelo Play do editor (PlayMode).
+motor_add_test(test_ui ${PROJECT_SOURCE_DIR}/editor/src/PlayMode.cpp)
+target_include_directories(test_ui PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)

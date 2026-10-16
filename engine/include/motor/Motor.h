@@ -35,3 +35,5 @@
 
 #include "motor/physics/ColliderGizmo.h"
 #include "motor/physics/PhysicsSystem.h"
+
+#include "motor/ui/Ui.h"

@@ -29,6 +29,7 @@ public:
     // `viewportFocused`: o jogo só lê teclado/mouse vendo pela câmera do jogo com o viewport em foco.
     void Update(float dt, bool viewportFocused);
     void FixedUpdate(float dt) { m_mode.FixedUpdate(dt); }
+    motor::SceneRuntime* Runtime() { return m_mode.Runtime(); }  // nullptr fora do Play
 
     void DrawMenu();       // menu "Jogo"
     void DrawStatus();     // "JOGANDO" / "EM PAUSA" na barra de menus

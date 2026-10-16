@@ -28,6 +28,16 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
             history.Track(ctx.scene, ctx.selected, true);
             ctx.pendingDelete = kNullEntity;
             m_gameView = true;
+            // Script::LoadScene: a cena pedida é procurada no projeto e carregada no lugar da atual.
+            m_mode.SetSceneLoader([&ctx](const std::string& request, Scene& out, std::string& error) {
+                const std::filesystem::path file = FindSceneFile(ctx.assets, request);
+                if (file.empty()) {
+                    error = "cena não encontrada no projeto";
+                    return false;
+                }
+                ctx.selected = kNullEntity;  // a seleção era da cena que sai
+                return SceneSerializer::Load(file, out, ctx.assets, &error);
+            });
             m_mode.Play(ctx.scene, ctx.selected);
             return Event::Started;
         case Request::Pause: m_mode.SetPaused(!m_mode.IsPaused()); break;

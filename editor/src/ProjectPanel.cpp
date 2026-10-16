@@ -42,6 +42,7 @@ Icon IconFor(bool isDirectory, AssetType type) {
         case AssetType::Mesh: return Icon::Mesh;
         case AssetType::Material: return Icon::Material;
         case AssetType::Prefab: return Icon::Prefab;
+        case AssetType::Font: break;  // fontes da UI: ícone de arquivo
         case AssetType::Unknown: break;
     }
     return Icon::File;

@@ -1,5 +1,7 @@
 #include "motor/scene/SceneRuntime.h"
 
+#include "motor/assets/AssetLibrary.h"
+#include "motor/core/Paths.h"
 #include "motor/scene/Scene.h"
 
 #include <algorithm>
@@ -200,6 +202,24 @@ void SceneRuntime::FlushDestroyed() {
     }
 }
 
+std::filesystem::path FindSceneFile(const AssetLibrary& assets, std::string_view scene) {
+    if (scene.empty() || assets.Root().empty()) return {};
+    std::string key(scene);
+    const std::string extension = kSceneFileExtension;
+    if (!key.ends_with(extension)) key += extension;
+    if (AssetLibrary::IsFileKey(key)) {
+        const std::filesystem::path file = assets.FileForKey(key);
+        std::error_code ec;
+        if (!file.empty() && std::filesystem::is_regular_file(file, ec)) return file;
+    }
+    // Só o nome: a primeira cena do projeto com esse nome de arquivo (ScanFiles vem em ordem alfabética).
+    const std::string name = ToUtf8(PathFromUtf8(key).filename());
+    for (const std::string& candidate : assets.ScanFiles(AssetType::Scene)) {
+        if (ToUtf8(PathFromUtf8(candidate).filename()) == name) return assets.FileForKey(candidate);
+    }
+    return {};
+}
+
 // --- Script -----------------------------------------------------------------------
 
 Entity& Script::GetEntity() {
@@ -232,6 +252,10 @@ void Script::Destroy(EntityId id) {
 
 void Script::DestroySelf() {
     Destroy(m_entity);
+}
+
+void Script::LoadScene(std::string_view scene) {
+    if (m_runtime) m_runtime->RequestSceneLoad(std::string(scene));
 }
 
 const GameTime& Script::Time() const {

@@ -2,9 +2,11 @@
 // - Compila numa DLL de scripts, com o toolchain do Motor, todos os exemplos do guia (docs/examples/) e os
 //   modelos do editor (editor/templates/Scripts/), sem erros nem avisos.
 // - Roda os exemplos de verdade: o mini jogo do guia (andar, coletar, pontuar), a porta, o inimigo, o
-//   disparador e a bola, com a física, simulando as teclas no estado interno do Input.
+//   disparador e a bola, com a física, simulando as teclas no estado interno do Input; o HUD e o menu com a
+//   UI do jogo (UiSystem), simulando o mouse.
 // - Cada bloco ```cpp do guia é um trecho de um arquivo de exemplo, e cada exemplo é citado no guia.
-// - A referência cita todos os métodos públicos de Script, de PhysicsSystem e as opções de FieldOptions.
+// - A referência cita todos os métodos públicos de Script, de PhysicsSystem, de UiSystem e as opções de
+//   FieldOptions.
 // Sem janela nem OpenGL. Demora alguns segundos (compila a DLL).
 #include "TestUtil.h"
 
@@ -20,6 +22,7 @@
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneRuntime.h>
 #include <motor/scene/ScriptModule.h>
+#include <motor/ui/UiSystem.h>
 
 #include <algorithm>
 #include <chrono>
@@ -277,11 +280,14 @@ int main(int argc, char** argv) {
         const std::string scriptH = ReadText(include / "scene" / "Script.h");
         const std::string physicsH = ReadText(include / "physics" / "PhysicsSystem.h");
         const std::string componentH = ReadText(include / "scene" / "Component.h");
+        const std::string uiH = ReadText(include / "ui" / "UiSystem.h");
 
         std::set<std::string> names = DeclaredFunctions(Between(scriptH, "class Script {", "private:"));
         for (const std::string& n : DeclaredFunctions(Between(physicsH, "class PhysicsSystem", "private:"))) names.insert(n);
+        for (const std::string& n : DeclaredFunctions(Between(uiH, "class UiSystem", "private:"))) names.insert(n);
         names.erase("Script");
         names.erase("PhysicsSystem");
+        names.erase("UiSystem");
         names.erase("FindSystem");  // detalhe de GetSystem
         CHECK(names.size() >= 30);
         for (const std::string& n : names) {
@@ -292,7 +298,8 @@ int main(int argc, char** argv) {
         // Opções de campo e campos das structs que os scripts recebem.
         const std::regex member(R"((\w+)\s*(?:=|\{))");
         const std::pair<const std::string*, const char*> structs[] = {
-            {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"}};
+            {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"},
+            {&uiH, "struct UiPointer {"}};
         for (const auto& [header, type] : structs) {
             const std::string body = Between(*header, type, "};");
             CHECK(!body.empty());
@@ -338,7 +345,7 @@ int main(int argc, char** argv) {
         return TestResult();
     }
     for (const char* type : {"Flutuar", "ExemploCampos", "CicloDeVida", "Projetil", "Disparador", "Placar", "Moeda",
-                             "Porta", "Inimigo", "BolaFisica", "Girar", "Jogador", "MoverWASD", "Seguir"}) {
+                             "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "Girar", "Jogador", "MoverWASD", "Seguir"}) {
         const ComponentType* t = ComponentRegistry::Instance().Find(type);
         if (!t) std::printf("  não registrado: %s\n", type);
         CHECK(t && t->IsScript());
@@ -515,6 +522,71 @@ int main(int argc, char** argv) {
         const int* passos = ScriptField<int>(scene, buoyId, "CicloDeVida", "passosFixos");
         CHECK(passos == nullptr);  // não registrado: estado interno
         runtime.Stop();
+    }
+
+    SECTION("HUD e menu do guia: vida e pontos na tela, Jogar troca de cena");
+    {
+        const glm::vec2 screen{1920.0f, 1080.0f};
+        auto click = [&](SceneRuntime& runtime, glm::vec2 at) {
+            UiSystem* ui = runtime.GetSystem<UiSystem>();
+            for (bool down : {true, false, false}) {  // aperta, solta (clique) e o script lê no frame seguinte
+                if (ui) ui->SetPointer({screen, at, true, down});
+                runtime.Update(kDt);
+            }
+        };
+
+        Scene scene;
+        loadedScenes = {&scene};
+        const EntityId player = scene.CreateEntity("Jogador").id;
+        Entity& placarEntity = scene.CreateEntity("Placar");
+        AddScript(placarEntity, "Placar");
+        const EntityId placar = placarEntity.id;
+        for (const char* name : {"Vida", "Pontos"}) {
+            Entity& e = scene.CreateEntity(name);
+            e.Add<UiRect>();
+            e.Add<UiText>();
+        }
+        scene.CreateEntity("FimDeJogo").Add<UiImage>();
+        AddScript(scene.CreateEntity("HUD"), "Hud");
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 0.1f);
+        UiSystem* ui = runtime.GetSystem<UiSystem>();
+        CHECK(ui && ui->GetText("Vida") == "Vida: 3" && ui->GetText("Pontos") == "Pontos: 0");
+        CHECK(ui && !ui->IsVisible("FimDeJogo"));
+        if (int* pontos = ScriptField<int>(scene, placar, "Placar", "pontos")) *pontos = 4;
+        Run(runtime, 0.1f);
+        CHECK(ui && ui->GetText("Pontos") == "Pontos: 4");
+        for (int i = 0; i < 3; ++i) {  // cai do chão três vezes: volta ao começo e perde uma vida
+            scene.Find(player)->transform.position.y = -10.0f;
+            Run(runtime, 0.1f);
+            CHECK(scene.Find(player)->transform.position.y == 0.0f);
+        }
+        CHECK(ui && ui->GetText("Vida") == "Vida: 0" && ui->IsVisible("FimDeJogo"));
+        runtime.Stop();
+
+        Scene menu;
+        loadedScenes = {&menu};
+        Entity& jogar = menu.CreateEntity("Jogar");  // UiRect padrão: centro da tela, 200 x 60
+        jogar.Add<UiRect>();
+        jogar.Add<UiButton>();
+        Entity& creditos = menu.CreateEntity("Creditos");
+        creditos.Add<UiRect>().position = {0.0f, 100.0f};
+        creditos.Add<UiButton>();
+        menu.CreateEntity("PainelCreditos").Add<UiRect>().position = {0.0f, -300.0f};
+        menu.FindByName("PainelCreditos")->Add<UiImage>();
+        AddScript(menu.CreateEntity("Menu"), "MenuPrincipal");
+
+        SceneRuntime menuRuntime(menu);
+        menuRuntime.Start();
+        UiSystem* menuUi = menuRuntime.GetSystem<UiSystem>();
+        CHECK(menuUi && !menuUi->IsVisible("PainelCreditos"));
+        click(menuRuntime, {960.0f, 640.0f});
+        CHECK(menuUi && menuUi->IsVisible("PainelCreditos") && !menuRuntime.HasSceneRequest());
+        click(menuRuntime, {960.0f, 540.0f});
+        CHECK(menuRuntime.HasSceneRequest() && menuRuntime.TakeSceneRequest() == "Fase1");
+        menuRuntime.Stop();
     }
 
     loadedScenes.clear();
