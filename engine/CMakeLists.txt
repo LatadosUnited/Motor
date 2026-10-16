@@ -6,6 +6,7 @@
 # Uma camada só pode incluir headers dela mesma e das camadas à esquerda. O teste `test_layers` confere isso
 # nos #include; a lista abaixo (MOTOR_LAYERS) é a fonte da ordem para ele.
 set(MOTOR_LAYERS core renderer project assets scene app)
+list(APPEND MOTOR_LAYERS physics)  # Fase 5: física (Jolt), acima de scene
 set(MOTOR_LAYERS ${MOTOR_LAYERS} PARENT_SCOPE)
 
 # motor_add_layer(<camada> SOURCES <arquivos...> DEPENDS <camadas...> [PRIVATE_LIBS <alvos...>])
