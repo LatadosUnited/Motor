@@ -257,6 +257,7 @@ struct PhysicsSystem::World {
         glm::vec3 scale{1.0f};
         JPH::EMotionType motion = JPH::EMotionType::Static;
         Transform written;          // dinâmicos: Transform local que a física escreveu por último
+        EntityId parent = kNullEntity;  // pai quando `written` foi escrito
         Pose pose;                  // estáticos e cinemáticos: pose do mundo aplicada por último
         bool kinematicMoving = false;
         uint32_t seen = 0;
@@ -410,9 +411,18 @@ struct PhysicsSystem::World {
 
             const MeshRenderer* renderer = collider->shape == ColliderShape::Mesh ? entity.Get<MeshRenderer>() : nullptr;
             const Mesh* mesh = renderer ? renderer->mesh.get() : nullptr;
-            const Pose pose = Decompose(scene.WorldMatrix(entity.id));
-
             auto it = bodies.find(entity.id);
+            if (it != bodies.end()) {
+                BodyRecord& r = it->second;
+                // Caminho comum (milhares de caixas): dinâmico que só a física mexeu, nada a fazer.
+                if (r.motion == JPH::EMotionType::Dynamic && r.parent == entity.parent &&
+                    SameTransform(entity.transform, r.written) && rigidbody && r.rigidbody == *rigidbody &&
+                    r.collider == *collider && r.mesh == mesh) {
+                    r.seen = frame;
+                    continue;
+                }
+            }
+            const Pose pose = Decompose(scene.WorldMatrix(entity.id));
             if (it != bodies.end()) {
                 BodyRecord& r = it->second;
                 const bool changed = !(r.collider == *collider) || r.hasRigidbody != (rigidbody != nullptr) ||
@@ -435,6 +445,7 @@ struct PhysicsSystem::World {
                 r.seen = frame;
                 if (r.motion == JPH::EMotionType::Dynamic) {
                     // Transform mexido por script ou pelo editor: teleporta (a velocidade continua).
+                    r.parent = entity.parent;
                     if (!SameTransform(entity.transform, r.written)) {
                         WakeAround(r.id);
                         bi.SetPositionAndRotation(r.id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
@@ -532,6 +543,7 @@ struct PhysicsSystem::World {
         r.scale = pose.scale;
         r.motion = motion;
         r.written = entity.transform;
+        r.parent = entity.parent;
         r.pose = pose;
         r.seen = frame;
         (motion == JPH::EMotionType::Static ? addStatic : addMoving).push_back(r.id);
