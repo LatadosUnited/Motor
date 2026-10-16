@@ -15,6 +15,7 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Scripts C++ por projeto (DLL compilada pelo editor, recarga sem fechar) | ✅ pronto (Fase 3) |
 | Luzes (direcional, pontual, spot como componentes) e ícones no viewport | ✅ pronto (Fase 4) |
 | Física (Jolt: colliders, rigidbody, triggers, raycast, personagem) | ✅ pronto (Fase 5) |
+| Materiais (`.mmat`) e prefabs (`.mprefab`) com overrides | ✅ pronto (Fase 6) |
 | Git + testes `ctest` | ✅ pronto (Fase 0) |
 | Editor (hierarquia, inspector, viewport, gizmos, desfazer) | ✅ pronto |
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
@@ -113,13 +114,27 @@ Pendências: picos isolados de até ~185 ms em passos soltos no teste de carga (
 nas malhas embutidas (Cubo, Plano) usa a caixa dos limites, porque a `Mesh` só guarda os dados na GPU
 (resolvido na Fase 11, com a cópia na CPU).
 
-## Fase 6 — Materiais e prefabs como assets ⭐ prioridade 2
+## Fase 6 — Materiais e prefabs como assets ✅
 
-- **Material** (`.mmat`): cor, textura, brilho; reaproveitado por vários objetos e editado num lugar só.
-- **Prefab** (`.mprefab`): uma entidade com filhos salva como asset; instâncias atualizam quando o prefab muda.
-- Ambos referenciados por GUID (o sistema de `.meta` já existe).
+- **Material** (`.mmat`): cor, textura, especular e brilho; o Mesh Renderer aponta para ele por GUID
+  (`sharedMaterial`) e todos os objetos compartilham o mesmo objeto, então editar muda todos. Sem asset,
+  vale o material próprio do componente: cenas antigas abrem sem perder nada. Criar no painel Projeto ou
+  pelo botão "Salvar como asset"; editar no Inspector (gravado ao soltar o controle); arquivos editados
+  fora do editor são relidos.
+- **Prefab** (`.mprefab`): entidade com filhos no mesmo formato da cena; cada entidade da instância tem o
+  componente `PrefabInstance` (GUID do prefab, id estável da entidade no prefab, overrides). As instâncias
+  seguem o prefab a cada mudança (inclusive entidades e componentes novos ou removidos); o que foi mudado na
+  instância vira override (comparando com o prefab). Aplicar, reverter e desvincular; criar pela Hierarquia
+  ou arrastando para o painel Projeto; instanciar arrastando para o viewport ou a Hierarquia.
+- Cena versão 5; `kScriptApiVersion` 6. Testes: `test_materials`, `test_prefabs`.
+- Pronto para a Fase 11: o importador glTF pode gravar `.mmat` (`AssetLibrary::WriteMaterialFile`) e montar
+  a hierarquia do modelo como prefab (`PrefabLibrary::WriteFile`).
 
-**Pronto quando:** mudar a cor de um material ou de um prefab atualiza todas as instâncias na cena.
+Limitações: sem prefab dentro de prefab; edições de material e de prefab não entram no desfazer (são
+gravadas no arquivo na hora), e editá-los durante o Play também fica valendo depois de parar; scripts ainda
+não instanciam prefabs.
+
+**Pronto quando:** mudar a cor de um material ou de um prefab atualiza todas as instâncias na cena. ✅
 
 ## Fase 7 — Renderização avançada
 

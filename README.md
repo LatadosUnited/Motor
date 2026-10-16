@@ -148,7 +148,7 @@ Renomear, mover ou excluir a cena aberta (ou a pasta dela) atualiza o editor: o 
 cena inicial do projeto acompanham. Se a cena aberta for excluída, ela continua na memória como
 "Sem título" com alterações pendentes. Mudanças feitas fora do editor aparecem em até 1 s.
 
-## Assets (texturas e malhas)
+## Assets (texturas, malhas, materiais e prefabs)
 
 Arquivos dentro do projeto podem ser usados direto nas cenas:
 
@@ -156,6 +156,8 @@ Arquivos dentro do projeto podem ser usados direto nas cenas:
 |---|---|---|
 | Textura | `.png` `.jpg` `.jpeg` `.bmp` `.tga` | via stb_image; tratada como cor sRGB, com mipmaps |
 | Malha | `.obj` | `v`, `vt`, `vn`, `f` (polígonos viram triângulos). Sem normais no arquivo, são calculadas. Materiais `.mtl` são ignorados |
+| Material | `.mmat` | do Motor: cor, textura, especular e brilho (abaixo) |
+| Prefab | `.mprefab` | do Motor: entidade com filhos (abaixo) |
 
 Como usar:
 
@@ -189,6 +191,49 @@ As cenas apontam para o GUID, não para o caminho. Por isso dá para **renomear 
 - **Pelo Explorer, mova o `.meta` junto com o arquivo.** Sem ele, o arquivo ganha um GUID novo e as cenas
   só o encontram se ele continuar no caminho antigo (plano B, com aviso no log).
 - Versione os `.meta` junto com os assets (no git, por exemplo).
+
+### Materiais (`.mmat`)
+
+Um material guarda **cor, textura, especular e brilho** num arquivo próprio, reaproveitado por vários
+objetos: editar o material muda todos os que o usam.
+
+- **Criar:** painel Projeto > "+ Criar" > "Novo material", ou no Inspector de um Mesh Renderer o botão
+  "Salvar como asset" (grava o material daquele objeto em `Assets/Materiais` e passa a usá-lo).
+- **Usar:** campo "Material" do Mesh Renderer (combo ou arrastando o `.mmat`), ou arraste o `.mmat` sobre
+  um objeto no viewport ou na Hierarquia. "(próprio)" volta ao material só daquele objeto.
+- **Editar:** clique no `.mmat` no painel Projeto (aparece no Inspector) ou edite os campos dele no Mesh
+  Renderer de qualquer objeto que o usa. O arquivo é gravado quando você solta o controle; arquivos
+  editados fora do editor são relidos (a cada 2 s).
+- O Mesh Renderer continua tendo o material próprio (cor e textura direto no componente, como nas cenas
+  antigas): ele vale quando o campo "Material" está vazio.
+- Nos scripts: `renderer->sharedMaterial->color` muda o asset (todos os objetos); `renderer->material` é o
+  material próprio, usado só sem asset. `Resolved()` devolve o que está valendo.
+
+```json
+{ "format": "motor-material", "version": 1, "color": [0.9, 0.15, 0.1, 1.0],
+  "texture": { "guid": "07b1...c9d0", "path": "Assets/Texturas/pintura.png" }, "specular": 0.6, "shininess": 48 }
+```
+
+### Prefabs (`.mprefab`)
+
+Um prefab é uma entidade com filhos salva como asset. As cópias na cena (**instâncias**) seguem o prefab:
+mudar a cor de uma peça no prefab muda todas as instâncias.
+
+- **Criar:** clique direito numa entidade da Hierarquia > "Criar prefab" (vai para `Assets/Prefabs`), ou
+  arraste a entidade para uma pasta do painel Projeto. A entidade vira a primeira instância.
+- **Instanciar:** arraste o `.mprefab` para o viewport (onde o mouse aponta) ou para a Hierarquia, ou
+  clique direito > "Adicionar à cena". Instâncias aparecem em azul na Hierarquia.
+- **Editar o prefab:** clique no `.mprefab` no painel Projeto (ou "Abrir" no componente Prefab de uma
+  instância). O Inspector mostra as entidades do prefab; as mudanças valem na hora para todas as instâncias
+  e o arquivo é gravado ao soltar o controle.
+- **Overrides:** o que você muda numa instância (um campo, o nome, um componente adicionado ou removido,
+  uma entidade apagada) fica só nela e deixa de seguir o prefab; esses campos aparecem em azul no Inspector
+  e a lista fica no componente Prefab. Posição e rotação da raiz são sempre de cada instância.
+- **Aplicar / Reverter / Desvincular** (componente Prefab ou clique direito na Hierarquia): grava a instância
+  no prefab (entidades novas chegam às outras instâncias), descarta as alterações dela, ou a solta do prefab.
+- Prefab dentro de prefab não é suportado: ao criar um prefab, vínculos com outros prefabs viram cópias.
+- Mudanças nos materiais e prefabs não entram no desfazer (são arquivos, gravados na hora); a cena registra
+  as alterações das instâncias normalmente.
 
 ## Componentes
 
@@ -446,7 +491,7 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
 ```json
 {
   "format": "motor-scene",
-  "version": 4,
+  "version": 5,
   "environment": { "skyColor": [0.53, 0.7, 0.88], "fogDensity": 0.012, "ambient": [0.12, 0.14, 0.18] },
   "entities": [
     {
@@ -463,7 +508,7 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
         {
           "type": "MeshRenderer",
           "mesh": { "guid": "9f2c...e41a", "path": "Assets/Modelos/carro.obj" },
-          "texture": { "guid": "07b1...c9d0", "path": "Assets/Texturas/pintura.png" },
+          "material": { "guid": "5d0e...a7b3", "path": "Assets/Materiais/Pintura.mmat" },
           ...
         }
       ]
@@ -488,7 +533,10 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
   gravado de volta igual (aviso no log).
 - Cenas antigas continuam abrindo: versão 1 (assets por caminho), 2 (`"meshRenderer"` fixo na entidade) e
   1 a 3 (luz direcional fixa da cena, `"light"`: vira uma entidade "Luz direcional" com o componente Luz, e
-  o ambiente vai para `"environment"`). Ao salvar, viram versão 4.
+  o ambiente vai para `"environment"`), 4 (sem asset de material: a cor e a textura do Mesh Renderer viram o
+  material próprio dele, nada se perde). Ao salvar, viram versão 5.
+- Instâncias de prefab têm o componente `PrefabInstance`: `{ "guid", "path", "source", "overrides" }`. Ao
+  abrir a cena, elas são atualizadas pelo prefab atual (menos os overrides).
 - Os ids são reatribuídos ao carregar; campos ausentes usam o valor padrão.
 - O salvamento escreve em `arquivo.tmp` e depois substitui o original, para não corromper a cena se falhar no meio.
 - Os diálogos de arquivo são nativos do Windows; em outras plataformas ainda não estão implementados.
