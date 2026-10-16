@@ -1,0 +1,76 @@
+#pragma once
+
+// Sistema da UI no jogo (RuntimeSystem, ordem kSystemOrderUi: roda depois dos scripts). A cada OnUpdate vê
+// onde está o mouse, acende os botões sob ele e detecta os cliques; os scripts leem no OnUpdate seguinte.
+//
+// Num script:
+//   if (auto* ui = GetSystem<motor::UiSystem>()) {
+//       ui->SetText("Pontos", std::format("Pontos: {}", pontos));
+//       if (ui->WasClicked("Jogar")) LoadScene("Fase1");
+//   }
+//
+// Clique: apertar e soltar o botão esquerdo em cima do mesmo botão (UiButton clicável). O elemento de cima
+// ganha: uma imagem por cima de um botão bloqueia o clique; texto sozinho não bloqueia.
+
+#include "motor/scene/RuntimeSystem.h"
+#include "motor/ui/UiLayout.h"
+
+#include <glm/vec2.hpp>
+
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace motor {
+
+class Scene;
+struct Entity;
+
+// Mouse em relação à tela do jogo, informado por quem roda o jogo (no editor, o viewport) a cada frame.
+struct UiPointer {
+    glm::vec2 screenSize{0.0f};  // pixels da imagem do jogo
+    glm::vec2 position{0.0f};    // pixels, a partir do canto superior esquerdo dela
+    bool inside = false;         // o mouse está sobre a imagem do jogo (e o jogo recebe o mouse)
+    bool down = false;           // botão esquerdo apertado
+};
+
+class UiSystem final : public RuntimeSystem {
+public:
+    void OnStart(SceneRuntime& runtime) override;
+    void OnUpdate(SceneRuntime& runtime, float dt) override;
+    void OnStop(SceneRuntime& runtime) override;
+
+    // --- Quem roda o jogo ---
+    void SetPointer(const UiPointer& pointer) { m_pointer = pointer; }
+    const UiPointer& Pointer() const { return m_pointer; }
+
+    // --- Scripts: pelo nome da entidade (a primeira com esse nome) ou pelo id ---
+    // Muda o texto do UiText. false se a entidade não existe ou não tem UiText.
+    bool SetText(std::string_view entity, std::string_view text);
+    bool SetText(EntityId entity, std::string_view text);
+    std::string GetText(std::string_view entity) const;  // "" se não houver
+    // Mostra ou esconde o elemento e os filhos (UiRect::visible; cria o UiRect se faltar).
+    bool SetVisible(std::string_view entity, bool visible);
+    bool SetVisible(EntityId entity, bool visible);
+    bool IsVisible(std::string_view entity) const;  // visível de fato: ativa, ela e os pais com visible
+    // O botão foi clicado (soltou o clique nele no frame anterior). Leia no OnUpdate.
+    bool WasClicked(std::string_view entity) const;
+    bool WasClicked(EntityId entity) const;
+    EntityId HoveredButton() const { return m_hovered; }  // botão sob o mouse, ou 0
+    // Retângulo do elemento na tela no último OnUpdate (pixels). false se não estava visível.
+    bool ScreenRect(EntityId entity, UiBox& out) const;
+
+private:
+    Entity* FindEntity(std::string_view name) const;
+    Entity* FindEntity(EntityId id) const;
+
+    SceneRuntime* m_runtime = nullptr;
+    UiPointer m_pointer;
+    std::vector<UiNode> m_layout;  // do último OnUpdate
+    EntityId m_hovered = 0;
+    EntityId m_pressed = 0;        // botão onde o clique começou
+    bool m_wasDown = false;
+};
+
+} // namespace motor

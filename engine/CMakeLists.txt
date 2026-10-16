@@ -7,6 +7,7 @@
 # nos #include; a lista abaixo (MOTOR_LAYERS) é a fonte da ordem para ele.
 set(MOTOR_LAYERS core renderer project assets scene app)
 list(APPEND MOTOR_LAYERS physics)  # Fase 5: física (Jolt), acima de scene
+list(APPEND MOTOR_LAYERS ui)       # Fase 9: interface do jogo (HUD), acima de scene
 set(MOTOR_LAYERS ${MOTOR_LAYERS} PARENT_SCOPE)
 
 # motor_add_layer(<camada> SOURCES <arquivos...> DEPENDS <camadas...> [PRIVATE_LIBS <alvos...>])
