@@ -6,3 +6,6 @@
 #include "motor/scene/CameraComponent.h"
 #include "motor/scene/MeshRenderer.h"
 #include "motor/scene/LightComponent.h"
+#include "motor/scene/ColliderComponent.h"
+#include "motor/scene/RigidbodyComponent.h"
+#include "motor/scene/CharacterControllerComponent.h"

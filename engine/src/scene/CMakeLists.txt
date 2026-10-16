@@ -10,5 +10,8 @@ motor_add_layer(scene
         Scene.cpp
         SceneRuntime.cpp
         SceneSerializer.cpp
+        ColliderComponent.cpp
+        RigidbodyComponent.cpp
+        CharacterControllerComponent.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)
