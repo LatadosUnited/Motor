@@ -25,6 +25,7 @@ target_compile_definitions(test_layers PRIVATE
     MOTOR_ENGINE_DIR="${PROJECT_SOURCE_DIR}/engine" MOTOR_LAYERS="${motor_layer_list}")
 
 motor_add_test(test_scripts)
+motor_add_test(test_runtime_systems)
 
 # O histórico de desfazer e o modo Play são do editor; compilamos só eles junto com os testes.
 motor_add_test(test_undo ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)
