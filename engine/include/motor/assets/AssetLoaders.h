@@ -12,7 +12,8 @@
 namespace motor {
 
 // Tipos de arquivo que a engine sabe usar, reconhecidos pela extensão (sem diferenciar maiúsculas).
-enum class AssetType { Unknown, Scene, Texture, Mesh, Material, Prefab };
+// Model: glTF 2.0 (.gltf/.glb), motor/assets/Model.h.
+enum class AssetType { Unknown, Scene, Texture, Mesh, Material, Prefab, Model };
 
 // Extensão dos arquivos de cena. Fica aqui (camada de assets) para o tipo do arquivo ser reconhecido sem
 // depender da cena; SceneSerializer::kFileExtension é a mesma.
@@ -21,7 +22,7 @@ inline constexpr const char* kMaterialFileExtension = ".mmat";   // MaterialFile
 inline constexpr const char* kPrefabFileExtension = ".mprefab";  // motor/scene/Prefab.h
 
 AssetType AssetTypeFromPath(const std::filesystem::path& path);
-const char* AssetTypeName(AssetType type);  // "Cena", "Textura", "Malha", "Material", "Prefab", "Arquivo"
+const char* AssetTypeName(AssetType type);  // "Cena", "Textura", "Malha", "Material", "Prefab", "Modelo", "Arquivo"
 
 // Dados na CPU, antes de irem para a GPU. Estas funções não usam OpenGL (dá para testar sem janela).
 struct MeshData {

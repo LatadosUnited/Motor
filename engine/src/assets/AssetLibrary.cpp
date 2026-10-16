@@ -1,5 +1,6 @@
 #include "motor/assets/AssetLibrary.h"
 
+#include "motor/assets/Model.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/project/Project.h"
@@ -56,6 +57,13 @@ void SetError(std::string* error, std::string message) {
     if (error) *error = std::move(message);
 }
 
+// "arquivo#parte" -> ("arquivo", "parte"); sem '#', a parte fica vazia.
+std::pair<std::string_view, std::string_view> SplitSubAsset(std::string_view text) {
+    const size_t hash = text.find(AssetLibrary::kSubAssetSeparator);
+    if (hash == std::string_view::npos) return {text, {}};
+    return {text.substr(0, hash), text.substr(hash + 1)};
+}
+
 std::shared_ptr<Mesh> LoadMesh(const fs::path& file, std::string_view label, std::string* error) {
     MeshData data;
     std::string problem;
@@ -91,7 +99,8 @@ bool WriteTextAtomic(const fs::path& file, const std::string& text, std::string*
     return true;
 }
 
-std::shared_ptr<Texture2D> LoadTexture(const fs::path& file, std::string_view label, std::string* error) {
+std::shared_ptr<Texture2D> LoadTexture(const fs::path& file, std::string_view label,
+                                       const AssetLibrary::TextureFactory& factory, std::string* error) {
     ImageData image;
     std::string problem;
     if (!LoadImageFile(file, image, &problem)) {
@@ -99,6 +108,7 @@ std::shared_ptr<Texture2D> LoadTexture(const fs::path& file, std::string_view la
         return nullptr;
     }
     log::Info("Textura carregada: {} ({}x{})", label, image.width, image.height);
+    if (factory) return factory(image);
     return std::make_shared<Texture2D>(image.width, image.height, image.pixels.data());
 }
 } // namespace
@@ -117,6 +127,9 @@ void AssetLibrary::SetRoot(const fs::path& root) {
     std::erase_if(m_textures, [](const auto& e) { return !e.guid.empty(); });
     m_materials.clear();
     m_materialTimes.clear();
+    m_models.clear();
+    m_modelTimes.clear();
+    m_clips.clear();
     m_database.SetAssetsDir(m_root.empty() ? fs::path{} : m_root / Project::kAssetsFolder);
 }
 
@@ -124,6 +137,13 @@ void AssetLibrary::SetRoot(const fs::path& root) {
 
 std::shared_ptr<Mesh> AssetLibrary::GetMesh(std::string_view key, std::string* error) {
     if (auto builtIn = FindBuiltIn(m_meshes, key)) return builtIn;
+    if (const auto [file, part] = SplitSubAsset(key); !part.empty()) {
+        const auto model = GetModel(file, error);
+        if (!model) return nullptr;
+        if (auto mesh = model->FindMesh(part)) return mesh;
+        SetError(error, std::format("O modelo '{}' não tem a malha '{}'.", file, part));
+        return nullptr;
+    }
     const std::string guid = m_database.GuidFor(FileForKey(key));
     if (guid.empty()) {
         SetError(error, std::format("Malha '{}' não existe no projeto.", key));
@@ -144,6 +164,13 @@ std::shared_ptr<Texture2D> AssetLibrary::GetTexture(std::string_view key, std::s
 
 std::shared_ptr<Mesh> AssetLibrary::GetMeshByGuid(std::string_view guid, std::string* error) {
     if (auto cached = FindByGuid(m_meshes, guid)) return cached;
+    if (const auto [fileGuid, part] = SplitSubAsset(guid); !part.empty()) {
+        const auto model = GetModelByGuid(fileGuid, error);
+        if (!model) return nullptr;
+        if (auto mesh = model->FindMesh(part)) return mesh;
+        SetError(error, std::format("O modelo (GUID {}) não tem a malha '{}'.", fileGuid, part));
+        return nullptr;
+    }
     fs::path file = m_database.PathFor(guid);
     if (file.empty()) {
         m_database.Refresh();  // pode ser um arquivo que chegou depois da última varredura
@@ -169,7 +196,7 @@ std::shared_ptr<Texture2D> AssetLibrary::GetTextureByGuid(std::string_view guid,
         SetError(error, std::format("Nenhum arquivo do projeto tem o GUID {}.", guid));
         return nullptr;
     }
-    auto texture = LoadTexture(file, KeyForFile(file), error);
+    auto texture = LoadTexture(file, KeyForFile(file), m_textureFactory, error);
     if (texture) m_textures.push_back({{}, std::string(guid), texture});
     return texture;
 }
@@ -215,7 +242,12 @@ std::shared_ptr<Material> AssetLibrary::GetMaterialByGuid(std::string_view guid,
 }
 
 bool AssetLibrary::WriteMaterialFile(const fs::path& file, const Material& material, std::string* error) {
-    if (!WriteTextAtomic(file, MaterialToJson(material), error)) return false;
+    return WriteMaterialFile(file, material, RefOf(material.albedo.get()), error);
+}
+
+bool AssetLibrary::WriteMaterialFile(const fs::path& file, const Material& material,
+                                     const std::optional<AssetRef>& texture, std::string* error) {
+    if (!WriteTextAtomic(file, MaterialToJson(material, texture), error)) return false;
     // Material em cache: a data nova é a da nossa gravação, não precisa reler.
     if (const std::string guid = m_database.GuidFor(file); !guid.empty() && m_materialTimes.contains(guid)) {
         std::error_code ec;
@@ -261,12 +293,16 @@ size_t AssetLibrary::ReloadChangedMaterials() {
 }
 
 std::string AssetLibrary::MaterialToJson(const Material& m) const {
+    return MaterialToJson(m, RefOf(m.albedo.get()));
+}
+
+std::string AssetLibrary::MaterialToJson(const Material& m, const std::optional<AssetRef>& textureRef) const {
     json root;
     root["format"] = kMaterialFormat;
     root["version"] = kMaterialVersion;
     root["color"] = json::array({Num(m.color.r), Num(m.color.g), Num(m.color.b), Num(m.color.a)});
     json texture = nullptr;
-    if (const auto ref = RefOf(m.albedo.get())) {
+    if (const auto& ref = textureRef) {
         if (ref->guid.empty()) {
             texture = ref->name;
         } else {
@@ -329,6 +365,74 @@ bool AssetLibrary::MaterialFromJson(std::string_view text, Material& out, std::s
     return true;
 }
 
+// --- Modelos (glTF) -------------------------------------------------------------
+
+std::shared_ptr<Model> AssetLibrary::GetModel(std::string_view key, std::string* error) {
+    const fs::path file = FileForKey(key);
+    const std::string guid = AssetTypeFromPath(file) == AssetType::Model ? m_database.GuidFor(file) : std::string();
+    if (guid.empty()) {
+        SetError(error, std::format("Modelo '{}' não existe no projeto.", key));
+        return nullptr;
+    }
+    return GetModelByGuid(guid, error);
+}
+
+std::shared_ptr<Model> AssetLibrary::GetModelByGuid(std::string_view guid, std::string* error) {
+    fs::path file = m_database.PathFor(guid);
+    std::error_code ec;
+    if (auto cached = FindByGuid(m_models, guid)) {
+        // Arquivo mudou no disco (exportado de novo): relê. Quem já usa as malhas antigas continua com elas.
+        const auto it = m_modelTimes.find(guid);
+        if (file.empty() || it == m_modelTimes.end() || fs::last_write_time(file, ec) == it->second || ec) return cached;
+        const std::string prefix = std::string(guid) + kSubAssetSeparator;
+        std::erase_if(m_models, [&](const auto& e) { return e.guid == guid; });
+        std::erase_if(m_meshes, [&](const auto& e) { return e.guid.starts_with(prefix); });
+        std::erase_if(m_clips, [&](const auto& e) { return e.guid.starts_with(prefix); });
+    }
+    if (file.empty()) {
+        m_database.Refresh();
+        file = m_database.PathFor(guid);
+    }
+    if (file.empty() || AssetTypeFromPath(file) != AssetType::Model) {
+        SetError(error, std::format("Nenhum modelo do projeto tem o GUID {}.", guid));
+        return nullptr;
+    }
+    ModelData data;
+    std::string problem;
+    if (!LoadGltf(file, data, &problem)) {
+        SetError(error, std::move(problem));
+        return nullptr;
+    }
+    auto model = BuildModel(std::move(data));
+    // Malhas e clipes entram no cache com o GUID "<arquivo>#<nome>": RefOf e as cenas os acham como os outros.
+    for (const auto& m : model->meshes) m_meshes.push_back({{}, std::format("{}#{}", guid, m.name), m.mesh});
+    for (const auto& c : model->clips) m_clips.push_back({{}, std::format("{}#{}", guid, c->name), c});
+    m_models.push_back({{}, std::string(guid), model});
+    m_modelTimes[std::string(guid)] = fs::last_write_time(file, ec);
+    log::Info("Modelo carregado: {} ({} malhas, {} nós, {} clipes)", KeyForFile(file), model->meshes.size(),
+              model->skeleton->joints.size(), model->clips.size());
+    return model;
+}
+
+std::shared_ptr<AnimationClip> AssetLibrary::GetClip(std::string_view key, std::string* error) {
+    const auto [file, part] = SplitSubAsset(key);
+    const auto model = GetModel(file, error);
+    if (!model) return nullptr;
+    if (auto clip = model->FindClip(part)) return clip;
+    SetError(error, std::format("O modelo '{}' não tem o clipe '{}'.", file, part));
+    return nullptr;
+}
+
+std::shared_ptr<AnimationClip> AssetLibrary::GetClipByGuid(std::string_view guid, std::string* error) {
+    if (auto cached = FindByGuid(m_clips, guid)) return cached;
+    const auto [fileGuid, part] = SplitSubAsset(guid);
+    const auto model = GetModelByGuid(fileGuid, error);
+    if (!model) return nullptr;
+    if (auto clip = model->FindClip(part)) return clip;
+    SetError(error, std::format("O modelo (GUID {}) não tem o clipe '{}'.", fileGuid, part));
+    return nullptr;
+}
+
 std::shared_ptr<Mesh> AssetLibrary::FindMesh(std::string_view name) const {
     return FindBuiltIn(m_meshes, name);
 }
@@ -346,8 +450,11 @@ std::optional<AssetRef> AssetLibrary::RefIn(const std::vector<Entry<T>>& list, c
         if (e.asset.get() != asset) continue;
         if (e.guid.empty()) return AssetRef{e.name, {}};
         // O caminho é sempre o atual: se o arquivo foi movido, o banco já sabe onde ele está.
-        const fs::path file = m_database.PathFor(e.guid);
-        return AssetRef{file.empty() ? std::string() : KeyForFile(file), e.guid};
+        const auto [fileGuid, part] = SplitSubAsset(e.guid);
+        const fs::path file = m_database.PathFor(fileGuid);
+        std::string key = file.empty() ? std::string() : KeyForFile(file);
+        if (!key.empty() && !part.empty()) key = std::format("{}#{}", key, part);
+        return AssetRef{std::move(key), e.guid};
     }
     return std::nullopt;
 }
@@ -362,6 +469,14 @@ std::optional<AssetRef> AssetLibrary::RefOf(const Texture2D* texture) const {
 
 std::optional<AssetRef> AssetLibrary::RefOf(const Material* material) const {
     return RefIn(m_materials, material);
+}
+
+std::optional<AssetRef> AssetLibrary::RefOf(const Model* model) const {
+    return RefIn(m_models, model);
+}
+
+std::optional<AssetRef> AssetLibrary::RefOf(const AnimationClip* clip) const {
+    return RefIn(m_clips, clip);
 }
 
 // --- Caminhos -------------------------------------------------------------------

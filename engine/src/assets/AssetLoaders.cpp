@@ -137,6 +137,7 @@ AssetType AssetTypeFromPath(const fs::path& path) {
     if (ext == ".obj") return AssetType::Mesh;
     if (ext == kMaterialFileExtension) return AssetType::Material;
     if (ext == kPrefabFileExtension) return AssetType::Prefab;
+    if (ext == ".gltf" || ext == ".glb") return AssetType::Model;
     return AssetType::Unknown;
 }
 
@@ -147,6 +148,7 @@ const char* AssetTypeName(AssetType type) {
         case AssetType::Mesh: return "Malha";
         case AssetType::Material: return "Material";
         case AssetType::Prefab: return "Prefab";
+        case AssetType::Model: return "Modelo";
         case AssetType::Unknown: break;
     }
     return "Arquivo";

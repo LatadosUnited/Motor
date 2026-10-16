@@ -4,6 +4,9 @@ motor_add_layer(assets
         AssetDatabase.cpp
         AssetLibrary.cpp
         AssetLoaders.cpp
+        Animation.cpp
+        GltfLoader.cpp
+        Model.cpp
     DEPENDS renderer project
     PRIVATE_LIBS nlohmann_json::nlohmann_json)
-target_include_directories(motor_assets PRIVATE ${stb_image_SOURCE_DIR})
+target_include_directories(motor_assets PRIVATE ${stb_image_SOURCE_DIR} ${cgltf_SOURCE_DIR})
