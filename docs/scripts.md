@@ -21,9 +21,10 @@ Sumário:
 8. [Sistemas do jogo (`GetSystem`)](#8-sistemas-do-jogo-getsystem)
 9. [Receitas](#9-receitas)
 10. [Mini jogo: andar, coletar, pontuar](#10-mini-jogo-andar-coletar-pontuar)
-11. [Recarga: o que é preservado](#11-recarga-o-que-é-preservado)
-12. [Componente "desconhecido" (script não carregado)](#12-componente-desconhecido-script-não-carregado)
-13. [Erros comuns](#13-erros-comuns)
+11. [Interface do jogo (HUD e menus)](#11-interface-do-jogo-hud-e-menus)
+12. [Recarga: o que é preservado](#12-recarga-o-que-é-preservado)
+13. [Componente "desconhecido" (script não carregado)](#13-componente-desconhecido-script-não-carregado)
+14. [Erros comuns](#14-erros-comuns)
 
 ---
 
@@ -458,7 +459,7 @@ O `Raycast` devolve um `std::optional<motor::PhysicsRaycastHit>`: teste com `if 
 
 ## 8. Sistemas do jogo (`GetSystem`)
 
-Partes da engine que rodam a cada passo do jogo (hoje, a física; depois, áudio e HUD) são **sistemas**. Um
+Partes da engine que rodam a cada passo do jogo (a física, a interface do jogo; depois, o áudio) são **sistemas**. Um
 script acha o sistema com `GetSystem<Tipo>()`:
 
 ```cpp
@@ -607,8 +608,8 @@ A moeda gira e, quando o jogador encosta, soma e some:
     }
 ```
 
-Ainda não há texto na tela (o HUD é uma fase futura): os pontos aparecem no console e no Inspector (selecione
-a entidade Placar durante o Play).
+Os pontos aparecem no console e no Inspector (selecione a entidade Placar durante o Play); para mostrá-los
+na tela, veja a [seção 11](#11-interface-do-jogo-hud-e-menus).
 
 ## 10. Mini jogo: andar, coletar, pontuar
 
@@ -634,7 +635,59 @@ com `total`), um inimigo de [examples/Inimigo.cpp](examples/Inimigo.cpp) com `Re
 flutuam com o [examples/Flutuar.cpp](examples/Flutuar.cpp) (Flutuar e Moeda juntos na mesma entidade), ou um
 tiro com o [examples/Disparador.cpp](examples/Disparador.cpp).
 
-## 11. Recarga: o que é preservado
+## 11. Interface do jogo (HUD e menus)
+
+Texto, imagens e botões na tela são **componentes de UI** em entidades comuns, desenhados por cima da cena:
+
+| Componente | Para quê |
+|---|---|
+| **UI: Retângulo** | onde fica na tela: **Âncora** (canto, borda, centro ou **Esticar**), **Posição** (pixels a partir da âncora; x para a direita, y para baixo), **Tamanho**, **Ordem** (maior desenha por cima) e **Visível** |
+| **UI: Texto** | o texto, a **Fonte** (um `.ttf`/`.otf` do projeto; vazio = Roboto), o tamanho, a cor e o alinhamento |
+| **UI: Imagem** | um retângulo com cor e, se quiser, uma textura |
+| **UI: Botão** | fundo com cor normal, com o mouse em cima e pressionado; o clique é lido pelo script |
+
+Crie com **Entidade > Interface (UI)** (Texto, Imagem, Botão, Painel). As medidas são pixels de uma tela de
+**1080 de altura**: numa janela menor (o viewport do editor) tudo encolhe junto, então o HUD fica no mesmo
+lugar em qualquer tamanho. Um elemento filho de outro se posiciona dentro do retângulo do pai (um painel com
+botões); esconder o pai esconde os filhos. No viewport, com o botão **UI** da barra ligado, um clique seleciona
+o elemento e arrastar o move; os campos também ficam no Inspector, com desfazer, como qualquer componente.
+
+Os scripts falam com a UI pelo sistema `motor::UiSystem` (`#include <motor/ui/UiSystem.h>`), achando os
+elementos pelo **nome da entidade**. O HUD do mini jogo mostra a vida e os pontos
+([examples/Hud.cpp](examples/Hud.cpp)):
+
+```cpp
+        // Mudar o texto todo frame é barato: se ficou igual, a geometria do texto não é refeita.
+        const Placar* placar = AcharPlacar(GetScene());
+        ui->SetText("Vida", std::format("Vida: {}", vida));
+        ui->SetText("Pontos", std::format("Pontos: {}", placar ? placar->pontos : 0));
+```
+
+E um menu com o botão **Jogar** troca de cena ([examples/MenuPrincipal.cpp](examples/MenuPrincipal.cpp)):
+
+```cpp
+        if (ui->WasClicked("Jogar")) {
+            Log("indo para {}", cenaDoJogo);
+            LoadScene(cenaDoJogo);  // no fim deste passo: o menu para e a cena do jogo começa
+        }
+        if (ui->WasClicked("Creditos")) ui->SetVisible("PainelCreditos", !ui->IsVisible("PainelCreditos"));
+```
+
+- `SetText(nome, texto)`, `SetVisible(nome, visível)`, `IsVisible(nome)` e `WasClicked(nome)` também
+  aceitam o id da entidade. Todos devolvem `false` se a entidade não existe (ou não tem o componente).
+- `WasClicked` fica verdadeiro durante **um** frame depois do clique (apertar e soltar em cima do botão):
+  leia no `OnUpdate`. O elemento de cima ganha o clique; texto sozinho não bloqueia.
+- `LoadScene("Fase1")` acha a cena pelo nome (ou pelo caminho, `"Assets/Cenas/Fase1.mscene"`). A cena atual
+  para (`OnDestroy` de todos) e a nova começa do zero. No editor, **Parar** volta à cena de antes do Play.
+
+Para pôr o HUD no mini jogo da seção anterior: copie `Hud.cpp` para `Scripts/`; crie **Entidade > Interface
+(UI) > Texto** com o nome `Vida` (Âncora em cima à esquerda, Posição `40 40`) e outro, `Pontos` (em cima à
+direita, Posição `-40 40`); um **Painel** chamado `FimDeJogo` com um Texto filho "Fim de jogo"; e uma entidade
+vazia `HUD` com **Scripts > HUD (vida e pontos)**. Para o menu: uma cena `Menu` com dois **Botões** chamados
+`Jogar` e `Creditos`, um Painel `PainelCreditos` e uma entidade `Menu` com **Scripts > Menu principal**
+(Cena do jogo = o nome da cena do mini jogo). Abra a cena `Menu` e aperte **Play**.
+
+## 12. Recarga: o que é preservado
 
 Ao salvar um arquivo de script com o editor aberto:
 
@@ -647,7 +700,7 @@ Ao salvar um arquivo de script com o editor aberto:
 - Com **erro de compilação** nada muda: os scripts da última compilação boa continuam carregados, e a barra
   de menus mostra "Scripts: N erro(s)".
 
-## 12. Componente "desconhecido" (script não carregado)
+## 13. Componente "desconhecido" (script não carregado)
 
 Se uma cena usa um script que não está carregado (você apagou o arquivo, mudou o identificador do
 `Register`, ou abriu a cena antes de os scripts compilarem), o componente **não some**: o Inspector o mostra
@@ -655,7 +708,7 @@ como "script não carregado", com os dados guardados. Ele é salvo de volta igua
 sozinho quando um script com aquele identificador for carregado de novo. Para se livrar dele de vez, remova o
 componente no Inspector.
 
-## 13. Erros comuns
+## 14. Erros comuns
 
 O painel Scripts lista as mensagens do compilador (GCC, em inglês). As mais comuns:
 
