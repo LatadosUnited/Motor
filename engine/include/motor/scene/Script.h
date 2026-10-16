@@ -86,6 +86,10 @@ protected:
     Entity& CreateEntity(std::string name, EntityId parent = 0);
     void Destroy(EntityId id);  // no fim do frame (com os descendentes); OnDestroy é chamado antes
     void DestroySelf();
+    // Troca de cena no fim deste passo: a cena atual para (OnDestroy) e a nova começa do zero. `scene`: nome
+    // ("Fase1") ou caminho relativo ao projeto ("Assets/Cenas/Fase1.mscene"). No editor, Parar volta à cena
+    // de antes do Play.
+    void LoadScene(std::string_view scene);
 
     // --- Tempo e entrada ---
     const GameTime& Time() const;
