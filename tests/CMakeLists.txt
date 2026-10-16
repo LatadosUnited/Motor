@@ -89,3 +89,18 @@ target_include_directories(test_ui PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 motor_add_test(test_gltf)
 target_link_libraries(test_gltf PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(test_gltf PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_SOURCE_DIR}/engine/assets")
+
+# Servidor MCP do editor (Fase 13): protocolo, ferramentas de cena, PNG/base64 e o transporte HTTP (cpp-httplib).
+motor_add_test(test_mcp
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/UiEditor.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/ImageEncode.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpServer.cpp)
+target_include_directories(test_mcp PRIVATE ${PROJECT_SOURCE_DIR}/editor/src ${httplib_SOURCE_DIR})
+target_link_libraries(test_mcp PRIVATE nlohmann_json::nlohmann_json)
+if(WIN32)
+    target_link_libraries(test_mcp PRIVATE ws2_32)
+    target_compile_definitions(test_mcp PRIVATE _WIN32_WINNT=0x0A00)
+endif()

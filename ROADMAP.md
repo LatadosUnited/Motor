@@ -17,15 +17,18 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Física (Jolt: colliders, rigidbody, triggers, raycast, personagem) | ✅ pronto (Fase 5) |
 | Materiais (`.mmat`) e prefabs (`.mprefab`) com overrides | ✅ pronto (Fase 6) |
 | Modelos glTF (`.gltf`/`.glb`) e animação esquelética (Animator) | ✅ pronto (Fase 11) |
+| Interface do jogo (texto, imagens, botões, fontes SDF, troca de cena) | ✅ pronto (Fase 9) |
+| Guia e referência de scripts (`docs/`), com os exemplos testados | ✅ pronto (Fase 12) |
+| Servidor MCP do editor (agentes veem e mexem no editor e testam o jogo) | ✅ pronto (Fase 13) |
 | Git + testes `ctest` | ✅ pronto (Fase 0) |
 | Editor (hierarquia, inspector, viewport, gizmos, desfazer) | ✅ pronto |
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
 | Base para trabalho em paralelo (camadas, peças do editor, extensões; ver CLAUDE.md) | ✅ pronto |
 
 **Usável hoje:** prototipar dentro do editor (cenas, luzes, física, scripts com recarga, Play).
-**Ainda não:** entregar um jogo. Falta exportar (Fase 10), interface do jogo (9), som (8) e o
-visual moderno (7). O uso real pelo
-editor (cliques, atalhos, Play com física) foi pouco testado à mão.
+**Ainda não:** entregar um jogo. Falta exportar (Fase 10), som (8) e o visual moderno (7). O uso real pelo
+editor foi pouco testado à mão; com o servidor MCP (Fase 13) um agente consegue jogar e conferir as fases
+sem cliques.
 
 ## Prioridades
 
@@ -38,7 +41,8 @@ Próximas fases, nesta ordem de importância:
 | 3 | ~~Fase 11 — Modelos 3D (glTF) e animação~~ ✅ | personagens e cenários de verdade, além de OBJ | — |
 | 4 | ~~Fase 12 — Documentação de scripts~~ ✅ | quem faz o jogo precisa saber escrever scripts sem ler o código da engine | — |
 
-Depois delas: Fase 10 (exportar), Fase 8 (áudio) e Fase 7 (renderização avançada). A 11 depende da 6
+As quatro estão prontas, e a Fase 13 (servidor MCP) também. Próximas: Fase 10 (exportar), Fase 8 (áudio) e
+Fase 7 (renderização avançada). A 11 depende da 6
 (o glTF traz materiais); 6 e 11 mexem nos mesmos arquivos de assets e não devem rodar ao mesmo tempo.
 
 ---
@@ -227,6 +231,26 @@ sem ler o código da engine.
 
 **Pronto quando:** alguém que sabe C++ básico, sem conhecer o Motor, faz um mini jogo (andar, coletar,
 pontuar) só com o guia.
+
+## Fase 13 — Servidor MCP do editor ✅
+
+Para um agente (Claude Code) usar o editor como uma pessoa usaria, sem simular mouse nem teclado do sistema:
+- Servidor MCP (transporte HTTP, JSON-RPC) dentro do editor, em `127.0.0.1:47800`. Liga pelo menu Ver ou
+  com `--mcp`. Biblioteca: cpp-httplib v0.58.0, só no editor. Recusa pedidos vindos de páginas da web.
+- 30 ferramentas:
+  - cena: hierarquia, entidades, componentes e campos, ambiente;
+  - desfazer e refazer;
+  - arquivos: cenas, assets, prefabs, materiais e texturas;
+  - Play, com teclas e cliques de UI simulados só para o jogo;
+  - scripts: compilar e ver os erros;
+  - log e captura do viewport em PNG.
+- Os pedidos são atendidos na thread principal, uma vez por quadro, pelos mesmos caminhos da interface. Por
+  isso cada mudança vira um passo de desfazer.
+- Testado no editor de verdade: um script recebeu tecla e clique simulados, e a captura do Play saiu pela câmera
+  do jogo.
+
+Pendências: mover a câmera do editor para um ponto escolhido, além de focar uma entidade; arrastar o gizmo e
+outras ações só de mouse; notificações para o agente (hoje ele pergunta com `editor_status` e `log_read`).
 
 ## Depois
 

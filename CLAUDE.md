@@ -44,6 +44,8 @@ ctest --test-dir build --output-on-failure
   Um arquivo por painel, `EditorContext` (estado compartilhado), `UndoHistory`.
   `PlayMode` (cópia/restauração da cena no Play; o loop de jogo é `motor::SceneRuntime`).
   Recurso novo do editor vai na peça da sua área, não no `EditorApp`.
+  `mcp/`: servidor MCP do editor (`McpProtocol` JSON-RPC, `McpServer` HTTP com cpp-httplib, `McpSceneTools`
+  ferramentas de cena testáveis sem janela, `McpController` peça do editor com as demais ferramentas).
 - Scripts de jogo ficam na pasta `Scripts/` de cada projeto (`motor::Script` + `MOTOR_SCRIPT`, ver
   `motor/scene/ScriptModule.h`). O editor compila uma DLL por projeto (`ScriptProject`, `ScriptBuilder`) e
   recarrega sem fechar (`ScriptHost`). A engine é a `libMotor.dll`, compartilhada pelo editor e pela DLL de
@@ -80,6 +82,11 @@ ctest --test-dir build --output-on-failure
 
 ## Verificar a interface — regras importantes
 
+- **Prefira o servidor MCP do editor** para ver e testar: abra `MotorEditor.exe "<projeto>" --mcp` (porta
+  47800) e chame as ferramentas por HTTP (`POST http://127.0.0.1:47800/mcp`, JSON-RPC `tools/call`), ou pelo
+  Claude Code se o servidor `motor` estiver configurado. `viewport_capture` substitui o PrintWindow; `play`,
+  `game_key`, `ui_click` e `log_read` testam o jogo sem entrada sintética global. Recurso novo do editor que
+  um agente precise usar ganha ferramenta em `McpController` (ou `McpSceneTools`, se for só cena).
 - **Nunca simule teclado ou mouse globais** (SendKeys, keybd_event, SetCursorPos...) para testar o editor:
   o foco pode ir para outra janela e o texto vai parar em outro lugar (já aconteceu). Peça confirmação
   explícita antes de qualquer entrada sintética.
@@ -88,7 +95,7 @@ ctest --test-dir build --output-on-failure
   Ex.: `MotorEditor.exe "C:\...\scratchpad\Projeto Teste"`.
 - Abrir o editor grava `%APPDATA%\Motor\editor.json` (último projeto, recentes). **Faça cópia antes e
   restaure depois** — é a configuração real do usuário.
-- O que depende de cliques (menus, arrastar, atalhos) fica como "não testado" no relatório, com passos
+- O que o MCP não cobre (menus, arrastar, atalhos, gizmo) fica como "não testado" no relatório, com passos
   para o usuário conferir.
 
 ## Grafo de conhecimento (graphify)
@@ -129,6 +136,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: arquivos | `editor/src/SceneDocument.*`, `FileDialog.*`, `EditorSettings.*` |
 | Editor: scripts | `editor/src/Script*.*`, `editor/templates/` |
 | Editor: painéis | `editor/src/{Hierarchy,Inspector,Scene,Project}Panel.*`, `FieldDrawers.*` |
+| Editor: MCP | `editor/src/mcp/` |
 | Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
 
 Componente novo da engine = `scene/<Nome>.h` + `scene/<Nome>.cpp` próprios (`MOTOR_COMPONENT_MODULE`), não
@@ -159,8 +167,9 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 9 HUD | camada nova `ui/` | `renderer/` (desenho 2D) | 7 |
 | 11 Modelos 3D/animação | `assets/` (importador glTF), `renderer/` (`Mesh` na CPU, skinning) | prefabs da 6, collider de malha (`physics/`) | 6, 7 |
 | 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
+| 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
 
-Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 6, 9, 11 e 12 prontas; próximas 10, 8 e 7.
+Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 6, 9, 11, 12 e 13 prontas; próximas 10, 8 e 7.
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

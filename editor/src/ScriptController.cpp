@@ -87,6 +87,30 @@ void ScriptController::CloseProject() {
     m_loadedDllTime = {};
 }
 
+ScriptController::Status ScriptController::GetStatus() const {
+    Status s;
+    if (!m_document.GetProject()) {
+        s.state = "sem projeto";
+    } else if (!m_toolchain) {
+        s.state = "sem toolchain";
+    } else if (m_builder.IsRunning()) {
+        s.state = "compilando";
+    } else if (m_builder.GetState() == ScriptBuilder::State::Succeeded) {
+        s.state = "ok";
+    } else if (m_builder.GetState() == ScriptBuilder::State::Failed) {
+        s.state = "falhou";
+    } else {
+        s.state = "não compilado";
+    }
+    s.seconds = m_builder.Seconds();
+    s.reloadPending = m_reloadPending;
+    s.toolchainError = m_toolchainError;
+    s.loadedTypes = m_host.Types();
+    s.diagnostics = m_diagnostics;
+    s.log = m_log;
+    return s;
+}
+
 void ScriptController::RequestBuild() {
     if (!m_document.GetProject()) return;
     if (!m_toolchain) {

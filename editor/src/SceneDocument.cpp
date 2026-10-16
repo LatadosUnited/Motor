@@ -186,6 +186,54 @@ bool SceneDocument::SaveScene(bool saveAs) {
     return true;
 }
 
+bool SceneDocument::OpenSceneDirect(const fs::path& path, bool discardChanges, std::string& error) {
+    m_host.stopPlay();
+    if (!discardChanges && HasUnsavedChanges()) {
+        error = "a cena aberta tem alterações não salvas: salve antes ou peça para descartá-las";
+        return false;
+    }
+    Scene loaded;
+    if (!SceneSerializer::Load(path, loaded, m_ctx.assets, &error)) return false;
+    ReplaceScene(std::move(loaded), path);
+    RememberScene();
+    return true;
+}
+
+bool SceneDocument::NewSceneDirect(bool discardChanges, std::string& error) {
+    m_host.stopPlay();
+    if (!discardChanges && HasUnsavedChanges()) {
+        error = "a cena aberta tem alterações não salvas: salve antes ou peça para descartá-las";
+        return false;
+    }
+    ReplaceScene(Scene{}, {});
+    log::Info("Nova cena");
+    return true;
+}
+
+bool SceneDocument::SaveSceneTo(const fs::path& path, std::string& error) {
+    if (m_host.isPlaying()) {
+        error = "pare o Play antes de salvar (as alterações do Play são descartadas)";
+        return false;
+    }
+    const fs::path target = path.empty() ? m_scenePath : path;
+    if (target.empty()) {
+        error = "a cena ainda não tem arquivo: informe o caminho (ex.: Assets/Cenas/Fase1.mscene)";
+        return false;
+    }
+    std::error_code ec;
+    fs::create_directories(target.parent_path(), ec);  // ex.: Assets/Cenas ainda não existe no projeto
+    if (!SceneSerializer::Save(target, m_ctx.scene, m_ctx.assets, &error)) return false;
+    m_scenePath = target;
+    MarkSaved();
+    if (m_project && IsInside(target, m_project->RootDir()) && m_project->StartupScene().empty()) {
+        m_project->SetStartupScene(target);
+        m_project->Save();
+    }
+    RememberScene();
+    m_projectPanel.Refresh();
+    return true;
+}
+
 bool SceneDocument::OpenSceneAt(const fs::path& path) {
     Scene loaded;
     std::string error;

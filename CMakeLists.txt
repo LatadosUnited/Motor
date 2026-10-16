@@ -115,6 +115,14 @@ FetchContent_Declare(cgltf
     DOWNLOAD_NO_EXTRACT TRUE)
 FetchContent_MakeAvailable(cgltf)
 
+# cpp-httplib (MIT): servidor HTTP num único header, para o servidor MCP do editor (Fase 13; só o editor usa,
+# escutando em 127.0.0.1). Fixado na tag v0.58.0, sem SSL.
+FetchContent_Declare(httplib
+    URL      https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.58.0/httplib.h
+    URL_HASH SHA256=aa14e7e7bd2703694e0a6b6855af3b8c406102ab1fc56ac905fe33619b31faa5
+    DOWNLOAD_NO_EXTRACT TRUE)
+FetchContent_MakeAvailable(httplib)
+
 # Objetos do ImGui (e o GLFW) entram na libMotor.dll: o editor e a DLL de scripts usam a mesma cópia (um
 # único contexto do ImGui e uma única janela do GLFW no processo).
 add_library(imgui OBJECT

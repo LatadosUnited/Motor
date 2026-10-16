@@ -3,8 +3,9 @@
 Engine 3D em C++20 + OpenGL 4.5, escrita do zero. Dependências externas mínimas:
 **GLFW** (janela/input), **GLM** (matemática), **Dear ImGui** (UI do editor, branch docking),
 **ImGuizmo** (gizmos de transform), **nlohmann/json** (cenas e projetos), **stb_image** (PNG/JPG),
-**cgltf** (modelos glTF) e **Jolt Physics** (física), baixadas automaticamente pelo CMake. O leitor de OBJ é
-próprio; as fontes da UI do jogo usam o `imstb_truetype.h` que já vem com o Dear ImGui.
+**cgltf** (modelos glTF), **Jolt Physics** (física) e **cpp-httplib** (servidor MCP do editor), baixadas
+automaticamente pelo CMake. O leitor de OBJ é próprio; as fontes da UI do jogo usam o `imstb_truetype.h` que já
+vem com o Dear ImGui.
 O carregador de OpenGL é próprio (`engine/src/renderer/GL.h`).
 
 ## Compilar (Windows, MSYS2 UCRT64)
@@ -479,6 +480,41 @@ desfazer:
   textura (retângulos sólidos usam o atlas da fonte: um HUD de texto e painéis é 1 chamada; a barra do
   viewport mostra "UI: N draws"). A geometria de cada elemento só é refeita quando o texto, o tamanho, a
   fonte, a cor ou o retângulo mudam; frame sem mudança não envia nada para a GPU.
+
+## Servidor MCP (agentes no editor)
+
+O editor tem um servidor [MCP](https://modelcontextprotocol.io) (Model Context Protocol): um agente como o
+Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simular mouse nem teclado do sistema.
+
+- **Ligar:** menu **Ver > Servidor MCP**. Fica ligado nas próximas vezes que o editor abrir. Outra opção é a
+  linha de comando `MotorEditor <projeto> --mcp` (ou `--mcp=<porta>`). A porta padrão é **47800**, e enquanto
+  o servidor estiver ligado aparece "MCP" na barra de menus.
+- **Conectar o Claude Code** (uma vez):
+
+  ```bash
+  claude mcp add --transport http motor http://127.0.0.1:47800/mcp
+  ```
+
+- **Ferramentas:**
+
+  | Grupo | Ferramentas |
+  |---|---|
+  | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read` |
+  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `select`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
+  | Arquivos | `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
+  | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD) |
+  | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |
+  | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus` |
+
+  As mudanças viram passos de **desfazer**, como as feitas na interface. Durante o Play, a cena é a do jogo:
+  o que mudar é descartado ao parar.
+- **Segurança:** o servidor só escuta em `127.0.0.1` e recusa pedidos vindos de páginas da web (cabeçalhos
+  `Origin`/`Host` de fora). Ele não tem senha: enquanto estiver ligado, qualquer programa deste computador pode
+  usá-lo. Desligue quando não estiver usando.
+- **Como funciona:** o protocolo JSON-RPC fica em `editor/src/mcp/McpProtocol`, o HTTP em `McpServer` e as
+  ferramentas em `McpSceneTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
+  thread principal, uma vez por quadro. A captura sai em PNG com um compressor próprio (`ImageEncode`).
+  Testes: `tests/test_mcp.cpp`.
 
 ## Cenas (`.mscene`)
 

@@ -41,6 +41,12 @@ public:
     void RequestFileAction(FileAction action, const std::filesystem::path& path = {});
 
     bool SaveScene(bool saveAs);                // false se falhou ou o usuário cancelou
+
+    // Sem diálogos nem popups (servidor MCP): o erro volta em `error`. Com alterações não salvas, abrir ou
+    // criar cena só segue com `discardChanges`. SaveSceneTo com `path` vazio grava no arquivo atual.
+    bool OpenSceneDirect(const std::filesystem::path& path, bool discardChanges, std::string& error);
+    bool NewSceneDirect(bool discardChanges, std::string& error);
+    bool SaveSceneTo(const std::filesystem::path& path, std::string& error);
     bool OpenProjectAt(const std::filesystem::path& fileOrDir, bool restoreLastScene);
     bool CreateEmptySceneFile(const std::filesystem::path& path);
     void OnPathMoved(const std::filesystem::path& from, const std::filesystem::path& to);

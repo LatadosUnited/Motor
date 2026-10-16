@@ -23,6 +23,8 @@ public:
 
     // Pedidos de menus, botões e atalhos são aplicados no início do próximo frame, como o desfazer.
     void Queue(Request request) { m_request = request; }
+    // O jogo recebe a entrada mesmo sem o viewport em foco (teclas simuladas pelo servidor MCP).
+    void SetExternalInput(bool enabled) { m_externalInput = enabled; }
     Event ApplyRequest(EditorContext& ctx, UndoHistory& history);
     bool Stop(EditorContext& ctx);  // volta à edição; false se já estava editando
 
@@ -39,6 +41,7 @@ private:
     PlayMode m_mode;
     Request m_request = Request::None;
     bool m_gameView = true;  // no Play: true = câmera do jogo, false = câmera livre do editor
+    bool m_externalInput = false;
 };
 
 } // namespace editor

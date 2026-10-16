@@ -8,6 +8,7 @@
 #include "SceneViewport.h"
 #include "ScriptController.h"
 #include "UndoHistory.h"
+#include "mcp/McpController.h"
 
 #include <motor/Motor.h>
 
@@ -20,8 +21,11 @@ namespace editor {
 // SceneDocument (cena/projeto abertos e menu Arquivo) e ScriptController (scripts do projeto).
 class EditorApp final : public motor::Application {
 public:
-    // projectToOpen: pasta ou .mproject passado na linha de comando; vazio = reabre o último projeto.
-    explicit EditorApp(std::filesystem::path projectToOpen = {});
+    struct Options {
+        std::filesystem::path project;  // pasta ou .mproject; vazio = reabre o último projeto
+        int mcpPort = 0;                // > 0: liga o servidor MCP nesta porta (--mcp na linha de comando)
+    };
+    explicit EditorApp(Options options);
 
 private:
     void OnInit() override;
@@ -52,8 +56,10 @@ private:
     PlayController m_play;
     SceneDocument m_document;  // depois dos membros que ele referencia
     ScriptController m_scripts;  // depois do documento e do Play, que ele referencia
+    McpController m_mcp;         // depois de todas as peças que as ferramentas usam
 
     std::filesystem::path m_startupProject;
+    int m_startupMcpPort = 0;
     int m_historyRequest = 0;  // -1 desfazer, +1 refazer (executado no início do próximo frame)
     float m_assetRefreshTimer = 0.0f;
     bool m_resetLayout = true;  // constrói o layout padrão se não houver um salvo

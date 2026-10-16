@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 namespace motor {
 
 // Alvo de renderização fora da tela (ex.: viewport do editor).
@@ -23,6 +26,8 @@ public:
 
     // Textura RGBA8 com o resultado (válida após Resolve()).
     unsigned int ColorTexture() const { return m_colorTexture; }
+    // Cópia da textura de cor na CPU: RGBA8, Width() x Height(), linhas de cima para baixo (como numa imagem).
+    std::vector<uint8_t> ReadPixels() const;
 
 private:
     void Create();

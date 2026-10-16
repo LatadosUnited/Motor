@@ -45,6 +45,8 @@ EditorSettings EditorSettings::Load() {
         }
         settings.projectGridView = root.value("projectGridView", settings.projectGridView);
         settings.projectIconSize = std::clamp(root.value("projectIconSize", settings.projectIconSize), 40.0f, 160.0f);
+        settings.mcpEnabled = root.value("mcpEnabled", settings.mcpEnabled);
+        settings.mcpPort = std::clamp(root.value("mcpPort", settings.mcpPort), 1024, 65535);
     } catch (const json::exception& e) {
         motor::log::Warn("Configurações do editor ignoradas ({}): {}", ToUtf8(FilePath()), e.what());
     }
@@ -60,6 +62,8 @@ void EditorSettings::Save() const {
     root["recentProjects"] = std::move(recent);
     root["projectGridView"] = projectGridView;
     root["projectIconSize"] = projectIconSize;
+    root["mcpEnabled"] = mcpEnabled;
+    root["mcpPort"] = mcpPort;
 
     const std::filesystem::path file = FilePath();
     std::error_code ec;

@@ -24,7 +24,7 @@ ApplicationDesc MakeDesc() {
 }
 } // namespace
 
-EditorApp::EditorApp(fs::path projectToOpen)
+EditorApp::EditorApp(Options options)
     : Application(MakeDesc()),
       m_document(m_ctx, m_history, m_settings, m_projectPanel,
                  {.isPlaying = [this] { return m_play.IsActive(); },
@@ -35,7 +35,14 @@ EditorApp::EditorApp(fs::path projectToOpen)
                   .projectClosing = [this] { m_scripts.CloseProject(); },
                   .projectOpened = [this] { m_scripts.OpenProject(); }}),
       m_scripts(m_ctx, m_history, m_document, m_play),
-      m_startupProject(std::move(projectToOpen)) {}
+      m_mcp({.ctx = m_ctx,
+             .document = m_document,
+             .play = m_play,
+             .scripts = m_scripts,
+             .viewport = m_viewport,
+             .requestHistory = [this](int direction) { m_historyRequest = direction; }}),
+      m_startupProject(std::move(options.project)),
+      m_startupMcpPort(options.mcpPort) {}
 
 void EditorApp::OnInit() {
     m_viewport.Init();
@@ -61,6 +68,13 @@ void EditorApp::OnInit() {
 
     log::Info("Editor: botão direito no viewport = voar (WASD/QE) | clique = selecionar | F = focar | "
               "Del = excluir | Ctrl+D = duplicar | Ctrl+P = Play");
+
+    // Servidor MCP: pedido na linha de comando (--mcp) ou deixado ligado na última sessão.
+    if (m_startupMcpPort > 0) {
+        m_mcp.Start(m_startupMcpPort);
+    } else if (m_settings.mcpEnabled) {
+        m_mcp.Start(m_settings.mcpPort);
+    }
 }
 
 void EditorApp::BuildDefaultScene() {
@@ -112,10 +126,12 @@ void EditorApp::BuildDefaultScene() {
 }
 
 void EditorApp::OnFixedUpdate(float dt) {
+    m_mcp.ApplyGameInput();  // teclas simuladas pelo servidor MCP, antes do jogo ler a entrada
     m_play.FixedUpdate(dt);
 }
 
 void EditorApp::OnUpdate(float dt) {
+    m_mcp.ApplyGameInput();
     m_play.Update(dt, m_viewport.IsFocused());
     m_scripts.Update(dt);
     m_document.PollChanges(dt);
@@ -174,6 +190,9 @@ void EditorApp::OnImGui() {
 
     // Atalhos antes dos popups: o Esc que fecha um popup não deve também limpar a seleção.
     HandleShortcuts();
+    // Pedidos do servidor MCP: depois do viewport (que informa o mouse à UI do jogo) e antes do Track do fim do
+    // quadro, que transforma as mudanças deles em passos de desfazer.
+    m_mcp.Pump();
     if (!m_ctx.pendingError.empty()) m_document.ShowError(std::exchange(m_ctx.pendingError, {}));
     m_document.DrawPopups();
     m_scripts.DrawNewScriptPopup();
@@ -195,6 +214,7 @@ bool EditorApp::OnCloseRequested() {
 }
 
 void EditorApp::OnShutdown() {
+    m_mcp.Stop();  // antes de tudo: nenhuma ferramenta pode rodar com o editor fechando
     StopPlay();
     m_scripts.CloseProject();  // nenhum objeto da DLL de scripts pode sobrar depois de descarregá-la
     m_settings.projectGridView = m_projectPanel.View().grid;
@@ -219,6 +239,7 @@ void EditorApp::StopPlay() {
 
 void EditorApp::OnPlayStopped() {
     m_viewport.StopLooking();
+    m_mcp.OnPlayStopped();
     m_scripts.OnPlayStopped();  // scripts recompilados durante o Play recarregam agora
 }
 
@@ -271,12 +292,15 @@ void EditorApp::DrawMenuBar() {
             m_resetLayout = true;
         }
         ImGui::MenuItem("Demo do ImGui", nullptr, &m_showDemo);
+        ImGui::Separator();
+        m_mcp.DrawMenuItems(m_settings);
         ImGui::EndMenu();
     }
     m_play.DrawMenu();
     m_scripts.DrawMenu();
     m_play.DrawStatus();
     m_scripts.DrawStatus();
+    m_mcp.DrawStatus();
     ImGui::EndMainMenuBar();
 }
 
