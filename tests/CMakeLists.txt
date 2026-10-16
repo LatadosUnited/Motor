@@ -52,3 +52,6 @@ set_tests_properties(test_script_project PROPERTIES TIMEOUT 600)
 
 # Luzes: componente, tipo da luz, coleta para o renderer e conversão de cenas antigas.
 motor_add_test(test_lights)
+
+# Física (Jolt): componentes, passo dentro do SceneRuntime, eventos, raios, personagem e contorno do editor.
+motor_add_test(test_physics)
