@@ -30,7 +30,8 @@ ctest --test-dir build --output-on-failure
   baixo ou inverta a dependência (callback, constante na camada de baixo), nunca inclua para cima.
   - `assets/`: `AssetLibrary` (malhas/texturas embutidas e de arquivo), `AssetDatabase` (GUIDs em `.meta`),
     `AssetLoaders` (OBJ próprio, imagens via stb_image).
-  - `scene/`: `Scene` (entidades, hierarquia, cópia profunda e `operator==`), `SceneSerializer` (`.mscene`).
+  - `scene/`: `Scene` (entidades, hierarquia, cópia profunda e `operator==`), `SceneSerializer` (`.mscene`),
+    `SceneRuntime` (loop de jogo: scripts e sistemas registrados, `RuntimeSystem.h`).
   - `project/`: `Project` (pasta + `.mproject`). `core/Paths.h`: conversões UTF-8.
   - `app/`: `Application` (loop principal). O `Renderer` carrega as funções do OpenGL; a `Window` só cria o contexto.
   - `renderer/GL.h`: loader OpenGL próprio (X-macro). Função GL nova = adicionar na lista de lá.
@@ -155,10 +156,13 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 8 Áudio | camada nova `audio/` | sistemas no `SceneRuntime`; biblioteca nova (miniaudio) | — |
 | 9 HUD | camada nova `ui/` | `renderer/` (desenho 2D) | 7 |
 
-**Pendente antes das Fases 5 e 8:** o `SceneRuntime` (camada scene) não tem como uma camada de cima
-(física, áudio) rodar a cada passo do jogo, e incluir para cima é proibido. A primeira tarefa da Fase 5 é
-criar esse ponto de extensão (sistemas registrados, no estilo de `MOTOR_COMPONENT_MODULE`), num commit
-próprio, antes da física em si. Quem fizer a Fase 8 depois só usa.
+**Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
+que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com
+`MOTOR_RUNTIME_SYSTEM(Nome, Tipo, ordem)` (`motor/scene/RuntimeSystem.h`, que documenta a ordem exata). Não
+mexa no `SceneRuntime` para isso. Use as ordens de lá (`kSystemOrderPhysics`, `kSystemOrderAudio`,
+`kSystemOrderUi`; ordem nova = constante nova no fim da lista); `order < 0` roda antes dos scripts. Estado
+do sistema fica na instância (uma por runtime, criada no `Start`); scripts acham com `GetSystem<T>()`.
+Exemplo testado: `tests/test_runtime_systems.cpp`.
 
 ### Regras de cada tarefa
 
