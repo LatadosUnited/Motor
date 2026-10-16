@@ -33,12 +33,13 @@ engine/            camadas, de baixo para cima (cada uma só usa as de baixo; co
     assets/        AssetLibrary (malhas/texturas), AssetDatabase (GUIDs em .meta), AssetLoaders (OBJ, PNG/JPG)
     scene/         Scene, componentes (Component.h: registro e campos), SceneSerializer (.mscene), Transform
     app/           Application (game loop c/ fixed timestep)
+    physics/       PhysicsSystem (Jolt Physics): corpos, personagem, eventos, raios; contorno dos colliders
   src/<camada>/    implementação + CMakeLists.txt da camada (+ renderer/GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine
 editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play, scripts
-  templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, MoverWASD, Seguir)
+  templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, Jogador, MoverWASD, Seguir)
 sandbox/           app de demonstração
-tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes)
+tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física)
 ```
 
 ## Controles do Sandbox
@@ -366,6 +367,77 @@ usam o mesmo registro de componentes, o mesmo heap, as mesmas exceções/RTTI, o
 Limites atuais: os scripts precisam do Motor compilado na mesma máquina (o SDK aponta para a pasta de
 build); um erro grave dentro de um script (ponteiro inválido) derruba o editor; sem projeto aberto não há
 scripts.
+
+## Física
+
+A física usa o [Jolt Physics](https://github.com/jrouwe/JoltPhysics) (v5.6.0, MIT): multithread e com SIMD.
+Ela é um sistema do jogo (`motor::PhysicsSystem`, `engine/include/motor/physics/PhysicsSystem.h`) que roda
+no `FixedUpdate`, **antes** dos scripts, só no Play. Tudo é montado por componentes:
+
+| Componentes | Resultado |
+|---|---|
+| **Collider** | corpo estático (chão, paredes). Formas: caixa, esfera, cápsula (de pé no Y) e malha |
+| **Collider** + **Rigidbody** | corpo que cai, empilha e é empurrado. Cinemático: segue o Transform e empurra os outros |
+| **Collider** com **Trigger** | só detecta quem entra e sai (`OnTriggerEnter`/`OnTriggerExit`), não empurra |
+| **Controlador de personagem** | cápsula para o jogador: anda, sobe degraus e rampas, não atravessa o chão |
+
+- Medidas do Collider são locais: a escala da entidade multiplica todas (o cubo embutido tem 1 x 1 x 1, então
+  um Collider caixa padrão já casa com ele). **Centro** desloca a forma; **Atrito** e **Elasticidade** por
+  collider. A origem do personagem é o centro da cápsula.
+- **Malha**: usa a malha do Mesh Renderer da entidade. Malha de arquivo (OBJ) vira malha estática de
+  verdade (ou o casco convexo, se tiver Rigidbody dinâmico); as embutidas (Cubo, Plano...) usam a caixa dos
+  limites. Para o chão com o Plano embutido, um Collider caixa com tamanho `1 x 0.1 x 1` e centro `0 -0.05 0`
+  deixa o topo no plano.
+- Mexer no Transform de um corpo (script ou editor) durante o Play o teleporta; mudar um componente refaz o
+  corpo; desativar ou excluir a entidade tira o corpo. Corpos parados "dormem" e quase não custam.
+- No viewport, o botão **Colliders** mostra as formas (verde), os triggers (azul) e os personagens.
+
+Scripts recebem os contatos (depois do passo da física, antes do próprio `OnFixedUpdate`) e usam o sistema:
+
+```cpp
+#include <motor/physics/PhysicsSystem.h>
+#include <motor/scene/ScriptModule.h>
+
+struct Jogador : motor::Script {
+    void OnFixedUpdate(float) override {
+        auto* fisica = GetSystem<motor::PhysicsSystem>();
+        if (!fisica) return;
+        fisica->MoveCharacter(GetId(), {3.0f, 0.0f, 0.0f});           // m/s; vale até a próxima chamada
+        if (IsKeyDown(motor::Key::Space)) fisica->Jump(GetId(), 5.0f);  // só no chão
+        if (auto hit = fisica->Raycast(GetTransform().position, {0, -1, 0}, 10.0f, GetId())) {
+            Log("chão a {:.2f} m", hit->distance);
+        }
+    }
+    void OnCollisionEnter(const motor::Collision& c) override { Log("bateu em {} a {:.1f} m/s", c.other, c.relativeSpeed); }
+    void OnTriggerEnter(motor::EntityId outro) override { Log("entrou {}", outro); }
+};
+```
+
+- Colisão: `OnCollisionEnter(const Collision&)` (outra entidade, ponto, normal apontando do outro para este,
+  velocidade de aproximação) e `OnCollisionExit(EntityId)`. Trigger: `OnTriggerEnter/Exit(EntityId)`. Os dois
+  lados recebem. Um par de entidades entra uma vez e sai quando não sobra nenhum contato entre elas.
+- `Raycast(origem, direção, distância, ignorar)`: primeiro corpo atingido (entidade, ponto, normal,
+  distância); triggers não contam. Rigidbody: `AddForce`, `AddImpulse`, `SetVelocity`, `GetVelocity`.
+  Personagem: `MoveCharacter`, `Jump`, `IsGrounded`, `GetCharacterVelocity`. Entidade criada neste passo só
+  ganha corpo no próximo `FixedUpdate`.
+- O personagem gera eventos com corpos dinâmicos e triggers (não com o chão estático: para saber se está no
+  chão, `IsGrounded`). O modelo **Scripts > Adicionar exemplo > Jogador** anda com WASD e pula com Espaço.
+- Configuração global (`motor::PhysicsSettings::Global()`, lida a cada Play): `workerThreads` (threads do job
+  system do Jolt; -1 = núcleos - 1, 0 = só a thread do jogo), `gravity`, `maxSubstep` e `meshData` (de onde
+  vêm os triângulos do collider de malha; o editor liga na AssetLibrary).
+- **SIMD**: o Jolt é compilado com SSE4.2 como base, sem AVX/AVX2. O jogo roda em qualquer x86-64 desde ~2008
+  (Nehalem) / 2011 (Bulldozer); com AVX2 ele fecharia com "instrução ilegal" em CPUs sem AVX2. No Debug o
+  Jolt é compilado otimizado (`-O2`), senão o Play fica lento demais.
+
+Desempenho (`tests/test_physics_bench.cpp`, Release, i5-6400 de 4 núcleos, caixas em colunas de 10 caindo e
+empilhando, média de 600 passos de 1/60 s do `FixedUpdate` inteiro):
+
+| Caixas | 0 threads extras | 3 threads extras |
+|---|---|---|
+| 500 | 2.1 ms | 0.9 ms |
+| 1000 | 3.6 ms | 2.0 ms |
+| 2000 | 6.5 ms | 2.7 ms |
+| 4000 | 14.3 ms | 6.7 ms |
 
 ## Cenas (`.mscene`)
 
