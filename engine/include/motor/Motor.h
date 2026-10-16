@@ -31,3 +31,6 @@
 #include "motor/scene/SceneSerializer.h"
 #include "motor/scene/Script.h"
 #include "motor/scene/Transform.h"
+
+#include "motor/physics/ColliderGizmo.h"
+#include "motor/physics/PhysicsSystem.h"
