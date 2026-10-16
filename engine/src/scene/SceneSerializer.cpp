@@ -177,6 +177,14 @@ json FieldToJson(const FieldInfo& f, const void* c, const AssetLibrary& assets, 
             if (texture && !ref) log::Warn("Salvar cena: textura de '{}' não está no AssetLibrary", owner);
             return RefToJson(ref, options);
         }
+        case FieldType::Custom: {
+            json value = json::parse(f.custom->toJson(f.Get(c), assets), nullptr, false);
+            if (value.is_discarded()) {
+                log::Warn("Salvar cena: campo '{}' de '{}' ({}) gerou JSON inválido", f.key, owner, f.custom->name);
+                return nullptr;
+            }
+            return value;
+        }
     }
     return nullptr;
 }
@@ -219,6 +227,7 @@ void FieldFromJson(const FieldInfo& f, void* c, const json& value, AssetLibrary&
             if (!texture) log::Warn("Cena: textura de '{}' não carregada: {}", owner, problem);
             break;
         }
+        case FieldType::Custom: f.custom->fromJson(value.dump(), f.Get(c), assets); break;
     }
 }
 

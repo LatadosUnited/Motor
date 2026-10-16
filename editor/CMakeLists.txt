@@ -3,6 +3,7 @@ add_executable(MotorEditor
     src/EditorApp.cpp
     src/EditorContext.cpp
     src/EditorSettings.cpp
+    src/FieldDrawers.cpp
     src/FileDialog.cpp
     src/HierarchyPanel.cpp
     src/InspectorPanel.cpp

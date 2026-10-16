@@ -6,6 +6,11 @@
 //
 //   struct Girar { float velocidade = 90.0f; };
 //   registry.Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
+//
+// Extensões sem mexer em arquivos centrais:
+// - Componentes da engine: cada módulo registra os seus num .cpp próprio com MOTOR_COMPONENT_MODULE (abaixo).
+// - Tipo de campo novo (enum, referência a outro asset...): especialize FieldTraits<T> (abaixo). Comparação,
+//   cena e cópia saem de graça; o Inspector usa o desenhador registrado pelo editor para esse tipo.
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -28,9 +33,32 @@ class Mesh;
 class Script;
 class Texture2D;
 
-enum class FieldType { Bool, Int, Float, Vec2, Vec3, Vec4, String, Mesh, Texture };
+// Custom: tipo descrito por FieldTraits<T> (CustomFieldType em FieldInfo::custom).
+enum class FieldType { Bool, Int, Float, Vec2, Vec3, Vec4, String, Mesh, Texture, Custom };
 
-template <class F> struct FieldTypeOf;  // tipo C++ -> FieldType (só os suportados compilam)
+// Tipo de campo definido fora da engine. As funções recebem o endereço do valor (um T).
+struct CustomFieldType {
+    std::string name;  // identificador do tipo ("LightKind"); o editor acha o desenhador por ele
+    std::function<bool(const void* a, const void* b)> equal;
+    // Valor como texto JSON (qualquer valor JSON: número, texto, objeto...). Referências a assets usam `assets`.
+    std::function<std::string(const void* value, const AssetLibrary& assets)> toJson;
+    // Lê o valor do texto JSON gravado por toJson. JSON inesperado: deixe o valor como está.
+    std::function<void(std::string_view json, void* value, AssetLibrary& assets)> fromJson;
+};
+
+// Para usar um tipo T novo em campos de componente, especialize no namespace motor:
+//
+//   template <> struct FieldTraits<LightKind> {
+//       static CustomFieldType Describe() {
+//           return {"LightKind",
+//                   [](const void* a, const void* b) { return *(const LightKind*)a == *(const LightKind*)b; },
+//                   [](const void* v, const AssetLibrary&) { return std::to_string(int(*(const LightKind*)v)); },
+//                   [](std::string_view json, void* v, AssetLibrary&) { ... }};
+//       }
+//   };
+template <class F> struct FieldTraits;
+
+template <class F> struct FieldTypeOf;  // tipo C++ -> FieldType dos tipos embutidos
 template <> struct FieldTypeOf<bool> { static constexpr FieldType value = FieldType::Bool; };
 template <> struct FieldTypeOf<int> { static constexpr FieldType value = FieldType::Int; };
 template <> struct FieldTypeOf<float> { static constexpr FieldType value = FieldType::Float; };
@@ -58,6 +86,7 @@ struct FieldInfo {
     std::string key;    // nome no arquivo da cena
     std::string label;  // nome no Inspector
     FieldType type = FieldType::Float;
+    const CustomFieldType* custom = nullptr;  // só com type == Custom
     FieldOptions options;
     std::function<void*(void*)> access;  // componente -> endereço do valor
 
@@ -129,16 +158,14 @@ public:
     // Campo direto: .Field("velocidade", "Velocidade", &Girar::velocidade)
     template <class F>
     ComponentBuilder& Field(const char* key, const char* label, F T::*member, FieldOptions options = {}) {
-        return Add(key, label, FieldTypeOf<F>::value, options,
-                   [member](void* c) -> void* { return &(static_cast<T*>(c)->*member); });
+        return Add<F>(key, label, options, [member](void* c) -> void* { return &(static_cast<T*>(c)->*member); });
     }
 
     // Campo dentro de outra struct: .FieldRef("cor", "Cor", [](MeshRenderer& m) -> auto& { return m.material.color; })
     template <class Getter>
     ComponentBuilder& FieldRef(const char* key, const char* label, Getter getter, FieldOptions options = {}) {
         using F = std::remove_cvref_t<std::invoke_result_t<Getter, T&>>;
-        return Add(key, label, FieldTypeOf<F>::value, options,
-                   [getter](void* c) -> void* { return &getter(*static_cast<T*>(c)); });
+        return Add<F>(key, label, options, [getter](void* c) -> void* { return &getter(*static_cast<T*>(c)); });
     }
 
     ComponentBuilder& OnAdd(std::function<void(T&, AssetLibrary&)> fn) {
@@ -147,9 +174,17 @@ public:
     }
 
 private:
-    ComponentBuilder& Add(const char* key, const char* label, FieldType type, FieldOptions options,
-                          std::function<void*(void*)> access) {
-        m_type.fields.push_back({key, label, type, options, std::move(access)});
+    template <class F>
+    ComponentBuilder& Add(const char* key, const char* label, FieldOptions options, std::function<void*(void*)> access) {
+        if constexpr (requires { FieldTypeOf<F>::value; }) {
+            m_type.fields.push_back({key, label, FieldTypeOf<F>::value, nullptr, options, std::move(access)});
+        } else {
+            static_assert(requires { FieldTraits<F>::Describe(); },
+                          "tipo de campo não suportado: use um tipo embutido ou especialize motor::FieldTraits<T>");
+            // Uma descrição por tipo (e por módulo: cada DLL tem a sua cópia, válida enquanto ela estiver carregada).
+            static const CustomFieldType custom = FieldTraits<F>::Describe();
+            m_type.fields.push_back({key, label, FieldType::Custom, &custom, options, std::move(access)});
+        }
         return *this;
     }
 
@@ -221,7 +256,31 @@ private:
     uint64_t m_generation = 1;  // muda a cada Register/Unregister (invalida os caches de TypeOf)
 };
 
-// Registra os componentes que vêm com a engine (Components.cpp).
+// ---------------------------------------------------------------------------
+// Módulos de componentes da engine. Cada módulo (MeshRenderer, Câmera e, nas próximas fases, luzes, física,
+// áudio...) registra os seus tipos num .cpp próprio, sem lista central para editar:
+//
+//   MOTOR_COMPONENT_MODULE(Fisica) {
+//       registry.Register<Rigidbody>("Rigidbody", "Rigidbody").Field("massa", "Massa", &Rigidbody::massa);
+//   }
+//
+// Os módulos rodam na primeira chamada de ComponentRegistry::Instance(), em ordem alfabética do nome do
+// módulo (ordem estável: é a do menu "Adicionar componente"). Um módulo que só aparece depois disso (de
+// uma DLL carregada mais tarde) é registrado na hora. Scripts de projeto usam MOTOR_SCRIPT (ScriptModule.h).
+// ---------------------------------------------------------------------------
+using ComponentModuleFn = void (*)(ComponentRegistry& registry);
+
+struct ComponentModuleRegistrar {
+    ComponentModuleRegistrar(const char* name, ComponentModuleFn fn);
+};
+
+#define MOTOR_COMPONENT_MODULE(Name)                                                                        \
+    static void MotorComponentModule_##Name(::motor::ComponentRegistry& registry);                         \
+    static const ::motor::ComponentModuleRegistrar g_motorComponentModule_##Name(#Name,                   \
+                                                                                  &MotorComponentModule_##Name); \
+    static void MotorComponentModule_##Name([[maybe_unused]] ::motor::ComponentRegistry& registry)
+
+// Registra os módulos de componentes da engine (chamado por Instance()).
 void RegisterBuiltInComponents(ComponentRegistry& registry);
 
 } // namespace motor

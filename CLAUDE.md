@@ -58,9 +58,13 @@ ctest --test-dir build --output-on-failure
 - Assets de arquivo são referenciados por **GUID** (`.meta` ao lado). Quem move/renomeia/exclui arquivo
   no editor leva o `.meta` junto (`ProjectPanel`). Exclusão vai sempre para a **Lixeira**, nunca definitiva.
 - **Recurso novo de entidade = componente registrado** (`motor/scene/Component.h`, exemplos no README e em
-  `engine/src/scene/Component.cpp`). Não adicione campos soltos em `Entity`: Inspector, serialização,
-  cópia e desfazer saem de graça dos campos registrados. Tipo de campo novo exige tratar o `FieldType` em
-  `ComponentsEqual`, no `SceneSerializer` (`FieldToJson`/`FieldFromJson`) e no Inspector (`DrawField`).
+  `engine/src/scene/MeshRenderer.cpp`). Não adicione campos soltos em `Entity`: Inspector, serialização,
+  cópia e desfazer saem de graça dos campos registrados. Componente da engine = header + `.cpp` próprios com
+  `MOTOR_COMPONENT_MODULE` (sem lista central); o header entra em `Components.h`.
+- **Tipo de campo novo** (enum, referência a asset...): especialize `motor::FieldTraits<T>` e registre o
+  desenhador do Inspector com `MOTOR_FIELD_DRAWER` (`editor/src/FieldDrawers.h`), cada um no seu `.cpp`.
+  Não acrescente valores ao enum `FieldType` (isso exigiria mexer em `ComponentsEqual`, `SceneSerializer`
+  e `DrawField` ao mesmo tempo). Exemplo completo em `tests/test_component_extension.cpp`.
 - Desfazer é automático: `UndoHistory::Track` compara a cena a cada frame (`Scene::operator==`). Dado de
   cena fora dos componentes (luz, ambiente) precisa entrar na cópia e no `operator==` de `Scene`.
 - Estilo: o do código vizinho (4 espaços, `m_` em membros, comentários curtos explicando o porquê).

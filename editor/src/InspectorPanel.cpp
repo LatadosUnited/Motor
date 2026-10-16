@@ -1,4 +1,5 @@
 #include "EditorContext.h"
+#include "FieldDrawers.h"
 
 #include <imgui.h>
 #include <imgui_stdlib.h>
@@ -196,6 +197,13 @@ void DrawField(EditorContext& ctx, const motor::FieldInfo& f, void* component) {
             break;
         case FieldType::Texture:
             AssetField(ctx, "##v", motor::AssetType::Texture, f.As<std::shared_ptr<motor::Texture2D>>(component));
+            break;
+        case FieldType::Custom:
+            if (const FieldDrawerFn drawer = FindFieldDrawer(f.custom->name)) {
+                drawer(ctx, f, f.Get(component));
+            } else {
+                ImGui::TextDisabled("(sem editor para \"%s\")", f.custom->name.c_str());
+            }
             break;
     }
     if (o.tooltip) ImGui::SetItemTooltip("%s", o.tooltip);

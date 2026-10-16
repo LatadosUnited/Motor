@@ -3,7 +3,36 @@
 #include "motor/assets/AssetLibrary.h"
 #include "motor/scene/Components.h"
 
+#include <algorithm>
+#include <cstring>
+
 namespace motor {
+
+namespace {
+struct ComponentModule {
+    const char* name;
+    ComponentModuleFn fn;
+};
+
+// Estáticas locais: os registradores rodam na inicialização estática, em qualquer ordem entre os .cpp.
+std::vector<ComponentModule>& Modules() {
+    static std::vector<ComponentModule> modules;
+    return modules;
+}
+
+bool& ModulesRegistered() {
+    static bool registered = false;
+    return registered;
+}
+} // namespace
+
+ComponentModuleRegistrar::ComponentModuleRegistrar(const char* name, ComponentModuleFn fn) {
+    if (ModulesRegistered()) {
+        fn(ComponentRegistry::Instance());  // módulo de uma DLL carregada depois: entra na hora
+    } else {
+        Modules().push_back({name, fn});
+    }
+}
 
 ComponentRegistry& ComponentRegistry::Instance() {
     static ComponentRegistry registry;
@@ -61,6 +90,7 @@ bool ComponentsEqual(const ComponentType& type, const void* a, const void* b) {
             case FieldType::Texture:
                 same = f.As<std::shared_ptr<Texture2D>>(a) == f.As<std::shared_ptr<Texture2D>>(b);
                 break;
+            case FieldType::Custom: same = f.custom->equal(f.Get(a), f.Get(b)); break;
         }
         if (!same) return false;
     }
@@ -68,25 +98,12 @@ bool ComponentsEqual(const ComponentType& type, const void* a, const void* b) {
 }
 
 void RegisterBuiltInComponents(ComponentRegistry& registry) {
-    // A ordem dos campos é a do Inspector e a do arquivo.
-    registry.Register<MeshRenderer>("MeshRenderer", "Mesh Renderer")
-        .Field("mesh", "Malha", &MeshRenderer::mesh)
-        .FieldRef("texture", "Textura", [](MeshRenderer& m) -> auto& { return m.material.albedo; })
-        .FieldRef("color", "Cor", [](MeshRenderer& m) -> auto& { return m.material.color; }, {.color = true})
-        .FieldRef("specular", "Especular", [](MeshRenderer& m) -> auto& { return m.material.specular; },
-                  {.slider = true, .min = 0.0f, .max = 2.0f})
-        .FieldRef("shininess", "Brilho", [](MeshRenderer& m) -> auto& { return m.material.shininess; },
-                  {.slider = true, .logarithmic = true, .min = 1.0f, .max = 256.0f, .format = "%.0f"})
-        .OnAdd([](MeshRenderer& m, AssetLibrary& assets) { m.mesh = assets.FindMesh("Cubo"); });
-
-    registry.Register<CameraComponent>("Camera", "Câmera")
-        .Field("fov", "Campo de visão", &CameraComponent::fov, {.slider = true, .min = 10.0f, .max = 120.0f, .format = "%.0f°"})
-        .Field("near", "Perto", &CameraComponent::nearPlane,
-               {.speed = 0.01f, .min = 0.01f, .max = 10.0f, .format = "%.2f m", .tooltip = "Plano de corte próximo"})
-        .Field("far", "Longe", &CameraComponent::farPlane,
-               {.speed = 1.0f, .min = 1.0f, .max = 10000.0f, .format = "%.0f m", .tooltip = "Plano de corte distante"})
-        .Field("main", "Principal", &CameraComponent::main,
-               {.tooltip = "No Play, a cena é vista pela primeira câmera ativa marcada como principal"});
+    // Ordem alfabética do nome do módulo: estável, não depende da ordem de ligação dos .cpp.
+    std::vector<ComponentModule> modules = Modules();
+    std::sort(modules.begin(), modules.end(),
+              [](const ComponentModule& a, const ComponentModule& b) { return std::strcmp(a.name, b.name) < 0; });
+    for (const ComponentModule& module : modules) module.fn(registry);
+    ModulesRegistered() = true;
 }
 
 } // namespace motor

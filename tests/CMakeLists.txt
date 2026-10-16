@@ -16,6 +16,7 @@ motor_add_test(test_project)
 motor_add_test(test_assets)
 motor_add_test(test_guid)
 motor_add_test(test_components)
+motor_add_test(test_component_extension)
 
 # Confere nos #include a ordem das camadas da engine (engine/CMakeLists.txt).
 motor_add_test(test_layers)

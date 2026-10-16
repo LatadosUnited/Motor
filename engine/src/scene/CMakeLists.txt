@@ -4,6 +4,8 @@ motor_add_layer(scene
         Transform.cpp
         FlyCameraController.cpp
         Component.cpp
+        CameraComponent.cpp
+        MeshRenderer.cpp
         Scene.cpp
         SceneRuntime.cpp
         SceneSerializer.cpp
