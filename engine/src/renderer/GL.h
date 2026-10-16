@@ -73,6 +73,7 @@
     X(PFNGLGENERATETEXTUREMIPMAPPROC, glGenerateTextureMipmap)        \
     X(PFNGLBINDTEXTUREUNITPROC, glBindTextureUnit)                    \
     X(PFNGLDELETETEXTURESPROC, glDeleteTextures)                      \
+    X(PFNGLGETTEXTUREIMAGEPROC, glGetTextureImage)                    \
     /* Framebuffers (DSA) */                                          \
     X(PFNGLCREATEFRAMEBUFFERSPROC, glCreateFramebuffers)              \
     X(PFNGLDELETEFRAMEBUFFERSPROC, glDeleteFramebuffers)              \

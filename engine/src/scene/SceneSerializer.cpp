@@ -298,6 +298,22 @@ ComponentPtr MakeMissing(std::string typeName, const json& obj) {
 }
 } // namespace
 
+std::string FieldValueToJson(const FieldInfo& field, const void* component, const AssetLibrary& assets) {
+    return FieldToJson(field, component, assets, JsonOptions{}, field.key)
+        .dump(-1, ' ', false, json::error_handler_t::replace);
+}
+
+bool FieldValueFromJson(const FieldInfo& field, void* component, std::string_view text, AssetLibrary& assets,
+                        std::string* error) {
+    const json value = json::parse(text, nullptr, false);
+    if (value.is_discarded()) {
+        SetError(error, "valor não é JSON válido: " + std::string(text));
+        return false;
+    }
+    FieldFromJson(field, component, value, assets, field.key);
+    return true;
+}
+
 std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOptions& options) {
     json root;
     const bool prefab = std::string_view(options.format) == kPrefabFormat;

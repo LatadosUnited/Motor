@@ -4,6 +4,7 @@
 #include "renderer/GL.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace motor {
 
@@ -76,6 +77,22 @@ void Framebuffer::Resolve() const {
     if (!m_resolveFbo) return;
     glBlitNamedFramebuffer(m_renderFbo, m_resolveFbo, 0, 0, m_width, m_height,
                            0, 0, m_width, m_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+}
+
+std::vector<uint8_t> Framebuffer::ReadPixels() const {
+    const size_t row = static_cast<size_t>(m_width) * 4;
+    std::vector<uint8_t> pixels(row * m_height);
+    glGetTextureImage(m_colorTexture, 0, GL_RGBA, GL_UNSIGNED_BYTE, static_cast<GLsizei>(pixels.size()), pixels.data());
+    // O OpenGL entrega a primeira linha embaixo: inverte para a ordem das imagens.
+    std::vector<uint8_t> line(row);
+    for (int y = 0; y < m_height / 2; ++y) {
+        uint8_t* a = pixels.data() + y * row;
+        uint8_t* b = pixels.data() + (m_height - 1 - y) * row;
+        std::memcpy(line.data(), a, row);
+        std::memcpy(a, b, row);
+        std::memcpy(b, line.data(), row);
+    }
+    return pixels;
 }
 
 } // namespace motor

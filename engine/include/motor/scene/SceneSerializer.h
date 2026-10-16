@@ -13,6 +13,7 @@ namespace motor {
 class AssetLibrary;
 class Scene;
 struct ComponentType;
+struct FieldInfo;
 
 // Cenas em JSON (.mscene). Malhas e texturas embutidas são referenciadas pelo nome; as de arquivo, pelo GUID
 // do .meta (com o caminho junto, como plano B). Ao carregar, assets de arquivo são lidos do disco.
@@ -38,6 +39,14 @@ std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOpt
 // `format`: o "format" exigido no arquivo (kSceneFormat ou kPrefabFormat).
 bool FromJson(std::string_view json, Scene& out, AssetLibrary& assets, std::string* error = nullptr,
               const char* format = kSceneFormat);
+
+// Um campo de componente no formato da cena (texto JSON): malhas e texturas como nome ou {guid, path},
+// vetores como listas. Usado por quem lê e muda campos de fora do Inspector (o servidor MCP do editor).
+std::string FieldValueToJson(const FieldInfo& field, const void* component, const AssetLibrary& assets);
+// Lê o campo do texto JSON nesse mesmo formato. Valor do tipo errado: o campo fica como estava. false (e
+// `error`) só se o texto não for JSON válido.
+bool FieldValueFromJson(const FieldInfo& field, void* component, std::string_view json, AssetLibrary& assets,
+                        std::string* error = nullptr);
 
 // Componentes de tipo desconhecido viram MissingComponent (Component.h): os dados são mantidos e gravados de
 // volta iguais. As duas funções abaixo fazem a troca nos dois sentidos, para a recarga da DLL de scripts.
