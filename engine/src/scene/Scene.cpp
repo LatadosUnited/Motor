@@ -252,7 +252,7 @@ void Scene::SubmitTo(Renderer& renderer) const {
     for (const auto& e : m_entities) {
         const MeshRenderer* mr = e->Get<MeshRenderer>();
         if (!mr || !mr->mesh || !IsActiveInHierarchy(e->id)) continue;
-        renderer.Submit(*mr->mesh, mr->material, WorldMatrix(e->id));
+        renderer.Submit(*mr->mesh, mr->Resolved(), WorldMatrix(e->id));
     }
 }
 

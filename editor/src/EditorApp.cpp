@@ -126,6 +126,9 @@ void EditorApp::OnUpdate(float dt) {
     if (m_assetRefreshTimer >= 2.0f) {
         m_assetRefreshTimer = 0.0f;
         m_ctx.assets.Database().Refresh();
+        // Materiais e prefabs editados fora do editor (ou por outro programa): relidos no mesmo objeto.
+        m_ctx.assets.ReloadChangedMaterials();
+        m_ctx.prefabs.ReloadChanged(m_ctx.assets);
     }
 
     m_viewport.UpdateCamera(dt, GetWindow());
@@ -174,6 +177,10 @@ void EditorApp::OnImGui() {
     m_document.DrawPopups();
     m_scripts.DrawNewScriptPopup();
     m_ctx.ApplyPendingDelete();
+    m_ctx.ApplyPendingPrefabAction();
+    // Instâncias seguem os prefabs que mudaram; o que mudou numa instância vira override (antes do Track,
+    // para entrar no mesmo passo de desfazer). No Play, não: a cena do jogo é descartada ao parar.
+    if (!m_play.IsActive()) m_ctx.UpdatePrefabs([this](const auto& fn) { m_history.ForEachScene(fn); });
     // Depois de todas as alterações do frame: se a cena mudou e o usuário terminou a interação, vira um passo.
     // No Play, não: ao parar a cena volta a ser igual à última foto do histórico.
     if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, !IsInteracting());
@@ -343,7 +350,10 @@ void EditorApp::DrawProjectPanel() {
     callbacks.openProject = [this] { m_document.RequestFileAction(FileAction::OpenProject); };
     callbacks.openScene = [this](const fs::path& p) { m_document.RequestFileAction(FileAction::OpenScenePath, p); };
     callbacks.createSceneFile = [this](const fs::path& p) { return m_document.CreateEmptySceneFile(p); };
-    callbacks.pathMoved = [this](const fs::path& from, const fs::path& to) { m_document.OnPathMoved(from, to); };
+    callbacks.pathMoved = [this](const fs::path& from, const fs::path& to) {
+        m_document.OnPathMoved(from, to);
+        m_ctx.inspectedAsset = RebasePath(m_ctx.inspectedAsset, from, to);
+    };
     callbacks.pathDeleted = [this](const fs::path& p) { m_document.OnPathDeleted(p); };
     callbacks.addMeshToScene = [this](const fs::path& p) { m_ctx.CreateFromMeshFile(p); };
     callbacks.applyTexture = [this](const fs::path& p) {
@@ -352,6 +362,24 @@ void EditorApp::DrawProjectPanel() {
         } else {
             m_document.ShowError("Selecione uma entidade para aplicar a textura.");
         }
+    };
+
+    callbacks.selectAsset = [this](const fs::path& p) {
+        // Material e prefab aparecem no Inspector (no lugar da entidade selecionada).
+        const AssetType type = AssetTypeFromPath(p);
+        if (type != AssetType::Material && type != AssetType::Prefab) return;
+        m_ctx.inspectedAsset = p;
+        m_ctx.selected = kNullEntity;
+    };
+    callbacks.createMaterialFile = [this](const fs::path& p) {
+        std::string error;
+        if (m_ctx.assets.WriteMaterialFile(p, Material{}, &error)) return true;
+        m_document.ShowError(error);
+        return false;
+    };
+    callbacks.addPrefabToScene = [this](const fs::path& p) { m_ctx.InstantiatePrefabFile(p); };
+    callbacks.createPrefabFromEntity = [this](uint32_t entity, const fs::path& folder) {
+        m_ctx.CreatePrefabFromEntity(entity, folder);
     };
 
     // Arquivos arrastados do Explorer para a janela são importados pelo painel.

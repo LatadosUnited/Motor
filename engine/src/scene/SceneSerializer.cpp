@@ -21,10 +21,11 @@ namespace motor::SceneSerializer {
 using json = nlohmann::ordered_json;
 
 namespace {
-constexpr const char* kFormatName = "motor-scene";
 // 2: assets de arquivo referenciados por GUID. 3: lista genérica "components" (antes, "meshRenderer" fixo).
 // 4: a luz direcional da cena ("light") virou uma entidade com o componente Luz; o ambiente foi para "environment".
-constexpr int kFormatVersion = 4;
+// 5: Mesh Renderer com asset de material ("material", .mmat) e instâncias de prefab (componente PrefabInstance).
+//    Cenas antigas não têm "material": continuam com o material próprio do componente (cor, textura...).
+constexpr int kFormatVersion = 5;
 
 // float -> double passando pela representação decimal mais curta, para o arquivo ter "0.6" e não
 // "0.6000000238418579".
@@ -299,14 +300,17 @@ ComponentPtr MakeMissing(std::string typeName, const json& obj) {
 
 std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOptions& options) {
     json root;
-    root["format"] = kFormatName;
+    const bool prefab = std::string_view(options.format) == kPrefabFormat;
+    root["format"] = options.format;
     root["version"] = kFormatVersion;
 
-    root["environment"] = {
-        {"skyColor", Vec(scene.environment.skyColor)},
-        {"fogDensity", Num(scene.environment.fogDensity)},
-        {"ambient", Vec(scene.environment.ambient)},
-    };
+    if (!prefab) {
+        root["environment"] = {
+            {"skyColor", Vec(scene.environment.skyColor)},
+            {"fogDensity", Num(scene.environment.fogDensity)},
+            {"ambient", Vec(scene.environment.ambient)},
+        };
+    }
 
     json entities = json::array();
     for (const auto& e : scene.Entities()) {
@@ -336,12 +340,13 @@ std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOpt
     return CompactNumberArrays(root.dump(2, ' ', false, json::error_handler_t::replace));
 }
 
-bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::string* error) {
+bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::string* error, const char* format) {
     try {
         const json root = json::parse(text);
 
-        if (!root.is_object() || root.value("format", std::string()) != kFormatName) {
-            SetError(error, "O arquivo não é uma cena do Motor.");
+        const bool prefab = std::string_view(format) == kPrefabFormat;
+        if (!root.is_object() || root.value("format", std::string()) != format) {
+            SetError(error, prefab ? "O arquivo não é um prefab do Motor." : "O arquivo não é uma cena do Motor.");
             return false;
         }
         const int version = root.value("version", 0);
@@ -405,7 +410,7 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
             }
         }
 
-        if (version < 4) ConvertSceneLight(root, out);
+        if (version < 4 && !prefab) ConvertSceneLight(root, out);
         return true;
     } catch (const json::exception& e) {
         SetError(error, std::format("JSON inválido: {}", e.what()));
@@ -446,8 +451,9 @@ size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets) {
     return count;
 }
 
-bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibrary& assets, std::string* error) {
-    const std::string text = ToJson(scene, assets);
+bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibrary& assets, std::string* error,
+          const JsonOptions& options) {
+    const std::string text = ToJson(scene, assets, options);
 
     // Escreve num arquivo temporário e troca no fim, para não corromper a cena se algo falhar no meio.
     std::filesystem::path temp = path;
@@ -472,7 +478,7 @@ bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibr
         return false;
     }
 
-    log::Info("Cena salva: {}", ToUtf8(path));
+    log::Info("{}: {}", std::string_view(options.format) == kPrefabFormat ? "Prefab salvo" : "Cena salva", ToUtf8(path));
     return true;
 }
 

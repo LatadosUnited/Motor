@@ -49,7 +49,7 @@ int main() {
     const auto& registry = ComponentRegistry::Instance();
     CHECK(registry.Find("MeshRenderer") != nullptr);
     CHECK(ComponentRegistry::TypeOf<MeshRenderer>() == registry.Find("MeshRenderer"));
-    CHECK(registry.Find("MeshRenderer")->fields.size() == 5);
+    CHECK(registry.Find("MeshRenderer")->fields.size() == 6);  // malha, material (asset) e os 4 do material próprio
     RegisterTestComponents();
     const ComponentType* tudo = registry.Find("Tudo");
     CHECK(tudo && tudo->fields.size() == 9);
@@ -103,7 +103,7 @@ int main() {
     e.Get<MeshRenderer>()->material.color = {0.5f, 0.6f, 0.7f, 1.0f};
     AssetLibrary assets;
     const std::string text = SceneSerializer::ToJson(scene, assets);
-    CHECK(text.find("\"version\": 4") != std::string::npos);
+    CHECK(text.find("\"version\": 5") != std::string::npos);
     CHECK(text.find("\"type\": \"Tudo\"") != std::string::npos);
     CHECK(text.find("estadoInterno") == std::string::npos);
 

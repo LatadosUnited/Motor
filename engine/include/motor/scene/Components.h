@@ -9,3 +9,4 @@
 #include "motor/scene/ColliderComponent.h"
 #include "motor/scene/RigidbodyComponent.h"
 #include "motor/scene/CharacterControllerComponent.h"
+#include "motor/scene/PrefabInstance.h"

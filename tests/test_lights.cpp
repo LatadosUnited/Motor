@@ -103,7 +103,7 @@ int main() {
     SECTION("Salvar e carregar luzes (versão 4)");
     scene.environment.ambient = {0.02f, 0.03f, 0.06f};
     const std::string text = SceneSerializer::ToJson(scene, assets);
-    CHECK(Contains(text, "\"version\": 4"));
+    CHECK(Contains(text, "\"version\": 5"));
     CHECK(Contains(text, "\"kind\": \"Spot\"") && Contains(text, "\"kind\": \"Point\"") && Contains(text, "\"type\": \"Light\""));
     CHECK(Contains(text, "\"ambient\": [0.02, 0.03, 0.06]"));
     CHECK(!Contains(text, "\"light\""));
@@ -154,7 +154,7 @@ int main() {
 
         // Salva já no formato novo, e abrir de novo não converte outra vez.
         const std::string saved = SceneSerializer::ToJson(old, assets);
-        CHECK(Contains(saved, "\"version\": 4") && !Contains(saved, "\"light\""));
+        CHECK(Contains(saved, "\"version\": 5") && !Contains(saved, "\"light\""));
         Scene again;
         CHECK(SceneSerializer::FromJson(saved, again, assets, &error));
         CHECK(again.Entities().size() == 3);

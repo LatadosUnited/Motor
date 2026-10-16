@@ -30,7 +30,8 @@ namespace motor {
 // Sobe quando a interface entre o editor e a DLL de scripts muda de forma incompatível.
 // 2: FieldInfo ganhou `custom` (FieldTraits). 3: Script::GetSystem (sistemas do SceneRuntime).
 // 4: Scene perdeu `light` (luzes viraram componentes). 5: eventos de colisão e trigger no Script (física).
-inline constexpr int kScriptApiVersion = 5;
+// 6: MeshRenderer ganhou `sharedMaterial` (asset de material) e há o componente PrefabInstance (prefabs).
+inline constexpr int kScriptApiVersion = 6;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

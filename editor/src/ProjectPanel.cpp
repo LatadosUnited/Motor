@@ -32,7 +32,7 @@ constexpr double kRescanInterval = 1.0;  // segundos; pega mudanças feitas fora
 constexpr size_t kMaxSearchResults = 1000;
 constexpr int kThumbnailPixels = 128;    // lado máximo da miniatura guardada na GPU
 
-enum class Icon { Folder, Scene, Texture, Mesh, File };
+enum class Icon { Folder, Scene, Texture, Mesh, Material, Prefab, File };
 
 Icon IconFor(bool isDirectory, AssetType type) {
     if (isDirectory) return Icon::Folder;
@@ -40,6 +40,8 @@ Icon IconFor(bool isDirectory, AssetType type) {
         case AssetType::Scene: return Icon::Scene;
         case AssetType::Texture: return Icon::Texture;
         case AssetType::Mesh: return Icon::Mesh;
+        case AssetType::Material: return Icon::Material;
+        case AssetType::Prefab: return Icon::Prefab;
         case AssetType::Unknown: break;
     }
     return Icon::File;
@@ -100,6 +102,25 @@ void DrawIcon(ImDrawList* dl, ImVec2 p, float s, Icon icon, float alpha = 1.0f) 
             dl->AddQuadFilled(top, right, center, left, col(200, 150, 235));
             dl->AddQuadFilled(left, center, bottom, bottomLeft, col(150, 100, 200));
             dl->AddQuadFilled(center, right, bottomRight, bottom, col(120, 75, 170));
+            break;
+        }
+        case Icon::Material: {
+            // Esfera com brilho: o "material" de quase todo editor.
+            const ImVec2 c{p.x + s * 0.5f, p.y + s * 0.5f};
+            dl->AddCircleFilled(c, s * 0.42f, col(214, 92, 120));
+            dl->AddCircleFilled({c.x + s * 0.06f, c.y + s * 0.06f}, s * 0.3f, col(180, 60, 92));
+            dl->AddCircleFilled({c.x - s * 0.15f, c.y - s * 0.15f}, s * 0.1f, col(255, 225, 235));
+            break;
+        }
+        case Icon::Prefab: {
+            // Cubo como o da malha, em azul (mesma cor das instâncias na Hierarquia).
+            const ImVec2 top{p.x + s * 0.5f, p.y + s * 0.08f}, left{p.x + s * 0.1f, p.y + s * 0.3f},
+                right{p.x + s * 0.9f, p.y + s * 0.3f}, center{p.x + s * 0.5f, p.y + s * 0.52f},
+                bottomLeft{p.x + s * 0.1f, p.y + s * 0.72f}, bottomRight{p.x + s * 0.9f, p.y + s * 0.72f},
+                bottom{p.x + s * 0.5f, p.y + s * 0.94f};
+            dl->AddQuadFilled(top, right, center, left, col(140, 200, 255));
+            dl->AddQuadFilled(left, center, bottom, bottomLeft, col(80, 150, 230));
+            dl->AddQuadFilled(center, right, bottomRight, bottom, col(55, 115, 200));
             break;
         }
         case Icon::File: {
@@ -176,7 +197,7 @@ motor::ImageData Downscale(const motor::ImageData& src, int maxSide) {
 }
 
 const char* FilterName(int filter) {
-    static const char* names[] = {"Todos", "Cenas", "Texturas", "Malhas"};
+    static const char* names[] = {"Todos", "Cenas", "Texturas", "Malhas", "Materiais", "Prefabs"};
     return names[filter];
 }
 } // namespace
@@ -287,6 +308,8 @@ bool ProjectPanel::PassesFilter(const Entry& e) const {
         case Filter::Scenes: return !e.isDirectory && e.type == AssetType::Scene;
         case Filter::Textures: return !e.isDirectory && e.type == AssetType::Texture;
         case Filter::Meshes: return !e.isDirectory && e.type == AssetType::Mesh;
+        case Filter::Materials: return !e.isDirectory && e.type == AssetType::Material;
+        case Filter::Prefabs: return !e.isDirectory && e.type == AssetType::Prefab;
         case Filter::All: break;
     }
     return true;
@@ -445,7 +468,7 @@ void ProjectPanel::DrawToolbar(const Callbacks& callbacks) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(filterWidth);
     if (ImGui::BeginCombo("##filter", FilterName(static_cast<int>(m_filter)))) {
-        for (int f = 0; f < 4; ++f) {
+        for (int f = 0; f <= static_cast<int>(Filter::Prefabs); ++f) {
             if (ImGui::Selectable(FilterName(f), static_cast<int>(m_filter) == f)) {
                 m_filter = static_cast<Filter>(f);
                 Refresh();
@@ -694,6 +717,7 @@ void ProjectPanel::ItemBehavior(const Entry& e, bool clicked, const Callbacks& c
             return;  // Activate pode trocar de pasta e invalidar a lista
         }
         ClickSelect(e.path);
+        if (callbacks.selectAsset && m_selection.size() == 1) callbacks.selectAsset(e.path);
     }
     if (e.isDirectory && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) m_hoveredFolder = e.path;
 
@@ -728,7 +752,15 @@ void ProjectPanel::DrawItemContextMenu(const Entry& e, const Callbacks& callback
             ImGui::MenuItem("Aplicar à entidade selecionada")) {
             callbacks.applyTexture(e.path);
         }
-        if (!e.isDirectory && e.type != AssetType::Scene && ImGui::MenuItem("Abrir com programa padrão", "Enter")) {
+        if (e.type == AssetType::Prefab && callbacks.addPrefabToScene && ImGui::MenuItem("Adicionar à cena")) {
+            callbacks.addPrefabToScene(e.path);
+        }
+        const bool inspectable = e.type == AssetType::Material || e.type == AssetType::Prefab;
+        if (inspectable && callbacks.selectAsset && ImGui::MenuItem("Editar no Inspector", "Enter")) {
+            callbacks.selectAsset(e.path);
+        }
+        if (!e.isDirectory && e.type != AssetType::Scene && !inspectable &&
+            ImGui::MenuItem("Abrir com programa padrão", "Enter")) {
             Shell::OpenWithDefaultApp(e.path);
         }
         if (!m_search.empty() && ImGui::MenuItem("Mostrar na pasta")) {
@@ -756,6 +788,8 @@ void ProjectPanel::DrawItemContextMenu(const Entry& e, const Callbacks& callback
 void ProjectPanel::DrawCreateMenuItems(const Callbacks& callbacks) {
     if (ImGui::MenuItem("Nova pasta")) CreateFolder();
     if (ImGui::MenuItem("Nova cena")) CreateScene(callbacks);
+    if (ImGui::MenuItem("Novo material")) CreateMaterial(callbacks);
+    ImGui::TextDisabled("Prefab: arraste uma entidade da Hierarquia para uma pasta");
 }
 
 void ProjectPanel::DrawPopups(const Callbacks& callbacks) {
@@ -950,6 +984,8 @@ void ProjectPanel::Activate(const Entry& entry, const Callbacks& callbacks) {
         SetCurrentDir(entry.path);
     } else if (entry.type == AssetType::Scene) {
         callbacks.openScene(entry.path);
+    } else if ((entry.type == AssetType::Material || entry.type == AssetType::Prefab) && callbacks.selectAsset) {
+        callbacks.selectAsset(entry.path);
     } else {
         Shell::OpenWithDefaultApp(entry.path);
     }
@@ -1013,6 +1049,15 @@ void ProjectPanel::CreateScene(const Callbacks& callbacks) {
     m_search.clear();
     Refresh();
     BeginRename(path);
+}
+
+void ProjectPanel::CreateMaterial(const Callbacks& callbacks) {
+    const fs::path path = UniquePath(m_currentDir, "Novo material", motor::kMaterialFileExtension);
+    if (!callbacks.createMaterialFile || !callbacks.createMaterialFile(path)) return;
+    m_search.clear();
+    Refresh();
+    BeginRename(path);
+    if (callbacks.selectAsset) callbacks.selectAsset(path);
 }
 
 void ProjectPanel::CopySelection(bool cut) {
@@ -1127,6 +1172,14 @@ void ProjectPanel::MoveItems(const std::vector<fs::path>& sources, const fs::pat
 void ProjectPanel::AcceptMoveDrop(const fs::path& folder, const Callbacks& callbacks) {
     const std::vector<fs::path> paths = AcceptAnyPathDrop();
     if (!paths.empty()) MoveItems(paths, folder, callbacks);
+    // Entidade arrastada da Hierarquia: vira um prefab nesta pasta.
+    if (callbacks.createPrefabFromEntity && ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
+            callbacks.createPrefabFromEntity(*static_cast<const uint32_t*>(payload->Data), folder);
+            Refresh();
+        }
+        ImGui::EndDragDropTarget();
+    }
 }
 
 void ProjectPanel::ShowError(std::string message) {

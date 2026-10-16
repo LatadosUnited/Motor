@@ -470,10 +470,13 @@ void SceneViewport::PickAt(EditorContext& ctx, const glm::vec2& uv) {
 }
 
 void SceneViewport::HandleDrop(EditorContext& ctx, const ImVec2& origin) {
-    // Arquivos do painel Projeto: malha = nova entidade onde o mouse apontar; textura = no objeto sob o mouse.
+    // Arquivos do painel Projeto: malha ou prefab = nova entidade onde o mouse apontar; textura ou material =
+    // no objeto sob o mouse.
     const auto meshes = AcceptPathDrop(AssetType::Mesh);
     const auto textures = AcceptPathDrop(AssetType::Texture);
-    if (meshes.empty() && textures.empty()) return;
+    const auto prefabs = AcceptPathDrop(AssetType::Prefab);
+    const auto materials = AcceptPathDrop(AssetType::Material);
+    if (meshes.empty() && textures.empty() && prefabs.empty() && materials.empty()) return;
 
     const ImVec2 mouse = ImGui::GetMousePos();
     const auto [rayOrigin, rayDir] = Ray({(mouse.x - origin.x) / m_size.x, (mouse.y - origin.y) / m_size.y});
@@ -484,6 +487,13 @@ void SceneViewport::HandleDrop(EditorContext& ctx, const ImVec2& origin) {
             ctx.ApplyTextureFile(hit->entity, textures.front());
         } else {
             ctx.pendingError = "Solte a textura sobre um objeto da cena.";
+        }
+    }
+    if (!materials.empty()) {
+        if (hit) {
+            ctx.ApplyMaterialFile(hit->entity, materials.front());
+        } else {
+            ctx.pendingError = "Solte o material sobre um objeto da cena.";
         }
     }
 
@@ -503,6 +513,12 @@ void SceneViewport::HandleDrop(EditorContext& ctx, const ImVec2& origin) {
             // Apoia a base da malha no ponto (a origem do OBJ nem sempre fica embaixo).
             e->transform.position = point + glm::vec3(offset, -mesh.BoundsMin().y, 0.0f);
             offset += std::max(1.0f, mesh.BoundsMax().x - mesh.BoundsMin().x) * 1.2f;
+        }
+    }
+    for (const auto& file : prefabs) {
+        if (Entity* e = ctx.InstantiatePrefabFile(file)) {
+            e->transform.position = point + glm::vec3(offset, 0.0f, 0.0f);
+            offset += 1.5f;
         }
     }
 }

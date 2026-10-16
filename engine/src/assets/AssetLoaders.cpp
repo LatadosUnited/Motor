@@ -135,6 +135,8 @@ AssetType AssetTypeFromPath(const fs::path& path) {
     if (ext == kSceneFileExtension) return AssetType::Scene;
     if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") return AssetType::Texture;
     if (ext == ".obj") return AssetType::Mesh;
+    if (ext == kMaterialFileExtension) return AssetType::Material;
+    if (ext == kPrefabFileExtension) return AssetType::Prefab;
     return AssetType::Unknown;
 }
 
@@ -143,6 +145,8 @@ const char* AssetTypeName(AssetType type) {
         case AssetType::Scene: return "Cena";
         case AssetType::Texture: return "Textura";
         case AssetType::Mesh: return "Malha";
+        case AssetType::Material: return "Material";
+        case AssetType::Prefab: return "Prefab";
         case AssetType::Unknown: break;
     }
     return "Arquivo";
