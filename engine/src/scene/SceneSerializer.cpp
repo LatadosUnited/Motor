@@ -279,7 +279,7 @@ void ConvertSceneLight(const json& root, Scene& out) {
     }
 
     Entity& sun = out.CreateEntity("Luz direcional");
-    sun.transform.position = {0.0f, 10.0f, 0.0f};  // só para o ícone ficar à vista: a posição não muda a luz
+    sun.transform.position = {0.0f, 3.0f, 0.0f};  // só para o ícone ficar à vista: a posição não muda a luz
     sun.transform.rotation = RotationLookingAt(direction);
     LightComponent& light = sun.Add<LightComponent>();
     light.type = LightType::Directional;

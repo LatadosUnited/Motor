@@ -84,7 +84,7 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
             light.type = motor::LightType::Spot;
             e.transform.rotation = motor::RotationLookingAt({0.0f, -1.0f, 0.0f});  // aponta para o chão
         }
-        if (parent == kNullEntity) e.transform.position = {0.0f, type == Primitive::DirectionalLight ? 8.0f : 3.0f, 0.0f};
+        if (parent == kNullEntity) e.transform.position = {0.0f, 3.0f, 0.0f};
     } else if (type != Primitive::Empty) {
         e.Add<motor::MeshRenderer>().mesh = assets.FindMesh(names[static_cast<int>(type)]);
         if (type != Primitive::Plane && parent == kNullEntity) e.transform.position.y = 0.5f;

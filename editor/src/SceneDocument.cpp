@@ -67,7 +67,7 @@ void BuildStarterScene(Scene& scene, const AssetLibrary& assets, bool withScript
     camera.Add<CameraComponent>();
 
     Entity& sun = scene.CreateEntity("Sol");
-    sun.transform.position = {0.0f, 8.0f, 0.0f};
+    sun.transform.position = {-2.0f, 3.0f, -1.0f};
     sun.transform.rotation = RotationLookingAt({-0.5f, -1.0f, -0.35f});
     sun.Add<LightComponent>().type = LightType::Directional;
 }
