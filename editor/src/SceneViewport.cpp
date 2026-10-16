@@ -67,6 +67,7 @@ void DrawCameraIcon(ImDrawList* dl, const ImVec2& c, ImU32 color) {
 
 void SceneViewport::Init() {
     m_framebuffer = std::make_unique<Framebuffer>(1280, 720, 4);
+    m_ui = std::make_unique<UiRenderer>();
     m_camera.position = {0.0f, 4.0f, 9.0f};
     m_camera.LookAt({0.0f, 0.5f, 0.0f});
 }
@@ -110,6 +111,9 @@ void SceneViewport::Render(Renderer& renderer, const EditorContext& ctx, bool ga
         renderer.SubmitWireframe(*mr->mesh, scene.WorldMatrix(e->id), kSelectionColor);
     }
     renderer.EndScene();
+
+    // UI do jogo por cima, no mesmo framebuffer (no Play e na edição, para ver o HUD no lugar).
+    if (m_showUi) m_ui->Render(scene, ctx.assets, m_framebuffer->Width(), m_framebuffer->Height(), m_framebuffer.get());
 }
 
 void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderStats& stats, float fps) {
@@ -138,6 +142,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     if (!gameView) {
         CollectIcons(ctx);
         ImDrawList* overlay = ImGui::GetWindowDrawList();
+        if (m_showUi) m_uiTool.Draw(ctx, overlay, origin, m_ui->Canvas().Layout());
         if (m_showColliders) DrawColliders(ctx, overlay, origin);
         DrawSelectedHelpers(ctx, overlay, origin);
         DrawIcons(ctx, overlay, origin);
@@ -145,6 +150,16 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         DrawToolbar(ImVec2(origin.x + 8.0f, origin.y + 44.0f));
     }
     play.DrawControls(origin, m_size.x);
+
+    // Mouse para a UI do jogo (botões): só na visão do jogo e fora dos botões de Play do viewport.
+    if (SceneRuntime* runtime = play.Runtime()) {
+        if (UiSystem* ui = runtime->GetSystem<UiSystem>()) {
+            const ImVec2 mouse = ImGui::GetMousePos();
+            ui->SetPointer({m_size, {mouse.x - origin.x, mouse.y - origin.y},
+                            gameView && m_showUi && imageHovered && !ImGui::IsAnyItemHovered(),
+                            ImGui::IsMouseDown(ImGuiMouseButton_Left)});
+        }
+    }
 
     // Cliques que caem no gizmo ou na barra de ferramentas não chegam à cena.
     const bool sceneHovered = !gameView && imageHovered && !ImGui::IsAnyItemHovered() &&
@@ -156,18 +171,29 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         }
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             const ImVec2 mouse = ImGui::GetMousePos();
-            PickAt(ctx, {(mouse.x - origin.x) / m_size.x, (mouse.y - origin.y) / m_size.y});
+            const glm::vec2 local{mouse.x - origin.x, mouse.y - origin.y};
+            // Ícones de luz/câmera ficam por cima de tudo; depois a UI (desenhada por cima da cena); depois as malhas.
+            const bool onIcon = std::any_of(m_icons.begin(), m_icons.end(), [&](const Icon& icon) {
+                const float dx = icon.center.x - local.x, dy = icon.center.y - local.y;
+                return dx * dx + dy * dy <= kIconPickRadius * kIconPickRadius;
+            });
+            if (onIcon || !m_showUi || !m_uiTool.OnClick(ctx, local, m_ui->Canvas().Layout())) {
+                PickAt(ctx, {local.x / m_size.x, local.y / m_size.y});
+            }
         }
     }
+    if (!gameView) m_uiTool.Update(ctx, m_size);
 
     // Overlay com estatísticas.
     ImDrawList* dl = ImGui::GetWindowDrawList();
     char text[160];
-    std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws  |  %u tris  |  %dx%d", fps, stats.drawCalls,
-                  stats.triangles, m_framebuffer->Width(), m_framebuffer->Height());
+    std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws  |  %u tris  |  UI: %u draws  |  %dx%d", fps,
+                  stats.drawCalls, stats.triangles, m_showUi ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(),
+                  m_framebuffer->Height());
     const ImVec2 pad{8.0f, 6.0f};
     const ImVec2 size = ImGui::CalcTextSize(text);
-    const ImVec2 p0{origin.x + 8.0f, origin.y + 8.0f};
+    // Na visão do jogo, embaixo: o canto de cima costuma ser do HUD do jogo.
+    const ImVec2 p0{origin.x + 8.0f, gameView ? origin.y + m_size.y - size.y - pad.y * 2 - 8.0f : origin.y + 8.0f};
     dl->AddRectFilled(p0, ImVec2(p0.x + size.x + pad.x * 2, p0.y + size.y + pad.y * 2), IM_COL32(0, 0, 0, 120), 4.0f);
     dl->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), IM_COL32(235, 235, 235, 255), text);
 
@@ -348,6 +374,8 @@ void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, cons
 void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
     const EntityId selected = ctx.selected;
     if (m_gizmoTool == GizmoTool::None || !ctx.scene.Find(selected)) return;
+    // Elementos de UI ficam na tela, não no mundo: movem-se arrastando no viewport (ou pelo Inspector).
+    if (IsUiEntity(*ctx.scene.Find(selected))) return;
 
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetGizmoSizeClipSpace(0.15f);  // padrão 0.1 fica pequeno no viewport
@@ -420,6 +448,10 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
     ImGui::SameLine(0.0f, 14.0f);
     if (toggleButton("Colliders", m_showColliders)) m_showColliders = !m_showColliders;
     ImGui::SetItemTooltip("Mostrar as formas de colisão (verde), os triggers (azul) e os personagens");
+    ImGui::SameLine();
+    if (toggleButton("UI", m_showUi)) m_showUi = !m_showUi;
+    ImGui::SetItemTooltip("Mostrar a interface do jogo (HUD) por cima da cena. Com ela ligada, um clique na UI a\n"
+                          "seleciona e arrastar move o elemento; desligue para clicar nos objetos 3D por trás dela.");
     ImGui::PopStyleVar();
     ImGui::EndGroup();
 

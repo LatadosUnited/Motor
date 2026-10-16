@@ -22,6 +22,8 @@ add_executable(MotorEditor
     src/ColliderShapeDrawer.cpp
     src/MaterialRefDrawer.cpp
     src/PrefabLinkDrawer.cpp
+    src/UiEditor.cpp
+    src/UiFieldDrawers.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 if(WIN32)
