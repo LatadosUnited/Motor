@@ -7,5 +7,7 @@ motor_add_layer(core
         ImGuiLayer.cpp
     PRIVATE_LIBS glfw)
 
-# O editor e os jogos usam o ImGui pelos headers da engine.
-target_link_libraries(motor_core PUBLIC imgui)
+# ImGui: os objetos entram na libMotor.dll pelo alvo Motor; aqui só os headers (públicos: o editor e os scripts
+# usam o ImGui pelos headers da engine).
+target_link_libraries(motor_core PRIVATE imgui)
+target_include_directories(motor_core PUBLIC ${MOTOR_IMGUI_INCLUDE_DIRS})

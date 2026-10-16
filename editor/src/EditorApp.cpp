@@ -3,7 +3,6 @@
 #include <imgui.h>
 #include <imgui_internal.h>  // DockBuilder
 #include <ImGuizmo.h>
-#include <scripts/Scripts.h>
 
 #include <string>
 #include <utility>
@@ -31,12 +30,13 @@ EditorApp::EditorApp(fs::path projectToOpen)
                   .stopPlay = [this] { StopPlay(); },
                   .quit = [this] { Quit(); },
                   .requestClose = [this] { GetWindow().RequestClose(); },
-                  .setWindowTitle = [this](const std::string& title) { SetWindowTitle(title); }}),
+                  .setWindowTitle = [this](const std::string& title) { SetWindowTitle(title); },
+                  .projectClosing = [this] { m_scripts.CloseProject(); },
+                  .projectOpened = [this] { m_scripts.OpenProject(); }}),
+      m_scripts(m_ctx, m_history, m_document, m_play),
       m_startupProject(std::move(projectToOpen)) {}
 
 void EditorApp::OnInit() {
-    // Antes de abrir qualquer cena: os scripts precisam estar registrados para serem lidos.
-    scripts::RegisterAll(ComponentRegistry::Instance());
     m_viewport.Init();
 
     AssetLibrary& assets = m_ctx.assets;
@@ -78,7 +78,6 @@ void EditorApp::BuildDefaultScene() {
 
     Entity& sphere = m_ctx.CreatePrimitive(Primitive::Sphere);
     sphere.name = "Jogador";
-    sphere.Add<scripts::MoverWasd>();
     sphere.transform.position = {0.0f, 0.6f, 0.0f};
     sphere.transform.scale = glm::vec3(1.2f);
     sphere.Get<MeshRenderer>()->material.color = {0.30f, 0.60f, 0.95f, 1.0f};
@@ -87,7 +86,6 @@ void EditorApp::BuildDefaultScene() {
     Entity& group = m_ctx.CreatePrimitive(Primitive::Empty);
     group.name = "Torre";
     group.transform.position = {2.8f, 0.0f, -0.5f};
-    group.Add<scripts::Girar>().velocidade = 45.0f;
     const EntityId groupId = group.id;
 
     struct Part { const char* name; Primitive type; glm::vec3 pos; float scale; glm::vec4 color; };
@@ -104,11 +102,10 @@ void EditorApp::BuildDefaultScene() {
         e.Get<MeshRenderer>()->material.color = p.color;
     }
 
-    // Câmera do jogo seguindo o jogador (ver "Seguir" no Inspector).
+    // Sem projeto não há scripts (eles ficam na pasta Scripts/ de cada projeto).
     Entity& camera = m_ctx.CreatePrimitive(Primitive::Camera);
     camera.transform.position = {0.0f, 4.6f, 7.0f};
     camera.transform.SetEulerDegrees({-30.0f, 0.0f, 0.0f});
-    camera.Add<scripts::Seguir>().deslocamento = {0.0f, 4.0f, 7.0f};
 
     scene.light.direction = {-0.5f, -1.0f, -0.35f};
     m_ctx.selected = kNullEntity;
@@ -120,6 +117,7 @@ void EditorApp::OnFixedUpdate(float dt) {
 
 void EditorApp::OnUpdate(float dt) {
     m_play.Update(dt, m_viewport.IsFocused());
+    m_scripts.Update(dt);
     m_document.PollChanges(dt);
 
     // Arquivos novos ou movidos fora do editor: cria os .meta que faltam e atualiza os caminhos dos GUIDs.
@@ -152,10 +150,11 @@ void EditorApp::OnImGui() {
     const ImGuiID dockspaceId = ImGui::GetID("EditorDockSpace");
     if (m_resetLayout) {
         // Só sobrescreve se não houver layout salvo (imgui.ini) ou se o usuário pediu para restaurar.
-        // Também reconstrói quando o layout salvo é de uma versão sem o painel "Projeto".
+        // Também reconstrói quando o layout salvo é de uma versão sem os painéis "Projeto" ou "Scripts".
         ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockspaceId);
-        const bool hasProjectPanel = ImGui::FindWindowSettingsByID(ImHashStr("Projeto")) != nullptr;
-        if (!node || !node->IsSplitNode() || !hasProjectPanel) BuildDockLayout(dockspaceId);
+        const bool hasPanels = ImGui::FindWindowSettingsByID(ImHashStr("Projeto")) != nullptr &&
+                               ImGui::FindWindowSettingsByID(ImHashStr("Scripts")) != nullptr;
+        if (!node || !node->IsSplitNode() || !hasPanels) BuildDockLayout(dockspaceId);
         m_resetLayout = false;
     }
     ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport());
@@ -165,12 +164,14 @@ void EditorApp::OnImGui() {
     DrawInspectorPanel(m_ctx);
     m_viewport.Draw(m_ctx, m_play, GetRenderer().GetStats(), FramesPerSecond());
     DrawProjectPanel();
+    m_scripts.DrawPanel();
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
 
     // Atalhos antes dos popups: o Esc que fecha um popup não deve também limpar a seleção.
     HandleShortcuts();
     if (!m_ctx.pendingError.empty()) m_document.ShowError(std::exchange(m_ctx.pendingError, {}));
     m_document.DrawPopups();
+    m_scripts.DrawNewScriptPopup();
     m_ctx.ApplyPendingDelete();
     // Depois de todas as alterações do frame: se a cena mudou e o usuário terminou a interação, vira um passo.
     // No Play, não: ao parar a cena volta a ser igual à última foto do histórico.
@@ -185,6 +186,8 @@ bool EditorApp::OnCloseRequested() {
 }
 
 void EditorApp::OnShutdown() {
+    StopPlay();
+    m_scripts.CloseProject();  // nenhum objeto da DLL de scripts pode sobrar depois de descarregá-la
     m_settings.projectGridView = m_projectPanel.View().grid;
     m_settings.projectIconSize = m_projectPanel.View().iconSize;
     m_settings.Save();
@@ -197,12 +200,17 @@ void EditorApp::ApplyPlayRequest() {
             m_viewport.StopLooking();
             m_viewport.RequestFocus();  // as teclas vão para o jogo sem precisar clicar no viewport
             break;
-        case PlayController::Event::Stopped: m_viewport.StopLooking(); break;
+        case PlayController::Event::Stopped: OnPlayStopped(); break;
     }
 }
 
 void EditorApp::StopPlay() {
-    if (m_play.Stop(m_ctx)) m_viewport.StopLooking();
+    if (m_play.Stop(m_ctx)) OnPlayStopped();
+}
+
+void EditorApp::OnPlayStopped() {
+    m_viewport.StopLooking();
+    m_scripts.OnPlayStopped();  // scripts recompilados durante o Play recarregam agora
 }
 
 void EditorApp::BuildDockLayout(unsigned int dockspaceId) {
@@ -221,7 +229,8 @@ void EditorApp::BuildDockLayout(unsigned int dockspaceId) {
     ImGui::DockBuilderDockWindow("Cena", leftBottom);
     ImGui::DockBuilderDockWindow("Inspector", right);
     ImGui::DockBuilderDockWindow("Viewport", center);
-    ImGui::DockBuilderDockWindow("Projeto", bottom);
+    ImGui::DockBuilderDockWindow("Scripts", bottom);
+    ImGui::DockBuilderDockWindow("Projeto", bottom);  // por último: fica como aba ativa
     ImGui::DockBuilderFinish(dockspaceId);
 }
 
@@ -256,7 +265,9 @@ void EditorApp::DrawMenuBar() {
         ImGui::EndMenu();
     }
     m_play.DrawMenu();
+    m_scripts.DrawMenu();
     m_play.DrawStatus();
+    m_scripts.DrawStatus();
     ImGui::EndMainMenuBar();
 }
 
@@ -281,6 +292,7 @@ void EditorApp::HandleShortcuts() {
         }
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F8, false) && m_play.IsActive()) m_play.ToggleGameView();
+    if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) m_scripts.RequestBuild();
     // Jogando com o viewport em foco, as teclas são do jogo (WASD não troca o gizmo, Del não exclui...).
     if (m_play.InGameView() && m_viewport.IsFocused()) return;
     // Com o painel Projeto em foco, Del/F2/Enter pertencem a ele (arquivos), não às entidades.

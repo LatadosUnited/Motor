@@ -7,9 +7,10 @@
 #include <motor/scene/Component.h>
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneSerializer.h>
-#include <scripts/Scripts.h>
 
 #include <glm/geometric.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/trigonometric.hpp>
 
 #include <string>
 
@@ -28,18 +29,27 @@ struct Fabrica : Script {
     }
     void OnDestroy() override { ++g_destroyed; }
 };
+
+// Gira em Y (graus por segundo).
+struct Girar : Script {
+    float velocidade = 90.0f;
+    void OnUpdate(float dt) override {
+        GetTransform().rotation = glm::angleAxis(glm::radians(velocidade * dt), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                  GetTransform().rotation;
+    }
+};
 } // namespace
 
 int main() {
     ComponentRegistry::Instance().Register<Fabrica>("Fabrica", "Fábrica").Field("velocidade", "Velocidade", &Fabrica::velocidade);
-    scripts::RegisterAll(ComponentRegistry::Instance());
+    ComponentRegistry::Instance().Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
 
     Scene scene;
     Entity& fabrica = scene.CreateEntity("Fábrica");
     fabrica.Add<Fabrica>();
     const EntityId idFabrica = fabrica.id;
     Entity& piao = scene.CreateEntity("Pião");
-    piao.Add<scripts::Girar>();
+    piao.Add<Girar>();
     const EntityId idPiao = piao.id;
     Entity& cam = scene.CreateEntity("Câmera");
     cam.Add<CameraComponent>();
@@ -99,7 +109,7 @@ int main() {
     CHECK(scene == original);
     CHECK(SceneSerializer::ToJson(scene, assets) == originalJson);
     CHECK(selected == idPiao);  // a peça sumiu: volta a seleção de antes do Play
-    CHECK(!scene.Find(idPiao)->Get<scripts::Girar>()->HasStarted());
+    CHECK(!scene.Find(idPiao)->Get<Girar>()->HasStarted());
 
     SECTION("Seleção que existe na cena restaurada é mantida");
     play.Play(scene, selected);

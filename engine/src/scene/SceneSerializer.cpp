@@ -224,6 +224,13 @@ void FieldFromJson(const FieldInfo& f, void* c, const json& value, AssetLibrary&
 
 json ComponentToJson(const ComponentPtr& component, const AssetLibrary& assets, const JsonOptions& options,
                      const std::string& owner) {
+    // Tipo desconhecido: grava de volta exatamente o que foi lido.
+    if (&component.Type() == &ComponentRegistry::MissingType()) {
+        const auto& missing = *static_cast<const MissingComponent*>(component.Data());
+        json stored = json::parse(missing.json, nullptr, false);
+        if (stored.is_object()) return stored;
+        return json{{"type", missing.type}};
+    }
     json j;
     j["type"] = component.Type().name;
     for (const FieldInfo& f : component.Type().fields) {
@@ -233,11 +240,22 @@ json ComponentToJson(const ComponentPtr& component, const AssetLibrary& assets, 
 }
 
 // Campos ausentes no arquivo ficam com o valor padrão do componente.
-void ComponentFromJson(const ComponentType& type, const json& obj, Entity& e, AssetLibrary& assets) {
-    void* data = e.Add(type);
+void ReadFields(const ComponentType& type, void* data, const json& obj, AssetLibrary& assets, const std::string& owner) {
     for (const FieldInfo& f : type.fields) {
-        if (auto it = obj.find(f.key); it != obj.end()) FieldFromJson(f, data, *it, assets, e.name);
+        if (auto it = obj.find(f.key); it != obj.end()) FieldFromJson(f, data, *it, assets, owner);
     }
+}
+
+void ComponentFromJson(const ComponentType& type, const json& obj, Entity& e, AssetLibrary& assets) {
+    ReadFields(type, e.Add(type), obj, assets, e.name);
+}
+
+ComponentPtr MakeMissing(std::string typeName, const json& obj) {
+    ComponentPtr component(ComponentRegistry::MissingType());
+    auto& missing = *static_cast<MissingComponent*>(component.Data());
+    missing.type = std::move(typeName);
+    missing.json = obj.dump(-1, ' ', false, json::error_handler_t::replace);
+    return component;
 }
 } // namespace
 
@@ -334,7 +352,9 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
                     const std::string typeName = jc.value("type", std::string());
                     const ComponentType* type = ComponentRegistry::Instance().Find(typeName);
                     if (!type) {
-                        log::Warn("Cena: componente desconhecido '{}' em '{}' foi ignorado", typeName, e.name);
+                        // Script que ainda não foi compilado/carregado, ou que foi removido: os dados ficam guardados.
+                        log::Warn("Cena: componente desconhecido '{}' em '{}' (dados mantidos)", typeName, e.name);
+                        e.components.push_back(MakeMissing(typeName, jc));
                     } else if (e.Get(*type)) {
                         log::Warn("Cena: componente '{}' repetido em '{}' foi ignorado", typeName, e.name);
                     } else {
@@ -361,6 +381,39 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
         SetError(error, std::format("JSON inválido: {}", e.what()));
         return false;
     }
+}
+
+size_t DetachComponents(Scene& scene, const std::function<bool(const ComponentType&)>& which,
+                        const AssetLibrary& assets) {
+    size_t count = 0;
+    for (const auto& e : scene.Entities()) {
+        for (ComponentPtr& component : e->components) {
+            const ComponentType& type = component.Type();
+            if (&type == &ComponentRegistry::MissingType() || !which(type)) continue;
+            component = MakeMissing(type.name, ComponentToJson(component, assets, {}, e->name));
+            ++count;
+        }
+    }
+    return count;
+}
+
+size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets) {
+    const ComponentType& missingType = ComponentRegistry::MissingType();
+    size_t count = 0;
+    for (const auto& e : scene.Entities()) {
+        for (ComponentPtr& component : e->components) {
+            if (&component.Type() != &missingType) continue;
+            const auto& missing = *static_cast<const MissingComponent*>(component.Data());
+            const ComponentType* type = ComponentRegistry::Instance().Find(missing.type);
+            if (!type || e->Get(*type)) continue;  // ainda desconhecido, ou a entidade já tem um desse tipo
+            const json obj = json::parse(missing.json, nullptr, false);
+            ComponentPtr real(*type);
+            if (obj.is_object()) ReadFields(*type, real.Data(), obj, assets, e->name);
+            component = std::move(real);  // no mesmo lugar da lista (ordem do Inspector)
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibrary& assets, std::string* error) {

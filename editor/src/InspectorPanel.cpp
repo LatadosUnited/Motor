@@ -202,9 +202,34 @@ void DrawField(EditorContext& ctx, const motor::FieldInfo& f, void* component) {
     ImGui::PopID();
 }
 
+// Componente de tipo desconhecido (script removido, renomeado, com erro ou ainda não compilado): só mostra
+// o que está guardado. Devolve false se o usuário pediu para removê-lo.
+bool DrawMissingComponent(const motor::MissingComponent& missing) {
+    bool keep = true;
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.35f, 1.0f));
+    const std::string header = missing.type + " (script não carregado)###missing";
+    const bool open = ImGui::CollapsingHeader(header.c_str(), &keep, ImGuiTreeNodeFlags_DefaultOpen);
+    ImGui::PopStyleColor();
+    if (open && keep) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("O tipo \"%s\" não está registrado: o script foi removido ou renomeado, não compilou, ou a "
+                            "DLL de scripts ainda não carregou. Os dados ficam guardados na cena e voltam a valer "
+                            "quando o script existir de novo.", missing.type.c_str());
+        ImGui::PopTextWrapPos();
+        if (ImGui::TreeNode("Dados guardados")) {
+            ImGui::TextWrapped("%s", missing.json.c_str());
+            ImGui::TreePop();
+        }
+    }
+    return keep;
+}
+
 // Cabeçalho + campos de um componente. Devolve false se o usuário pediu para removê-lo.
 bool DrawComponent(EditorContext& ctx, motor::ComponentPtr& component) {
     const motor::ComponentType& type = component.Type();
+    if (&type == &motor::ComponentRegistry::MissingType()) {
+        return DrawMissingComponent(*static_cast<const motor::MissingComponent*>(component.Data()));
+    }
     ImGui::PushID(type.name.c_str());
     bool keep = true;
     const bool open = ImGui::CollapsingHeader(type.label.c_str(), &keep, ImGuiTreeNodeFlags_DefaultOpen);
@@ -250,11 +275,14 @@ void DrawInspectorPanel(EditorContext& ctx) {
         DrawTransform(ctx, *e);
     }
 
-    const motor::ComponentType* toRemove = nullptr;  // removido depois do laço, para não invalidar a lista
-    for (motor::ComponentPtr& component : e->components) {
-        if (!DrawComponent(ctx, component)) toRemove = &component.Type();
+    // Removido depois do laço, para não invalidar a lista. Pelo índice: pode haver vários desconhecidos.
+    std::optional<size_t> toRemove;
+    for (size_t i = 0; i < e->components.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        if (!DrawComponent(ctx, e->components[i])) toRemove = i;
+        ImGui::PopID();
     }
-    if (toRemove) e->Remove(*toRemove);
+    if (toRemove) e->components.erase(e->components.begin() + static_cast<std::ptrdiff_t>(*toRemove));
 
     ImGui::Spacing();
     ImGui::Separator();

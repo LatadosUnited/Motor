@@ -36,11 +36,15 @@ ctest --test-dir build --output-on-failure
   - `renderer/GL.h`: loader OpenGL próprio (X-macro). Função GL nova = adicionar na lista de lá.
 - `editor/` — `MotorEditor`. `EditorApp` só monta as peças (loop, layout, barra de menus, atalhos,
   desfazer); `SceneViewport` (câmera livre, gizmo, seleção, arquivos soltos), `PlayController` (menu Jogo,
-  botões e pedidos de Play), `SceneDocument` (cena/projeto abertos, menu Arquivo, popups, título).
+  botões e pedidos de Play), `SceneDocument` (cena/projeto abertos, menu Arquivo, popups, título),
+  `ScriptController` (menu e painel Scripts, compilação e recarga da DLL de scripts do projeto).
   Um arquivo por painel, `EditorContext` (estado compartilhado), `UndoHistory`.
   `PlayMode` (cópia/restauração da cena no Play; o loop de jogo é `motor::SceneRuntime`).
   Recurso novo do editor vai na peça da sua área, não no `EditorApp`.
-- `scripts/` — scripts de jogo em C++ (`motor::Script`, biblioteca `MotorScripts`, registrados em `RegisterAll`).
+- Scripts de jogo ficam na pasta `Scripts/` de cada projeto (`motor::Script` + `MOTOR_SCRIPT`, ver
+  `motor/scene/ScriptModule.h`). O editor compila uma DLL por projeto (`ScriptProject`, `ScriptBuilder`) e
+  recarrega sem fechar (`ScriptHost`). A engine é a `libMotor.dll`, compartilhada pelo editor e pela DLL de
+  scripts; modelos de script em `editor/templates/Scripts/`.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções

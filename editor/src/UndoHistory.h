@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <vector>
 
 namespace editor {
@@ -30,6 +31,9 @@ public:
     // Trocam o conteúdo de `scene` e ajustam a seleção. Retornam false se não havia o que fazer.
     bool Undo(motor::Scene& scene, motor::EntityId& selected);
     bool Redo(motor::Scene& scene, motor::EntityId& selected);
+
+    // Todas as fotos guardadas (a recarga dos scripts precisa trocar os componentes delas também).
+    void ForEachScene(const std::function<void(motor::Scene&)>& fn);
 
 private:
     struct State {

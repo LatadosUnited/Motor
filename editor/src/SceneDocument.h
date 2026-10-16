@@ -25,6 +25,8 @@ public:
         std::function<void()> quit;              // fecha sem perguntar
         std::function<void()> requestClose;      // passa por OnCloseRequested
         std::function<void(const std::string&)> setWindowTitle;
+        std::function<void()> projectClosing;    // antes de trocar de projeto (descarrega os scripts)
+        std::function<void()> projectOpened;     // projeto novo aberto, antes de abrir a cena (carrega os scripts)
     };
 
     enum class FileAction { None, NewScene, OpenScene, OpenScenePath, NewProject, OpenProject, OpenProjectPath, Quit };

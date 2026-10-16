@@ -14,6 +14,7 @@ function(motor_add_layer layer)
     cmake_parse_arguments(ARG "" "" "SOURCES;DEPENDS;PRIVATE_LIBS" ${ARGN})
     set(target motor_${layer})
     add_library(${target} OBJECT ${ARG_SOURCES})
+    set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON)  # os objetos vão para uma DLL
 
     target_include_directories(${target}
         PUBLIC  ${MOTOR_ENGINE_DIR}/include
@@ -43,8 +44,45 @@ foreach(layer IN LISTS MOTOR_LAYERS)
     add_subdirectory(src/${layer})
 endforeach()
 
-# Biblioteca única usada pelo editor, sandbox, scripts e testes: os objetos de todas as camadas.
-add_library(Motor STATIC)
+# ---------------------------------------------------------------------------
+# Biblioteca compartilhada (libMotor.dll) com os objetos de todas as camadas: o editor e a DLL de scripts de
+# cada projeto ligam nela, e assim compartilham o registro de componentes, o Input, o log e o ImGui.
+# ---------------------------------------------------------------------------
+add_library(Motor SHARED)
+
+# Ligação direta: os objetos das camadas (e os do ImGui, biblioteca de objetos) entram na DLL. PRIVATE para
+# o GLFW e o nlohmann_json não irem também para quem liga no Motor (haveria duas cópias no processo).
 foreach(layer IN LISTS MOTOR_LAYERS)
-    target_link_libraries(Motor PUBLIC motor_${layer})
+    target_link_libraries(Motor PRIVATE motor_${layer})
 endforeach()
+target_link_libraries(Motor PRIVATE imgui glfw nlohmann_json::nlohmann_json)
+
+# O que quem usa o Motor precisa: headers da engine e do ImGui, GLM.
+target_include_directories(Motor PUBLIC include ${MOTOR_IMGUI_INCLUDE_DIRS})
+target_link_libraries(Motor PUBLIC glm::glm)
+target_compile_definitions(Motor PUBLIC GLM_FORCE_RADIANS)
+
+# Sem __declspec(dllexport) no código: exporta todos os símbolos (engine, ImGui e GLFW).
+if(MINGW)
+    target_link_options(Motor PRIVATE -Wl,--export-all-symbols)
+endif()
+
+# ---------------------------------------------------------------------------
+# SDK para os scripts dos projetos: o editor gera um CMakeLists por projeto que inclui MotorSDK.cmake (alvo
+# importado Motor::Motor) e lê MotorSDK.json para saber qual toolchain usar (o mesmo deste build).
+# ---------------------------------------------------------------------------
+set(MOTOR_SDK_DIR ${CMAKE_BINARY_DIR}/bin/sdk)
+set(MOTOR_SDK_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include ${glm_SOURCE_DIR} ${MOTOR_IMGUI_INCLUDE_DIRS})
+file(GENERATE OUTPUT ${MOTOR_SDK_DIR}/MotorSDK.cmake CONTENT
+"# Gerado pelo build do Motor. Não edite.
+if(NOT TARGET Motor::Motor)
+    add_library(Motor::Motor SHARED IMPORTED)
+    set_target_properties(Motor::Motor PROPERTIES
+        IMPORTED_LOCATION \"$<TARGET_FILE:Motor>\"
+        IMPORTED_IMPLIB \"$<TARGET_LINKER_FILE:Motor>\"
+        INTERFACE_INCLUDE_DIRECTORIES \"${MOTOR_SDK_INCLUDE_DIRS}\"
+        INTERFACE_COMPILE_DEFINITIONS \"GLM_FORCE_RADIANS\"
+        INTERFACE_COMPILE_FEATURES \"cxx_std_20\")
+endif()
+")
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/MotorSDK.json.in ${MOTOR_SDK_DIR}/MotorSDK.json @ONLY)

@@ -11,11 +11,13 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <typeinfo>
 #include <utility>
 #include <vector>
 
@@ -75,8 +77,17 @@ struct ComponentType {
     std::function<void(void*)> destroy;
     std::function<void(void*, AssetLibrary&)> onAdd;  // opcional: valores iniciais ao adicionar pelo editor
     std::function<Script*(void*)> asScript;           // só para tipos que herdam de Script (Script.h)
+    const std::type_info* cppType = nullptr;          // tipo C++ registrado (achar o tipo de T entre DLLs)
 
     bool IsScript() const { return static_cast<bool>(asScript); }
+};
+
+// Componente cujo tipo não está registrado: script removido ou renomeado, ou DLL de scripts ainda não
+// carregada. Guarda o JSON original do componente para gravá-lo de volta igual e para religá-lo quando o
+// tipo reaparecer (SceneSerializer::ResolveMissingComponents). Tipo: ComponentRegistry::MissingType().
+struct MissingComponent {
+    std::string type;  // nome do tipo que falta ("Girar")
+    std::string json;  // objeto JSON completo do componente, como no arquivo da cena
 };
 
 // Mesmos valores em todos os campos registrados (estado não registrado não entra na comparação).
@@ -152,44 +163,62 @@ public:
 
     template <class T>
     ComponentBuilder<T> Register(std::string name, std::string label) {
-        static_assert(std::is_default_constructible_v<T> && std::is_copy_constructible_v<T>,
-                      "componentes precisam de construtor padrão e de cópia");
         auto type = std::make_unique<ComponentType>();
-        type->name = std::move(name);
-        type->label = std::move(label);
-        type->create = [] { return static_cast<void*>(new T()); };
-        type->clone = [](const void* p) { return static_cast<void*>(new T(*static_cast<const T*>(p))); };
-        type->destroy = [](void* p) { delete static_cast<T*>(p); };
-        // Script só precisa estar completo aqui se T herdar dele (e aí, por herança, já está).
-        if constexpr (std::is_base_of_v<Script, T>) {
-            type->asScript = [](void* p) -> Script* { return static_cast<T*>(p); };
-        }
+        Describe<T>(*type, std::move(name), std::move(label));
         ComponentType& ref = *type;
         m_types.push_back(std::move(type));
-        Slot<T>() = &ref;
+        ++m_generation;
         return ComponentBuilder<T>(ref);
     }
+
+    // Remove um tipo (scripts de uma DLL que vai ser descarregada). Não pode haver componentes dele vivos:
+    // antes, troque-os por MissingComponent (SceneSerializer::DetachComponents).
+    void Unregister(const ComponentType* type);
 
     const ComponentType* Find(std::string_view name) const;
     const std::vector<std::unique_ptr<ComponentType>>& Types() const { return m_types; }
 
-    // Tipo registrado para T (nullptr se T nunca foi registrado).
+    // Tipo dos componentes desconhecidos (MissingComponent). Não aparece em Types() nem em Find().
+    static const ComponentType& MissingType();
+
+    // Tipo registrado para T (nullptr se T não está registrado). Procura pelo typeid, e não por uma variável
+    // estática por tipo, porque cada DLL teria a sua cópia dela: assim um script numa DLL acha o
+    // MeshRenderer registrado pela engine. O resultado fica em cache neste módulo até o registro mudar.
     template <class T>
     static const ComponentType* TypeOf() {
-        Instance();
-        return Slot<T>();
+        const ComponentRegistry& registry = Instance();
+        static const ComponentType* cached = nullptr;
+        static uint64_t cachedGeneration = 0;
+        if (cachedGeneration != registry.m_generation) {
+            cached = registry.FindCppType(typeid(T));
+            cachedGeneration = registry.m_generation;
+        }
+        return cached;
     }
 
 private:
     ComponentRegistry() = default;
 
     template <class T>
-    static const ComponentType*& Slot() {
-        static const ComponentType* slot = nullptr;
-        return slot;
+    static void Describe(ComponentType& type, std::string name, std::string label) {
+        static_assert(std::is_default_constructible_v<T> && std::is_copy_constructible_v<T>,
+                      "componentes precisam de construtor padrão e de cópia");
+        type.name = std::move(name);
+        type.label = std::move(label);
+        type.cppType = &typeid(T);
+        type.create = [] { return static_cast<void*>(new T()); };
+        type.clone = [](const void* p) { return static_cast<void*>(new T(*static_cast<const T*>(p))); };
+        type.destroy = [](void* p) { delete static_cast<T*>(p); };
+        // Script só precisa estar completo aqui se T herdar dele (e aí, por herança, já está).
+        if constexpr (std::is_base_of_v<Script, T>) {
+            type.asScript = [](void* p) -> Script* { return static_cast<T*>(p); };
+        }
     }
 
+    const ComponentType* FindCppType(const std::type_info& info) const;
+
     std::vector<std::unique_ptr<ComponentType>> m_types;
+    uint64_t m_generation = 1;  // muda a cada Register/Unregister (invalida os caches de TypeOf)
 };
 
 // Registra os componentes que vêm com a engine (Components.cpp).

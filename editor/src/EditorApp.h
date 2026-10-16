@@ -6,6 +6,7 @@
 #include "ProjectPanel.h"
 #include "SceneDocument.h"
 #include "SceneViewport.h"
+#include "ScriptController.h"
 #include "UndoHistory.h"
 
 #include <motor/Motor.h>
@@ -15,8 +16,8 @@
 namespace editor {
 
 // Janela principal do editor: loop, layout dos painéis, barra de menus, atalhos e desfazer. O trabalho
-// de cada área fica nas peças que ele monta: SceneViewport (viewport), PlayController (modo Play) e
-// SceneDocument (cena/projeto abertos e menu Arquivo).
+// de cada área fica nas peças que ele monta: SceneViewport (viewport), PlayController (modo Play),
+// SceneDocument (cena/projeto abertos e menu Arquivo) e ScriptController (scripts do projeto).
 class EditorApp final : public motor::Application {
 public:
     // projectToOpen: pasta ou .mproject passado na linha de comando; vazio = reabre o último projeto.
@@ -40,6 +41,7 @@ private:
     void Redo();
     void ApplyPlayRequest();
     void StopPlay();  // volta à edição (nada acontece se já estiver editando)
+    void OnPlayStopped();
     void DrawProjectPanel();
 
     EditorContext m_ctx;
@@ -49,6 +51,7 @@ private:
     SceneViewport m_viewport;
     PlayController m_play;
     SceneDocument m_document;  // depois dos membros que ele referencia
+    ScriptController m_scripts;  // depois do documento e do Play, que ele referencia
 
     std::filesystem::path m_startupProject;
     int m_historyRequest = 0;  // -1 desfazer, +1 refazer (executado no início do próximo frame)
