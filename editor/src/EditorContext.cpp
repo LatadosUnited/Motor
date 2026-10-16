@@ -66,7 +66,7 @@ std::vector<fs::path> AcceptAnyPathDrop() {
 }
 
 motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
-    const char* names[] = {"Entidade", "Cubo", "Esfera", "Plano", "Câmera"};
+    const char* names[] = {"Entidade", "Cubo", "Esfera", "Plano", "Câmera", "Sol", "Lâmpada", "Holofote"};
     motor::Entity& e = scene.CreateEntity(names[static_cast<int>(type)], parent);
 
     if (type == Primitive::Camera) {
@@ -75,6 +75,16 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
             e.transform.position = {0.0f, 2.0f, 6.0f};
             e.transform.SetEulerDegrees({-12.0f, 0.0f, 0.0f});
         }
+    } else if (type == Primitive::DirectionalLight || type == Primitive::PointLight || type == Primitive::SpotLight) {
+        motor::LightComponent& light = e.Add<motor::LightComponent>();
+        if (type == Primitive::DirectionalLight) {
+            light.type = motor::LightType::Directional;
+            e.transform.rotation = motor::RotationLookingAt({-0.4f, -1.0f, -0.3f});
+        } else if (type == Primitive::SpotLight) {
+            light.type = motor::LightType::Spot;
+            e.transform.rotation = motor::RotationLookingAt({0.0f, -1.0f, 0.0f});  // aponta para o chão
+        }
+        if (parent == kNullEntity) e.transform.position = {0.0f, 3.0f, 0.0f};
     } else if (type != Primitive::Empty) {
         e.Add<motor::MeshRenderer>().mesh = assets.FindMesh(names[static_cast<int>(type)]);
         if (type != Primitive::Plane && parent == kNullEntity) e.transform.position.y = 0.5f;
@@ -142,6 +152,10 @@ void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent) {
     if (ImGui::MenuItem("Plano")) ctx.CreatePrimitive(Primitive::Plane, parent);
     ImGui::Separator();
     if (ImGui::MenuItem("Câmera")) ctx.CreatePrimitive(Primitive::Camera, parent);
+    ImGui::Separator();
+    if (ImGui::MenuItem("Luz direcional")) ctx.CreatePrimitive(Primitive::DirectionalLight, parent);
+    if (ImGui::MenuItem("Luz pontual")) ctx.CreatePrimitive(Primitive::PointLight, parent);
+    if (ImGui::MenuItem("Luz spot")) ctx.CreatePrimitive(Primitive::SpotLight, parent);
 }
 
 } // namespace editor

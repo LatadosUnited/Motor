@@ -73,7 +73,7 @@ public:
     Scene(Scene&&) noexcept = default;
     Scene& operator=(Scene&&) noexcept = default;
 
-    // Mesmo conteúdo: entidades (na mesma ordem, com os mesmos ids e valores), luz e ambiente.
+    // Mesmo conteúdo: entidades (na mesma ordem, com os mesmos ids e valores) e ambiente.
     bool operator==(const Scene& other) const;
 
     Entity& CreateEntity(std::string name, EntityId parent = kNullEntity);
@@ -103,6 +103,9 @@ public:
     // Ajusta o Transform local para que a entidade fique com esta matriz no mundo.
     void SetWorldMatrix(EntityId id, const glm::mat4& world);
 
+    // Luzes das entidades ativas com o componente Luz, na ordem da cena, já no espaço do mundo.
+    std::vector<Light> CollectLights() const;
+
     // Render = BeginScene + SubmitTo + EndScene. SubmitTo serve para quem quer desenhar algo a mais na mesma passada.
     void Render(Renderer& renderer, const Camera& camera, const Framebuffer* target = nullptr) const;
     void SubmitTo(Renderer& renderer) const;
@@ -110,7 +113,7 @@ public:
     // Raio contra as caixas (AABB locais) das malhas visíveis. direction não precisa ser normalizada.
     std::optional<RaycastHit> Raycast(const glm::vec3& origin, const glm::vec3& direction) const;
 
-    DirectionalLight light;
+    // Céu, neblina e luz ambiente. As luzes com direção são entidades com o componente Luz.
     Environment environment;
 
 private:

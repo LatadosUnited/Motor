@@ -88,7 +88,7 @@ private:
     }
 
     void OnRender(Renderer& renderer) override {
-        renderer.BeginScene(m_camera, m_light);
+        renderer.BeginScene(m_camera, {&m_light, 1});
         for (const auto& o : m_objects) {
             renderer.Submit(*o.mesh, o.material, o.transform.Matrix());
         }
@@ -97,7 +97,7 @@ private:
 
     Camera m_camera;
     FlyCameraController m_cameraController;
-    DirectionalLight m_light;
+    Light m_light;  // direcional
     std::vector<Object> m_objects;
 };
 

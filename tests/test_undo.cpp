@@ -25,7 +25,7 @@ int main() {
     CHECK(!(b == a));
     b = a;
     CHECK(b == a);
-    b.light.intensity = 2;
+    b.environment.ambient.r = 0.5f;
     CHECK(!(b == a));
     b = a;
     b.Find(childId)->Get<MeshRenderer>()->material.specular = 0.9f;

@@ -72,9 +72,16 @@ int main() {
     CHECK(mesh && mesh->fields.size() == 5);
     CHECK(ComponentRegistry::TypeOf<CameraComponent>() == camera);
     CHECK(ComponentRegistry::TypeOf<Sensor>() == sensor);
-    // Módulos "Camera" < "MeshRenderer" < "Sensores".
+    // Módulos "Camera" < "MeshRenderer" < "Sensores" (outros módulos da engine podem ficar no meio).
     const auto& types = registry.Types();
-    CHECK(types.size() >= 3 && types[0].get() == camera && types[1].get() == mesh && types[2].get() == sensor);
+    auto indexOf = [&](const ComponentType* type) {
+        for (size_t i = 0; i < types.size(); ++i) {
+            if (types[i].get() == type) return i;
+        }
+        return types.size();
+    };
+    CHECK(types.size() >= 3 && types[0].get() == camera && indexOf(camera) < indexOf(mesh) &&
+          indexOf(mesh) < indexOf(sensor) && indexOf(sensor) < types.size());
 
     SECTION("Tipo de campo próprio (FieldTraits)");
     CHECK(sensor && sensor->fields.size() == 2);

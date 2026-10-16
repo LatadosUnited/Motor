@@ -9,7 +9,9 @@
 #include <imgui.h>
 
 #include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 
 namespace editor {
 
@@ -36,6 +38,18 @@ public:
     void RequestFocus() { m_focusRequest = true; }
 
 private:
+    // Ícones de luzes e câmeras (que não têm malha para clicar): desenhados por cima da imagem e
+    // selecionáveis com o clique, antes do raio contra as malhas.
+    struct Icon {
+        EntityId entity = kNullEntity;
+        ImVec2 center;       // em pixels, relativo ao canto superior esquerdo do viewport
+        float depth = 0.0f;  // distância até a câmera do editor (o mais perto ganha no clique)
+    };
+    void CollectIcons(const EditorContext& ctx);
+    void DrawIcons(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) const;
+    void DrawSelectedHelpers(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) const;
+    // Ponto do mundo em pixels do viewport (relativo ao canto); nullopt se estiver atrás da câmera.
+    std::optional<ImVec2> Project(const glm::vec3& world) const;
     void DrawGizmo(EditorContext& ctx, const ImVec2& origin);
     void DrawToolbar(const ImVec2& position);
     void PickAt(EditorContext& ctx, const glm::vec2& uv);  // uv no viewport, (0,0) = canto superior esquerdo
@@ -54,6 +68,7 @@ private:
     float m_snapRotate = 15.0f;  // graus
     float m_snapScale = 0.1f;
 
+    std::vector<Icon> m_icons;  // do frame atual
     glm::vec2 m_size{1.0f};
     bool m_looking = false;            // botão direito segurado no viewport
     bool m_focused = false;            // o jogo só recebe teclado/mouse com o viewport em foco

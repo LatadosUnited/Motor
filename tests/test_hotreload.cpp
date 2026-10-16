@@ -56,7 +56,7 @@ const MissingComponent& AsMissing(const ComponentPtr& c) {
 
 const char* kSceneWithUnknown = R"({
   "format": "motor-scene",
-  "version": 3,
+  "version": 4,
   "entities": [
     {"id": 1, "name": "A", "components": [
       {"type": "Camera", "fov": 50.0},

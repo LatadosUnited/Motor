@@ -5,11 +5,17 @@
 #include "renderer/GL.h"
 
 #include <GLFW/glfw3.h>
+#include <glm/common.hpp>
 #include <glm/exponential.hpp>
+#include <glm/trigonometric.hpp>
+#include <glm/vec4.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace motor {
 
@@ -19,12 +25,42 @@ struct FrameData {
     glm::mat4 view;
     glm::mat4 projection;
     glm::vec4 cameraPosition;
-    glm::vec4 lightDirection;
-    glm::vec4 lightColor;  // rgb * intensidade
     glm::vec4 ambient;
-    glm::vec4 fog;         // rgb = cor do céu (linear), a = densidade
+    glm::vec4 fog;      // rgb = cor do céu (linear), a = densidade
 };
+
+// Espelha o bloco "Lights" (std140) do lit.frag.
+struct LightData {
+    glm::vec4 positionRange;   // xyz = posição, w = alcance
+    glm::vec4 directionType;   // xyz = direção (normalizada), w = tipo (LightType)
+    glm::vec4 color;           // rgb = cor * intensidade
+    glm::vec4 cone;            // x = cos(ângulo interno), y = cos(ângulo externo)
+};
+struct LightsData {
+    glm::ivec4 count;  // x = número de luzes
+    LightData lights[kMaxLights];
+};
+
 constexpr GLuint kFrameBinding = 0;
+constexpr GLuint kLightsBinding = 1;
+
+glm::vec3 ToLinear(const glm::vec3& srgb) {
+    return glm::pow(glm::max(srgb, glm::vec3(0.0f)), glm::vec3(2.2f));
+}
+
+LightData Pack(const Light& light) {
+    const float len = glm::length(light.direction);
+    const glm::vec3 direction = len > 1e-6f ? light.direction / len : glm::vec3(0.0f, -1.0f, 0.0f);
+    // Ângulos limitados para o cone não degenerar (externo > interno, abaixo de 90°).
+    const float outer = glm::clamp(light.outerAngle, 1.0f, 89.0f);
+    const float inner = glm::clamp(light.innerAngle, 0.0f, outer - 0.5f);
+    return {
+        glm::vec4(light.position, glm::max(light.range, 0.01f)),
+        glm::vec4(direction, static_cast<float>(light.type)),
+        glm::vec4(light.color * glm::max(light.intensity, 0.0f), 1.0f),
+        glm::vec4(std::cos(glm::radians(inner)), std::cos(glm::radians(outer)), 0.0f, 0.0f),
+    };
+}
 
 void APIENTRY OnGlDebug(GLenum, GLenum type, GLuint id, GLenum severity, GLsizei, const GLchar* message, const void*) {
     if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) return;
@@ -61,9 +97,12 @@ Renderer::Renderer() {
 
     glCreateBuffers(1, &m_frameUbo);
     glNamedBufferStorage(m_frameUbo, sizeof(FrameData), nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glCreateBuffers(1, &m_lightsUbo);
+    glNamedBufferStorage(m_lightsUbo, sizeof(LightsData), nullptr, GL_DYNAMIC_STORAGE_BIT);
 }
 
 Renderer::~Renderer() {
+    glDeleteBuffers(1, &m_lightsUbo);
     glDeleteBuffers(1, &m_frameUbo);
 }
 
@@ -77,8 +116,8 @@ void Renderer::BeginFrame(int width, int height) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void Renderer::BeginScene(const Camera& camera, const DirectionalLight& light,
-                          const Environment& environment, const Framebuffer* target) {
+void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, const Environment& environment,
+                          const Framebuffer* target) {
     MOTOR_ASSERT(!m_inScene, "BeginScene chamado duas vezes sem EndScene");
     m_inScene = true;
     m_target = target;
@@ -108,13 +147,22 @@ void Renderer::BeginScene(const Camera& camera, const DirectionalLight& light,
         camera.View(),
         camera.Projection(),
         glm::vec4(camera.position, 1.0f),
-        glm::vec4(glm::normalize(light.direction), 0.0f),
-        glm::vec4(light.color * light.intensity, 1.0f),
-        glm::vec4(light.ambient, 1.0f),
-        glm::vec4(glm::pow(environment.skyColor, glm::vec3(2.2f)), environment.fogDensity),
+        glm::vec4(environment.ambient, 1.0f),
+        glm::vec4(ToLinear(environment.skyColor), environment.fogDensity),
     };
     glNamedBufferSubData(m_frameUbo, 0, sizeof(FrameData), &data);
     glBindBufferBase(GL_UNIFORM_BUFFER, kFrameBinding, m_frameUbo);
+
+    if (lights.size() > kMaxLights && !std::exchange(m_warnedTooManyLights, true)) {
+        log::Warn("Renderer: {} luzes na cena; só as primeiras {} são usadas", lights.size(), kMaxLights);
+    }
+    const size_t count = std::min(lights.size(), kMaxLights);
+    LightsData lightsData{};
+    lightsData.count = glm::ivec4(static_cast<int>(count), 0, 0, 0);
+    for (size_t i = 0; i < count; ++i) lightsData.lights[i] = Pack(lights[i]);
+    // Só o cabeçalho e as luzes usadas: o resto do bloco o shader não lê.
+    glNamedBufferSubData(m_lightsUbo, 0, sizeof(glm::ivec4) + count * sizeof(LightData), &lightsData);
+    glBindBufferBase(GL_UNIFORM_BUFFER, kLightsBinding, m_lightsUbo);
 
     m_litShader->Bind();
 }

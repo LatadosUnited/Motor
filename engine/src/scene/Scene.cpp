@@ -54,7 +54,7 @@ void Entity::Remove(const ComponentType& type) {
 
 // --- Scene ------------------------------------------------------------------------
 
-Scene::Scene(const Scene& other) : light(other.light), environment(other.environment), m_nextId(other.m_nextId) {
+Scene::Scene(const Scene& other) : environment(other.environment), m_nextId(other.m_nextId) {
     m_entities.reserve(other.m_entities.size());
     for (const auto& e : other.m_entities) {
         m_entities.push_back(std::make_unique<Entity>(*e));
@@ -69,14 +69,8 @@ Scene& Scene::operator=(const Scene& other) {
 
 bool Scene::operator==(const Scene& other) const {
     if (m_entities.size() != other.m_entities.size()) return false;
-    const DirectionalLight &la = light, &lb = other.light;
-    if (la.direction != lb.direction || la.color != lb.color || la.intensity != lb.intensity ||
-        la.ambient != lb.ambient) {
-        return false;
-    }
-    if (environment.skyColor != other.environment.skyColor || environment.fogDensity != other.environment.fogDensity) {
-        return false;
-    }
+    const Environment &ea = environment, &eb = other.environment;
+    if (ea.skyColor != eb.skyColor || ea.fogDensity != eb.fogDensity || ea.ambient != eb.ambient) return false;
     for (size_t i = 0; i < m_entities.size(); ++i) {
         if (!SameEntity(*m_entities[i], *other.m_entities[i])) return false;
     }
@@ -238,8 +232,18 @@ glm::mat4 Scene::WorldMatrix(EntityId id) const {
     return m;
 }
 
+std::vector<Light> Scene::CollectLights() const {
+    std::vector<Light> lights;
+    for (const auto& e : m_entities) {
+        const LightComponent* light = e->Get<LightComponent>();
+        if (!light || !IsActiveInHierarchy(e->id)) continue;
+        lights.push_back(MakeLight(*light, WorldMatrix(e->id)));
+    }
+    return lights;
+}
+
 void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* target) const {
-    renderer.BeginScene(camera, light, environment, target);
+    renderer.BeginScene(camera, CollectLights(), environment, target);
     SubmitTo(renderer);
     renderer.EndScene();
 }

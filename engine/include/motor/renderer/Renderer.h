@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motor/renderer/Camera.h"
+#include "motor/renderer/Light.h"
 #include "motor/renderer/Material.h"
 #include "motor/renderer/Mesh.h"
 #include "motor/renderer/Shader.h"
@@ -11,21 +12,16 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 
 namespace motor {
 
 class Framebuffer;
 
-struct DirectionalLight {
-    glm::vec3 direction{-0.4f, -1.0f, -0.3f};
-    glm::vec3 color{1.0f, 0.97f, 0.9f};
-    float intensity = 1.0f;
-    glm::vec3 ambient{0.12f, 0.14f, 0.18f};
-};
-
 struct Environment {
     glm::vec3 skyColor{0.53f, 0.70f, 0.88f};  // sRGB; também é a cor da neblina
     float fogDensity = 0.012f;
+    glm::vec3 ambient{0.12f, 0.14f, 0.18f};   // luz que chega a tudo, sem direção (linear)
 };
 
 struct RenderStats {
@@ -49,8 +45,9 @@ public:
     bool IsWireframe() const { return m_wireframe; }
 
     // target == nullptr desenha na janela. A cena começa limpando o alvo com a cor do céu.
-    void BeginScene(const Camera& camera, const DirectionalLight& light,
-                    const Environment& environment = {}, const Framebuffer* target = nullptr);
+    // Até kMaxLights luzes (as demais são ignoradas, com aviso no log); nenhuma = só a luz ambiente.
+    void BeginScene(const Camera& camera, std::span<const Light> lights, const Environment& environment = {},
+                    const Framebuffer* target = nullptr);
     void Submit(const Mesh& mesh, const Material& material, const glm::mat4& model);
     void SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color);  // sem iluminação
     void EndScene();
@@ -62,6 +59,8 @@ private:
     std::unique_ptr<Shader> m_unlitShader;
     std::shared_ptr<Texture2D> m_whiteTexture;
     unsigned int m_frameUbo = 0;
+    unsigned int m_lightsUbo = 0;
+    bool m_warnedTooManyLights = false;
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;
     int m_windowHeight = 0;

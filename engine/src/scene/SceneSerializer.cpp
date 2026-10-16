@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
 #include <format>
 #include <memory>
 #include <optional>
@@ -22,7 +23,8 @@ using json = nlohmann::ordered_json;
 namespace {
 constexpr const char* kFormatName = "motor-scene";
 // 2: assets de arquivo referenciados por GUID. 3: lista genérica "components" (antes, "meshRenderer" fixo).
-constexpr int kFormatVersion = 3;
+// 4: a luz direcional da cena ("light") virou uma entidade com o componente Luz; o ambiente foi para "environment".
+constexpr int kFormatVersion = 4;
 
 // float -> double passando pela representação decimal mais curta, para o arquivo ter "0.6" e não
 // "0.6000000238418579".
@@ -46,7 +48,10 @@ void Read(const json& obj, const char* key, glm::vec3& v) { ReadFloats<3>(obj, k
 void Read(const json& obj, const char* key, glm::quat& q) {
     float xyzw[4] = {q.x, q.y, q.z, q.w};
     ReadFloats<4>(obj, key, xyzw);
-    q = glm::normalize(glm::quat(xyzw[3], xyzw[0], xyzw[1], xyzw[2]));
+    q = glm::quat(xyzw[3], xyzw[0], xyzw[1], xyzw[2]);
+    // Só normaliza se precisar: renormalizar um quaternion que já é unitário muda o último bit e a cena
+    // deixaria de ser igual depois de salvar e abrir.
+    if (std::abs(glm::length(q) - 1.0f) > 1e-5f) q = glm::normalize(q);
 }
 
 template <class T>
@@ -259,6 +264,30 @@ void ComponentFromJson(const ComponentType& type, const json& obj, Entity& e, As
     ReadFields(type, e.Add(type), obj, assets, e.name);
 }
 
+// Versões 1 a 3: a cena tinha uma luz direcional fixa ("light", com o ambiente junto), sempre presente
+// (campo ausente = valor padrão). Vira uma entidade com o componente Luz, no fim da lista.
+void ConvertSceneLight(const json& root, Scene& out) {
+    // Valores padrão da antiga DirectionalLight.
+    glm::vec3 direction{-0.4f, -1.0f, -0.3f};
+    glm::vec3 color{1.0f, 0.97f, 0.9f};
+    float intensity = 1.0f;
+    if (auto it = root.find("light"); it != root.end() && it->is_object()) {
+        Read(*it, "direction", direction);
+        Read(*it, "color", color);
+        Read(*it, "intensity", intensity);
+        Read(*it, "ambient", out.environment.ambient);
+    }
+
+    Entity& sun = out.CreateEntity("Luz direcional");
+    sun.transform.position = {0.0f, 3.0f, 0.0f};  // só para o ícone ficar à vista: a posição não muda a luz
+    sun.transform.rotation = RotationLookingAt(direction);
+    LightComponent& light = sun.Add<LightComponent>();
+    light.type = LightType::Directional;
+    light.color = color;
+    light.intensity = intensity;
+    log::Info("Cena antiga (versão {}): luz da cena convertida na entidade '{}'", root.value("version", 0), sun.name);
+}
+
 ComponentPtr MakeMissing(std::string typeName, const json& obj) {
     ComponentPtr component(ComponentRegistry::MissingType());
     auto& missing = *static_cast<MissingComponent*>(component.Data());
@@ -276,12 +305,7 @@ std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOpt
     root["environment"] = {
         {"skyColor", Vec(scene.environment.skyColor)},
         {"fogDensity", Num(scene.environment.fogDensity)},
-    };
-    root["light"] = {
-        {"direction", Vec(scene.light.direction)},
-        {"color", Vec(scene.light.color)},
-        {"intensity", Num(scene.light.intensity)},
-        {"ambient", Vec(scene.light.ambient)},
+        {"ambient", Vec(scene.environment.ambient)},
     };
 
     json entities = json::array();
@@ -329,12 +353,7 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
         if (auto it = root.find("environment"); it != root.end() && it->is_object()) {
             Read(*it, "skyColor", out.environment.skyColor);
             Read(*it, "fogDensity", out.environment.fogDensity);
-        }
-        if (auto it = root.find("light"); it != root.end() && it->is_object()) {
-            Read(*it, "direction", out.light.direction);
-            Read(*it, "color", out.light.color);
-            Read(*it, "intensity", out.light.intensity);
-            Read(*it, "ambient", out.light.ambient);
+            Read(*it, "ambient", out.environment.ambient);
         }
 
         // 1ª passada: cria tudo na ordem do arquivo. Os ids são reatribuídos, então guardamos o mapeamento.
@@ -385,6 +404,8 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
                 log::Warn("Cena: pai inválido para '{}'; movida para a raiz", out.Find(child)->name);
             }
         }
+
+        if (version < 4) ConvertSceneLight(root, out);
         return true;
     } catch (const json::exception& e) {
         SetError(error, std::format("JSON inválido: {}", e.what()));
