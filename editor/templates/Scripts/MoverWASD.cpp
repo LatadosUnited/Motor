@@ -1,4 +1,6 @@
 // Move a entidade no plano XZ com WASD (Shift corre). W = -Z ("frente" no mundo). Script de exemplo do Motor.
+// Mexe direto no Transform, sem física: atravessa paredes. Para andar com colisão, veja o modelo Jogador.
+// Guia passo a passo: docs/scripts.md na pasta do Motor (seção "Entrada e tempo").
 
 #include <motor/scene/ScriptModule.h>
 
@@ -13,6 +15,7 @@ struct MoverWasd : motor::Script {
     bool virar = true;        // vira a frente (-Z) para a direção do movimento
 
     void OnUpdate(float dt) override {
+        // IsKeyDown: tecla apertada agora (falso quando o jogo não tem o foco, ex.: digitando no editor).
         using motor::Key;
         glm::vec3 dir{0.0f};
         if (IsKeyDown(Key::W)) dir.z -= 1.0f;
@@ -24,6 +27,7 @@ struct MoverWasd : motor::Script {
 
         const bool running = IsKeyDown(Key::LeftShift) || IsKeyDown(Key::RightShift);
         motor::Transform& t = GetTransform();
+        // Velocidade (m/s) vezes dt (s) = metros andados neste frame.
         t.position += dir * velocidade * (running ? corrida : 1.0f) * dt;
 
         // Frente do objeto é -Z: o ângulo em Y que leva -Z até dir.

@@ -1,6 +1,7 @@
 // Jogador com física: anda com WASD (Shift corre) e pula com Espaço, sem atravessar o chão nem as paredes.
 // Precisa do componente "Controlador de personagem" na mesma entidade; o chão e as paredes precisam de Collider.
 // W = -Z ("frente" no mundo). Script de exemplo do Motor.
+// Guia passo a passo: docs/scripts.md na pasta do Motor (seção "Física" e receita "Jogador").
 
 #include <motor/physics/PhysicsSystem.h>
 #include <motor/scene/ScriptModule.h>
@@ -16,7 +17,7 @@ struct Jogador : motor::Script {
     float pulo = 5.0f;        // velocidade para cima ao pular (m/s): ~1.3 m de altura
     bool virar = true;        // vira a frente (-Z) para a direção do movimento
 
-    bool querPular = false;
+    bool querPular = false;  // não registrado: estado interno do Play
 
     // A tecla é lida a cada frame (OnUpdate) e o pulo vai no passo da física (OnFixedUpdate): assim nenhum
     // aperto de Espaço se perde entre dois passos.
@@ -25,6 +26,7 @@ struct Jogador : motor::Script {
     }
 
     void OnFixedUpdate(float) override {
+        // A física é um sistema do jogo: existe só no Play (fora dele, nullptr).
         auto* fisica = GetSystem<motor::PhysicsSystem>();
         if (!fisica) return;
 
@@ -38,6 +40,7 @@ struct Jogador : motor::Script {
         if (moving) dir = glm::normalize(dir);  // na diagonal não anda mais rápido
 
         const bool running = IsKeyDown(Key::LeftShift) || IsKeyDown(Key::RightShift);
+        // MoveCharacter vale até a próxima chamada: chamar a cada passo (com zero, para).
         fisica->MoveCharacter(GetId(), dir * velocidade * (running ? corrida : 1.0f));
         if (querPular) {
             fisica->Jump(GetId(), pulo);  // só pula se estiver no chão

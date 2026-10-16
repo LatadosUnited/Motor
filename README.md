@@ -36,6 +36,7 @@ engine/            camadas, de baixo para cima (cada uma só usa as de baixo; co
     physics/       PhysicsSystem (Jolt Physics): corpos, personagem, eventos, raios; contorno dos colliders
   src/<camada>/    implementação + CMakeLists.txt da camada (+ renderer/GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine
+docs/              guia e referência dos scripts (scripts.md, scripts-api.md) e exemplos compilados pelo ctest
 editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play, scripts
   templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, Jogador, MoverWASD, Seguir)
 sandbox/           app de demonstração
@@ -292,114 +293,40 @@ entity.Remove<Girar>();
 
 ## Scripts (C++)
 
-Os scripts são de cada projeto: ficam em `MeuJogo/Scripts/` (`.cpp`/`.h` do usuário) e o editor os compila
-numa DLL que carrega e **recarrega sem fechar**. Um script é um componente que herda de `motor::Script`: os
-campos registrados aparecem no Inspector (em "Adicionar componente" > Scripts), são salvos na cena e
-entram no desfazer como qualquer componente; os métodos `On*` só rodam no Play.
+**Guia completo: [docs/scripts.md](docs/scripts.md)** (do primeiro script a um mini jogo, com receitas e
+erros comuns) e **referência da API: [docs/scripts-api.md](docs/scripts-api.md)**. Os exemplos do guia
+ficam em `docs/examples/` e são compilados e executados pelo teste `test_script_docs`.
+
+Os scripts são de cada projeto: ficam em `MeuJogo/Scripts/` e o editor os compila numa DLL que carrega e
+**recarrega sem fechar** (ao abrir o projeto, ao salvar/criar/apagar um arquivo da pasta e com F7). Um script
+é um componente que herda de `motor::Script`: os campos registrados aparecem no Inspector ("Adicionar
+componente" > Scripts), são salvos na cena e entram no desfazer; os métodos `On*` só rodam no Play.
 
 ```cpp
 // MeuJogo/Scripts/Girar.cpp
 #include <motor/scene/ScriptModule.h>
 
 struct Girar : motor::Script {
-    glm::vec3 eixo{0.0f, 1.0f, 0.0f};
     float velocidade = 90.0f;  // graus por segundo
 
     void OnUpdate(float dt) override {
-        GetTransform().rotation *= glm::angleAxis(glm::radians(velocidade * dt), eixo);
+        GetTransform().Rotate({0.0f, 1.0f, 0.0f}, glm::radians(velocidade * dt));
     }
 };
 
-// Registro: roda quando a DLL é carregada. O nome ("Girar") é o que vai no arquivo da cena.
 MOTOR_SCRIPT(Girar) {
-    registry.Register<Girar>("Girar", "Girar")
-        .Field("eixo", "Eixo", &Girar::eixo)
-        .Field("velocidade", "Velocidade", &Girar::velocidade);
+    registry.Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
 }
 ```
 
-| O que | API (dentro do script) |
-|---|---|
-| Ciclo de vida | `OnStart()`, `OnUpdate(dt)`, `OnFixedUpdate(dt)`, `OnDestroy()` (virtuais, todas opcionais) |
-| Dono | `GetEntity()`, `GetId()`, `GetTransform()`, `GetScene()` |
-| Cena | `FindEntity("nome")`, `CreateEntity("nome", pai)`, `Destroy(id)`, `DestroySelf()` |
-| Tempo | `Time().delta`, `Time().fixedDelta`, `Time().elapsed` (s desde o Play, sem pausas), `Time().frame` |
-| Entrada | `IsKeyDown(Key::W)`, `WasKeyPressed(...)`, `IsMouseDown(...)`, `MouseDelta()` |
-| Log | `Log("vidas = {}", vidas)` — sai no log com o nome da entidade |
-
-- `OnStart` roda antes do primeiro `OnUpdate`; entidades inativas só iniciam quando ficam ativas, e
-  entidades criadas durante um quadro começam no seguinte.
-- `Destroy` é adiado para o fim do passo e leva os filhos junto (todos recebem `OnDestroy`).
-- A entrada dos scripts é falsa/zero quando o jogo não tem o foco; `motor::Input` direto não tem esse filtro.
-- Campos não registrados são estado interno (não salvos, não comparados). Copiar um script (Play, duplicar)
-  copia os campos, mas a cópia começa "não iniciada".
-- Não remova o componente de um script de dentro dele mesmo durante o Play; use `Destroy` na entidade.
-- Componentes da engine podem ser usados normalmente (`GetEntity().Get<motor::MeshRenderer>()`).
-- Sistemas do jogo (física, áudio...) são achados com `GetSystem<T>()` (ver "Sistemas do jogo" abaixo).
-
-### Sistemas do jogo (física, áudio, HUD)
-
-Camadas acima de `scene` (física, áudio, HUD) rodam a cada passo do Play como **sistemas**: uma classe que
-herda de `motor::RuntimeSystem`, registrada num `.cpp` da própria camada com `MOTOR_RUNTIME_SYSTEM`
-(`engine/include/motor/scene/RuntimeSystem.h`). O `SceneRuntime` não conhece as camadas de cima; ele só
-chama os ganchos dos sistemas registrados.
-
-```cpp
-// engine/src/physics/PhysicsSystem.cpp (exemplo)
-#include <motor/scene/SceneRuntime.h>
-
-class PhysicsSystem : public motor::RuntimeSystem {
-public:
-    void OnStart(motor::SceneRuntime& runtime) override { /* cria os corpos da cena */ }
-    void OnFixedUpdate(motor::SceneRuntime& runtime, float dt) override { /* avança o mundo */ }
-    void OnUpdate(motor::SceneRuntime& runtime, float dt) override {}
-    void OnStop(motor::SceneRuntime& runtime) override { /* libera tudo */ }
-};
-MOTOR_RUNTIME_SYSTEM(Fisica, PhysicsSystem, motor::kSystemOrderPhysics);
-
-// Num script:
-if (auto* fisica = GetSystem<PhysicsSystem>()) { /* ... */ }
-```
-
-- **Estado por Play**: cada `SceneRuntime` cria uma instância nova de cada sistema no `Start` e a destrói no
-  `Stop`. Dois runtimes não dividem estado, e cada Play começa limpo.
-- **Ordem** (estável): pela `order` e, no empate, pelo nome. `order < 0` roda **antes** dos scripts no
-  `FixedUpdate`/`Update`; `order >= 0`, **depois**. Ordens da engine: `kSystemOrderPhysics` (-100),
-  `kSystemOrderAudio` (100), `kSystemOrderUi` (200).
-
-| Passo | Ordem |
-|---|---|
-| `Start` | `OnStart` de todos os sistemas → `OnStart` dos scripts |
-| `FixedUpdate` | scripts pendentes iniciam → sistemas `order < 0` → `OnFixedUpdate` dos scripts → sistemas `order >= 0` → destruições |
-| `Update` | scripts pendentes iniciam → sistemas `order < 0` → `OnUpdate` dos scripts → sistemas `order >= 0` → destruições |
-| `Stop` | `OnDestroy` dos scripts → `OnStop` dos sistemas (ordem inversa) → sistemas destruídos |
-
-- Os scripts já acham os sistemas no `OnStart` e ainda no `OnDestroy`; fora do Play, `GetSystem` dá `nullptr`.
-  Um sistema acha outro com `runtime.GetSystem<T>()` (todos existem antes do primeiro `OnStart`).
-- Precisa rodar antes **e** depois dos scripts no mesmo passo? Registre dois sistemas.
-- Entidades podem sumir entre passos (`Destroy`, exclusão no editor durante o Play): guarde `EntityId` e
-  confira com `scene.Find(id)`, nunca ponteiros.
-- Exemplo completo e testado: `tests/test_runtime_systems.cpp`.
-
-### Compilar e recarregar
-
-- O editor compila a pasta `Scripts/` **ao abrir o projeto**, **ao salvar, criar ou apagar** um arquivo
-  dela (verifica a pasta a cada ~1 s) e pelo menu **Scripts > Recompilar scripts** (F7). Todos os `.cpp`
-  da pasta (e subpastas) entram; não há lista de arquivos para manter.
-- O painel **Scripts** (aba ao lado de Projeto) mostra a situação, os erros e avisos do compilador (clique
-  abre o arquivo) e a saída completa da compilação. Com erro, a barra de menus mostra "Scripts: N erro(s)"
-  e os scripts carregados continuam sendo os da última compilação boa.
-- **Recarga sem fechar**: os campos de todos os componentes de script são guardados (pelo JSON dos campos
-  registrados), os tipos antigos saem do registro, a DLL antiga é descarregada, a nova é carregada e os
-  campos são restaurados. Campo novo fica com o valor padrão; campo removido é ignorado. O desfazer continua
-  funcionando. **Durante o Play** a recarga espera: acontece ao parar.
-- **Script removido ou renomeado** (o nome passado para `Register`): os componentes dele não somem — ficam
-  como "script não carregado" no Inspector, com os dados guardados, são salvos de volta iguais na cena e
-  voltam a funcionar quando o tipo reaparecer. O mesmo acontece ao abrir uma cena antes de os scripts
-  compilarem.
-- **Scripts > Novo script...** cria `Scripts/<Nome>.cpp` com o esqueleto; **Adicionar exemplo** copia
-  **Girar**, **Mover com WASD** (plano XZ, Shift corre, vira para onde anda) ou **Seguir** (segue uma
-  entidade pelo nome — bom para a câmera). **Abrir pasta de scripts** abre no Explorer.
+- Menu **Scripts**: Novo script, Adicionar exemplo (Girar, Jogador, Mover com WASD, Seguir, de
+  `editor/templates/Scripts/`), Recompilar (F7), Abrir pasta. O painel **Scripts** mostra erros e avisos.
+- Com erro de compilação, continuam carregados os scripts da última compilação boa. Durante o Play a recarga
+  espera o Play parar. Script removido ou renomeado vira componente "script não carregado", com os dados
+  guardados, até voltar.
+- Sistemas do jogo (física, áudio, HUD) são `motor::RuntimeSystem` registrados pela engine com
+  `MOTOR_RUNTIME_SYSTEM` (ordem e regras em `engine/include/motor/scene/RuntimeSystem.h`, exemplo em
+  `tests/test_runtime_systems.cpp`); os scripts os acham com `GetSystem<T>()`.
 
 Como funciona: o editor gera `MeuJogo/.motor/scripts/cmake/CMakeLists.txt` (uma `GameScripts.dll` com
 todos os `.cpp` de `Scripts/` mais um ponto de entrada que exporta `MotorRegisterScripts`), que inclui

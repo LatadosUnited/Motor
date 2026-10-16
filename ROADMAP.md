@@ -32,10 +32,10 @@ Próximas fases, nesta ordem de importância:
 
 | # | Fase | Por quê | Pode rodar junto com |
 |---|---|---|---|
-| 1 | **Fase 9 — Interface do jogo (HUD)** | sem texto e botões na tela não há jogo (vida, pontos, menus) | 6, 12 |
-| 2 | **Fase 6 — Materiais e prefabs** | reaproveitar objetos e materiais; base dos modelos 3D | 9, 12 |
-| 3 | **Fase 11 — Modelos 3D (glTF) e animação** | personagens e cenários de verdade, além de OBJ | 9, 12 (depois da 6) |
-| 4 | **Fase 12 — Documentação de scripts** | quem faz o jogo precisa saber escrever scripts sem ler o código da engine | todas (só documentação e exemplos) |
+| 1 | **Fase 9 — Interface do jogo (HUD)** | sem texto e botões na tela não há jogo (vida, pontos, menus) | 11 |
+| 2 | ~~Fase 6 — Materiais e prefabs~~ ✅ | reaproveitar objetos e materiais; base dos modelos 3D | — |
+| 3 | **Fase 11 — Modelos 3D (glTF) e animação** | personagens e cenários de verdade, além de OBJ | 9 (a 6 já está pronta) |
+| 4 | ~~Fase 12 — Documentação de scripts~~ ✅ | quem faz o jogo precisa saber escrever scripts sem ler o código da engine | — |
 
 Depois delas: Fase 10 (exportar), Fase 8 (áudio) e Fase 7 (renderização avançada). A 11 depende da 6
 (o glTF traz materiais); 6 e 11 mexem nos mesmos arquivos de assets e não devem rodar ao mesmo tempo.
@@ -184,7 +184,7 @@ Depende da Fase 6 (o glTF traz materiais e vira prefab).
 **Pronto quando:** um personagem glTF animado anda pela cena controlado pelo script Jogador, trocando entre
 as animações parado, andando e pulando.
 
-## Fase 12 — Documentação de scripts ⭐ prioridade 4
+## Fase 12 — Documentação de scripts ✅
 
 Hoje o uso de scripts está espalhado no README e nos headers. Quem faz o jogo deve conseguir escrever scripts
 sem ler o código da engine.
@@ -214,8 +214,8 @@ Fase 0 Git/testes
    └─ Fase 1 Componentes ──┬─ Fase 2 Play ── Fase 3 Scripts ──┬─ Fase 5 Física ✅
                            │                                  ├─ Fase 8 Áudio
                            ├─ Fase 4 Luzes/câmera ✅          ├─ Fase 9 HUD           ⭐1
-                           ├─ Fase 6 Materiais/prefabs ⭐2    ├─ Fase 10 Exportar
-                           │     └─ Fase 11 Modelos 3D ⭐3    └─ Fase 12 Doc. scripts ⭐4
+                           ├─ Fase 6 Materiais/prefabs ✅     ├─ Fase 10 Exportar
+                           │     └─ Fase 11 Modelos 3D ⭐3    └─ Fase 12 Doc. scripts ✅
                            └─ Fase 7 Renderização avançada (depende da 4)
 ```
 

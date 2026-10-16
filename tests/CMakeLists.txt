@@ -63,3 +63,18 @@ motor_add_test(test_physics_bench)
 motor_add_test(test_materials)
 motor_add_test(test_prefabs ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)
 target_include_directories(test_prefabs PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Documentação dos scripts: compila os exemplos do guia (docs/examples) e os modelos do editor numa DLL de
+# scripts, roda os exemplos e confere que o guia e a referência batem com os arquivos e os headers.
+motor_add_test(test_script_docs
+    ${PROJECT_SOURCE_DIR}/editor/src/ScriptBuilder.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/ScriptHost.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/ScriptProject.cpp)
+target_include_directories(test_script_docs PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_script_docs PRIVATE nlohmann_json::nlohmann_json)
+target_compile_definitions(test_script_docs PRIVATE
+    MOTOR_TEST_SDK_JSON="${CMAKE_BINARY_DIR}/bin/sdk/MotorSDK.json"
+    MOTOR_TEST_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/editor/templates/Scripts"
+    MOTOR_TEST_DOCS_DIR="${PROJECT_SOURCE_DIR}/docs"
+    MOTOR_TEST_ENGINE_INCLUDE="${PROJECT_SOURCE_DIR}/engine/include")
+set_tests_properties(test_script_docs PROPERTIES TIMEOUT 600)

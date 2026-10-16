@@ -1,0 +1,524 @@
+// Documentação dos scripts (docs/scripts.md, docs/scripts-api.md): para o guia não ficar desatualizado.
+// - Compila numa DLL de scripts, com o toolchain do Motor, todos os exemplos do guia (docs/examples/) e os
+//   modelos do editor (editor/templates/Scripts/), sem erros nem avisos.
+// - Roda os exemplos de verdade: o mini jogo do guia (andar, coletar, pontuar), a porta, o inimigo, o
+//   disparador e a bola, com a física, simulando as teclas no estado interno do Input.
+// - Cada bloco ```cpp do guia é um trecho de um arquivo de exemplo, e cada exemplo é citado no guia.
+// - A referência cita todos os métodos públicos de Script, de PhysicsSystem e as opções de FieldOptions.
+// Sem janela nem OpenGL. Demora alguns segundos (compila a DLL).
+#include "TestUtil.h"
+
+#include "ScriptBuilder.h"
+#include "ScriptHost.h"
+#include "ScriptProject.h"
+
+#include <motor/assets/AssetLibrary.h>
+#include <motor/core/Input.h>
+#include <motor/core/Paths.h>
+#include <motor/physics/PhysicsSystem.h>
+#include <motor/scene/Components.h>
+#include <motor/scene/Scene.h>
+#include <motor/scene/SceneRuntime.h>
+#include <motor/scene/ScriptModule.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <format>
+#include <fstream>
+#include <functional>
+#include <optional>
+#include <regex>
+#include <utility>
+#include <set>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
+
+using namespace motor;
+using namespace editor;
+namespace fs = std::filesystem;
+namespace SP = editor::ScriptProject;
+
+namespace {
+
+constexpr float kDt = 1.0f / 60.0f;
+
+std::string ReadText(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+std::vector<std::string> Lines(const std::string& text) {
+    std::vector<std::string> lines;
+    std::stringstream ss(text);
+    std::string line;
+    while (std::getline(ss, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+bool Contains(const std::string& text, const std::string& part) {
+    return text.find(part) != std::string::npos;
+}
+
+bool Near(float a, float b, float eps) { return std::abs(a - b) < eps; }
+
+bool BuildAndWait(ScriptBuilder& builder, const SP::Paths& paths, const SP::Toolchain& toolchain) {
+    builder.Start(paths, toolchain);
+    const auto start = std::chrono::steady_clock::now();
+    while (!builder.Poll()) {
+        if (std::chrono::steady_clock::now() - start > std::chrono::minutes(8)) {
+            builder.Cancel();
+            std::printf("  (tempo esgotado)\n");
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    const bool ok = builder.GetState() == ScriptBuilder::State::Succeeded;
+    if (!ok || !SP::ParseDiagnostics(builder.Log()).empty()) {
+        std::printf("----- saída da compilação -----\n%s\n-------------------------------\n", builder.Log().c_str());
+    }
+    std::printf("  (compilação: %.1f s)\n", builder.Seconds());
+    return ok;
+}
+
+// --- Blocos de código do guia -------------------------------------------------------
+
+struct CodeBlock {
+    int line = 0;  // linha do ``` no guia
+    std::vector<std::string> lines;
+};
+
+// Blocos ```cpp (só esses: ```cpp errado, ```text etc. não são conferidos).
+std::vector<CodeBlock> CppBlocks(const std::string& markdown) {
+    std::vector<CodeBlock> blocks;
+    const std::vector<std::string> lines = Lines(markdown);
+    for (size_t i = 0; i < lines.size(); ++i) {
+        if (lines[i] != "```cpp") continue;
+        CodeBlock block;
+        block.line = static_cast<int>(i + 1);
+        for (++i; i < lines.size() && lines[i] != "```"; ++i) block.lines.push_back(lines[i]);
+        blocks.push_back(std::move(block));
+    }
+    return blocks;
+}
+
+// `part` aparece em `file` como linhas seguidas, a partir de `from`. Devolve a linha seguinte ao trecho.
+std::optional<size_t> FindLines(const std::vector<std::string>& file, const std::vector<std::string>& part, size_t from) {
+    if (part.empty()) return from;
+    for (size_t i = from; i + part.size() <= file.size(); ++i) {
+        if (std::equal(part.begin(), part.end(), file.begin() + static_cast<std::ptrdiff_t>(i))) return i + part.size();
+    }
+    return std::nullopt;
+}
+
+// O bloco é um trecho do arquivo: as partes separadas por linhas "// ..." aparecem nele, nessa ordem.
+bool BlockIsExcerptOf(const CodeBlock& block, const std::vector<std::string>& file) {
+    std::vector<std::vector<std::string>> parts(1);
+    for (const std::string& line : block.lines) {
+        if (line.find_first_not_of(' ') != std::string::npos && line.substr(line.find_first_not_of(' ')) == "// ...") {
+            parts.emplace_back();
+        } else {
+            parts.back().push_back(line);
+        }
+    }
+    size_t at = 0;
+    for (const auto& part : parts) {
+        const auto next = FindLines(file, part, at);
+        if (!next) return false;
+        at = *next;
+    }
+    return true;
+}
+
+// Nomes de funções declaradas num trecho de header (o que vem antes de '(' numa declaração).
+std::set<std::string> DeclaredFunctions(const std::string& code) {
+    std::set<std::string> names;
+    static const std::regex decl(R"((?:^|\s|[*&>])([A-Z]\w*)\s*\()");
+    for (const std::string& line : Lines(code)) {
+        const std::string trimmed = line.substr(std::min(line.size(), line.find_first_not_of(' ')));
+        if (trimmed.starts_with("//") || trimmed.starts_with("return") || trimmed.starts_with("static_assert") ||
+            trimmed.starts_with("WriteLog")) {
+            continue;
+        }
+        for (std::sregex_iterator it(line.begin(), line.end(), decl), end; it != end; ++it) names.insert((*it)[1]);
+    }
+    return names;
+}
+
+// Texto entre `begin` e o primeiro `end` depois dele.
+std::string Between(const std::string& text, const std::string& begin, const std::string& end) {
+    const size_t a = text.find(begin);
+    if (a == std::string::npos) return {};
+    const size_t b = text.find(end, a + begin.size());
+    return text.substr(a, b == std::string::npos ? std::string::npos : b - a);
+}
+
+// --- Cena e scripts da DLL ------------------------------------------------------------
+
+// Componente de script registrado pela DLL, adicionado à entidade.
+void* AddScript(Entity& entity, const char* type) {
+    const ComponentType* t = ComponentRegistry::Instance().Find(type);
+    return t ? entity.Add(*t) : nullptr;
+}
+
+// Campo registrado de um script (para ler e mudar valores, como o Inspector faz).
+template <class F>
+F* ScriptField(Scene& scene, EntityId id, const char* type, const char* key) {
+    const ComponentType* t = ComponentRegistry::Instance().Find(type);
+    Entity* entity = scene.Find(id);
+    if (!t || !entity) return nullptr;
+    void* data = entity->Get(*t);
+    if (!data) return nullptr;
+    for (const FieldInfo& f : t->fields) {
+        if (f.key == key) return &f.As<F>(data);
+    }
+    return nullptr;
+}
+
+// Chão estático de 20 x 1 x 20 com o topo em y = 0.
+void AddFloor(Scene& scene) {
+    Entity& floor = scene.CreateEntity("Chão");
+    floor.transform.position = {0.0f, -0.5f, 0.0f};
+    floor.transform.scale = {20.0f, 1.0f, 20.0f};
+    floor.Add<ColliderComponent>();
+}
+
+EntityId AddPlayer(Scene& scene, const glm::vec3& position, bool withScript = true) {
+    Entity& player = scene.CreateEntity("Jogador");
+    player.transform.position = position;
+    player.Add<CharacterControllerComponent>();  // 1.8 m: centro em y = 0.9 no chão
+    if (withScript) AddScript(player, "Jogador");
+    return player.id;
+}
+
+EntityId AddTrigger(Scene& scene, const char* name, const glm::vec3& position, const glm::vec3& size, const char* script) {
+    Entity& e = scene.CreateEntity(name);
+    e.transform.position = position;
+    ColliderComponent& c = e.Add<ColliderComponent>();
+    c.size = size;
+    c.isTrigger = true;
+    AddScript(e, script);
+    return e.id;
+}
+
+// Um quadro do editor: passo fixo, Update e o Input avança (WasKeyPressed vale só no primeiro quadro).
+void Run(SceneRuntime& runtime, float seconds) {
+    const int steps = static_cast<int>(std::lround(seconds / kDt));
+    for (int i = 0; i < steps; ++i) {
+        runtime.FixedUpdate(kDt);
+        runtime.Update(kDt);
+        Input::BeginFrame();
+    }
+}
+
+void Hold(Key key, bool down) {
+    Input::SetKeyState(key, down);
+}
+
+int CountNamed(const Scene& scene, const std::string& name) {
+    return static_cast<int>(std::count_if(scene.Entities().begin(), scene.Entities().end(),
+                                          [&](const auto& e) { return e->name == name; }));
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    const fs::path dir = TestDir(argc, argv, "tmp_test_script_docs");
+    const fs::path docs = MOTOR_TEST_DOCS_DIR;
+    const fs::path examples = docs / "examples";
+    const fs::path templates = MOTOR_TEST_TEMPLATES_DIR;
+    const fs::path root = dir / PathFromUtf8("Jogo Ação");
+    const SP::Paths paths = SP::PathsFor(root);
+
+    // Arquivos de exemplo: os do guia e os modelos do editor (que o guia também usa).
+    std::vector<fs::path> exampleFiles;
+    for (const fs::path& folder : {examples, templates}) {
+        for (const auto& entry : fs::directory_iterator(folder)) {
+            if (SP::IsScriptFile(entry.path())) exampleFiles.push_back(entry.path());
+        }
+    }
+    std::sort(exampleFiles.begin(), exampleFiles.end());
+
+    SECTION("O guia cita os exemplos e os seus blocos de código são trechos deles");
+    const std::string guide = ReadText(docs / "scripts.md");
+    CHECK(!guide.empty());
+    for (const fs::path& file : exampleFiles) {
+        const std::string name = ToUtf8(file.filename());
+        const bool cited = Contains(guide, "examples/" + name) || Contains(guide, "templates/Scripts/" + name);
+        if (!cited) std::printf("  não citado no guia: %s\n", name.c_str());
+        CHECK(cited);
+    }
+    {
+        std::vector<std::vector<std::string>> fileLines;
+        for (const fs::path& file : exampleFiles) fileLines.push_back(Lines(ReadText(file)));
+        const auto blocks = CppBlocks(guide);
+        CHECK(blocks.size() >= 10);
+        for (const CodeBlock& block : blocks) {
+            const bool found = std::any_of(fileLines.begin(), fileLines.end(),
+                                           [&](const auto& lines) { return BlockIsExcerptOf(block, lines); });
+            if (!found) std::printf("  bloco da linha %d de docs/scripts.md não está em nenhum exemplo\n", block.line);
+            CHECK(found);
+        }
+    }
+
+    SECTION("A referência cita toda a API pública dos scripts");
+    {
+        const std::string reference = ReadText(docs / "scripts-api.md");
+        CHECK(!reference.empty());
+        const fs::path include = fs::path(MOTOR_TEST_ENGINE_INCLUDE) / "motor";
+        const std::string scriptH = ReadText(include / "scene" / "Script.h");
+        const std::string physicsH = ReadText(include / "physics" / "PhysicsSystem.h");
+        const std::string componentH = ReadText(include / "scene" / "Component.h");
+
+        std::set<std::string> names = DeclaredFunctions(Between(scriptH, "class Script {", "private:"));
+        for (const std::string& n : DeclaredFunctions(Between(physicsH, "class PhysicsSystem", "private:"))) names.insert(n);
+        names.erase("Script");
+        names.erase("PhysicsSystem");
+        names.erase("FindSystem");  // detalhe de GetSystem
+        CHECK(names.size() >= 30);
+        for (const std::string& n : names) {
+            const bool documented = Contains(reference, "`" + n) || Contains(reference, n + "(");
+            if (!documented) std::printf("  sem documentação: %s\n", n.c_str());
+            CHECK(documented);
+        }
+        // Opções de campo e campos das structs que os scripts recebem.
+        const std::regex member(R"((\w+)\s*(?:=|\{))");
+        const std::pair<const std::string*, const char*> structs[] = {
+            {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"}};
+        for (const auto& [header, type] : structs) {
+            const std::string body = Between(*header, type, "};");
+            CHECK(!body.empty());
+            for (const std::string& line : Lines(body)) {
+                std::smatch m;
+                if (line.starts_with("    ") && std::regex_search(line, m, member)) {
+                    const bool documented = Contains(reference, "`" + m[1].str());
+                    if (!documented) std::printf("  sem documentação: %s.%s\n", type, m[1].str().c_str());
+                    CHECK(documented);
+                }
+            }
+        }
+        CHECK(Contains(reference, std::format("kScriptApiVersion` = {}", kScriptApiVersion)));
+    }
+
+    SECTION("Compilar os exemplos e os modelos, sem erros nem avisos");
+    fs::create_directories(paths.scriptsDir);
+    for (const fs::path& file : exampleFiles) {
+        CHECK(!fs::exists(paths.scriptsDir / file.filename()));  // nomes únicos entre exemplos e modelos
+        fs::copy_file(file, paths.scriptsDir / file.filename());
+    }
+    std::string toolchainError;
+    const auto toolchain = SP::LoadToolchain(MOTOR_TEST_SDK_JSON, &toolchainError);
+    CHECK(toolchain.has_value());
+    if (!toolchain) {
+        std::printf("  %s\n", toolchainError.c_str());
+        return TestResult();
+    }
+    ScriptBuilder builder;
+    CHECK(BuildAndWait(builder, paths, *toolchain));
+    CHECK(SP::ParseDiagnostics(builder.Log()).empty());
+
+    AssetLibrary assets;
+    std::vector<Scene*> loadedScenes;  // cenas que o host atualiza ao descarregar
+    auto scenes = [&](const std::function<void(Scene&)>& fn) {
+        for (Scene* s : loadedScenes) fn(*s);
+    };
+    ScriptHost host;
+    const ScriptHost::Result loaded = host.Load(paths.dll, paths.loadDir, scenes, assets);
+    CHECK(loaded.ok);
+    if (!loaded.ok) {
+        std::printf("  %s\n", loaded.error.c_str());
+        return TestResult();
+    }
+    for (const char* type : {"Flutuar", "ExemploCampos", "CicloDeVida", "Projetil", "Disparador", "Placar", "Moeda",
+                             "Porta", "Inimigo", "BolaFisica", "Girar", "Jogador", "MoverWASD", "Seguir"}) {
+        const ComponentType* t = ComponentRegistry::Instance().Find(type);
+        if (!t) std::printf("  não registrado: %s\n", type);
+        CHECK(t && t->IsScript());
+    }
+
+    SECTION("Mini jogo do guia: anda com WASD, pega as moedas e o placar soma");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        const EntityId player = AddPlayer(scene, {0.0f, 0.9f, 0.0f});
+        AddTrigger(scene, "Moeda", {2.0f, 1.0f, 0.0f}, glm::vec3(0.8f), "Moeda");
+        AddTrigger(scene, "Moeda", {4.0f, 1.0f, 0.0f}, glm::vec3(0.8f), "Moeda");
+        AddTrigger(scene, "Moeda", {0.0f, 1.0f, 6.0f}, glm::vec3(0.8f), "Moeda");  // fora do caminho
+        Entity& placarEntity = scene.CreateEntity("Placar");
+        AddScript(placarEntity, "Placar");
+        const EntityId placar = placarEntity.id;
+        Entity& camera = scene.CreateEntity("Câmera");
+        camera.Add<CameraComponent>();
+        AddScript(camera, "Seguir");
+        const EntityId cameraId = camera.id;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 0.5f);
+        CHECK(CountNamed(scene, "Moeda") == 3);
+        Hold(Key::D, true);  // D anda para +X
+        Run(runtime, 1.5f);  // 4 m/s: passa pelas duas moedas
+        Hold(Key::D, false);
+        Run(runtime, 0.2f);
+        const glm::vec3 p = scene.Find(player)->transform.position;
+        std::printf("  jogador em x = %.2f\n", p.x);
+        CHECK(p.x > 4.5f && Near(p.y, 0.9f, 0.1f));
+        CHECK(CountNamed(scene, "Moeda") == 1);
+        const int* pontos = ScriptField<int>(scene, placar, "Placar", "pontos");
+        CHECK(pontos && *pontos == 2);
+        // A câmera seguiu o jogador (Seguir: deslocamento 0, 4, 7).
+        const glm::vec3 c = scene.Find(cameraId)->transform.position;
+        CHECK(Near(c.x, p.x, 1.0f) && c.y > 3.0f);
+        runtime.Stop();
+    }
+
+    SECTION("Porta com trigger: abre com o jogador dentro e fecha quando ele sai");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        AddPlayer(scene, {0.0f, 0.9f, 0.0f});
+        AddTrigger(scene, "Sensor", {3.0f, 1.0f, 0.0f}, {2.0f, 2.0f, 2.0f}, "Porta");
+        Entity& door = scene.CreateEntity("Porta");
+        door.transform.position = {3.0f, 1.0f, 4.0f};
+        door.transform.scale = {2.0f, 2.0f, 0.2f};
+        door.Add<ColliderComponent>();
+        door.Add<RigidbodyComponent>().isKinematic = true;
+        const EntityId doorId = door.id;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 0.3f);
+        Hold(Key::D, true);
+        Run(runtime, 0.75f);  // chega ao sensor (x = 2 a 4)
+        Hold(Key::D, false);
+        Run(runtime, 1.0f);
+        const float open = scene.Find(doorId)->transform.position.y;
+        std::printf("  porta aberta em y = %.2f\n", open);
+        CHECK(open > 2.5f);
+        Hold(Key::D, true);
+        Run(runtime, 1.0f);  // sai do sensor
+        Hold(Key::D, false);
+        Run(runtime, 2.5f);
+        CHECK(Near(scene.Find(doorId)->transform.position.y, 1.0f, 0.01f));
+        runtime.Stop();
+    }
+
+    SECTION("Inimigo: persegue o jogador que vê e o manda de volta ao recomeço");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        const EntityId player = AddPlayer(scene, {0.0f, 0.9f, 0.0f}, false);
+        Entity& enemy = scene.CreateEntity("Inimigo");
+        enemy.transform.position = {0.0f, 0.9f, -6.0f};
+        enemy.Add<CharacterControllerComponent>();
+        AddScript(enemy, "Inimigo");
+        const EntityId enemyId = enemy.id;
+        if (glm::vec3* r = ScriptField<glm::vec3>(scene, enemyId, "Inimigo", "recomeco")) *r = {6.0f, 0.9f, 6.0f};
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 1.0f);
+        const float before = scene.Find(enemyId)->transform.position.z;
+        std::printf("  inimigo em z = %.2f depois de 1 s\n", before);
+        CHECK(before > -4.5f);  // andou na direção do jogador
+        Run(runtime, 2.0f);
+        const glm::vec3 p = scene.Find(player)->transform.position;
+        std::printf("  jogador em (%.2f, %.2f, %.2f)\n", p.x, p.y, p.z);
+        CHECK(p.x > 4.0f && p.z > 4.0f);  // foi pego e voltou ao recomeço
+        runtime.Stop();
+    }
+
+    SECTION("Disparador e Projetil: F cria um projétil, que some sozinho");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        Entity& gun = scene.CreateEntity("Arma");
+        gun.Add<MeshRenderer>().material.color = {1.0f, 0.0f, 0.0f, 1.0f};
+        AddScript(gun, "Disparador");
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Hold(Key::F, true);
+        Run(runtime, 0.1f);  // segurar F atira uma vez só (WasKeyPressed)
+        Hold(Key::F, false);
+        CHECK(CountNamed(scene, "Projétil") == 1);
+        const Entity* shot = scene.FindByName("Projétil");
+        CHECK(shot && shot->Has<MeshRenderer>() && shot->Get<MeshRenderer>()->material.color.r == 1.0f);
+        CHECK(shot && shot->transform.position.z < -1.0f);  // andou para a frente (-Z)
+        Run(runtime, 2.5f);
+        CHECK(CountNamed(scene, "Projétil") == 0);
+        runtime.Stop();
+    }
+
+    SECTION("Bola: força com as setas e impulso no chão");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        Entity& ball = scene.CreateEntity("Bola");
+        ball.transform.position = {0.0f, 0.5f, 0.0f};
+        ball.Add<ColliderComponent>().shape = ColliderShape::Sphere;
+        ball.Add<RigidbodyComponent>();
+        AddScript(ball, "BolaFisica");
+        const EntityId ballId = ball.id;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 0.3f);
+        Hold(Key::Right, true);
+        Run(runtime, 0.4f);
+        Hold(Key::Right, false);
+        std::printf("  bola rolou até x = %.2f\n", scene.Find(ballId)->transform.position.x);
+        CHECK(scene.Find(ballId)->transform.position.x > 0.5f);
+        Hold(Key::Space, true);
+        float highest = 0.0f;
+        for (int i = 0; i < 30; ++i) {
+            Run(runtime, kDt);
+            Hold(Key::Space, false);
+            highest = std::max(highest, scene.Find(ballId)->transform.position.y);
+        }
+        std::printf("  bola subiu até y = %.2f\n", highest);
+        CHECK(highest > 1.0f);
+        runtime.Stop();
+    }
+
+    SECTION("Primeiros exemplos: Flutuar, campos e ciclo de vida");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        Entity& buoy = scene.CreateEntity("Boia");
+        AddScript(buoy, "Flutuar");
+        AddScript(buoy, "CicloDeVida");
+        const EntityId buoyId = buoy.id;
+        Entity& fields = scene.CreateEntity("Campos");
+        fields.Add<MeshRenderer>();
+        AddScript(fields, "ExemploCampos");
+        const EntityId fieldsId = fields.id;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 0.5f);
+        CHECK(std::abs(scene.Find(buoyId)->transform.position.y) > 0.1f);
+        const glm::vec4 color = scene.Find(fieldsId)->Get<MeshRenderer>()->material.color;
+        CHECK(Near(color.g, 0.8f, 1e-4f));  // a cor do script foi para o Mesh Renderer
+        const int* passos = ScriptField<int>(scene, buoyId, "CicloDeVida", "passosFixos");
+        CHECK(passos == nullptr);  // não registrado: estado interno
+        runtime.Stop();
+    }
+
+    loadedScenes.clear();
+    host.Unload(scenes, assets);
+    CHECK(!host.IsLoaded());
+    return TestResult();
+}
