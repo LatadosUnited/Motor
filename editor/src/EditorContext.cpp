@@ -2,6 +2,7 @@
 #include "UiEditor.h"
 
 #include <motor/core/Paths.h>
+#include <motor/scene/ModelImport.h>
 
 #include <imgui.h>
 
@@ -210,6 +211,23 @@ motor::Entity* EditorContext::InstantiatePrefabFile(const fs::path& file, Entity
     }
     selected = motor::Prefabs::Instantiate(*prefab, scene, parent);
     return scene.Find(selected);
+}
+
+motor::Entity* EditorContext::InstantiateModelFile(const fs::path& file, EntityId parent) {
+    if (motor::ModelNeedsImport(file) && !ReimportModelFile(file)) return nullptr;
+    motor::Entity* e = InstantiatePrefabFile(motor::ModelPrefabPath(file), parent);
+    if (e) e->name = motor::ToUtf8(file.stem());
+    return e;
+}
+
+bool EditorContext::ReimportModelFile(const fs::path& file) {
+    std::string error;
+    if (!motor::ImportModel(file, assets, nullptr, &error)) {
+        pendingError = std::move(error);
+        return false;
+    }
+    prefabs.ReloadChanged(assets);  // prefab já em cache: as instâncias seguem o novo
+    return true;
 }
 
 bool EditorContext::CreatePrefabFromEntity(EntityId id, const fs::path& folder) {

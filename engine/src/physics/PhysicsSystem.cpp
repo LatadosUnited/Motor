@@ -227,22 +227,6 @@ PhysicsSettings& PhysicsSettings::Global() {
     return settings;
 }
 
-MeshDataSource MeshDataFromAssets(const AssetLibrary& assets) {
-    return [&assets](const Mesh& mesh, MeshData& out) {
-        const auto ref = assets.RefOf(&mesh);
-        if (!ref || ref->guid.empty()) return false;  // embutida: sem arquivo
-        std::filesystem::path file = assets.FileForKey(ref->name);
-        if (file.empty()) return false;
-        if (AssetTypeFromPath(file) != AssetType::Mesh) return false;
-        std::string error;
-        if (!LoadObj(file, out, &error)) {
-            log::Warn("Física: não foi possível ler a malha do collider ({}): {}", ref->name, error);
-            return false;
-        }
-        return true;
-    };
-}
-
 // ---------------------------------------------------------------------------
 // Mundo do Jolt
 // ---------------------------------------------------------------------------
@@ -305,8 +289,15 @@ struct PhysicsSystem::World {
     std::shared_ptr<MeshData> MeshDataFor(const Mesh& mesh) {
         auto it = meshData.find(&mesh);
         if (it != meshData.end()) return it->second;
+        // A fonte da configuração (se houver) tem a palavra final; senão, a cópia na CPU que toda Mesh guarda.
         auto data = std::make_shared<MeshData>();
-        if (!settings.meshData || !settings.meshData(mesh, *data) || data->indices.size() < 3) data.reset();
+        if (!settings.meshData || !settings.meshData(mesh, *data)) {
+            data->vertices.clear();
+            data->vertices.reserve(mesh.Positions().size());
+            for (const glm::vec3& p : mesh.Positions()) data->vertices.push_back({p, glm::vec3(0.0f), glm::vec2(0.0f)});
+            data->indices = mesh.Indices();
+        }
+        if (data->indices.size() < 3) data.reset();
         meshData.emplace(&mesh, data);
         return data;
     }
@@ -345,7 +336,7 @@ struct PhysicsSystem::World {
                 if (data) {
                     shape = BuildMeshShape(*data, s, motion);
                 } else {
-                    // Sem os dados na CPU (malha embutida, ou sem fonte): a caixa dos limites.
+                    // Malha sem triângulos: a caixa dos limites.
                     const glm::vec3 lo = mesh->BoundsMin(), hi = mesh->BoundsMax();
                     shape = box((hi - lo) * s);
                     offset += (lo + hi) * 0.5f * s;

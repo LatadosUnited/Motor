@@ -83,3 +83,9 @@ set_tests_properties(test_script_docs PROPERTIES TIMEOUT 600)
 # scripts, serialização e a troca de cena pelo Play do editor (PlayMode).
 motor_add_test(test_ui ${PROJECT_SOURCE_DIR}/editor/src/PlayMode.cpp)
 target_include_directories(test_ui PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Modelos glTF e animação esquelética (Fase 11): leitura, asset, importação como prefab, dados da malha na
+# CPU (raycast e collider exatos), amostragem dos clipes, skinning e Animator. Gera os próprios arquivos glTF.
+motor_add_test(test_gltf)
+target_link_libraries(test_gltf PRIVATE nlohmann_json::nlohmann_json)
+target_compile_definitions(test_gltf PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_SOURCE_DIR}/engine/assets")

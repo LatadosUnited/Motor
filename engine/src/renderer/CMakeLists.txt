@@ -9,5 +9,6 @@ motor_add_layer(renderer
         Renderer.cpp
         Framebuffer.cpp
         Renderer2D.cpp
+        Skeleton.cpp
     DEPENDS core
     PRIVATE_LIBS glfw)

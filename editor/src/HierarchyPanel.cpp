@@ -56,6 +56,7 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
     // Arquivos do painel Projeto: malha e prefab viram filhos; textura e material vão para o Mesh Renderer
     // desta entidade.
     for (const auto& file : AcceptPathDrop(motor::AssetType::Mesh)) ctx.CreateFromMeshFile(file, id);
+    for (const auto& file : AcceptPathDrop(motor::AssetType::Model)) ctx.InstantiateModelFile(file, id);
     for (const auto& file : AcceptPathDrop(motor::AssetType::Prefab)) ctx.InstantiatePrefabFile(file, id);
     if (const auto files = AcceptPathDrop(motor::AssetType::Texture); !files.empty()) {
         ctx.ApplyTextureFile(id, files.front());
@@ -113,6 +114,7 @@ void DrawHierarchyPanel(EditorContext& ctx) {
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) ctx.selected = kNullEntity;
     AcceptEntityDrop(ctx, kNullEntity);
     for (const auto& file : AcceptPathDrop(motor::AssetType::Mesh)) ctx.CreateFromMeshFile(file, kNullEntity);
+    for (const auto& file : AcceptPathDrop(motor::AssetType::Model)) ctx.InstantiateModelFile(file, kNullEntity);
     for (const auto& file : AcceptPathDrop(motor::AssetType::Prefab)) ctx.InstantiatePrefabFile(file, kNullEntity);
 
     if (ImGui::BeginPopupContextItem("##hierarchy_background_ctx")) {

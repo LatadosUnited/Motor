@@ -52,6 +52,7 @@ class SceneRuntime;
 inline constexpr int kSystemOrderPhysics = -100;  // física avança antes do OnFixedUpdate dos scripts
 inline constexpr int kSystemOrderAudio = 100;     // áudio lê as posições depois que os scripts as mudaram
 inline constexpr int kSystemOrderUi = 200;        // HUD por último
+inline constexpr int kSystemOrderAnimation = 50;  // animação depois dos scripts (que trocam os clipes)
 
 class RuntimeSystem {
 public:

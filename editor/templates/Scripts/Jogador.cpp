@@ -1,21 +1,29 @@
 // Jogador com física: anda com WASD (Shift corre) e pula com Espaço, sem atravessar o chão nem as paredes.
 // Precisa do componente "Controlador de personagem" na mesma entidade; o chão e as paredes precisam de Collider.
 // W = -Z ("frente" no mundo). Script de exemplo do Motor.
-// Guia passo a passo: docs/scripts.md na pasta do Motor (seção "Física" e receita "Jogador").
+// Com um modelo animado (glTF com Animator) na entidade ou como filho, troca entre as animações parado,
+// andando e pulando (nomes nos campos; o Robo.glb de exemplo usa "Parado", "Andando" e "Pulando").
+// Guia passo a passo: docs/scripts.md na pasta do Motor (seções "Física" e "Animação", receita "Jogador").
 
 #include <motor/physics/PhysicsSystem.h>
+#include <motor/scene/Animator.h>
 #include <motor/scene/ScriptModule.h>
 
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <cmath>
+#include <string>
 
 struct Jogador : motor::Script {
     float velocidade = 4.0f;  // metros por segundo
     float corrida = 2.0f;     // multiplicador com Shift
     float pulo = 5.0f;        // velocidade para cima ao pular (m/s): ~1.3 m de altura
     bool virar = true;        // vira a frente (-Z) para a direção do movimento
+    std::string animParado = "Parado";    // clipes do Animator (vazio = não troca)
+    std::string animAndando = "Andando";
+    std::string animPulando = "Pulando";
+    float transicao = 0.15f;  // segundos de mistura entre as animações
 
     bool querPular = false;  // não registrado: estado interno do Play
 
@@ -42,14 +50,23 @@ struct Jogador : motor::Script {
         const bool running = IsKeyDown(Key::LeftShift) || IsKeyDown(Key::RightShift);
         // MoveCharacter vale até a próxima chamada: chamar a cada passo (com zero, para).
         fisica->MoveCharacter(GetId(), dir * velocidade * (running ? corrida : 1.0f));
+        bool pulou = false;
         if (querPular) {
-            fisica->Jump(GetId(), pulo);  // só pula se estiver no chão
+            pulou = fisica->Jump(GetId(), pulo);  // só pula se estiver no chão
             querPular = false;
         }
 
         // Frente do objeto é -Z: o ângulo em Y que leva -Z até dir.
         if (virar && moving) {
             GetTransform().rotation = glm::angleAxis(std::atan2(-dir.x, -dir.z), glm::vec3(0.0f, 1.0f, 0.0f));
+        }
+
+        // Animação: CrossFade com o clipe que já está tocando não faz nada, então dá para pedir a cada passo.
+        if (auto* anim = GetAnimator()) {
+            const bool noAr = pulou || !fisica->IsGrounded(GetId());
+            const std::string& clipe = noAr ? animPulando : (moving ? animAndando : animParado);
+            if (!clipe.empty()) anim->CrossFade(clipe, transicao, !noAr);  // o pulo não repete: segura a pose
+            anim->speed = moving && running && !noAr ? corrida : 1.0f;
         }
     }
 };
@@ -62,5 +79,10 @@ MOTOR_SCRIPT(Jogador) {
                {.speed = 0.05f, .min = 1.0f, .max = 10.0f, .format = "x%.1f", .tooltip = "Multiplicador com Shift"})
         .Field("pulo", "Pulo", &Jogador::pulo,
                {.speed = 0.05f, .min = 0.0f, .max = 50.0f, .format = "%.1f m/s", .tooltip = "Velocidade para cima ao pular"})
-        .Field("virar", "Virar", &Jogador::virar, {.tooltip = "Vira o objeto para a direção do movimento"});
+        .Field("virar", "Virar", &Jogador::virar, {.tooltip = "Vira o objeto para a direção do movimento"})
+        .Field("animParado", "Anim. parado", &Jogador::animParado, {.tooltip = "Clipe do Animator (vazio = não troca)"})
+        .Field("animAndando", "Anim. andando", &Jogador::animAndando)
+        .Field("animPulando", "Anim. pulando", &Jogador::animPulando)
+        .Field("transicao", "Transição", &Jogador::transicao,
+               {.speed = 0.01f, .min = 0.0f, .max = 2.0f, .format = "%.2f s", .tooltip = "Mistura entre as animações"});
 }

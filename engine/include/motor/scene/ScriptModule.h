@@ -32,7 +32,8 @@ namespace motor {
 // 4: Scene perdeu `light` (luzes viraram componentes). 5: eventos de colisão e trigger no Script (física).
 // 6: MeshRenderer ganhou `sharedMaterial` (asset de material) e há o componente PrefabInstance (prefabs).
 // 7: Script::LoadScene (troca de cena) e a UI do jogo (componentes Ui*, UiSystem).
-inline constexpr int kScriptApiVersion = 7;
+// 8: componente Animator e Script::GetAnimator (animação esquelética); Mesh guarda os dados na CPU.
+inline constexpr int kScriptApiVersion = 8;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

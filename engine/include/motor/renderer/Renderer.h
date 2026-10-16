@@ -31,6 +31,8 @@ struct RenderStats {
 
 class Renderer {
 public:
+    static constexpr size_t kMaxJoints = 128;  // mesmo valor do skinned.vert
+
     Renderer();  // exige um contexto OpenGL atual (criado pela Window); carrega as funções do OpenGL
     ~Renderer();
 
@@ -50,6 +52,10 @@ public:
                     const Framebuffer* target = nullptr);
     void Submit(const Mesh& mesh, const Material& material, const glm::mat4& model);
     void SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color);  // sem iluminação
+    // Malha com pele (animação): `joints` são as matrizes das juntas da pele (Skin::JointMatrices), no espaço
+    // de `model`. Até kMaxJoints (as demais ficam paradas, com aviso no log).
+    void SubmitSkinned(const Mesh& mesh, const Material& material, const glm::mat4& model,
+                       std::span<const glm::mat4> joints);
     void EndScene();
 
     const RenderStats& GetStats() const { return m_stats; }
@@ -61,6 +67,9 @@ private:
     unsigned int m_frameUbo = 0;
     unsigned int m_lightsUbo = 0;
     bool m_warnedTooManyLights = false;
+    std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
+    unsigned int m_jointsUbo = 0;
+    bool m_warnedTooManyJoints = false;
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;
     int m_windowHeight = 0;

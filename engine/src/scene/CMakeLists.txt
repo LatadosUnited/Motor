@@ -15,5 +15,7 @@ motor_add_layer(scene
         CharacterControllerComponent.cpp
         PrefabInstance.cpp
         Prefab.cpp
+        Animator.cpp
+        ModelImport.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

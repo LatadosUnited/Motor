@@ -138,6 +138,7 @@ AssetType AssetTypeFromPath(const fs::path& path) {
     if (ext == kMaterialFileExtension) return AssetType::Material;
     if (ext == kPrefabFileExtension) return AssetType::Prefab;
     if (ext == ".ttf" || ext == ".otf") return AssetType::Font;  // fontes da UI do jogo (motor/ui/Font.h)
+    if (ext == ".gltf" || ext == ".glb") return AssetType::Model;
     return AssetType::Unknown;
 }
 
@@ -149,6 +150,7 @@ const char* AssetTypeName(AssetType type) {
         case AssetType::Material: return "Material";
         case AssetType::Prefab: return "Prefab";
         case AssetType::Font: return "Fonte";
+        case AssetType::Model: return "Modelo";
         case AssetType::Unknown: break;
     }
     return "Arquivo";

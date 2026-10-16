@@ -16,7 +16,7 @@ MOTOR_FIELD_DRAWER(ColliderShape) {
         ImGui::EndCombo();
     }
     if (shape == motor::ColliderShape::Mesh) {
-        ImGui::SetItemTooltip("Usa a malha do Mesh Renderer. Malha de arquivo (OBJ) vira malha estática; com "
-                              "Rigidbody, o casco convexo. Malhas embutidas usam a caixa dos limites.");
+        ImGui::SetItemTooltip("Usa os triângulos da malha do Mesh Renderer (qualquer malha, inclusive as embutidas): "
+                              "malha estática; com Rigidbody, o casco convexo.");
     }
 }

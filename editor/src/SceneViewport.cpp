@@ -508,7 +508,8 @@ void SceneViewport::HandleDrop(EditorContext& ctx, const ImVec2& origin) {
     const auto textures = AcceptPathDrop(AssetType::Texture);
     const auto prefabs = AcceptPathDrop(AssetType::Prefab);
     const auto materials = AcceptPathDrop(AssetType::Material);
-    if (meshes.empty() && textures.empty() && prefabs.empty() && materials.empty()) return;
+    const auto models = AcceptPathDrop(AssetType::Model);
+    if (meshes.empty() && textures.empty() && prefabs.empty() && materials.empty() && models.empty()) return;
 
     const ImVec2 mouse = ImGui::GetMousePos();
     const auto [rayOrigin, rayDir] = Ray({(mouse.x - origin.x) / m_size.x, (mouse.y - origin.y) / m_size.y});
@@ -549,6 +550,12 @@ void SceneViewport::HandleDrop(EditorContext& ctx, const ImVec2& origin) {
     }
     for (const auto& file : prefabs) {
         if (Entity* e = ctx.InstantiatePrefabFile(file)) {
+            e->transform.position = point + glm::vec3(offset, 0.0f, 0.0f);
+            offset += 1.5f;
+        }
+    }
+    for (const auto& file : models) {  // glTF: instância do prefab gerado (importa na hora se preciso)
+        if (Entity* e = ctx.InstantiateModelFile(file)) {
             e->transform.position = point + glm::vec3(offset, 0.0f, 0.0f);
             offset += 1.5f;
         }

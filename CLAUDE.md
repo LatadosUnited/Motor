@@ -160,7 +160,7 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 11 Modelos 3D/animação | `assets/` (importador glTF), `renderer/` (`Mesh` na CPU, skinning) | prefabs da 6, collider de malha (`physics/`) | 6, 7 |
 | 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
 
-Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 11 (6, 9 e 12 prontas).
+Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 6, 9, 11 e 12 prontas; próximas 10, 8 e 7.
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

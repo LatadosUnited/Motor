@@ -67,6 +67,10 @@ struct EditorContext {
     // Prefabs: nova instância do arquivo (selecionada); entidade -> prefab novo em `folder` (vazio = Assets/Prefabs).
     motor::Entity* InstantiatePrefabFile(const std::filesystem::path& file, EntityId parent = kNullEntity);
     bool CreatePrefabFromEntity(EntityId id, const std::filesystem::path& folder = {});
+    // Modelos glTF (.gltf/.glb): importa se preciso (gera o prefab, motor/scene/ModelImport.h) e cria uma
+    // instância do prefab; ReimportModelFile gera o prefab e os materiais de novo.
+    motor::Entity* InstantiateModelFile(const std::filesystem::path& file, EntityId parent = kNullEntity);
+    bool ReimportModelFile(const std::filesystem::path& file);
     void RequestPrefabAction(PrefabAction action, EntityId id);
     void ApplyPendingPrefabAction();
     // Fim do frame, fora do Play: as instâncias seguem os prefabs que mudaram e o que o usuário mudou numa

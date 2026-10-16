@@ -16,14 +16,15 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Luzes (direcional, pontual, spot como componentes) e ícones no viewport | ✅ pronto (Fase 4) |
 | Física (Jolt: colliders, rigidbody, triggers, raycast, personagem) | ✅ pronto (Fase 5) |
 | Materiais (`.mmat`) e prefabs (`.mprefab`) com overrides | ✅ pronto (Fase 6) |
+| Modelos glTF (`.gltf`/`.glb`) e animação esquelética (Animator) | ✅ pronto (Fase 11) |
 | Git + testes `ctest` | ✅ pronto (Fase 0) |
 | Editor (hierarquia, inspector, viewport, gizmos, desfazer) | ✅ pronto |
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
 | Base para trabalho em paralelo (camadas, peças do editor, extensões; ver CLAUDE.md) | ✅ pronto |
 
 **Usável hoje:** prototipar dentro do editor (cenas, luzes, física, scripts com recarga, Play).
-**Ainda não:** entregar um jogo. Falta exportar (Fase 10), interface do jogo (9), som (8), reaproveitar
-objetos e materiais (6), modelos além de OBJ e animação (11) e o visual moderno (7). O uso real pelo
+**Ainda não:** entregar um jogo. Falta exportar (Fase 10), interface do jogo (9), som (8) e o
+visual moderno (7). O uso real pelo
 editor (cliques, atalhos, Play com física) foi pouco testado à mão.
 
 ## Prioridades
@@ -34,7 +35,7 @@ Próximas fases, nesta ordem de importância:
 |---|---|---|---|
 | 1 | ~~Fase 9 — Interface do jogo (HUD)~~ ✅ | sem texto e botões na tela não há jogo (vida, pontos, menus) | 11 |
 | 2 | ~~Fase 6 — Materiais e prefabs~~ ✅ | reaproveitar objetos e materiais; base dos modelos 3D | — |
-| 3 | **Fase 11 — Modelos 3D (glTF) e animação** | personagens e cenários de verdade, além de OBJ | 9 (a 6 já está pronta) |
+| 3 | ~~Fase 11 — Modelos 3D (glTF) e animação~~ ✅ | personagens e cenários de verdade, além de OBJ | — |
 | 4 | ~~Fase 12 — Documentação de scripts~~ ✅ | quem faz o jogo precisa saber escrever scripts sem ler o código da engine | — |
 
 Depois delas: Fase 10 (exportar), Fase 8 (áudio) e Fase 7 (renderização avançada). A 11 depende da 6
@@ -111,8 +112,8 @@ Depois (opcional): Lua como linguagem de script leve.
 - Desempenho (`test_physics_bench`, i5 de 4 núcleos): ~2 ms por passo com 1000 caixas, ~7 ms com 4000.
 
 Pendências: picos isolados de até ~185 ms em passos soltos no teste de carga (investigar); collider de malha
-nas malhas embutidas (Cubo, Plano) usa a caixa dos limites, porque a `Mesh` só guarda os dados na GPU
-(resolvido na Fase 11, com a cópia na CPU).
+nas malhas embutidas (Cubo, Plano) usava a caixa dos limites, porque a `Mesh` só guardava os dados na GPU
+(✅ resolvido na Fase 11, com a cópia na CPU).
 
 ## Fase 6 — Materiais e prefabs como assets ✅
 
@@ -176,7 +177,7 @@ No editor, a UI aparece por cima do viewport, com seleção e arraste. Exemplos 
 
 **Pronto quando:** uma pasta com o .exe e os assets roda o jogo num computador sem o editor.
 
-## Fase 11 — Modelos 3D (glTF) e animação ⭐ prioridade 3
+## Fase 11 — Modelos 3D (glTF) e animação ✅
 
 Depende da Fase 6 (o glTF traz materiais e vira prefab).
 
@@ -189,7 +190,27 @@ Depende da Fase 6 (o glTF traz materiais e vira prefab).
   clipe), clipes do glTF como assets; API para os scripts.
 
 **Pronto quando:** um personagem glTF animado anda pela cena controlado pelo script Jogador, trocando entre
-as animações parado, andando e pulando.
+as animações parado, andando e pulando. ✅
+
+Feito:
+- Biblioteca **cgltf v1.15** (um header C99, MIT, sem dependências), fixada por URL + SHA256. `LoadGltf` lê
+  `.gltf` (data URIs ou `.bin`/imagens externos, caminhos UTF-8) e `.glb` para `ModelData` (CPU); `BuildModel`
+  cria o asset `Model` (uma `Mesh` por primitiva, esqueleto com todos os nós, peles, clipes).
+- Asset com GUID (`AssetType::Model`); malhas e clipes são partes do arquivo: `"<guid>#<nome>"`. O modelo é
+  relido se o arquivo mudar.
+- `ImportModel` gera `<nome>.mprefab` e `<nome>_materiais/` (`.mmat` da Fase 6 e texturas embutidas); o
+  editor importa os modelos novos ou alterados sozinho, e arrastar o `.glb` instancia o prefab.
+- `Mesh` guarda posições e índices na CPU e só sobe para a GPU no primeiro desenho: raycast exato do editor
+  (triângulos) e collider de malha da física para qualquer malha (pendência da Fase 5).
+- Skinning no shader (`skinned.vert`, até 128 juntas, UBO), `Renderer::SubmitSkinned`; componente **Animator**
+  (Play, CrossFade, Stop, velocidade, loop), `AnimationSystem` no `SceneRuntime` (`kSystemOrderAnimation`,
+  depois dos scripts), `Script::GetAnimator()`. `kScriptApiVersion` 8 (7 é o da Fase 9).
+- Modelo de exemplo `engine/assets/models/Robo.glb` (gerado por `gerar_robo.py`) e o script Jogador trocando
+  Parado/Andando/Pulando. Guia e referência dos scripts com a seção Animação. Teste: `test_gltf`.
+
+Limitações: sem morph targets, câmeras e luzes do glTF; só juntas são animadas (nós sem pele ficam parados);
+materiais PBR aproximados (normal, metal e emissão ficam para a Fase 7); malhas de modelo não aparecem no combo
+"Malha" do Inspector; sem pré-visualização da animação fora do Play.
 
 ## Fase 12 — Documentação de scripts ✅
 
@@ -220,9 +241,9 @@ pontuar) só com o guia.
 Fase 0 Git/testes
    └─ Fase 1 Componentes ──┬─ Fase 2 Play ── Fase 3 Scripts ──┬─ Fase 5 Física ✅
                            │                                  ├─ Fase 8 Áudio
-                           ├─ Fase 4 Luzes/câmera ✅          ├─ Fase 9 HUD           ⭐1
+                           ├─ Fase 4 Luzes/câmera ✅          ├─ Fase 9 HUD           ✅
                            ├─ Fase 6 Materiais/prefabs ✅     ├─ Fase 10 Exportar
-                           │     └─ Fase 11 Modelos 3D ⭐3    └─ Fase 12 Doc. scripts ✅
+                           │     └─ Fase 11 Modelos 3D ✅     └─ Fase 12 Doc. scripts ✅
                            └─ Fase 7 Renderização avançada (depende da 4)
 ```
 
