@@ -88,12 +88,15 @@ Depois (opcional): Lua como linguagem de script leve.
 ## Fase 5 — Física
 
 - Componentes **Collider** (caixa, esfera, cápsula, malha estática) e **Rigidbody** (massa, gravidade, cinemático).
-- Biblioteca: Jolt Physics (madura e rápida) ou um motor próprio simples (caixas e esferas) para manter
-  as dependências mínimas — decidir no início da fase.
+- Biblioteca: Jolt Physics v5.6.0 (decidido: multithread e SIMD; SSE4.2 como base para o jogo rodar em
+  CPUs sem AVX2). Camada nova `physics/`, sistema do `SceneRuntime` antes dos scripts.
 - Eventos para scripts: `OnCollisionEnter`, triggers; raycast pela API.
 - Visualização dos colliders no editor.
 
+- Controlador de personagem (CharacterVirtual do Jolt) e modelo de script Jogador.
+
 **Pronto quando:** caixas caem, empilham e um script de jogador anda e pula sem atravessar o chão.
+(Feito no branch `fase-5-fisica`: testes em `test_physics`, desempenho em `test_physics_bench`.)
 
 ## Fase 6 — Materiais e prefabs como assets
 
