@@ -6,14 +6,36 @@
 #include "motor/renderer/Mesh.h"
 #include "motor/renderer/Texture.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <format>
+#include <fstream>
+#include <sstream>
 
 namespace motor {
 
 namespace fs = std::filesystem;
+using json = nlohmann::ordered_json;
 
 namespace {
+constexpr const char* kMaterialFormat = "motor-material";
+constexpr int kMaterialVersion = 1;
+
+// float -> double pela representação decimal mais curta ("0.6" no arquivo, e não "0.6000000238418579").
+double Num(float value) {
+    return std::stod(std::format("{}", value));
+}
+
+bool ReadText(const fs::path& file, std::string& out) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) return false;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    out = ss.str();
+    return true;
+}
+
 template <class T>
 std::shared_ptr<T> FindBuiltIn(const std::vector<AssetLibrary::Entry<T>>& list, std::string_view name) {
     for (const auto& e : list) {
@@ -45,6 +67,30 @@ std::shared_ptr<Mesh> LoadMesh(const fs::path& file, std::string_view label, std
     return std::make_shared<Mesh>(data.vertices, data.indices);
 }
 
+// Escreve num .tmp e renomeia no fim, para não deixar o arquivo pela metade se algo falhar.
+bool WriteTextAtomic(const fs::path& file, const std::string& text, std::string* error) {
+    fs::path temp = file;
+    temp += ".tmp";
+    {
+        std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+        if (!out || !(out << text) || !out.flush()) {
+            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(temp)));
+            return false;
+        }
+    }
+    std::error_code ec;
+    fs::rename(temp, file, ec);
+    if (ec) {
+        fs::remove(file, ec);  // algumas implementações não substituem o destino
+        fs::rename(temp, file, ec);
+    }
+    if (ec) {
+        SetError(error, std::format("Não foi possível salvar '{}': {}", ToUtf8(file), ec.message()));
+        return false;
+    }
+    return true;
+}
+
 std::shared_ptr<Texture2D> LoadTexture(const fs::path& file, std::string_view label, std::string* error) {
     ImageData image;
     std::string problem;
@@ -69,6 +115,8 @@ void AssetLibrary::SetRoot(const fs::path& root) {
     m_root = root.empty() ? fs::path{} : root.lexically_normal();
     std::erase_if(m_meshes, [](const auto& e) { return !e.guid.empty(); });
     std::erase_if(m_textures, [](const auto& e) { return !e.guid.empty(); });
+    m_materials.clear();
+    m_materialTimes.clear();
     m_database.SetAssetsDir(m_root.empty() ? fs::path{} : m_root / Project::kAssetsFolder);
 }
 
@@ -126,6 +174,161 @@ std::shared_ptr<Texture2D> AssetLibrary::GetTextureByGuid(std::string_view guid,
     return texture;
 }
 
+// --- Materiais --------------------------------------------------------------------
+
+std::shared_ptr<Material> AssetLibrary::GetMaterial(std::string_view key, std::string* error) {
+    const std::string guid = m_database.GuidFor(FileForKey(key));
+    if (guid.empty()) {
+        SetError(error, std::format("Material '{}' não existe no projeto.", key));
+        return nullptr;
+    }
+    return GetMaterialByGuid(guid, error);
+}
+
+std::shared_ptr<Material> AssetLibrary::GetMaterialByGuid(std::string_view guid, std::string* error) {
+    if (auto cached = FindByGuid(m_materials, guid)) return cached;
+    fs::path file = m_database.PathFor(guid);
+    if (file.empty()) {
+        m_database.Refresh();
+        file = m_database.PathFor(guid);
+    }
+    if (file.empty()) {
+        SetError(error, std::format("Nenhum arquivo do projeto tem o GUID {}.", guid));
+        return nullptr;
+    }
+    std::string text;
+    if (!ReadText(file, text)) {
+        SetError(error, std::format("Não foi possível abrir '{}'.", ToUtf8(file)));
+        return nullptr;
+    }
+    auto material = std::make_shared<Material>();
+    std::string problem;
+    if (!MaterialFromJson(text, *material, &problem)) {
+        SetError(error, std::format("{}: {}", KeyForFile(file), problem));
+        return nullptr;
+    }
+    std::error_code ec;
+    m_materialTimes[std::string(guid)] = fs::last_write_time(file, ec);
+    m_materials.push_back({{}, std::string(guid), material});
+    log::Info("Material carregado: {}", KeyForFile(file));
+    return material;
+}
+
+bool AssetLibrary::WriteMaterialFile(const fs::path& file, const Material& material, std::string* error) {
+    if (!WriteTextAtomic(file, MaterialToJson(material), error)) return false;
+    // Material em cache: a data nova é a da nossa gravação, não precisa reler.
+    if (const std::string guid = m_database.GuidFor(file); !guid.empty() && m_materialTimes.contains(guid)) {
+        std::error_code ec;
+        m_materialTimes[guid] = fs::last_write_time(file, ec);
+    }
+    return true;
+}
+
+bool AssetLibrary::SaveMaterial(const Material* material, std::string* error) {
+    for (const auto& e : m_materials) {
+        if (e.asset.get() != material) continue;
+        const fs::path file = m_database.PathFor(e.guid);
+        if (file.empty()) {
+            SetError(error, std::format("O arquivo do material (GUID {}) não existe mais.", e.guid));
+            return false;
+        }
+        return WriteMaterialFile(file, *material, error);
+    }
+    SetError(error, "O material não veio de um arquivo do projeto.");
+    return false;
+}
+
+size_t AssetLibrary::ReloadChangedMaterials() {
+    size_t count = 0;
+    for (const auto& e : m_materials) {
+        const fs::path file = m_database.PathFor(e.guid);
+        if (file.empty()) continue;
+        std::error_code ec;
+        const auto modified = fs::last_write_time(file, ec);
+        if (ec || m_materialTimes[e.guid] == modified) continue;
+        m_materialTimes[e.guid] = modified;
+        std::string text, problem;
+        Material reloaded;
+        if (!ReadText(file, text) || !MaterialFromJson(text, reloaded, &problem)) {
+            log::Warn("Material {} não foi relido: {}", KeyForFile(file), problem);
+            continue;
+        }
+        *e.asset = std::move(reloaded);  // mesmo objeto: todos que o usam veem a mudança
+        log::Info("Material relido: {}", KeyForFile(file));
+        ++count;
+    }
+    return count;
+}
+
+std::string AssetLibrary::MaterialToJson(const Material& m) const {
+    json root;
+    root["format"] = kMaterialFormat;
+    root["version"] = kMaterialVersion;
+    root["color"] = json::array({Num(m.color.r), Num(m.color.g), Num(m.color.b), Num(m.color.a)});
+    json texture = nullptr;
+    if (const auto ref = RefOf(m.albedo.get())) {
+        if (ref->guid.empty()) {
+            texture = ref->name;
+        } else {
+            texture = {{"guid", ref->guid}};
+            if (!ref->name.empty()) texture["path"] = ref->name;
+        }
+    } else if (m.albedo) {
+        log::Warn("Salvar material: a textura não está no AssetLibrary");
+    }
+    root["texture"] = std::move(texture);
+    root["specular"] = Num(m.specular);
+    root["shininess"] = Num(m.shininess);
+
+    // Uma chave por linha, cada valor compacto (a cor fica [1.0,0.5,0.2,1.0]).
+    std::string text = "{\n";
+    bool first = true;
+    for (const auto& [key, value] : root.items()) {
+        if (!first) text += ",\n";
+        text += std::format("  {}: {}", json(key).dump(), value.dump(-1, ' ', false, json::error_handler_t::replace));
+        first = false;
+    }
+    return text + "\n}\n";
+}
+
+bool AssetLibrary::MaterialFromJson(std::string_view text, Material& out, std::string* error) {
+    const json root = json::parse(text, nullptr, false);
+    if (root.is_discarded() || !root.is_object() || root.value("format", std::string()) != kMaterialFormat) {
+        SetError(error, "O arquivo não é um material do Motor.");
+        return false;
+    }
+    const int version = root.value("version", 0);
+    if (version < 1 || version > kMaterialVersion) {
+        SetError(error, std::format("Versão de material não suportada: {} (esperado até {}).", version, kMaterialVersion));
+        return false;
+    }
+
+    // Leitura tolerante: campo ausente ou com formato errado fica com o valor padrão.
+    Material m;
+    if (auto it = root.find("color"); it != root.end() && it->is_array() && it->size() == 4) {
+        const bool numbers = std::all_of(it->begin(), it->end(), [](const json& v) { return v.is_number(); });
+        if (numbers) {
+            for (glm::length_t i = 0; i < 4; ++i) m.color[i] = (*it)[static_cast<size_t>(i)].get<float>();
+        }
+    }
+    if (auto it = root.find("specular"); it != root.end() && it->is_number()) m.specular = it->get<float>();
+    if (auto it = root.find("shininess"); it != root.end() && it->is_number()) m.shininess = it->get<float>();
+    if (auto it = root.find("texture"); it != root.end() && !it->is_null()) {
+        std::string problem;
+        if (it->is_string()) {
+            m.albedo = GetTexture(it->get<std::string>(), &problem);
+        } else if (it->is_object()) {
+            const std::string guid = it->value("guid", std::string());
+            const std::string path = it->value("path", std::string());
+            if (!guid.empty()) m.albedo = GetTextureByGuid(guid, &problem);
+            if (!m.albedo && !path.empty()) m.albedo = GetTexture(path, nullptr);  // .meta perdido: pelo caminho
+        }
+        if (!m.albedo) log::Warn("Material: textura não carregada: {}", problem);
+    }
+    out = std::move(m);
+    return true;
+}
+
 std::shared_ptr<Mesh> AssetLibrary::FindMesh(std::string_view name) const {
     return FindBuiltIn(m_meshes, name);
 }
@@ -155,6 +358,10 @@ std::optional<AssetRef> AssetLibrary::RefOf(const Mesh* mesh) const {
 
 std::optional<AssetRef> AssetLibrary::RefOf(const Texture2D* texture) const {
     return RefIn(m_textures, texture);
+}
+
+std::optional<AssetRef> AssetLibrary::RefOf(const Material* material) const {
+    return RefIn(m_materials, material);
 }
 
 // --- Caminhos -------------------------------------------------------------------
