@@ -15,6 +15,7 @@
 #include "motor/scene/RuntimeSystem.h"
 
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
 #include <cstdint>
 #include <format>
@@ -40,6 +41,14 @@ struct GameTime {
     uint64_t frame = 0;       // quantos OnUpdate já rodaram
 };
 
+// Contato que começou entre dois corpos da física (OnCollisionEnter).
+struct Collision {
+    EntityId other = 0;          // a outra entidade
+    glm::vec3 point{0.0f};       // ponto de contato, no mundo
+    glm::vec3 normal{0.0f};      // aponta do outro corpo para este (para onde este é empurrado)
+    float relativeSpeed = 0.0f;  // velocidade de aproximação no contato (m/s); 0 se só encostaram
+};
+
 class Script {
 public:
     Script() = default;
@@ -54,6 +63,14 @@ public:
     virtual void OnUpdate(float /*dt*/) {}  // todo frame
     virtual void OnFixedUpdate(float /*dt*/) {}  // passo fixo (física, lógica determinística)
     virtual void OnDestroy() {}             // ao parar o Play ou ao destruir a entidade
+
+    // Física (PhysicsSystem): chamados depois do passo da física, antes do OnFixedUpdate. Colisão precisa de
+    // Collider nas duas entidades e de um Rigidbody (ou controlador de personagem) em pelo menos uma; trigger
+    // é um Collider com "Trigger" marcado. Os dois lados recebem o evento.
+    virtual void OnCollisionEnter(const Collision& /*collision*/) {}
+    virtual void OnCollisionExit(EntityId /*other*/) {}
+    virtual void OnTriggerEnter(EntityId /*other*/) {}
+    virtual void OnTriggerExit(EntityId /*other*/) {}
 
     bool HasStarted() const { return m_started; }
 
