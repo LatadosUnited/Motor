@@ -1,6 +1,7 @@
 #include "EditorApp.h"
 
 #include <imgui.h>
+#include <motor/scene/ModelImport.h>
 #include <imgui_internal.h>  // DockBuilder
 #include <ImGuizmo.h>
 
@@ -45,8 +46,6 @@ void EditorApp::OnInit() {
     assets.AddMesh("Plano", Mesh::CreatePlane());
     assets.AddTexture("Xadrez", Texture2D::CreateChecker(512, 16, {215, 215, 220, 255}, {150, 155, 165, 255}));
     assets.AddTexture("Xadrez grosso", Texture2D::CreateChecker(256, 4, {240, 240, 240, 255}, {60, 60, 70, 255}));
-    // Collider de malha: a física relê do disco o OBJ das malhas de arquivo (a Mesh só guarda os dados na GPU).
-    PhysicsSettings::Global().meshData = MeshDataFromAssets(assets);
 
     // Projeto da linha de comando, senão o último usado; sem projeto, mostra a cena de exemplo.
     m_settings = EditorSettings::Load();
@@ -128,6 +127,8 @@ void EditorApp::OnUpdate(float dt) {
         m_ctx.assets.Database().Refresh();
         // Materiais e prefabs editados fora do editor (ou por outro programa): relidos no mesmo objeto.
         m_ctx.assets.ReloadChangedMaterials();
+        // Modelos glTF novos ou alterados viram prefab (motor/scene/ModelImport.h).
+        if (!m_play.IsActive()) motor::ImportModelsInProject(m_ctx.assets);
         m_ctx.prefabs.ReloadChanged(m_ctx.assets);
     }
 
@@ -378,6 +379,8 @@ void EditorApp::DrawProjectPanel() {
         return false;
     };
     callbacks.addPrefabToScene = [this](const fs::path& p) { m_ctx.InstantiatePrefabFile(p); };
+    callbacks.addModelToScene = [this](const fs::path& p) { m_ctx.InstantiateModelFile(p); };
+    callbacks.reimportModel = [this](const fs::path& p) { m_ctx.ReimportModelFile(p); };
     callbacks.createPrefabFromEntity = [this](uint32_t entity, const fs::path& folder) {
         m_ctx.CreatePrefabFromEntity(entity, folder);
     };

@@ -42,6 +42,7 @@ Icon IconFor(bool isDirectory, AssetType type) {
         case AssetType::Mesh: return Icon::Mesh;
         case AssetType::Material: return Icon::Material;
         case AssetType::Prefab: return Icon::Prefab;
+        case AssetType::Model: return Icon::Mesh;
         case AssetType::Unknown: break;
     }
     return Icon::File;
@@ -307,7 +308,7 @@ bool ProjectPanel::PassesFilter(const Entry& e) const {
     switch (m_filter) {
         case Filter::Scenes: return !e.isDirectory && e.type == AssetType::Scene;
         case Filter::Textures: return !e.isDirectory && e.type == AssetType::Texture;
-        case Filter::Meshes: return !e.isDirectory && e.type == AssetType::Mesh;
+        case Filter::Meshes: return !e.isDirectory && (e.type == AssetType::Mesh || e.type == AssetType::Model);
         case Filter::Materials: return !e.isDirectory && e.type == AssetType::Material;
         case Filter::Prefabs: return !e.isDirectory && e.type == AssetType::Prefab;
         case Filter::All: break;
@@ -754,6 +755,12 @@ void ProjectPanel::DrawItemContextMenu(const Entry& e, const Callbacks& callback
         }
         if (e.type == AssetType::Prefab && callbacks.addPrefabToScene && ImGui::MenuItem("Adicionar à cena")) {
             callbacks.addPrefabToScene(e.path);
+        }
+        if (e.type == AssetType::Model && callbacks.addModelToScene && ImGui::MenuItem("Adicionar à cena")) {
+            callbacks.addModelToScene(e.path);
+        }
+        if (e.type == AssetType::Model && callbacks.reimportModel && ImGui::MenuItem("Importar de novo")) {
+            callbacks.reimportModel(e.path);
         }
         const bool inspectable = e.type == AssetType::Material || e.type == AssetType::Prefab;
         if (inspectable && callbacks.selectAsset && ImGui::MenuItem("Editar no Inspector", "Enter")) {

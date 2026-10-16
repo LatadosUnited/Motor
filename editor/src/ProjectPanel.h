@@ -32,6 +32,8 @@ public:
         std::function<void(const std::filesystem::path&)> selectAsset;        // clique num arquivo (Inspector)
         std::function<bool(const std::filesystem::path&)> createMaterialFile; // grava um material padrão
         std::function<void(const std::filesystem::path&)> addPrefabToScene;   // .mprefab -> nova instância
+        std::function<void(const std::filesystem::path&)> addModelToScene;    // .gltf/.glb -> instância do prefab
+        std::function<void(const std::filesystem::path&)> reimportModel;      // gera o prefab do modelo de novo
         // Entidade da Hierarquia solta numa pasta: vira um prefab nela.
         std::function<void(uint32_t entity, const std::filesystem::path& folder)> createPrefabFromEntity;
     };
