@@ -55,3 +55,6 @@ motor_add_test(test_lights)
 
 # Física (Jolt): componentes, passo dentro do SceneRuntime, eventos, raios, personagem e contorno do editor.
 motor_add_test(test_physics)
+
+# Desempenho da física: caixas caindo e empilhando (pequeno no ctest; números do relatório em Release).
+motor_add_test(test_physics_bench)
