@@ -27,6 +27,8 @@ constexpr int kColumnHeight = 10;
 struct Result {
     double avgMs = 0.0, maxMs = 0.0;     // FixedUpdate inteiro
     double avgStepMs = 0.0;              // só o PhysicsSystem::Update do Jolt
+    double avgSyncMs = 0.0, avgWriteMs = 0.0;  // componentes -> corpos; corpos -> Transforms e eventos
+    int maxStepIndex = 0;                // em que passo foi o pior
     double fallingMs = 0.0;              // média do primeiro segundo (tudo caindo e batendo)
     int threads = 0;
     int asleep = 0;                      // corpos dormindo no fim
@@ -68,7 +70,7 @@ Result Run(int boxes, int steps, int threads) {
     auto* physics = runtime.GetSystem<PhysicsSystem>();
 
     Result r;
-    double total = 0.0, totalStep = 0.0, falling = 0.0;
+    double total = 0.0, totalStep = 0.0, totalSync = 0.0, totalWrite = 0.0, falling = 0.0;
     const int fallingSteps = std::min(steps, 60);
     for (int i = 0; i < steps; ++i) {
         const auto start = std::chrono::steady_clock::now();
@@ -76,11 +78,18 @@ Result Run(int boxes, int steps, int threads) {
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         total += ms;
         totalStep += physics->Stats().stepMs;
-        r.maxMs = std::max(r.maxMs, ms);
+        totalSync += physics->Stats().syncMs;
+        totalWrite += physics->Stats().writeMs;
+        if (ms > r.maxMs) {
+            r.maxMs = ms;
+            r.maxStepIndex = i;
+        }
         if (i < fallingSteps) falling += ms;
     }
     r.avgMs = total / steps;
     r.avgStepMs = totalStep / steps;
+    r.avgSyncMs = totalSync / steps;
+    r.avgWriteMs = totalWrite / steps;
     r.fallingMs = falling / fallingSteps;
     r.threads = physics->Stats().threads;
     r.bodies = physics->Stats().bodies;
@@ -113,9 +122,10 @@ int main(int argc, char** argv) {
     SECTION("Caixas caindo e empilhando");
     for (int threads : {0, -1}) {
         const Result r = Run(boxes, steps, threads);
-        std::printf("  threads extras %2d: FixedUpdate médio %.2f ms (máx %.2f, 1º segundo %.2f), Jolt %.2f ms;"
-                    " %d/%d dormindo, %d fora da coluna\n",
-                    r.threads, r.avgMs, r.maxMs, r.fallingMs, r.avgStepMs, r.asleep, r.bodies, r.toppled);
+        std::printf("  threads extras %2d: FixedUpdate médio %.2f ms (máx %.2f no passo %d, 1º segundo %.2f);"
+                    " Jolt %.2f, sync %.2f, escrita %.2f ms; %d/%d dormindo, %d fora da coluna\n",
+                    r.threads, r.avgMs, r.maxMs, r.maxStepIndex, r.fallingMs, r.avgStepMs, r.avgSyncMs, r.avgWriteMs,
+                    r.asleep, r.bodies, r.toppled);
         CHECK(r.fellThrough == 0);
         CHECK(r.bodies == boxes + 1);
     }
