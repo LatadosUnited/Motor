@@ -3,6 +3,8 @@
 #include "EditorContext.h"
 
 #include <functional>
+#include <optional>
+#include <string>
 #include <string_view>
 
 namespace editor {
@@ -24,6 +26,12 @@ struct FieldDrawerRegistrar {
 };
 
 FieldDrawerFn FindFieldDrawer(std::string_view typeName);
+
+// Combo de asset para desenhadores: embutidos primeiro (malhas e texturas), depois os arquivos do projeto
+// desse tipo. Aceita arquivos arrastados do painel Projeto. `current`: chave atual (nulo = nenhum);
+// `noneLabel`: item "nenhum" (nulo = não oferece). Devolve a chave escolhida ("" = nenhum).
+std::optional<std::string> AssetCombo(EditorContext& ctx, const char* id, motor::AssetType type,
+                                      const std::string* current, const char* noneLabel = "(nenhuma)");
 
 #define MOTOR_FIELD_DRAWER(TypeName)                                                                         \
     static void MotorFieldDrawer_##TypeName(::editor::EditorContext& ctx, const ::motor::FieldInfo& field, \

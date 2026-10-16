@@ -29,6 +29,11 @@ public:
         std::function<void(const std::filesystem::path&)> pathDeleted;
         std::function<void(const std::filesystem::path&)> addMeshToScene;     // .obj -> nova entidade
         std::function<void(const std::filesystem::path&)> applyTexture;       // textura -> entidade selecionada
+        std::function<void(const std::filesystem::path&)> selectAsset;        // clique num arquivo (Inspector)
+        std::function<bool(const std::filesystem::path&)> createMaterialFile; // grava um material padrão
+        std::function<void(const std::filesystem::path&)> addPrefabToScene;   // .mprefab -> nova instância
+        // Entidade da Hierarquia solta numa pasta: vira um prefab nela.
+        std::function<void(uint32_t entity, const std::filesystem::path& folder)> createPrefabFromEntity;
     };
 
     struct ViewOptions {
@@ -50,7 +55,7 @@ public:
     void SetView(const ViewOptions& view) { m_view = view; }
 
 private:
-    enum class Filter { All, Scenes, Textures, Meshes };
+    enum class Filter { All, Scenes, Textures, Meshes, Materials, Prefabs };
 
     struct Entry {
         std::filesystem::path path;
@@ -101,6 +106,7 @@ private:
     void CommitRename(const Callbacks& callbacks);
     void CreateFolder();
     void CreateScene(const Callbacks& callbacks);
+    void CreateMaterial(const Callbacks& callbacks);
     void CopySelection(bool cut);
     void Paste(const Callbacks& callbacks);
     void DuplicateSelection();

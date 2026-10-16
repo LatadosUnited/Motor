@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <format>
+#include <string_view>
+#include <utility>
 
 namespace editor {
 
@@ -128,9 +130,135 @@ bool EditorContext::ApplyTextureFile(EntityId id, const fs::path& file) {
         mr = &e->Add<motor::MeshRenderer>();
         mr->mesh = assets.FindMesh("Cubo");
     }
-    mr->material.albedo = std::move(texture);
+    if (mr->sharedMaterial) {
+        // Material de asset: a textura vai para ele (e para todos que o usam), e o .mmat é gravado.
+        mr->sharedMaterial->albedo = std::move(texture);
+        if (!assets.SaveMaterial(mr->sharedMaterial.get(), &error)) pendingError = std::move(error);
+    } else {
+        mr->material.albedo = std::move(texture);
+    }
     selected = id;
     return true;
+}
+
+fs::path EditorContext::NewAssetPath(const fs::path& folder, const std::string& name, const char* extension) const {
+    const fs::path assetsDir = assets.Database().AssetsDir();
+    if (assetsDir.empty()) return {};
+    const fs::path dir = folder.is_absolute() ? folder : assetsDir / folder;
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+
+    // Nome de entidade pode ter caracteres que não valem em nome de arquivo.
+    std::string base;
+    for (char c : name) base += std::string_view("<>:\"/\\|?*").find(c) == std::string_view::npos && c >= ' ' ? c : '_';
+    while (!base.empty() && (base.back() == ' ' || base.back() == '.')) base.pop_back();
+    if (base.empty()) base = "Novo";
+
+    fs::path path = dir / motor::PathFromUtf8(base + extension);
+    for (int i = 2; fs::exists(path, ec); ++i) path = dir / motor::PathFromUtf8(std::format("{} {}{}", base, i, extension));
+    return path;
+}
+
+bool EditorContext::ApplyMaterialFile(EntityId id, const fs::path& file) {
+    motor::Entity* e = scene.Find(id);
+    if (!e) return false;
+    const std::string key = assets.KeyForFile(file);
+    std::string error = "O arquivo está fora do projeto.";
+    auto material = key.empty() ? nullptr : assets.GetMaterial(key, &error);
+    if (!material) {
+        pendingError = std::move(error);
+        return false;
+    }
+    motor::MeshRenderer* mr = e->Get<motor::MeshRenderer>();
+    if (!mr) {
+        mr = &e->Add<motor::MeshRenderer>();
+        mr->mesh = assets.FindMesh("Cubo");
+    }
+    mr->sharedMaterial = std::move(material);
+    selected = id;
+    return true;
+}
+
+bool EditorContext::CreateMaterialFromRenderer(motor::MeshRenderer& renderer, const std::string& name) {
+    const fs::path file = NewAssetPath("Materiais", name, motor::kMaterialFileExtension);
+    if (file.empty()) {
+        pendingError = "Abra ou crie um projeto para criar materiais.";
+        return false;
+    }
+    std::string error;
+    if (!assets.WriteMaterialFile(file, renderer.material, &error)) {
+        pendingError = std::move(error);
+        return false;
+    }
+    auto material = assets.GetMaterial(assets.KeyForFile(file), &error);
+    if (!material) {
+        pendingError = std::move(error);
+        return false;
+    }
+    renderer.sharedMaterial = std::move(material);
+    motor::log::Info("Material criado: {}", assets.KeyForFile(file));
+    return true;
+}
+
+motor::Entity* EditorContext::InstantiatePrefabFile(const fs::path& file, EntityId parent) {
+    std::string error;
+    const motor::Prefab* prefab = prefabs.GetFile(file, assets, &error);
+    if (!prefab) {
+        pendingError = std::move(error);
+        return nullptr;
+    }
+    selected = motor::Prefabs::Instantiate(*prefab, scene, parent);
+    return scene.Find(selected);
+}
+
+bool EditorContext::CreatePrefabFromEntity(EntityId id, const fs::path& folder) {
+    const motor::Entity* e = scene.Find(id);
+    if (!e) return false;
+    const fs::path file = NewAssetPath(folder.empty() ? fs::path("Prefabs") : folder, e->name, motor::kPrefabFileExtension);
+    if (file.empty()) {
+        pendingError = "Abra ou crie um projeto para criar prefabs.";
+        return false;
+    }
+    std::string error;
+    if (!motor::Prefabs::CreateFromEntity(scene, id, file, prefabs, assets, &error)) {
+        pendingError = std::move(error);
+        return false;
+    }
+    motor::log::Info("Prefab criado: {}", assets.KeyForFile(file));
+    return true;
+}
+
+void EditorContext::RequestPrefabAction(PrefabAction action, EntityId id) {
+    pendingPrefabAction = action;
+    pendingPrefabEntity = id;
+}
+
+void EditorContext::ApplyPendingPrefabAction() {
+    const PrefabAction action = std::exchange(pendingPrefabAction, PrefabAction::None);
+    const EntityId id = std::exchange(pendingPrefabEntity, kNullEntity);
+    if (!scene.Find(id)) return;
+    std::string error;
+    switch (action) {
+        case PrefabAction::None: break;
+        case PrefabAction::Apply:
+            if (!motor::Prefabs::ApplyInstance(scene, id, prefabs, assets, &error)) pendingError = std::move(error);
+            break;
+        case PrefabAction::Revert: motor::Prefabs::RevertInstance(scene, id, prefabs, assets); break;
+        case PrefabAction::Unpack: motor::Prefabs::Unpack(scene, id, prefabs, assets); break;
+    }
+}
+
+void EditorContext::UpdatePrefabs(const std::function<void(const std::function<void(motor::Scene&)>&)>& forEachSnapshot) {
+    // Outro projeto (pode ser uma cópia, com os mesmos GUIDs): o cache é do projeto anterior.
+    if (assets.Root() != m_prefabRoot) {
+        prefabs.Clear();
+        m_prefabRoot = assets.Root();
+    }
+    if (motor::Prefabs::NeedsSync(scene, prefabs, assets)) {
+        motor::Prefabs::SyncInstances(scene, prefabs, assets);
+        if (forEachSnapshot) forEachSnapshot([this](motor::Scene& s) { motor::Prefabs::SyncInstances(s, prefabs, assets); });
+    }
+    motor::Prefabs::RecordOverrides(scene, prefabs, assets);
 }
 
 void EditorContext::DuplicateSelected() {
