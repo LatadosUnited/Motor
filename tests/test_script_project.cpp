@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
 
         const fs::path templates = MOTOR_TEST_TEMPLATES_DIR;
         const auto names = SP::ListTemplates(templates);
-        CHECK(names == (std::vector<std::string>{"Girar", "MoverWASD", "Seguir"}));
+        CHECK(names == (std::vector<std::string>{"Girar", "Jogador", "MoverWASD", "Seguir"}));
         CHECK(SP::CopyTemplate(templates, "Girar", paths.scriptsDir));
         CHECK(!SP::CopyTemplate(templates, "Girar", paths.scriptsDir));  // não sobrescreve
         CHECK(!SP::CopyTemplate(templates, "NaoExiste", paths.scriptsDir));
