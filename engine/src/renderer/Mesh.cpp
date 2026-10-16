@@ -13,47 +13,69 @@
 namespace motor {
 
 Mesh::Mesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices)
-    : m_indexCount(static_cast<uint32_t>(indices.size())) {
-    if (!vertices.empty()) {
-        m_boundsMin = m_boundsMax = vertices[0].position;
-        for (const Vertex& v : vertices) {
-            m_boundsMin = glm::min(m_boundsMin, v.position);
-            m_boundsMax = glm::max(m_boundsMax, v.position);
+    : Mesh(vertices, indices, {}) {}
+
+Mesh::Mesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices, std::span<const SkinWeights> skinWeights)
+    : m_indices(indices.begin(), indices.end()), m_pendingVertices(vertices.begin(), vertices.end()) {
+    m_positions.reserve(vertices.size());
+    for (const Vertex& v : vertices) m_positions.push_back(v.position);
+    if (!m_positions.empty()) {
+        m_boundsMin = m_boundsMax = m_positions[0];
+        for (const glm::vec3& p : m_positions) {
+            m_boundsMin = glm::min(m_boundsMin, p);
+            m_boundsMax = glm::max(m_boundsMax, p);
         }
     }
+    if (skinWeights.size() == vertices.size()) m_weights.assign(skinWeights.begin(), skinWeights.end());
+}
 
+Mesh::~Mesh() {
+    if (m_vao == 0) return;  // nunca foi desenhada: não há nada na GPU
+    glDeleteVertexArrays(1, &m_vao);
+    glDeleteBuffers(1, &m_vbo);
+    glDeleteBuffers(1, &m_ibo);
+    if (m_skinVbo) glDeleteBuffers(1, &m_skinVbo);
+}
+
+void Mesh::Upload() const {
     glCreateBuffers(1, &m_vbo);
-    glNamedBufferStorage(m_vbo, static_cast<GLsizeiptr>(vertices.size_bytes()), vertices.data(), 0);
+    glNamedBufferStorage(m_vbo, static_cast<GLsizeiptr>(m_pendingVertices.size() * sizeof(Vertex)),
+                         m_pendingVertices.data(), 0);
 
     glCreateBuffers(1, &m_ibo);
-    glNamedBufferStorage(m_ibo, static_cast<GLsizeiptr>(indices.size_bytes()), indices.data(), 0);
+    glNamedBufferStorage(m_ibo, static_cast<GLsizeiptr>(m_indices.size() * sizeof(uint32_t)), m_indices.data(), 0);
 
     glCreateVertexArrays(1, &m_vao);
     glVertexArrayVertexBuffer(m_vao, 0, m_vbo, 0, sizeof(Vertex));
     glVertexArrayElementBuffer(m_vao, m_ibo);
 
-    struct Attr { GLuint location; GLint size; GLuint offset; };
-    const Attr attrs[] = {
-        {0, 3, offsetof(Vertex, position)},
-        {1, 3, offsetof(Vertex, normal)},
-        {2, 2, offsetof(Vertex, uv)},
+    struct Attr { GLuint location; GLint size; GLuint offset; GLuint binding; };
+    std::vector<Attr> attrs = {
+        {0, 3, offsetof(Vertex, position), 0},
+        {1, 3, offsetof(Vertex, normal), 0},
+        {2, 2, offsetof(Vertex, uv), 0},
     };
+    // Pele num segundo buffer (binding 1): só o shader de malhas animadas lê as posições 3 e 4.
+    if (!m_weights.empty()) {
+        glCreateBuffers(1, &m_skinVbo);
+        glNamedBufferStorage(m_skinVbo, static_cast<GLsizeiptr>(m_weights.size() * sizeof(SkinWeights)),
+                             m_weights.data(), 0);
+        glVertexArrayVertexBuffer(m_vao, 1, m_skinVbo, 0, sizeof(SkinWeights));
+        attrs.push_back({3, 4, offsetof(SkinWeights, joints), 1});
+        attrs.push_back({4, 4, offsetof(SkinWeights, weights), 1});
+    }
     for (const auto& a : attrs) {
         glEnableVertexArrayAttrib(m_vao, a.location);
         glVertexArrayAttribFormat(m_vao, a.location, a.size, GL_FLOAT, GL_FALSE, a.offset);
-        glVertexArrayAttribBinding(m_vao, a.location, 0);
+        glVertexArrayAttribBinding(m_vao, a.location, a.binding);
     }
-}
-
-Mesh::~Mesh() {
-    glDeleteVertexArrays(1, &m_vao);
-    glDeleteBuffers(1, &m_vbo);
-    glDeleteBuffers(1, &m_ibo);
+    m_pendingVertices = {};  // a GPU já tem; na CPU ficam só posições e índices
 }
 
 void Mesh::Draw() const {
+    if (m_vao == 0) Upload();
     glBindVertexArray(m_vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indexCount), GL_UNSIGNED_INT, nullptr);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
 }
 
 std::shared_ptr<Mesh> Mesh::CreateCube() {

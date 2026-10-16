@@ -8,5 +8,6 @@ motor_add_layer(renderer
         Camera.cpp
         Renderer.cpp
         Framebuffer.cpp
+        Skeleton.cpp
     DEPENDS core
     PRIVATE_LIBS glfw)

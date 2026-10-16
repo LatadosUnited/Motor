@@ -43,6 +43,7 @@ struct LightsData {
 
 constexpr GLuint kFrameBinding = 0;
 constexpr GLuint kLightsBinding = 1;
+constexpr GLuint kJointsBinding = 2;  // skinned.vert
 
 glm::vec3 ToLinear(const glm::vec3& srgb) {
     return glm::pow(glm::max(srgb, glm::vec3(0.0f)), glm::vec3(2.2f));
@@ -99,9 +100,15 @@ Renderer::Renderer() {
     glNamedBufferStorage(m_frameUbo, sizeof(FrameData), nullptr, GL_DYNAMIC_STORAGE_BIT);
     glCreateBuffers(1, &m_lightsUbo);
     glNamedBufferStorage(m_lightsUbo, sizeof(LightsData), nullptr, GL_DYNAMIC_STORAGE_BIT);
+
+    // Animação esquelética (Fase 11).
+    m_skinnedShader = Shader::FromFiles(dir + "skinned.vert", dir + "lit.frag");
+    glCreateBuffers(1, &m_jointsUbo);
+    glNamedBufferStorage(m_jointsUbo, sizeof(glm::mat4) * kMaxJoints, nullptr, GL_DYNAMIC_STORAGE_BIT);
 }
 
 Renderer::~Renderer() {
+    glDeleteBuffers(1, &m_jointsUbo);
     glDeleteBuffers(1, &m_lightsUbo);
     glDeleteBuffers(1, &m_frameUbo);
 }
@@ -202,6 +209,32 @@ void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const g
 
     m_litShader->Bind();
     ++m_stats.drawCalls;
+}
+
+void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const glm::mat4& model,
+                             std::span<const glm::mat4> joints) {
+    MOTOR_ASSERT(m_inScene, "SubmitSkinned fora de BeginScene/EndScene");
+
+    if (joints.size() > kMaxJoints && !std::exchange(m_warnedTooManyJoints, true)) {
+        log::Warn("Renderer: malha com {} juntas; só as primeiras {} se movem", joints.size(), kMaxJoints);
+    }
+    const size_t count = std::min(joints.size(), kMaxJoints);
+    glNamedBufferSubData(m_jointsUbo, 0, static_cast<GLsizeiptr>(count * sizeof(glm::mat4)), joints.data());
+    glBindBufferBase(GL_UNIFORM_BUFFER, kJointsBinding, m_jointsUbo);
+
+    m_skinnedShader->Bind();
+    m_skinnedShader->SetMat4("uModel", model);
+    m_skinnedShader->SetMat3("uNormalMatrix", glm::inverseTranspose(glm::mat3(model)));
+    m_skinnedShader->SetVec4("uColor", material.color);
+    m_skinnedShader->SetFloat("uSpecular", material.specular);
+    m_skinnedShader->SetFloat("uShininess", material.shininess);
+    (material.albedo ? material.albedo : m_whiteTexture)->Bind(0);
+
+    mesh.Draw();
+    m_litShader->Bind();
+
+    ++m_stats.drawCalls;
+    m_stats.triangles += mesh.IndexCount() / 3;
 }
 
 void Renderer::EndScene() {

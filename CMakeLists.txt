@@ -107,6 +107,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(Jolt PRIVATE $<$<CONFIG:Debug>:-O2>)
 endif()
 
+# cgltf (MIT): leitor de glTF 2.0 (.gltf/.glb) num único header C99, sem dependências (Fase 11). Fixado na tag
+# v1.15; a implementação é compilada só no GltfLoader.cpp da camada de assets.
+FetchContent_Declare(cgltf
+    URL      https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/cgltf.h
+    URL_HASH SHA256=e378a21c084bf1f288bb799de827bb26906efb024255f1ecf1705ea13f11c6ec
+    DOWNLOAD_NO_EXTRACT TRUE)
+FetchContent_MakeAvailable(cgltf)
+
 # Objetos do ImGui (e o GLFW) entram na libMotor.dll: o editor e a DLL de scripts usam a mesma cópia (um
 # único contexto do ImGui e uma única janela do GLFW no processo).
 add_library(imgui OBJECT
