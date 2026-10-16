@@ -169,7 +169,7 @@ Depende da Fase 6 (o glTF traz materiais e vira prefab).
 **Pronto quando:** um personagem glTF animado anda pela cena controlado pelo script Jogador, trocando entre
 as animações parado, andando e pulando.
 
-## Fase 12 — Documentação de scripts ⭐ prioridade 4
+## Fase 12 — Documentação de scripts ✅
 
 Hoje o uso de scripts está espalhado no README e nos headers. Quem faz o jogo deve conseguir escrever scripts
 sem ler o código da engine.
