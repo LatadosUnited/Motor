@@ -18,6 +18,7 @@ add_executable(MotorEditor
     src/ScriptHost.cpp
     src/ScriptProject.cpp
     src/UndoHistory.cpp
+    src/LightTypeDrawer.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 if(WIN32)
