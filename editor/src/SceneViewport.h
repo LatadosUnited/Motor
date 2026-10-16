@@ -48,6 +48,8 @@ private:
     void CollectIcons(const EditorContext& ctx);
     void DrawIcons(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) const;
     void DrawSelectedHelpers(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) const;
+    // Contorno dos colliders e personagens (física), em linhas por cima da imagem.
+    void DrawColliders(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin);
     // Ponto do mundo em pixels do viewport (relativo ao canto); nullopt se estiver atrás da câmera.
     std::optional<ImVec2> Project(const glm::vec3& world) const;
     void DrawGizmo(EditorContext& ctx, const ImVec2& origin);
@@ -69,6 +71,8 @@ private:
     float m_snapScale = 0.1f;
 
     std::vector<Icon> m_icons;  // do frame atual
+    std::vector<motor::GizmoLine> m_lines;  // reaproveitado entre entidades (sem alocar a cada frame)
+    bool m_showColliders = true;
     glm::vec2 m_size{1.0f};
     bool m_looking = false;            // botão direito segurado no viewport
     bool m_focused = false;            // o jogo só recebe teclado/mouse com o viewport em foco

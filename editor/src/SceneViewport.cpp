@@ -23,6 +23,9 @@ namespace {
 constexpr glm::vec4 kSelectionColor{1.0f, 0.62f, 0.15f, 1.0f};
 constexpr ImU32 kSelectionColorU32 = IM_COL32(255, 158, 38, 255);
 constexpr ImU32 kHelperColor = IM_COL32(255, 230, 140, 200);
+constexpr ImU32 kColliderColor = IM_COL32(110, 230, 120, 150);
+constexpr ImU32 kColliderSelectedColor = IM_COL32(140, 255, 150, 255);
+constexpr ImU32 kTriggerColor = IM_COL32(110, 200, 255, 150);  // triggers em azul, para diferenciar
 constexpr float kIconRadius = 11.0f;      // raio do ícone em pixels
 constexpr float kIconPickRadius = 14.0f;  // tolerância do clique
 
@@ -135,6 +138,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     if (!gameView) {
         CollectIcons(ctx);
         ImDrawList* overlay = ImGui::GetWindowDrawList();
+        if (m_showColliders) DrawColliders(ctx, overlay, origin);
         DrawSelectedHelpers(ctx, overlay, origin);
         DrawIcons(ctx, overlay, origin);
         DrawGizmo(ctx, origin);
@@ -309,6 +313,38 @@ void SceneViewport::DrawSelectedHelpers(const EditorContext& ctx, ImDrawList* dl
     }
 }
 
+void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) {
+    const Scene& scene = ctx.scene;
+    for (const auto& e : scene.Entities()) {
+        const ColliderComponent* collider = e->Get<ColliderComponent>();
+        const CharacterControllerComponent* character = e->Get<CharacterControllerComponent>();
+        if (!collider && !character) continue;
+        const bool active = scene.IsActiveInHierarchy(e->id);
+        const bool selected = e->id == ctx.selected;
+        if (!active && !selected) continue;
+
+        m_lines.clear();
+        const glm::mat4 world = scene.WorldMatrix(e->id);
+        if (collider) {
+            const MeshRenderer* mr = collider->shape == ColliderShape::Mesh ? e->Get<MeshRenderer>() : nullptr;
+            if (mr && mr->mesh) {
+                const glm::vec3 lo = mr->mesh->BoundsMin(), hi = mr->mesh->BoundsMax();
+                AppendColliderLines(*collider, world, m_lines, &lo, &hi);
+            } else {
+                AppendColliderLines(*collider, world, m_lines);
+            }
+        }
+        if (character) AppendCharacterLines(*character, world, m_lines);
+
+        const ImU32 color = selected ? kColliderSelectedColor : collider && collider->isTrigger ? kTriggerColor : kColliderColor;
+        const float thickness = selected ? 2.0f : 1.0f;
+        for (const GizmoLine& l : m_lines) {
+            const auto pa = Project(l.a), pb = Project(l.b);
+            if (pa && pb) dl->AddLine(Add(origin, *pa), Add(origin, *pb), color, thickness);
+        }
+    }
+}
+
 void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
     const EntityId selected = ctx.selected;
     if (m_gizmoTool == GizmoTool::None || !ctx.scene.Find(selected)) return;
@@ -381,6 +417,9 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
     if (toggleButton("Snap", m_snap)) m_snap = !m_snap;
     ImGui::SetItemTooltip("Encaixe: %.2g m / %.0f° / %.2g (segure Ctrl para ativar temporariamente)",
                           m_snapTranslate, m_snapRotate, m_snapScale);
+    ImGui::SameLine(0.0f, 14.0f);
+    if (toggleButton("Colliders", m_showColliders)) m_showColliders = !m_showColliders;
+    ImGui::SetItemTooltip("Mostrar as formas de colisão (verde), os triggers (azul) e os personagens");
     ImGui::PopStyleVar();
     ImGui::EndGroup();
 
