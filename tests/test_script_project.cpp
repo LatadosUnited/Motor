@@ -107,6 +107,21 @@ int main(int argc, char** argv) {
         CHECK(build.size() >= 3 && build[1] == "--build");
         CHECK(SP::ToolchainPathDirs(fake).size() == 2);
         CHECK(SP::NeedsConfigure(paths));
+        // Configuração interrompida: cache sem Makefile ainda precisa configurar (e o cache é apagado antes).
+        fs::create_directories(paths.binaryDir / "CMakeFiles");
+        { std::ofstream(paths.binaryDir / "CMakeCache.txt") << "CMAKE_GENERATOR:INTERNAL=MSYS Makefiles\n"; }
+        CHECK(SP::NeedsConfigure(paths));
+        { std::ofstream(paths.binaryDir / "Makefile") << "all:\n"; }
+        CHECK(!SP::NeedsConfigure(paths));
+        fs::remove(paths.binaryDir / "Makefile");
+        SP::ResetConfigure(paths);
+        CHECK(!fs::exists(paths.binaryDir / "CMakeCache.txt") && !fs::exists(paths.binaryDir / "CMakeFiles"));
+
+        // Caminho longo demais para o compilador (limite de 260 do Windows): aviso com a provável causa.
+        CHECK(SP::LongPathWarning(SP::PathsFor("C:/Jogos/Meu Jogo")).empty());
+        const fs::path deep = fs::path("C:/") / std::string(150, 'p') / "Projeto Robô";
+        const std::string warning = SP::LongPathWarning(SP::PathsFor(deep));
+        CHECK(Contains(warning, "longo demais") && Contains(warning, "Projeto Robô"));
 
         // Gravar duas vezes o mesmo conteúdo não muda a data (o CMake não reconfigura à toa).
         CHECK(SP::WriteBuildFiles(paths, fake));

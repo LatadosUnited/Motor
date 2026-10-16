@@ -252,7 +252,10 @@ bool ScriptBuilder::Start(const ScriptProject::Paths& paths, const ScriptProject
             if (code == -1) Append(error + "\n");
             return code == 0;
         };
-        if (ok && ScriptProject::NeedsConfigure(paths)) ok = run(ScriptProject::ConfigureCommand(paths, toolchain));
+        if (ok && ScriptProject::NeedsConfigure(paths)) {
+            ScriptProject::ResetConfigure(paths);
+            ok = run(ScriptProject::ConfigureCommand(paths, toolchain));
+        }
         if (ok) ok = run(ScriptProject::BuildCommand(paths, toolchain));
 
         {

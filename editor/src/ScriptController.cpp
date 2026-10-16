@@ -151,6 +151,12 @@ void ScriptController::Update(float dt) {
     if (m_builder.Poll()) {
         m_log = m_builder.Log();
         m_diagnostics = ScriptProject::ParseDiagnostics(m_log);
+        if (m_builder.GetState() == ScriptBuilder::State::Failed) {
+            // O GCC falha sem explicar quando o caminho de um arquivo passa de 260 caracteres: diga a provável causa.
+            if (std::string warning = ScriptProject::LongPathWarning(paths); !warning.empty()) {
+                m_diagnostics.insert(m_diagnostics.begin(), {Diagnostic::Kind::Warning, {}, 0, 0, std::move(warning)});
+            }
+        }
         if (m_builder.GetState() == ScriptBuilder::State::Succeeded) {
             log::Info("Scripts: compilados em {:.1f} s", m_builder.Seconds());
             // O make não reescreve a DLL se nada mudou: aí não há o que recarregar.
