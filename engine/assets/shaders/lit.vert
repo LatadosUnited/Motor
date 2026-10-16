@@ -8,8 +8,6 @@ layout(std140, binding = 0) uniform Frame {
     mat4 uView;
     mat4 uProjection;
     vec4 uCameraPosition;
-    vec4 uLightDirection;
-    vec4 uLightColor;
     vec4 uAmbient;
     vec4 uFog;  // rgb = cor do céu (linear), a = densidade
 };
