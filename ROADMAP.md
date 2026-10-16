@@ -252,6 +252,22 @@ Para um agente (Claude Code) usar o editor como uma pessoa usaria, sem simular m
 Pendências: mover a câmera do editor para um ponto escolhido, além de focar uma entidade; arrastar o gizmo e
 outras ações só de mouse; notificações para o agente (hoje ele pergunta com `editor_status` e `log_read`).
 
+## Anotado para a alpha 2
+
+Problemas encontrados por um agente testando o editor pelo MCP (16/10/2026):
+
+- **Pasta vazia não vira projeto.** Abrir o editor numa pasta vazia mostra só a cena de exemplo, e o MCP
+  não tem como criar projeto. O agente precisou montar o `.mproject` e a pasta `Scripts/` à mão, copiando os
+  modelos da engine, e reabrir o editor apontando para o projeto. Saídas possíveis (dá para fazer as duas):
+  - ferramenta `project_create` no MCP (nome e pasta), com o mesmo resultado de Arquivo > Novo projeto;
+  - criar o projeto sozinho quando o editor abre uma pasta vazia.
+- **Agentes mexem na configuração do usuário.** Abrir o editor grava `%APPDATA%\Motor\editor.json` (último
+  projeto, recentes). Testes automáticos esquecem a cópia que o CLAUDE.md pede; aconteceu duas vezes: o
+  último projeto do usuário virou um projeto de teste. Saída: opção para o editor usar outro arquivo de
+  configuração ou não gravar nenhum (ex.: `--settings <arquivo>` ou `--no-settings`), usada pelos agentes.
+- **Falta testar à mão** (o MCP não cobre): teclado e mouse de verdade no viewport (câmera livre, seleção
+  por clique, foco do jogo), menus, gizmo e arrastar arquivos (do painel Projeto e do Explorer).
+
 ## Depois
 
 - Terreno, partículas, navegação (pathfinding).
