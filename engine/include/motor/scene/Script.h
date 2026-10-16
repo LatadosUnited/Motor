@@ -12,6 +12,7 @@
 
 #include "motor/core/Input.h"
 #include "motor/core/Log.h"
+#include "motor/scene/RuntimeSystem.h"
 
 #include <glm/vec2.hpp>
 
@@ -19,6 +20,8 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <typeinfo>
 #include <utility>
 
 namespace motor {
@@ -75,6 +78,15 @@ protected:
     bool IsMouseDown(MouseButton button) const;
     glm::vec2 MouseDelta() const;
 
+    // --- Sistemas do jogo (física, áudio..., ver RuntimeSystem.h) ---
+    // Sistema do tipo T deste Play, ou nullptr (não registrado). Já existe no OnStart e ainda no OnDestroy.
+    //   if (auto* fisica = GetSystem<motor::PhysicsSystem>()) fisica->...
+    template <class T>
+    T* GetSystem() {
+        static_assert(std::is_base_of_v<RuntimeSystem, T>, "GetSystem: T precisa herdar de motor::RuntimeSystem");
+        return static_cast<T*>(FindSystem(typeid(T)));
+    }
+
     // --- Log com o nome da entidade: Log("vidas = {}", vidas) ---
     template <class... Args>
     void Log(std::format_string<Args...> fmt, Args&&... args) {
@@ -85,6 +97,7 @@ private:
     friend class SceneRuntime;
     void WriteLog(const std::string& message);
     bool InputEnabled() const;
+    RuntimeSystem* FindSystem(const std::type_info& type);
 
     SceneRuntime* m_runtime = nullptr;
     EntityId m_entity = 0;

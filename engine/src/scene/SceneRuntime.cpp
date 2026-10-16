@@ -2,9 +2,40 @@
 
 #include "motor/scene/Scene.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace motor {
+
+// --- Registro dos sistemas ----------------------------------------------------------
+
+namespace {
+// Estática local: os registradores rodam na inicialização estática, em qualquer ordem entre os .cpp.
+std::vector<RuntimeSystemInfo>& SystemRegistry() {
+    static std::vector<RuntimeSystemInfo> systems;
+    return systems;
+}
+} // namespace
+
+void RegisterRuntimeSystem(RuntimeSystemInfo info) {
+    MOTOR_ASSERT(info.cppType && info.create, "RegisterRuntimeSystem: tipo e fábrica são obrigatórios");
+    UnregisterRuntimeSystem(*info.cppType);  // registrar de novo o mesmo tipo substitui
+    SystemRegistry().push_back(std::move(info));
+}
+
+void UnregisterRuntimeSystem(const std::type_info& cppType) {
+    std::erase_if(SystemRegistry(), [&](const RuntimeSystemInfo& s) { return *s.cppType == cppType; });
+}
+
+std::vector<RuntimeSystemInfo> RegisteredRuntimeSystems() {
+    std::vector<RuntimeSystemInfo> systems = SystemRegistry();
+    std::sort(systems.begin(), systems.end(), [](const RuntimeSystemInfo& a, const RuntimeSystemInfo& b) {
+        return a.order != b.order ? a.order < b.order : a.name < b.name;
+    });
+    return systems;
+}
+
+// --- SceneRuntime -------------------------------------------------------------------
 
 SceneRuntime::SceneRuntime(Scene& scene) : m_scene(scene) {}
 
@@ -44,10 +75,31 @@ void SceneRuntime::StartPending() {
     });
 }
 
+void SceneRuntime::RunSystems(bool beforeScripts, void (RuntimeSystem::*hook)(SceneRuntime&, float), float dt) {
+    // m_systems não muda durante o Play (não chame Stop() de dentro de um gancho).
+    for (SystemSlot& slot : m_systems) {
+        if ((slot.info.order < 0) == beforeScripts) (slot.system.get()->*hook)(*this, dt);
+    }
+}
+
+RuntimeSystem* SceneRuntime::FindSystem(const std::type_info& type) {
+    for (SystemSlot& slot : m_systems) {
+        if (*slot.info.cppType == type) return slot.system.get();
+    }
+    return nullptr;
+}
+
 void SceneRuntime::Start() {
     if (m_running) return;
     m_running = true;
     m_time = {};
+    // Instâncias novas a cada Start: o estado dos sistemas é deste runtime e deste Play.
+    for (RuntimeSystemInfo& info : RegisteredRuntimeSystems()) {
+        std::unique_ptr<RuntimeSystem> system = info.create();
+        m_systems.push_back({std::move(info), std::move(system)});
+    }
+    // Todos os sistemas existem antes do primeiro OnStart: um pode achar o outro com GetSystem.
+    for (SystemSlot& slot : m_systems) slot.system->OnStart(*this);
     StartPending();
     FlushDestroyed();
 }
@@ -57,11 +109,13 @@ void SceneRuntime::Update(float dt) {
     m_time.delta = dt;
     m_time.elapsed += dt;
     StartPending();
+    RunSystems(true, &RuntimeSystem::OnUpdate, dt);
     ForEachScript([this, dt](Script& s, EntityId id) {
         if (!s.m_started) return;
         Bind(s, id);
         s.OnUpdate(dt);
     });
+    RunSystems(false, &RuntimeSystem::OnUpdate, dt);
     ++m_time.frame;
     FlushDestroyed();
 }
@@ -70,11 +124,13 @@ void SceneRuntime::FixedUpdate(float dt) {
     if (!m_running) return;
     m_time.fixedDelta = dt;
     StartPending();
+    RunSystems(true, &RuntimeSystem::OnFixedUpdate, dt);
     ForEachScript([this, dt](Script& s, EntityId id) {
         if (!s.m_started) return;
         Bind(s, id);
         s.OnFixedUpdate(dt);
     });
+    RunSystems(false, &RuntimeSystem::OnFixedUpdate, dt);
     FlushDestroyed();
 }
 
@@ -96,6 +152,9 @@ void SceneRuntime::Stop() {
             s.OnDestroy();
         }
     }
+    // Os sistemas param depois dos scripts (que ainda podem usá-los no OnDestroy), na ordem inversa.
+    for (size_t i = m_systems.size(); i-- > 0;) m_systems[i].system->OnStop(*this);
+    m_systems.clear();
     m_running = false;
     m_toDestroy.clear();
 }
@@ -178,6 +237,10 @@ void Script::DestroySelf() {
 const GameTime& Script::Time() const {
     MOTOR_ASSERT(m_runtime, "Script usado fora do Play");
     return m_runtime->Time();
+}
+
+RuntimeSystem* Script::FindSystem(const std::type_info& type) {
+    return m_runtime ? m_runtime->FindSystem(type) : nullptr;
 }
 
 bool Script::InputEnabled() const {
