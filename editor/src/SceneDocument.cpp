@@ -66,7 +66,10 @@ void BuildStarterScene(Scene& scene, const AssetLibrary& assets, bool withScript
     camera.transform.SetEulerDegrees({-20.0f, 0.0f, 0.0f});
     camera.Add<CameraComponent>();
 
-    scene.light.direction = {-0.5f, -1.0f, -0.35f};
+    Entity& sun = scene.CreateEntity("Sol");
+    sun.transform.position = {0.0f, 8.0f, 0.0f};
+    sun.transform.rotation = RotationLookingAt({-0.5f, -1.0f, -0.35f});
+    sun.Add<LightComponent>().type = LightType::Directional;
 }
 
 // Primeira cena encontrada dentro de `dir` (busca recursiva), ou vazio.

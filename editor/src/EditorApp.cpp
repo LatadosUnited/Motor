@@ -63,8 +63,6 @@ void EditorApp::OnInit() {
 }
 
 void EditorApp::BuildDefaultScene() {
-    Scene& scene = m_ctx.scene;
-
     Entity& floor = m_ctx.CreatePrimitive(Primitive::Plane);
     floor.name = "Chão";
     floor.transform.scale = {40.0f, 1.0f, 40.0f};
@@ -107,7 +105,8 @@ void EditorApp::BuildDefaultScene() {
     camera.transform.position = {0.0f, 4.6f, 7.0f};
     camera.transform.SetEulerDegrees({-30.0f, 0.0f, 0.0f});
 
-    scene.light.direction = {-0.5f, -1.0f, -0.35f};
+    Entity& sun = m_ctx.CreatePrimitive(Primitive::DirectionalLight);
+    sun.transform.rotation = RotationLookingAt({-0.5f, -1.0f, -0.35f});
     m_ctx.selected = kNullEntity;
 }
 
