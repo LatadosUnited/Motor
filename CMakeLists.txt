@@ -58,6 +58,55 @@ FetchContent_Declare(stb_image
 
 FetchContent_MakeAvailable(glfw glm imgui imguizmo json stb_image)
 
+# Jolt Physics (MIT) para a física (Fase 5): multithread (job system próprio) e SIMD. Tarball da tag v5.6.0
+# (commit e77f175595e64cb44218cc9d9d56fc365ad0e36a). O CMakeLists dele fica em Build/.
+#
+# SIMD: base SSE4.2 (+POPCNT), sem AVX/AVX2/FMA/F16C/LZCNT/TZCNT. O jogo exportado roda em qualquer x86-64
+# dos últimos ~15 anos (SSE4.2 existe desde Nehalem/2008 e Bulldozer/2011); com AVX2 ligado (padrão do Jolt) o
+# executável fecha com "instrução ilegal" em CPUs sem AVX2, sem aviso, e não há troca em tempo de execução.
+# O ganho de AVX2 no passo da física é pequeno perto disso.
+set(USE_SSE4_1 ON  CACHE BOOL "" FORCE)
+set(USE_SSE4_2 ON  CACHE BOOL "" FORCE)
+set(USE_AVX    OFF CACHE BOOL "" FORCE)
+set(USE_AVX2   OFF CACHE BOOL "" FORCE)
+set(USE_AVX512 OFF CACHE BOOL "" FORCE)
+set(USE_LZCNT  OFF CACHE BOOL "" FORCE)
+set(USE_TZCNT  OFF CACHE BOOL "" FORCE)
+set(USE_F16C   OFF CACHE BOOL "" FORCE)
+set(USE_FMADD  OFF CACHE BOOL "" FORCE)
+# RTTI ligado: herdamos de classes do Jolt (ContactListener, filtros de camada) num código com RTTI, e as
+# vtables precisam do typeinfo das classes base.
+set(CPP_RTTI_ENABLED ON CACHE BOOL "" FORCE)
+# Só a biblioteca: sem asserts, -Werror, LTO, instalação, profiler, debug renderer (o editor desenha os
+# colliders), ObjectStream, nem a parte de GPU (DX12/Vulkan/Metal/CPU compute, usada só pelo cabelo).
+set(USE_ASSERTS                         OFF CACHE BOOL "" FORCE)
+set(ENABLE_ALL_WARNINGS                 OFF CACHE BOOL "" FORCE)
+set(INTERPROCEDURAL_OPTIMIZATION        OFF CACHE BOOL "" FORCE)
+set(GENERATE_DEBUG_SYMBOLS              OFF CACHE BOOL "" FORCE)
+set(FLOATING_POINT_EXCEPTIONS_ENABLED   OFF CACHE BOOL "" FORCE)
+set(ENABLE_INSTALL                      OFF CACHE BOOL "" FORCE)
+set(PROFILER_IN_DEBUG_AND_RELEASE       OFF CACHE BOOL "" FORCE)
+set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(ENABLE_OBJECT_STREAM                OFF CACHE BOOL "" FORCE)
+set(JPH_USE_DX12                        OFF CACHE BOOL "" FORCE)
+set(JPH_USE_VK                          OFF CACHE BOOL "" FORCE)
+set(JPH_USE_MTL                         OFF CACHE BOOL "" FORCE)
+set(JPH_USE_CPU_COMPUTE                 OFF CACHE BOOL "" FORCE)
+set(JPH_BUILD_SHARED_LIBS               OFF CACHE BOOL "" FORCE)  # estática, entra na libMotor.dll
+
+FetchContent_Declare(jolt
+    URL         https://github.com/jrouwe/JoltPhysics/archive/refs/tags/v5.6.0.tar.gz
+    URL_HASH    SHA256=6e069ee0172478cc78182047aac87e5310ba14a67a53348ae14cc37801fd3f8e
+    SOURCE_SUBDIR Build)
+FetchContent_MakeAvailable(jolt)
+
+# Os objetos do Jolt vão para uma DLL. No Debug ele é otimizado mesmo assim: sem otimização o passo da física
+# fica dezenas de vezes mais lento e o Play no editor deixa de ser utilizável (não depuramos o Jolt por dentro).
+set_target_properties(Jolt PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(Jolt PRIVATE $<$<CONFIG:Debug>:-O2>)
+endif()
+
 # Objetos do ImGui (e o GLFW) entram na libMotor.dll: o editor e a DLL de scripts usam a mesma cópia (um
 # único contexto do ImGui e uma única janela do GLFW no processo).
 add_library(imgui OBJECT
