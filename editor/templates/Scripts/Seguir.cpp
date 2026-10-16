@@ -1,5 +1,7 @@
 // Segue outra entidade (achada pelo nome) mantendo um deslocamento; útil na câmera. A entidade que segue
 // deve estar na raiz da hierarquia. Script de exemplo do Motor.
+// Mostra como achar outra entidade e guardar o id dela (nunca o ponteiro: ela pode ser destruída).
+// Guia passo a passo: docs/scripts.md na pasta do Motor (receita "Câmera que segue").
 
 #include <motor/scene/ScriptModule.h>
 
@@ -15,6 +17,7 @@ struct Seguir : motor::Script {
     float suavidade = 6.0f;  // 0 = instantâneo
     bool olhar = true;       // aponta para o alvo
 
+    // OnStart roda uma vez, no início do Play: bom lugar para achar as outras entidades.
     void OnStart() override {
         const motor::Entity* target = FindEntity(alvo);
         m_alvo = target ? target->id : motor::kNullEntity;
