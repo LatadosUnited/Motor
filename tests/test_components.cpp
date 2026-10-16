@@ -103,7 +103,7 @@ int main() {
     e.Get<MeshRenderer>()->material.color = {0.5f, 0.6f, 0.7f, 1.0f};
     AssetLibrary assets;
     const std::string text = SceneSerializer::ToJson(scene, assets);
-    CHECK(text.find("\"version\": 3") != std::string::npos);
+    CHECK(text.find("\"version\": 4") != std::string::npos);
     CHECK(text.find("\"type\": \"Tudo\"") != std::string::npos);
     CHECK(text.find("estadoInterno") == std::string::npos);
 
