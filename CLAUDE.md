@@ -106,3 +106,67 @@ ctest --test-dir build --output-on-failure
 
 - Git: cada fase/assunto do `ROADMAP.md` em um branch próprio; commits pequenos com mensagem em português.
 - Ao terminar uma tarefa: build sem avisos, `ctest` passando, README atualizado se mudou o uso.
+
+## Trabalho em paralelo (vários agentes)
+
+Cada tarefa tem uma **área**: as pastas que ela pode mudar à vontade. Fora da sua área, só os pontos de
+coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergunte antes de editar.
+
+### Áreas
+
+| Área | Pastas e arquivos |
+|---|---|
+| Núcleo | `engine/{include/motor,src}/core/` |
+| Renderer | `engine/{include/motor,src}/renderer/`, `engine/assets/shaders/` |
+| Projeto e assets | `engine/{include/motor,src}/{project,assets}/` |
+| Cena e componentes | `engine/{include/motor,src}/scene/` (núcleo: `Scene`, `Component`, `SceneSerializer`, `SceneRuntime`) |
+| Aplicação | `engine/{include/motor,src}/app/`, `sandbox/` |
+| Editor: viewport | `editor/src/SceneViewport.*` |
+| Editor: Play | `editor/src/PlayController.*`, `editor/src/PlayMode.*` |
+| Editor: arquivos | `editor/src/SceneDocument.*`, `FileDialog.*`, `EditorSettings.*` |
+| Editor: scripts | `editor/src/Script*.*`, `editor/templates/` |
+| Editor: painéis | `editor/src/{Hierarchy,Inspector,Scene,Project}Panel.*`, `FieldDrawers.*` |
+| Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
+
+Componente novo da engine = `scene/<Nome>.h` + `scene/<Nome>.cpp` próprios (`MOTOR_COMPONENT_MODULE`), não
+importa a fase: isso não conflita com ninguém. Tipo de campo novo = `FieldTraits<T>` + `MOTOR_FIELD_DRAWER`
+em arquivos próprios. Camada nova (física, áudio, HUD) = pasta `engine/{include/motor,src}/<camada>/` própria.
+
+### Pontos de coordenação (arquivos que várias tarefas tocam)
+
+Só **acrescente** (uma linha ou um bloco no fim da lista), num commit pequeno separado, sem reordenar nem
+reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuário.
+
+- `engine/CMakeLists.txt` (`MOTOR_LAYERS`) e `engine/src/<camada>/CMakeLists.txt` de outra área
+- `engine/include/motor/Motor.h`, `engine/include/motor/scene/Components.h`
+- `CMakeLists.txt` da raiz (`FetchContent`: biblioteca nova só com aprovação do usuário), `editor/CMakeLists.txt`
+- `editor/src/EditorApp.*` (só para montar uma peça nova: membro, chamada no loop, item de menu) e `EditorContext.*`
+- `README.md` e `ROADMAP.md` (só a seção da sua fase), `CLAUDE.md`
+- Headers públicos de outra área (`engine/include/motor/...`): mudança de API é tarefa própria, combinada antes
+
+### Fases do roteiro: onde cada uma mexe
+
+| Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
+|---|---|---|---|
+| 4 Luzes | componentes de luz em `scene/`, `renderer/` (N luzes), shaders | `Scene` e `SceneSerializer` (a luz da cena vira componente; cenas antigas convertidas), `SceneViewport` (ícones), painel Cena | 7 |
+| 5 Física | camada nova `physics/` | **pré-requisito:** sistemas no `SceneRuntime` (abaixo); biblioteca nova | — |
+| 6 Materiais/prefabs | `assets/`, `ProjectPanel` | `SceneSerializer` (prefab), Inspector | — |
+| 7 Render avançado | `renderer/`, shaders | `Renderer` (mesmo arquivo da 4) | 4 |
+| 8 Áudio | camada nova `audio/` | sistemas no `SceneRuntime`; biblioteca nova (miniaudio) | — |
+| 9 HUD | camada nova `ui/` | `renderer/` (desenho 2D) | 7 |
+
+**Pendente antes das Fases 5 e 8:** o `SceneRuntime` (camada scene) não tem como uma camada de cima
+(física, áudio) rodar a cada passo do jogo, e incluir para cima é proibido. A primeira tarefa da Fase 5 é
+criar esse ponto de extensão (sistemas registrados, no estilo de `MOTOR_COMPONENT_MODULE`), num commit
+próprio, antes da física em si. Quem fizer a Fase 8 depois só usa.
+
+### Regras de cada tarefa
+
+1. Um branch e uma worktree por tarefa (`fase-<n>-<assunto>` ou `refactor/<assunto>`), a partir do `main`
+   atualizado. Nunca trabalhe direto no `main` nem na pasta de outra tarefa.
+2. Antes de terminar: traga o `main` mais recente para o seu branch, resolva os conflitos, e confira
+   build sem avisos + `ctest` inteiro (incluindo `test_layers`).
+3. Não mude o comportamento de outra área "de passagem": anote no relatório como tarefa sugerida.
+4. Formato de arquivo mudou (cena, projeto, `.meta`)? Suba a versão e continue lendo as antigas.
+   Interface com a DLL de scripts mudou (`Component.h`, `Script.h`, `ScriptModule.h`)? Suba `kScriptApiVersion`.
+5. Depois do merge no `main`, atualize o grafo: `/graphify . --update`.
