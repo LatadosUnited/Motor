@@ -77,7 +77,7 @@ só (não há janelas "Cena" e "Jogo" lado a lado).
 
 Depois (opcional): Lua como linguagem de script leve.
 
-## Fase 4 — Luzes e câmera completas
+## Fase 4 — Luzes e câmera completas ✅
 
 - Componentes **Luz**: direcional, pontual e spot; várias por cena (o shader passa a aceitar N luzes).
 - A luz direcional sai do painel "Cena" e vira um componente (cenas antigas convertidas ao abrir).
