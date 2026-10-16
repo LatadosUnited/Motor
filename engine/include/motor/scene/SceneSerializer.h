@@ -21,16 +21,23 @@ namespace SceneSerializer {
 
 inline constexpr const char* kFileExtension = kSceneFileExtension;
 
+// Valor de "format" no arquivo. Prefabs (.mprefab, Prefab.h) usam o mesmo formato de entidades, sem o ambiente.
+inline constexpr const char* kSceneFormat = "motor-scene";
+inline constexpr const char* kPrefabFormat = "motor-prefab";
+
 struct JsonOptions {
     // Grava "path" ao lado do GUID. Desligado na comparação de "alterações não salvas": mover um arquivo
     // muda o caminho, mas não a cena.
     bool pathHints = true;
+    const char* format = kSceneFormat;
 };
 
 std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOptions& options = {});
 
 // `out` deve estar vazia. Assets não encontrados viram avisos no log (o componente fica sem o asset).
-bool FromJson(std::string_view json, Scene& out, AssetLibrary& assets, std::string* error = nullptr);
+// `format`: o "format" exigido no arquivo (kSceneFormat ou kPrefabFormat).
+bool FromJson(std::string_view json, Scene& out, AssetLibrary& assets, std::string* error = nullptr,
+              const char* format = kSceneFormat);
 
 // Componentes de tipo desconhecido viram MissingComponent (Component.h): os dados são mantidos e gravados de
 // volta iguais. As duas funções abaixo fazem a troca nos dois sentidos, para a recarga da DLL de scripts.
@@ -43,8 +50,9 @@ size_t DetachComponents(Scene& scene, const std::function<bool(const ComponentTy
 // sumiram do tipo são ignorados; os novos ficam com o valor padrão). Devolve quantos religou.
 size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets);
 
+// Grava num .tmp e renomeia no fim. `options.format` = kPrefabFormat grava um prefab.
 bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibrary& assets,
-          std::string* error = nullptr);
+          std::string* error = nullptr, const JsonOptions& options = {});
 bool Load(const std::filesystem::path& path, Scene& out, AssetLibrary& assets, std::string* error = nullptr);
 
 } // namespace SceneSerializer
