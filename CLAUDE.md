@@ -35,6 +35,8 @@ ctest --test-dir build --output-on-failure
   - `project/`: `Project` (pasta + `.mproject`). `core/Paths.h`: conversões UTF-8.
   - `app/`: `Application` (loop principal). O `Renderer` carrega as funções do OpenGL; a `Window` só cria o contexto.
   - `renderer/GL.h`: loader OpenGL próprio (X-macro). Função GL nova = adicionar na lista de lá.
+  - `ui/` (acima de scene): HUD do jogo. Componentes `Ui*`, `UiLayout` (âncoras), `Font` (atlas SDF com o
+    `imstb_truetype.h` do ImGui), `UiRenderer` (sobre o `renderer/Renderer2D`), `UiSystem` (cliques).
 - `editor/` — `MotorEditor`. `EditorApp` só monta as peças (loop, layout, barra de menus, atalhos,
   desfazer); `SceneViewport` (câmera livre, gizmo, seleção, arquivos soltos), `PlayController` (menu Jogo,
   botões e pedidos de Play), `SceneDocument` (cena/projeto abertos, menu Arquivo, popups, título),
@@ -158,7 +160,7 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 11 Modelos 3D/animação | `assets/` (importador glTF), `renderer/` (`Mesh` na CPU, skinning) | prefabs da 6, collider de malha (`physics/`) | 6, 7 |
 | 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
 
-Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 9 e 11 (6 e 12 prontas).
+Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 11 (6, 9 e 12 prontas).
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com
