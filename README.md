@@ -282,6 +282,51 @@ MOTOR_SCRIPT(Girar) {
   copia os campos, mas a cópia começa "não iniciada".
 - Não remova o componente de um script de dentro dele mesmo durante o Play; use `Destroy` na entidade.
 - Componentes da engine podem ser usados normalmente (`GetEntity().Get<motor::MeshRenderer>()`).
+- Sistemas do jogo (física, áudio...) são achados com `GetSystem<T>()` (ver "Sistemas do jogo" abaixo).
+
+### Sistemas do jogo (física, áudio, HUD)
+
+Camadas acima de `scene` (física, áudio, HUD) rodam a cada passo do Play como **sistemas**: uma classe que
+herda de `motor::RuntimeSystem`, registrada num `.cpp` da própria camada com `MOTOR_RUNTIME_SYSTEM`
+(`engine/include/motor/scene/RuntimeSystem.h`). O `SceneRuntime` não conhece as camadas de cima; ele só
+chama os ganchos dos sistemas registrados.
+
+```cpp
+// engine/src/physics/PhysicsSystem.cpp (exemplo)
+#include <motor/scene/SceneRuntime.h>
+
+class PhysicsSystem : public motor::RuntimeSystem {
+public:
+    void OnStart(motor::SceneRuntime& runtime) override { /* cria os corpos da cena */ }
+    void OnFixedUpdate(motor::SceneRuntime& runtime, float dt) override { /* avança o mundo */ }
+    void OnUpdate(motor::SceneRuntime& runtime, float dt) override {}
+    void OnStop(motor::SceneRuntime& runtime) override { /* libera tudo */ }
+};
+MOTOR_RUNTIME_SYSTEM(Fisica, PhysicsSystem, motor::kSystemOrderPhysics);
+
+// Num script:
+if (auto* fisica = GetSystem<PhysicsSystem>()) { /* ... */ }
+```
+
+- **Estado por Play**: cada `SceneRuntime` cria uma instância nova de cada sistema no `Start` e a destrói no
+  `Stop`. Dois runtimes não dividem estado, e cada Play começa limpo.
+- **Ordem** (estável): pela `order` e, no empate, pelo nome. `order < 0` roda **antes** dos scripts no
+  `FixedUpdate`/`Update`; `order >= 0`, **depois**. Ordens da engine: `kSystemOrderPhysics` (-100),
+  `kSystemOrderAudio` (100), `kSystemOrderUi` (200).
+
+| Passo | Ordem |
+|---|---|
+| `Start` | `OnStart` de todos os sistemas → `OnStart` dos scripts |
+| `FixedUpdate` | scripts pendentes iniciam → sistemas `order < 0` → `OnFixedUpdate` dos scripts → sistemas `order >= 0` → destruições |
+| `Update` | scripts pendentes iniciam → sistemas `order < 0` → `OnUpdate` dos scripts → sistemas `order >= 0` → destruições |
+| `Stop` | `OnDestroy` dos scripts → `OnStop` dos sistemas (ordem inversa) → sistemas destruídos |
+
+- Os scripts já acham os sistemas no `OnStart` e ainda no `OnDestroy`; fora do Play, `GetSystem` dá `nullptr`.
+  Um sistema acha outro com `runtime.GetSystem<T>()` (todos existem antes do primeiro `OnStart`).
+- Precisa rodar antes **e** depois dos scripts no mesmo passo? Registre dois sistemas.
+- Entidades podem sumir entre passos (`Destroy`, exclusão no editor durante o Play): guarde `EntityId` e
+  confira com `scene.Find(id)`, nunca ponteiros.
+- Exemplo completo e testado: `tests/test_runtime_systems.cpp`.
 
 ### Compilar e recarregar
 
