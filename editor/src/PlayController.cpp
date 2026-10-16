@@ -57,8 +57,10 @@ bool PlayController::Stop(EditorContext& ctx) {
 
 void PlayController::Update(float dt, bool viewportFocused) {
     // O jogo só lê teclado/mouse vendo pela câmera do jogo, com o viewport em foco e sem campo de texto ativo.
+    // Entrada externa (teclas mandadas pelo servidor MCP) vale sem foco: ela não vem do teclado de verdade.
     if (SceneRuntime* runtime = m_mode.Runtime()) {
-        runtime->SetInputEnabled(InGameView() && viewportFocused && !ImGui::GetIO().WantTextInput);
+        runtime->SetInputEnabled(m_externalInput ||
+                                 (InGameView() && viewportFocused && !ImGui::GetIO().WantTextInput));
     }
     m_mode.Update(dt);
 }

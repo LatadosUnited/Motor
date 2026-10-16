@@ -13,6 +13,8 @@ struct EditorSettings {
     std::vector<std::filesystem::path> recentProjects;
     bool projectGridView = false;   // painel Projeto: grade (true) ou lista
     float projectIconSize = 72.0f;
+    bool mcpEnabled = false;  // servidor MCP (Ver > Servidor MCP) ligado ao abrir o editor
+    int mcpPort = 47800;
 
     static constexpr size_t kMaxRecent = 8;
 

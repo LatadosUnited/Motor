@@ -35,6 +35,9 @@ public:
     void FocusSelected(const EditorContext& ctx);
     void HandleGizmoShortcuts();  // Q/W/E/R/X, sem Ctrl
 
+    // Imagem do último quadro desenhado (cena e HUD, sem os controles do ImGui por cima).
+    const motor::Framebuffer* Target() const { return m_framebuffer.get(); }
+
     bool IsLooking() const { return m_looking; }
     bool IsFocused() const { return m_focused; }
     void StopLooking() { m_looking = false; }

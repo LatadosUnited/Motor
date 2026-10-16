@@ -29,6 +29,18 @@ public:
     void RequestBuild();         // compila agora (ou logo que a compilação em andamento terminar)
     void OnPlayStopped();        // recarrega se recompilou durante o Play
 
+    // Situação dos scripts, para quem mostra fora do painel (servidor MCP).
+    struct Status {
+        std::string state;        // "sem projeto", "sem toolchain", "compilando", "ok", "falhou", "não compilado"
+        float seconds = 0.0f;     // duração da última compilação (ou da atual)
+        bool reloadPending = false;
+        std::string toolchainError;
+        std::vector<std::string> loadedTypes;
+        std::vector<ScriptProject::Diagnostic> diagnostics;
+        std::string log;          // saída completa da última compilação
+    };
+    Status GetStatus() const;
+
     void DrawMenu();             // menu "Scripts"
     void DrawStatus();           // aviso na barra de menus quando a compilação falha
     void DrawPanel();            // painel "Scripts"
