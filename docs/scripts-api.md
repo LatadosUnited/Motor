@@ -2,13 +2,13 @@
 
 Tudo que um script do Motor pode usar, conferido com os headers da engine. Para aprender passo a passo, leia
 primeiro o [guia](scripts.md). Fontes, se quiser ir além: `engine/include/motor/scene/Script.h`,
-`ScriptModule.h`, `Scene.h`, `Component.h` e `engine/include/motor/physics/PhysicsSystem.h`.
+`ScriptModule.h`, `Scene.h`, `Component.h`, `Animator.h` e `engine/include/motor/physics/PhysicsSystem.h`.
 
 O teste `test_script_docs` confere que esta página cita todos os métodos públicos de `motor::Script` e de
 `motor::PhysicsSystem`, todas as opções de campo e os campos de `GameTime` e `Collision`. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 6 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 7 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -18,6 +18,7 @@ recompilar os scripts).
 |---|---|
 | `<motor/scene/ScriptModule.h>` | o necessário para qualquer script: `motor::Script`, `MOTOR_SCRIPT`, `Scene`, `Entity`, `Transform`, os componentes da engine, `Key`, GLM (vetores, matrizes, quaternions) |
 | `<motor/physics/PhysicsSystem.h>` | `motor::PhysicsSystem` (forças, personagem, raios) |
+| `<motor/scene/Animator.h>` | `motor::Animator` (já vem com o `ScriptModule.h`; inclua para deixar claro) |
 | `<glm/geometric.hpp>` | `glm::length`, `glm::normalize`, `glm::dot`, `glm::cross` (inclua para não depender de includes indiretos) |
 | `<glm/gtc/quaternion.hpp>` | `glm::angleAxis`, `glm::quatLookAt` |
 
@@ -129,6 +130,7 @@ tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas se
 | Método | Efeito |
 |---|---|
 | `template <class T> T* GetSystem()` | o sistema do tipo `T` deste Play (ex.: `GetSystem<motor::PhysicsSystem>()`), ou `nullptr`. Já existe no `OnStart` e ainda no `OnDestroy` |
+| `motor::Animator* GetAnimator()` | o Animator da entidade ou do primeiro descendente que tiver um (o modelo filho do jogador), ou `nullptr`. Ver [Animação](#animação-motoranimator) |
 | `void Log(fmt, args...)` | escreve no console com o nome da entidade. Formato do `std::format`: `Log("vidas = {}", vidas)` |
 
 Fora de um script (funções livres, outras structs), use `motor::log::Info(...)`, `Warn(...)` ou
@@ -214,9 +216,44 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::ColliderComponent` | Collider | `ColliderShape shape` (`Box`, `Sphere`, `Capsule`, `Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution` |
 | `motor::RigidbodyComponent` | Rigidbody | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
 | `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass` |
+| `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
 passo da física.
+
+## Animação: `motor::Animator`
+
+Componente na raiz de um modelo glTF importado (o prefab do modelo já vem com ele). Anima o esqueleto do
+modelo; as malhas com pele abaixo dele seguem a pose. No Play, o clipe inicial começa sozinho e a animação
+avança a cada frame, depois do `OnUpdate` dos scripts. Ache com `GetAnimator()` (ou
+`GetEntity().Get<motor::Animator>()`).
+
+| Método | Efeito |
+|---|---|
+| `bool Play(std::string_view clipName, bool loop = true)` | toca o clipe do modelo, trocando na hora. Se já estiver tocando, continua (se terminou, sem loop, recomeça). `false` se o modelo não tem o clipe |
+| `bool CrossFade(std::string_view clipName, float duration = 0.2f, bool loop = true)` | troca misturando com o clipe atual durante `duration` segundos. Pedir o clipe atual não faz nada (dá para chamar a cada passo) |
+| `Play(clip, loop)` / `CrossFade(clip, duration, loop)` | mesmos, com um `std::shared_ptr<const AnimationClip>` de outro modelo com as mesmas juntas (achadas pelo nome) |
+| `void Stop()` | para e volta à pose de repouso |
+| `bool IsPlaying() const` | há um clipe tocando (mesmo parado no fim, sem loop) |
+| `bool IsFinished() const` | o clipe sem loop chegou ao fim |
+| `const std::string& CurrentClip() const` | nome do clipe atual (`""` se parado) |
+| `float ClipTime() const` / `float ClipLength() const` | segundos dentro do clipe atual / duração dele |
+| `bool HasClip(std::string_view clipName) const` | o modelo tem o clipe |
+| `std::vector<std::string> ClipNames() const` | clipes do modelo |
+| `void Update(float dt)` | avança e calcula a pose (o sistema de animação chama; não precisa chamar no Play) |
+| `GlobalPose()` / `PoseSkeleton()` | pose calculada (matriz de cada junta, espaço do modelo) e o esqueleto dela |
+
+Campos: `model`, `clip` (clipe inicial), `playOnStart`, `loop` (o clipe inicial repete), `speed` (1 = normal,
+0 = congela; vale para todos os clipes).
+
+```cpp
+if (auto* anim = GetAnimator()) {
+    if (WasKeyPressed(motor::Key::E)) anim->CrossFade("Acenar", 0.2f, false);
+    if (anim->CurrentClip() == "Acenar" && anim->IsFinished()) anim->CrossFade("Parado");
+}
+```
+
+`motor::FindAnimator(scene, id)` faz a mesma busca do `GetAnimator()` para qualquer entidade.
 
 ## Física: `motor::PhysicsSystem`
 

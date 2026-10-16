@@ -2,8 +2,9 @@
 
 Engine 3D em C++20 + OpenGL 4.5, escrita do zero. Dependências externas mínimas:
 **GLFW** (janela/input), **GLM** (matemática), **Dear ImGui** (UI do editor, branch docking),
-**ImGuizmo** (gizmos de transform), **nlohmann/json** (cenas e projetos) e **stb_image** (PNG/JPG),
-baixadas automaticamente pelo CMake. O leitor de OBJ é próprio.
+**ImGuizmo** (gizmos de transform), **nlohmann/json** (cenas e projetos), **stb_image** (PNG/JPG),
+**cgltf** (modelos glTF) e **Jolt Physics** (física), baixadas automaticamente pelo CMake. O leitor de OBJ é
+próprio.
 O carregador de OpenGL é próprio (`engine/src/renderer/GL.h`).
 
 ## Compilar (Windows, MSYS2 UCRT64)
@@ -28,19 +29,23 @@ para lá. `build/bin/sdk/` tem o que o editor usa para compilar os scripts dos p
 engine/            camadas, de baixo para cima (cada uma só usa as de baixo; conferido pelo test_layers):
   include/motor/   API pública
     core/          Window, Input, Log, Paths (UTF-8), ImGuiLayer
-    renderer/      Renderer, Shader, Mesh, Texture2D, Framebuffer, Camera, Material
+    renderer/      Renderer, Shader, Mesh (cópia na CPU), Skeleton/Skin, Texture2D, Framebuffer, Camera, Material
     project/       Project (pasta do projeto + arquivo .mproject)
-    assets/        AssetLibrary (malhas/texturas), AssetDatabase (GUIDs em .meta), AssetLoaders (OBJ, PNG/JPG)
-    scene/         Scene, componentes (Component.h: registro e campos), SceneSerializer (.mscene), Transform
+    assets/        AssetLibrary (malhas/texturas/modelos), AssetDatabase (GUIDs em .meta), AssetLoaders (OBJ,
+                   PNG/JPG), Model (glTF, cgltf), Animation (clipes e amostragem)
+    scene/         Scene, componentes (Component.h: registro e campos), SceneSerializer (.mscene), Transform,
+                   Prefab, Animator (animação), ModelImport (glTF -> prefab)
     app/           Application (game loop c/ fixed timestep)
     physics/       PhysicsSystem (Jolt Physics): corpos, personagem, eventos, raios; contorno dos colliders
   src/<camada>/    implementação + CMakeLists.txt da camada (+ renderer/GL.h: loader OpenGL privado)
-  assets/shaders/  shaders GLSL da engine
+  assets/shaders/  shaders GLSL da engine (skinned.vert: malhas animadas)
+  assets/models/   Robo.glb, personagem animado de exemplo (gerado por gerar_robo.py)
 docs/              guia e referência dos scripts (scripts.md, scripts-api.md) e exemplos compilados pelo ctest
 editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play, scripts
   templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, Jogador, MoverWASD, Seguir)
 sandbox/           app de demonstração
-tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física)
+tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física,
+                   materiais, prefabs, glTF e animação)
 ```
 
 ## Controles do Sandbox
@@ -149,7 +154,7 @@ Renomear, mover ou excluir a cena aberta (ou a pasta dela) atualiza o editor: o 
 cena inicial do projeto acompanham. Se a cena aberta for excluída, ela continua na memória como
 "Sem título" com alterações pendentes. Mudanças feitas fora do editor aparecem em até 1 s.
 
-## Assets (texturas, malhas, materiais e prefabs)
+## Assets (texturas, malhas, modelos, materiais e prefabs)
 
 Arquivos dentro do projeto podem ser usados direto nas cenas:
 
@@ -157,6 +162,7 @@ Arquivos dentro do projeto podem ser usados direto nas cenas:
 |---|---|---|
 | Textura | `.png` `.jpg` `.jpeg` `.bmp` `.tga` | via stb_image; tratada como cor sRGB, com mipmaps |
 | Malha | `.obj` | `v`, `vt`, `vn`, `f` (polígonos viram triângulos). Sem normais no arquivo, são calculadas. Materiais `.mtl` são ignorados |
+| Modelo | `.gltf` `.glb` | glTF 2.0 (via cgltf): nós, malhas, materiais, texturas, esqueleto e animações. Vira prefab (abaixo) |
 | Material | `.mmat` | do Motor: cor, textura, especular e brilho (abaixo) |
 | Prefab | `.mprefab` | do Motor: entidade com filhos (abaixo) |
 
@@ -235,6 +241,35 @@ mudar a cor de uma peça no prefab muda todas as instâncias.
 - Prefab dentro de prefab não é suportado: ao criar um prefab, vínculos com outros prefabs viram cópias.
 - Mudanças nos materiais e prefabs não entram no desfazer (são arquivos, gravados na hora); a cena registra
   as alterações das instâncias normalmente.
+
+### Modelos 3D (glTF) e animação
+
+Copie um `.gltf` (com o `.bin` e as imagens ao lado) ou `.glb` para `Assets/`. O editor importa sozinho
+(e de novo quando o arquivo muda; clique direito > "Importar de novo" força):
+
+```
+Assets/Personagens/Robo.glb
+Assets/Personagens/Robo.mprefab          o modelo pronto para a cena (prefab)
+Assets/Personagens/Robo_materiais/       um .mmat por material do glTF e as texturas embutidas no arquivo
+```
+
+- Arraste o `.glb` (ou o `.mprefab`) para o viewport ou a Hierarquia, ou clique direito > "Adicionar à cena".
+  As entidades seguem os nós do glTF; os ossos não viram entidades (o esqueleto fica no Animator).
+- As malhas do arquivo aparecem nas cenas como `{ "guid": "<guid do .glb>#Corpo", "path": "Assets/.../Robo.glb#Corpo" }`;
+  os clipes, do mesmo jeito (`#Andando`).
+- Materiais PBR do glTF viram os materiais do Motor: cor base (convertida para sRGB), textura de cor; a
+  rugosidade vira especular e brilho. Mapas de normal, metal e emissão são ignorados (Fase 7).
+- **Animação esquelética:** o prefab de um modelo com esqueleto ou clipes vem com o componente **Animator**
+  (Modelo, Clipe inicial, Tocar ao iniciar, Repetir, Velocidade). No Play, o clipe inicial toca sozinho;
+  scripts trocam com `GetAnimator()->CrossFade("Andando", 0.2f)` (guia: [docs/scripts.md](docs/scripts.md),
+  seção "Animação"). Fora do Play o modelo fica na pose de repouso. O skinning é feito no shader
+  (`skinned.vert`, até 128 juntas, 4 por vértice).
+- Exemplo: `engine/assets/models/Robo.glb` (1,93 m, olha para -Z, clipes Parado, Andando e Pulando). Com o
+  modelo Jogador: entidade com Controlador de personagem + Jogador, o robô como filho na posição `0 -0.9 0`.
+
+Limitações: sem morph targets, câmeras e luzes do glTF; animação só de juntas (nós sem pele não se movem);
+malhas do modelo não aparecem no combo "Malha" do Inspector (use o prefab); o modelo alterado no disco é
+relido, mas cenas abertas só pegam as malhas novas ao reabrir.
 
 ## Componentes
 
@@ -356,10 +391,9 @@ no `FixedUpdate`, **antes** dos scripts, só no Play. Tudo é montado por compon
 - Medidas do Collider são locais: a escala da entidade multiplica todas (o cubo embutido tem 1 x 1 x 1, então
   um Collider caixa padrão já casa com ele). **Centro** desloca a forma; **Atrito** e **Elasticidade** por
   collider. A origem do personagem é o centro da cápsula.
-- **Malha**: usa a malha do Mesh Renderer da entidade. Malha de arquivo (OBJ) vira malha estática de
-  verdade (ou o casco convexo, se tiver Rigidbody dinâmico); as embutidas (Cubo, Plano...) usam a caixa dos
-  limites. Para o chão com o Plano embutido, um Collider caixa com tamanho `1 x 0.1 x 1` e centro `0 -0.05 0`
-  deixa o topo no plano.
+- **Malha**: usa os triângulos da malha do Mesh Renderer da entidade (qualquer malha: OBJ, glTF ou as
+  embutidas, como o Plano do chão), que a `Mesh` guarda na CPU. Vira malha estática de verdade (ou o casco
+  convexo, se tiver Rigidbody dinâmico). Malhas com pele usam a pose de repouso.
 - Mexer no Transform de um corpo (script ou editor) durante o Play o teleporta; mudar um componente refaz o
   corpo; desativar ou excluir a entidade tira o corpo. Corpos parados "dormem" e quase não custam.
 - No viewport, o botão **Colliders** mostra as formas (verde), os triggers (azul) e os personagens.

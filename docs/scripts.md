@@ -19,11 +19,12 @@ Sumário:
 6. [Achar, criar e destruir entidades](#6-achar-criar-e-destruir-entidades)
 7. [Física](#7-física)
 8. [Sistemas do jogo (`GetSystem`)](#8-sistemas-do-jogo-getsystem)
-9. [Receitas](#9-receitas)
-10. [Mini jogo: andar, coletar, pontuar](#10-mini-jogo-andar-coletar-pontuar)
-11. [Recarga: o que é preservado](#11-recarga-o-que-é-preservado)
-12. [Componente "desconhecido" (script não carregado)](#12-componente-desconhecido-script-não-carregado)
-13. [Erros comuns](#13-erros-comuns)
+9. [Animação](#9-animação)
+10. [Receitas](#10-receitas)
+11. [Mini jogo: andar, coletar, pontuar](#11-mini-jogo-andar-coletar-pontuar)
+12. [Recarga: o que é preservado](#12-recarga-o-que-é-preservado)
+13. [Componente "desconhecido" (script não carregado)](#13-componente-desconhecido-script-não-carregado)
+14. [Erros comuns](#14-erros-comuns)
 
 ---
 
@@ -474,7 +475,42 @@ script acha o sistema com `GetSystem<Tipo>()`:
 - Sistemas são da engine: um script usa, não cria. (Criar um sistema é trabalho de engine, descrito em
   `engine/include/motor/scene/RuntimeSystem.h`.)
 
-## 9. Receitas
+## 9. Animação
+
+Personagens animados vêm de modelos **glTF** (`.gltf` ou `.glb`, o formato que o Blender e a maioria dos
+programas exportam) com esqueleto e clipes de animação. A engine traz um de exemplo:
+`engine/assets/models/Robo.glb`, com os clipes `Parado`, `Andando` e `Pulando`.
+
+1. Copie o `.glb` para a pasta `Assets/` do projeto. O editor importa sozinho: aparecem `Robo.mprefab` (o
+   modelo pronto para a cena) e a pasta `Robo_materiais/` (materiais e texturas do modelo).
+2. Arraste o `.glb` (ou o `.mprefab`) para a cena. A raiz do modelo tem o componente **Animator**: Modelo,
+   Clipe inicial (toca sozinho no Play), Repetir e Velocidade.
+3. Jogador animado: na entidade com **Controlador de personagem** e **Jogador (física)**, arraste o modelo
+   para dentro dela na Hierarquia (vira filho) e ponha a posição do modelo em `0 -0.9 0` (a origem do
+   controlador é o meio da cápsula; a do robô, os pés). Tire o Mesh Renderer da entidade do jogador.
+
+No script, `GetAnimator()` acha o Animator da própria entidade ou do primeiro filho que tiver um. O modelo
+Jogador troca de animação conforme anda ou pula:
+
+```cpp
+        // Animação: CrossFade com o clipe que já está tocando não faz nada, então dá para pedir a cada passo.
+        if (auto* anim = GetAnimator()) {
+            const bool noAr = pulou || !fisica->IsGrounded(GetId());
+            const std::string& clipe = noAr ? animPulando : (moving ? animAndando : animParado);
+            if (!clipe.empty()) anim->CrossFade(clipe, transicao, !noAr);  // o pulo não repete: segura a pose
+            anim->speed = moving && running && !noAr ? corrida : 1.0f;
+        }
+```
+
+- `CrossFade(nome, segundos, repetir)` troca misturando com o clipe atual (sem "tranco"); `Play(nome)` troca
+  na hora. Pedir o clipe que já está tocando continua de onde está: dá para chamar a cada passo.
+- Clipe sem repetir (`repetir = false`) para no último quadro; `IsFinished()` diz quando chegou lá.
+- `speed` acelera (`2`), desacelera (`0.5`) ou congela (`0`) a animação.
+- A animação avança a cada frame depois do `OnUpdate` dos scripts (o pedido feito no frame já vale nele).
+  Fora do Play o modelo fica na pose de repouso.
+- Nomes dos clipes: passe o mouse sobre o campo Modelo do Animator, ou `ClipNames()`.
+
+## 10. Receitas
 
 Cada receita é um arquivo completo, pronto para copiar para `Scripts/`. Os modelos Jogador e Seguir também
 vêm no editor: **Scripts > Adicionar exemplo**.
@@ -483,7 +519,8 @@ vêm no editor: **Scripts > Adicionar exemplo**.
 
 [editor/templates/Scripts/Jogador.cpp](../editor/templates/Scripts/Jogador.cpp): anda com WASD (Shift corre),
 pula com Espaço e vira para onde anda. Na entidade: **Controlador de personagem** + **Jogador (física)**. O
-chão precisa de Collider. W anda para -Z (a "frente" do mundo; a câmera do Seguir fica atrás, em +Z).
+chão precisa de Collider. W anda para -Z (a "frente" do mundo; a câmera do Seguir fica atrás, em +Z). Com um
+modelo animado como filho, troca entre parado, andando e pulando ([Animação](#9-animação)).
 
 ```cpp
     void OnFixedUpdate(float) override {
@@ -610,7 +647,7 @@ A moeda gira e, quando o jogador encosta, soma e some:
 Ainda não há texto na tela (o HUD é uma fase futura): os pontos aparecem no console e no Inspector (selecione
 a entidade Placar durante o Play).
 
-## 10. Mini jogo: andar, coletar, pontuar
+## 11. Mini jogo: andar, coletar, pontuar
 
 Juntando as receitas. Copie para a pasta `Scripts/` do projeto: `Placar.h`, `Placar.cpp` e `Moeda.cpp` (de
 `docs/examples/`), e adicione os modelos **Jogador** e **Seguir** em **Scripts > Adicionar exemplo**. Espere
@@ -634,7 +671,7 @@ com `total`), um inimigo de [examples/Inimigo.cpp](examples/Inimigo.cpp) com `Re
 flutuam com o [examples/Flutuar.cpp](examples/Flutuar.cpp) (Flutuar e Moeda juntos na mesma entidade), ou um
 tiro com o [examples/Disparador.cpp](examples/Disparador.cpp).
 
-## 11. Recarga: o que é preservado
+## 12. Recarga: o que é preservado
 
 Ao salvar um arquivo de script com o editor aberto:
 
@@ -647,7 +684,7 @@ Ao salvar um arquivo de script com o editor aberto:
 - Com **erro de compilação** nada muda: os scripts da última compilação boa continuam carregados, e a barra
   de menus mostra "Scripts: N erro(s)".
 
-## 12. Componente "desconhecido" (script não carregado)
+## 13. Componente "desconhecido" (script não carregado)
 
 Se uma cena usa um script que não está carregado (você apagou o arquivo, mudou o identificador do
 `Register`, ou abriu a cena antes de os scripts compilarem), o componente **não some**: o Inspector o mostra
@@ -655,7 +692,7 @@ como "script não carregado", com os dados guardados. Ele é salvo de volta igua
 sozinho quando um script com aquele identificador for carregado de novo. Para se livrar dele de vez, remova o
 componente no Inspector.
 
-## 13. Erros comuns
+## 14. Erros comuns
 
 O painel Scripts lista as mensagens do compilador (GCC, em inglês). As mais comuns:
 
