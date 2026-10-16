@@ -58,3 +58,8 @@ motor_add_test(test_physics)
 
 # Desempenho da física: caixas caindo e empilhando (pequeno no ctest; números do relatório em Release).
 motor_add_test(test_physics_bench)
+
+# Materiais (.mmat) e migração de cenas antigas; prefabs (.mprefab) com overrides e o histórico de desfazer.
+motor_add_test(test_materials)
+motor_add_test(test_prefabs ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)
+target_include_directories(test_prefabs PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)

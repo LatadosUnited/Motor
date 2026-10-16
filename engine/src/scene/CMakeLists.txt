@@ -1,4 +1,4 @@
-# Cena: entidades, componentes, scripts, loop de jogo (SceneRuntime) e serialização (.mscene).
+# Cena: entidades, componentes, scripts, loop de jogo (SceneRuntime), serialização (.mscene) e prefabs (.mprefab).
 motor_add_layer(scene
     SOURCES
         Transform.cpp
@@ -13,5 +13,7 @@ motor_add_layer(scene
         ColliderComponent.cpp
         RigidbodyComponent.cpp
         CharacterControllerComponent.cpp
+        PrefabInstance.cpp
+        Prefab.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)
