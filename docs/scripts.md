@@ -319,9 +319,9 @@ scripts:
 
 | Componente (no editor) | Tipo C++ | Campos principais |
 |---|---|---|
-| Mesh Renderer | `motor::MeshRenderer` | `mesh`, `sharedMaterial` (asset `.mmat`) e `material` (o próprio): `color` (vec4), `albedo` (textura), `specular`, `shininess` |
+| Mesh Renderer | `motor::MeshRenderer` | `mesh`, `sharedMaterial` (asset `.mmat`) e `material` (o próprio): `color` (vec4), `albedo` (textura), `metallic`, `roughness`, `specular`, `emissive`... (PBR, ver a referência) |
 | Câmera | `motor::CameraComponent` | `fov` (graus), `nearPlane`, `farPlane`, `main` |
-| Luz | `motor::LightComponent` | `type` (`motor::LightType::Directional`/`Point`/`Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle` |
+| Luz | `motor::LightComponent` | `type` (`motor::LightType::Directional`/`Point`/`Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `castShadows` |
 | Collider | `motor::ColliderComponent` | `shape` (`motor::ColliderShape::Box`/`Sphere`/`Capsule`/`Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution` |
 | Rigidbody | `motor::RigidbodyComponent` | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
 | Controlador de personagem | `motor::CharacterControllerComponent` | `height`, `radius`, `maxSlope`, `stepHeight`, `mass` |

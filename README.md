@@ -205,8 +205,11 @@ As cenas apontam para o GUID, não para o caminho. Por isso dá para **renomear 
 
 ### Materiais (`.mmat`)
 
-Um material guarda **cor, textura, especular e brilho** num arquivo próprio, reaproveitado por vários
-objetos: editar o material muda todos os que o usam.
+Um material PBR (metal/rugosidade, o mesmo modelo do glTF) guarda **cor, textura, metal, rugosidade,
+reflexo, mapas de normal, metal/rugosidade e oclusão, e emissão** num arquivo próprio, reaproveitado por
+vários objetos: editar o material muda todos os que o usam. Materiais da versão 1 (Blinn-Phong, até a Fase 6)
+continuam abrindo: o "brilho" vira rugosidade. Os mapas de dados (normal, metal/rugosidade, oclusão) são
+lidos sem a conversão sRGB; o de normal é em espaço tangente com +Y para cima (OpenGL/glTF).
 
 - **Criar:** painel Projeto > "+ Criar" > "Novo material", ou no Inspector de um Mesh Renderer o botão
   "Salvar como asset" (grava o material daquele objeto em `Assets/Materiais` e passa a usá-lo).
@@ -221,8 +224,12 @@ objetos: editar o material muda todos os que o usam.
   material próprio, usado só sem asset. `Resolved()` devolve o que está valendo.
 
 ```json
-{ "format": "motor-material", "version": 1, "color": [0.9, 0.15, 0.1, 1.0],
-  "texture": { "guid": "07b1...c9d0", "path": "Assets/Texturas/pintura.png" }, "specular": 0.6, "shininess": 48 }
+{ "format": "motor-material", "version": 2, "color": [0.9, 0.15, 0.1, 1.0],
+  "texture": { "guid": "07b1...c9d0", "path": "Assets/Texturas/pintura.png" },
+  "metallic": 0.0, "roughness": 0.4, "specular": 0.5,
+  "normalMap": { "guid": "5c2e...", "path": "Assets/Texturas/pintura_normal.png" }, "normalStrength": 1.0,
+  "metallicRoughnessMap": null, "occlusionMap": null, "occlusionStrength": 1.0,
+  "emissive": [0.0, 0.0, 0.0], "emissiveIntensity": 1.0, "emissiveMap": null }
 ```
 
 ### Prefabs (`.mprefab`)
@@ -319,13 +326,38 @@ entity.Remove<Girar>();
   depois de ter cenas salvas. Campos que não estão registrados não são salvos nem comparados (bom para
   estado interno).
 - No Inspector, o X do cabeçalho remove o componente; clique direito no cabeçalho tem "Redefinir valores".
-- Componentes da engine hoje: **Mesh Renderer** (malha, textura, cor, especular, brilho) e **Câmera**
+- Componentes da engine hoje: **Mesh Renderer** (malha e material: textura, cor, metal, rugosidade,
+  reflexo, mapas e emissão) e **Câmera**
   (campo de visão, planos perto/longe, principal). A câmera olha para o -Z local da entidade; no Play vale
   a primeira câmera ativa marcada como principal (senão, a primeira ativa). Entidade > Câmera cria uma.
 - **Luz**: tipo (direcional, pontual ou spot), cor, intensidade, alcance (pontual e spot) e ângulos interno/
   externo do cone (spot). Como a câmera, aponta para o -Z local: direcional e spot se giram com o gizmo de
   rotação; a posição só importa para pontual e spot. Várias por cena (até 32 acesas ao mesmo tempo).
+  **Projeta sombra** e **qualidade da sombra** (baixa/média/alta): a primeira direcional com sombra usa
+  4 cascatas (1024/2048/4096 por cascata); pontuais e spots usam um cubo (256/512/1024 por face), até 4 ao
+  mesmo tempo (as mais perto da câmera que iluminam algo visível). Funciona com malhas animadas.
   Entidade > Luz direcional / pontual / spot cria uma. Céu, neblina e **luz ambiente** ficam no painel Cena.
+
+### Renderização (Fase 7)
+
+O renderer desenha em passadas no `EndScene` (os `Submit*` só guardam o pedido):
+mapas de sombra → cena em **HDR** (RGBA16F, MSAA 4x) com o céu ao fundo → **bloom** → **tone mapping**
+(ACES, Reinhard ou nenhum) e gama → **FXAA** → contornos do editor por cima.
+
+- **PBR** de metal/rugosidade (Cook-Torrance com GGX), mapas de normal sem tangentes nos vértices (base pelas
+  derivadas da tela, vale também com pele), oclusão e emissão (que o bloom faz brilhar).
+- **Céu** (painel Cena > Céu): uma cor (degradê do zênite ao chão, como antes) ou uma imagem **HDR
+  equirretangular** (`.hdr` do projeto, asset "Céu HDR"), com brilho e rotação. O céu também **ilumina a
+  cena**: luz difusa em harmônicos esféricos e reflexos de um cubemap pré-filtrado por rugosidade, com a
+  tabela da BRDF; "Luz do céu" ajusta quanto. A neblina usa a cor do horizonte.
+- **Pós-processamento** (painel Cena): exposição, tone mapping, bloom (intensidade e limiar) e FXAA. A
+  distância das sombras da luz direcional também fica lá. Tudo entra no desfazer e na cena (versão 6).
+- O viewport mostra os contadores: FPS, draws (e quantos foram para as sombras, em quantos passes), triângulos.
+- Base para efeitos de ambiente (água, partículas): `Renderer::SceneDepthTexture()` (profundidade da cena),
+  `SceneColorTexture()` (luz HDR antes do pós), `SkyCubemap()` e `ReflectionCubemap()` (céu e reflexo).
+- Código: `engine/src/renderer/` (`Renderer`, `Shadows`, `Sky`, `PostProcess`) e `engine/assets/shaders/`
+  (`#include` e variantes por `#define` no `Shader::FromFiles`). A matemática sem GPU (`ShadowMath.h`,
+  `Pbr.h`) tem teste: `tests/test_render.cpp`.
 - No viewport, luzes e câmeras aparecem como **ícones** clicáveis (selecionam a entidade e mostram o
   gizmo). Selecionada, a luz mostra o alcance (pontual), o cone (spot) ou a direção (direcional), e a
   câmera, a pirâmide de visão.
@@ -524,14 +556,17 @@ Cenas são salvas em JSON legível (`engine/src/scene/SceneSerializer.cpp`, via 
 ```json
 {
   "format": "motor-scene",
-  "version": 5,
-  "environment": { "skyColor": [0.53, 0.7, 0.88], "fogDensity": 0.012, "ambient": [0.12, 0.14, 0.18] },
+  "version": 6,
+  "environment": { "skyColor": [0.53, 0.7, 0.88], "fogDensity": 0.012, "ambient": [0.12, 0.14, 0.18],
+                   "sky": "Color", "skyTexture": null, "skyIntensity": 1.0, "skyRotation": 0.0, "skyLight": 1.0,
+                   "shadowDistance": 60.0, "exposure": 1.0, "toneMapper": "ACES", "bloom": true,
+                   "bloomIntensity": 0.5, "bloomThreshold": 1.0, "fxaa": true },
   "entities": [
     {
       "id": 1, "name": "Chão", "active": true, "parent": 0,
       "transform": { "position": [0, 0, 0], "rotation": [x, y, z, w], "scale": [40, 1, 40] },
       "components": [
-        { "type": "MeshRenderer", "mesh": "Plano", "texture": "Xadrez", "color": [1, 1, 1, 1], "specular": 0.1, "shininess": 32 }
+        { "type": "MeshRenderer", "mesh": "Plano", "texture": "Xadrez", "color": [1, 1, 1, 1], "metallic": 0.0, "roughness": 0.5, "specular": 0.1, ... }
       ]
     },
     {
