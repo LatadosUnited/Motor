@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
+#include <thread>
 
 namespace motor {
 
@@ -78,6 +79,9 @@ void Application::Run() {
                 m_imgui->EndFrame();
             }
             m_window->SwapBuffers();
+        } else {
+            // Minimizada não há SwapBuffers para esperar o vsync: sem esta pausa o loop gira a milhares de FPS.
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
         ++fpsFrames;

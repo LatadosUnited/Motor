@@ -149,14 +149,14 @@ void EditorApp::OnUpdate(float dt) {
     }
 
     m_viewport.UpdateCamera(dt, GetWindow());
+    if (GetWindow().IsMinimized()) UpdateMinimized();
 }
 
 void EditorApp::OnRender(Renderer& renderer) {
     m_viewport.Render(renderer, m_ctx, m_play.InGameView());
 }
 
-void EditorApp::OnImGui() {
-    // Desfazer/refazer e Play/Parar pedidos no frame anterior: aplicados antes de os painéis desenharem a cena.
+void EditorApp::ApplyRequests() {
     // No Play não há desfazer (tudo é descartado ao parar).
     if (!m_play.IsActive()) {
         if (m_historyRequest < 0) Undo();
@@ -164,6 +164,30 @@ void EditorApp::OnImGui() {
     }
     m_historyRequest = 0;
     ApplyPlayRequest();
+}
+
+void EditorApp::ApplyPendingChanges(bool interactionFinished) {
+    m_ctx.ApplyPendingDelete();
+    m_ctx.ApplyPendingPrefabAction();
+    // Instâncias seguem os prefabs que mudaram; o que mudou numa instância vira override (antes do Track,
+    // para entrar no mesmo passo de desfazer). No Play, não: a cena do jogo é descartada ao parar.
+    if (!m_play.IsActive()) m_ctx.UpdatePrefabs([this](const auto& fn) { m_history.ForEachScene(fn); });
+    // Depois de todas as alterações do frame: se a cena mudou e o usuário terminou a interação, vira um passo.
+    // No Play, não: ao parar a cena volta a ser igual à última foto do histórico.
+    if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, interactionFinished);
+}
+
+void EditorApp::UpdateMinimized() {
+    // Minimizado o OnImGui não roda: o que não é interface roda aqui, para o servidor MCP continuar atendendo
+    // (antes os pedidos esperavam até a janela voltar, e o agente via o editor como travado).
+    ApplyRequests();
+    m_mcp.Pump();
+    ApplyPendingChanges(true);  // ninguém está arrastando nada com a janela minimizada
+}
+
+void EditorApp::OnImGui() {
+    // Desfazer/refazer e Play/Parar pedidos no frame anterior: aplicados antes de os painéis desenharem a cena.
+    ApplyRequests();
 
     ImGuizmo::BeginFrame();
     DrawMenuBar();
@@ -196,14 +220,7 @@ void EditorApp::OnImGui() {
     if (!m_ctx.pendingError.empty()) m_document.ShowError(std::exchange(m_ctx.pendingError, {}));
     m_document.DrawPopups();
     m_scripts.DrawNewScriptPopup();
-    m_ctx.ApplyPendingDelete();
-    m_ctx.ApplyPendingPrefabAction();
-    // Instâncias seguem os prefabs que mudaram; o que mudou numa instância vira override (antes do Track,
-    // para entrar no mesmo passo de desfazer). No Play, não: a cena do jogo é descartada ao parar.
-    if (!m_play.IsActive()) m_ctx.UpdatePrefabs([this](const auto& fn) { m_history.ForEachScene(fn); });
-    // Depois de todas as alterações do frame: se a cena mudou e o usuário terminou a interação, vira um passo.
-    // No Play, não: ao parar a cena volta a ser igual à última foto do histórico.
-    if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, !IsInteracting());
+    ApplyPendingChanges(!IsInteracting());
 }
 
 bool EditorApp::OnCloseRequested() {
