@@ -50,17 +50,36 @@ CustomFieldType FieldTraits<std::shared_ptr<Material>>::Describe() {
 
 MOTOR_COMPONENT_MODULE(MeshRenderer) {
     // A ordem dos campos é a do Inspector e a do arquivo. Os campos depois de "material" são o material
-    // próprio do componente (usado quando não há asset de material).
+    // próprio do componente (usado quando não há asset de material). Cenas até a versão 5 tinham "shininess"
+    // no lugar de "roughness" (SceneSerializer converte).
     registry.Register<MeshRenderer>("MeshRenderer", "Mesh Renderer")
         .Field("mesh", "Malha", &MeshRenderer::mesh)
         .Field("material", "Material", &MeshRenderer::sharedMaterial,
                {.tooltip = "Asset de material (.mmat), compartilhado entre objetos. Vazio = material próprio."})
         .FieldRef("texture", "Textura", [](MeshRenderer& m) -> auto& { return m.material.albedo; })
         .FieldRef("color", "Cor", [](MeshRenderer& m) -> auto& { return m.material.color; }, {.color = true})
-        .FieldRef("specular", "Especular", [](MeshRenderer& m) -> auto& { return m.material.specular; },
+        .FieldRef("metallic", "Metal", [](MeshRenderer& m) -> auto& { return m.material.metallic; },
+                  {.slider = true, .min = 0.0f, .max = 1.0f, .tooltip = "0 = não metal (plástico, madeira), 1 = metal"})
+        .FieldRef("roughness", "Rugosidade", [](MeshRenderer& m) -> auto& { return m.material.roughness; },
+                  {.slider = true, .min = 0.0f, .max = 1.0f, .tooltip = "0 = espelho, 1 = fosco"})
+        .FieldRef("specular", "Reflexo", [](MeshRenderer& m) -> auto& { return m.material.specular; },
+                  {.slider = true, .min = 0.0f, .max = 1.0f,
+                   .tooltip = "Reflexo dos não metais: 0.5 = 4% (o comum), 0 = nenhum"})
+        .FieldRef("normalMap", "Mapa de normal", [](MeshRenderer& m) -> auto& { return m.material.normalMap; })
+        .FieldRef("normalStrength", "Força da normal", [](MeshRenderer& m) -> auto& { return m.material.normalStrength; },
                   {.slider = true, .min = 0.0f, .max = 2.0f})
-        .FieldRef("shininess", "Brilho", [](MeshRenderer& m) -> auto& { return m.material.shininess; },
-                  {.slider = true, .logarithmic = true, .min = 1.0f, .max = 256.0f, .format = "%.0f"})
+        .FieldRef("metallicRoughnessMap", "Mapa metal/rugosidade",
+                  [](MeshRenderer& m) -> auto& { return m.material.metallicRoughnessMap; },
+                  {.tooltip = "Como no glTF: verde = rugosidade, azul = metal (multiplicam os valores acima)"})
+        .FieldRef("occlusionMap", "Mapa de oclusão", [](MeshRenderer& m) -> auto& { return m.material.occlusionMap; })
+        .FieldRef("occlusionStrength", "Força da oclusão",
+                  [](MeshRenderer& m) -> auto& { return m.material.occlusionStrength; },
+                  {.slider = true, .min = 0.0f, .max = 1.0f})
+        .FieldRef("emissive", "Emissão", [](MeshRenderer& m) -> auto& { return m.material.emissive; }, {.color = true})
+        .FieldRef("emissiveIntensity", "Intensidade da emissão",
+                  [](MeshRenderer& m) -> auto& { return m.material.emissiveIntensity; },
+                  {.speed = 0.05f, .min = 0.0f, .max = 100.0f, .format = "%.2f"})
+        .FieldRef("emissiveMap", "Mapa de emissão", [](MeshRenderer& m) -> auto& { return m.material.emissiveMap; })
         .OnAdd([](MeshRenderer& m, AssetLibrary& assets) { m.mesh = assets.FindMesh("Cubo"); });
 }
 

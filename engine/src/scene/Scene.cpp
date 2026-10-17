@@ -69,8 +69,7 @@ Scene& Scene::operator=(const Scene& other) {
 
 bool Scene::operator==(const Scene& other) const {
     if (m_entities.size() != other.m_entities.size()) return false;
-    const Environment &ea = environment, &eb = other.environment;
-    if (ea.skyColor != eb.skyColor || ea.fogDensity != eb.fogDensity || ea.ambient != eb.ambient) return false;
+    if (environment != other.environment) return false;
     for (size_t i = 0; i < m_entities.size(); ++i) {
         if (!SameEntity(*m_entities[i], *other.m_entities[i])) return false;
     }

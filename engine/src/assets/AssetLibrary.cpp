@@ -21,7 +21,8 @@ using json = nlohmann::ordered_json;
 
 namespace {
 constexpr const char* kMaterialFormat = "motor-material";
-constexpr int kMaterialVersion = 1;
+// 1: Blinn-Phong (cor, textura, especular, brilho). 2: PBR da Fase 7 (metal, rugosidade, mapas, emissão).
+constexpr int kMaterialVersion = 2;
 
 // float -> double pela representação decimal mais curta ("0.6" no arquivo, e não "0.6000000238418579").
 double Num(float value) {
@@ -130,6 +131,7 @@ void AssetLibrary::SetRoot(const fs::path& root) {
     m_models.clear();
     m_modelTimes.clear();
     m_clips.clear();
+    m_environmentMaps.clear();
     m_database.SetAssetsDir(m_root.empty() ? fs::path{} : m_root / Project::kAssetsFolder);
 }
 
@@ -241,13 +243,23 @@ std::shared_ptr<Material> AssetLibrary::GetMaterialByGuid(std::string_view guid,
     return material;
 }
 
+MaterialTextureRefs AssetLibrary::TextureRefsOf(const Material& m) const {
+    auto ref = [&](const std::shared_ptr<Texture2D>& texture) -> std::optional<AssetRef> {
+        if (!texture) return std::nullopt;
+        auto r = RefOf(texture.get());
+        if (!r) log::Warn("Salvar material: uma textura não está no AssetLibrary");
+        return r;
+    };
+    return {ref(m.albedo), ref(m.normalMap), ref(m.metallicRoughnessMap), ref(m.occlusionMap), ref(m.emissiveMap)};
+}
+
 bool AssetLibrary::WriteMaterialFile(const fs::path& file, const Material& material, std::string* error) {
-    return WriteMaterialFile(file, material, RefOf(material.albedo.get()), error);
+    return WriteMaterialFile(file, material, TextureRefsOf(material), error);
 }
 
 bool AssetLibrary::WriteMaterialFile(const fs::path& file, const Material& material,
-                                     const std::optional<AssetRef>& texture, std::string* error) {
-    if (!WriteTextAtomic(file, MaterialToJson(material, texture), error)) return false;
+                                     const MaterialTextureRefs& textures, std::string* error) {
+    if (!WriteTextAtomic(file, MaterialToJson(material, textures), error)) return false;
     // Material em cache: a data nova é a da nossa gravação, não precisa reler.
     if (const std::string guid = m_database.GuidFor(file); !guid.empty() && m_materialTimes.contains(guid)) {
         std::error_code ec;
@@ -293,28 +305,46 @@ size_t AssetLibrary::ReloadChangedMaterials() {
 }
 
 std::string AssetLibrary::MaterialToJson(const Material& m) const {
-    return MaterialToJson(m, RefOf(m.albedo.get()));
+    return MaterialToJson(m, TextureRefsOf(m));
 }
 
-std::string AssetLibrary::MaterialToJson(const Material& m, const std::optional<AssetRef>& textureRef) const {
+namespace {
+// Textura embutida pelo nome ("Xadrez"); de arquivo, { "guid", "path" }; nenhuma, null.
+json TextureJson(const std::optional<AssetRef>& ref) {
+    if (!ref) return nullptr;
+    if (ref->guid.empty()) return ref->name;
+    json texture = {{"guid", ref->guid}};
+    if (!ref->name.empty()) texture["path"] = ref->name;
+    return texture;
+}
+
+void ReadNumber(const json& root, const char* key, float& out) {
+    if (auto it = root.find(key); it != root.end() && it->is_number()) out = it->get<float>();
+}
+
+bool AllNumbers(const json& array, size_t size) {
+    return array.is_array() && array.size() == size &&
+           std::all_of(array.begin(), array.end(), [](const json& v) { return v.is_number(); });
+}
+} // namespace
+
+std::string AssetLibrary::MaterialToJson(const Material& m, const MaterialTextureRefs& t) const {
     json root;
     root["format"] = kMaterialFormat;
     root["version"] = kMaterialVersion;
     root["color"] = json::array({Num(m.color.r), Num(m.color.g), Num(m.color.b), Num(m.color.a)});
-    json texture = nullptr;
-    if (const auto& ref = textureRef) {
-        if (ref->guid.empty()) {
-            texture = ref->name;
-        } else {
-            texture = {{"guid", ref->guid}};
-            if (!ref->name.empty()) texture["path"] = ref->name;
-        }
-    } else if (m.albedo) {
-        log::Warn("Salvar material: a textura não está no AssetLibrary");
-    }
-    root["texture"] = std::move(texture);
+    root["texture"] = TextureJson(t.albedo);
+    root["metallic"] = Num(m.metallic);
+    root["roughness"] = Num(m.roughness);
     root["specular"] = Num(m.specular);
-    root["shininess"] = Num(m.shininess);
+    root["normalMap"] = TextureJson(t.normal);
+    root["normalStrength"] = Num(m.normalStrength);
+    root["metallicRoughnessMap"] = TextureJson(t.metallicRoughness);
+    root["occlusionMap"] = TextureJson(t.occlusion);
+    root["occlusionStrength"] = Num(m.occlusionStrength);
+    root["emissive"] = json::array({Num(m.emissive.r), Num(m.emissive.g), Num(m.emissive.b)});
+    root["emissiveIntensity"] = Num(m.emissiveIntensity);
+    root["emissiveMap"] = TextureJson(t.emissive);
 
     // Uma chave por linha, cada valor compacto (a cor fica [1.0,0.5,0.2,1.0]).
     std::string text = "{\n";
@@ -326,6 +356,25 @@ std::string AssetLibrary::MaterialToJson(const Material& m, const std::optional<
     }
     return text + "\n}\n";
 }
+
+namespace {
+std::shared_ptr<Texture2D> TextureFromJson(AssetLibrary& assets, const json& value, const char* what) {
+    std::string problem;
+    std::shared_ptr<Texture2D> texture;
+    if (value.is_string()) {
+        texture = assets.GetTexture(value.get<std::string>(), &problem);
+    } else if (value.is_object()) {
+        const std::string guid = value.value("guid", std::string());
+        const std::string path = value.value("path", std::string());
+        if (!guid.empty()) texture = assets.GetTextureByGuid(guid, &problem);
+        if (!texture && !path.empty()) texture = assets.GetTexture(path, nullptr);  // .meta perdido: pelo caminho
+    } else {
+        return nullptr;  // null ou formato errado: sem textura
+    }
+    if (!texture) log::Warn("Material: {} não carregado: {}", what, problem);
+    return texture;
+}
+} // namespace
 
 bool AssetLibrary::MaterialFromJson(std::string_view text, Material& out, std::string* error) {
     const json root = json::parse(text, nullptr, false);
@@ -341,28 +390,64 @@ bool AssetLibrary::MaterialFromJson(std::string_view text, Material& out, std::s
 
     // Leitura tolerante: campo ausente ou com formato errado fica com o valor padrão.
     Material m;
-    if (auto it = root.find("color"); it != root.end() && it->is_array() && it->size() == 4) {
-        const bool numbers = std::all_of(it->begin(), it->end(), [](const json& v) { return v.is_number(); });
-        if (numbers) {
-            for (glm::length_t i = 0; i < 4; ++i) m.color[i] = (*it)[static_cast<size_t>(i)].get<float>();
-        }
+    if (auto it = root.find("color"); it != root.end() && AllNumbers(*it, 4)) {
+        for (glm::length_t i = 0; i < 4; ++i) m.color[i] = (*it)[static_cast<size_t>(i)].get<float>();
     }
-    if (auto it = root.find("specular"); it != root.end() && it->is_number()) m.specular = it->get<float>();
-    if (auto it = root.find("shininess"); it != root.end() && it->is_number()) m.shininess = it->get<float>();
-    if (auto it = root.find("texture"); it != root.end() && !it->is_null()) {
-        std::string problem;
-        if (it->is_string()) {
-            m.albedo = GetTexture(it->get<std::string>(), &problem);
-        } else if (it->is_object()) {
-            const std::string guid = it->value("guid", std::string());
-            const std::string path = it->value("path", std::string());
-            if (!guid.empty()) m.albedo = GetTextureByGuid(guid, &problem);
-            if (!m.albedo && !path.empty()) m.albedo = GetTexture(path, nullptr);  // .meta perdido: pelo caminho
-        }
-        if (!m.albedo) log::Warn("Material: textura não carregada: {}", problem);
+    ReadNumber(root, "metallic", m.metallic);
+    ReadNumber(root, "roughness", m.roughness);
+    ReadNumber(root, "specular", m.specular);
+    ReadNumber(root, "normalStrength", m.normalStrength);
+    ReadNumber(root, "occlusionStrength", m.occlusionStrength);
+    ReadNumber(root, "emissiveIntensity", m.emissiveIntensity);
+    if (auto it = root.find("emissive"); it != root.end() && AllNumbers(*it, 3)) {
+        for (glm::length_t i = 0; i < 3; ++i) m.emissive[i] = (*it)[static_cast<size_t>(i)].get<float>();
     }
+    // Versão 1 (Blinn-Phong): o brilho vira rugosidade.
+    if (version < 2) {
+        float shininess = 32.0f;
+        ReadNumber(root, "shininess", shininess);
+        m.roughness = RoughnessFromShininess(shininess);
+    }
+    if (auto it = root.find("texture"); it != root.end()) m.albedo = TextureFromJson(*this, *it, "textura");
+    if (auto it = root.find("normalMap"); it != root.end()) m.normalMap = TextureFromJson(*this, *it, "mapa de normal");
+    if (auto it = root.find("metallicRoughnessMap"); it != root.end()) {
+        m.metallicRoughnessMap = TextureFromJson(*this, *it, "mapa metal/rugosidade");
+    }
+    if (auto it = root.find("occlusionMap"); it != root.end()) m.occlusionMap = TextureFromJson(*this, *it, "mapa de oclusão");
+    if (auto it = root.find("emissiveMap"); it != root.end()) m.emissiveMap = TextureFromJson(*this, *it, "mapa de emissão");
     out = std::move(m);
     return true;
+}
+
+// --- Céus HDR ----------------------------------------------------------------------
+
+std::shared_ptr<const HdrImage> AssetLibrary::GetEnvironmentMap(std::string_view key, std::string* error) {
+    const fs::path file = FileForKey(key);
+    const std::string guid = AssetTypeFromPath(file) == AssetType::EnvironmentMap ? m_database.GuidFor(file) : std::string();
+    if (guid.empty()) {
+        SetError(error, std::format("Céu HDR '{}' não existe no projeto.", key));
+        return nullptr;
+    }
+    return GetEnvironmentMapByGuid(guid, error);
+}
+
+std::shared_ptr<const HdrImage> AssetLibrary::GetEnvironmentMapByGuid(std::string_view guid, std::string* error) {
+    if (auto cached = FindByGuid(m_environmentMaps, guid)) return cached;
+    fs::path file = m_database.PathFor(guid);
+    if (file.empty()) {
+        m_database.Refresh();
+        file = m_database.PathFor(guid);
+    }
+    if (file.empty() || AssetTypeFromPath(file) != AssetType::EnvironmentMap) {
+        SetError(error, std::format("Nenhum céu HDR do projeto tem o GUID {}.", guid));
+        return nullptr;
+    }
+    auto image = std::make_shared<HdrImage>();
+    if (!LoadHdrFile(file, *image, error)) return nullptr;
+    log::Info("Céu HDR carregado: {} ({}x{})", KeyForFile(file), image->width, image->height);
+    std::shared_ptr<const HdrImage> loaded = std::move(image);
+    m_environmentMaps.push_back({{}, std::string(guid), loaded});
+    return loaded;
 }
 
 // --- Modelos (glTF) -------------------------------------------------------------
@@ -477,6 +562,10 @@ std::optional<AssetRef> AssetLibrary::RefOf(const Model* model) const {
 
 std::optional<AssetRef> AssetLibrary::RefOf(const AnimationClip* clip) const {
     return RefIn(m_clips, clip);
+}
+
+std::optional<AssetRef> AssetLibrary::RefOf(const HdrImage* image) const {
+    return RefIn<const HdrImage>(m_environmentMaps, image);
 }
 
 // --- Caminhos -------------------------------------------------------------------

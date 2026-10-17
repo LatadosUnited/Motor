@@ -19,6 +19,7 @@
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_BMP
 #define STBI_ONLY_TGA
+#define STBI_ONLY_HDR  // céus HDR (Fase 7)
 #define STBI_NO_STDIO
 #define STBI_MAX_DIMENSIONS 16384
 #if defined(__GNUC__)
@@ -139,6 +140,7 @@ AssetType AssetTypeFromPath(const fs::path& path) {
     if (ext == kPrefabFileExtension) return AssetType::Prefab;
     if (ext == ".ttf" || ext == ".otf") return AssetType::Font;  // fontes da UI do jogo (motor/ui/Font.h)
     if (ext == ".gltf" || ext == ".glb") return AssetType::Model;
+    if (ext == ".hdr") return AssetType::EnvironmentMap;  // céu equirretangular (Fase 7)
     return AssetType::Unknown;
 }
 
@@ -151,6 +153,7 @@ const char* AssetTypeName(AssetType type) {
         case AssetType::Prefab: return "Prefab";
         case AssetType::Font: return "Fonte";
         case AssetType::Model: return "Modelo";
+        case AssetType::EnvironmentMap: return "Céu HDR";
         case AssetType::Unknown: break;
     }
     return "Arquivo";
@@ -300,6 +303,35 @@ bool DecodeImage(std::span<const uint8_t> bytes, ImageData& out, std::string* er
                     pixels + static_cast<size_t>(y) * rowBytes, rowBytes);
     }
     stbi_image_free(pixels);
+    return true;
+}
+
+bool DecodeHdrImage(std::span<const uint8_t> bytes, HdrImage& out, std::string* error) {
+    if (bytes.empty() || bytes.size() > static_cast<size_t>(INT32_MAX)) {
+        SetError(error, "Imagem vazia ou grande demais.");
+        return false;
+    }
+    int width = 0, height = 0, channels = 0;
+    float* pixels = stbi_loadf_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, 3);
+    if (!pixels) {
+        SetError(error, std::format("Imagem HDR inválida ({}).", stbi_failure_reason()));
+        return false;
+    }
+    out.width = width;
+    out.height = height;
+    // Linha de cima primeiro, como no arquivo (é o que a amostragem equirretangular espera).
+    out.rgb.assign(pixels, pixels + static_cast<size_t>(width) * static_cast<size_t>(height) * 3);
+    stbi_image_free(pixels);
+    return true;
+}
+
+bool LoadHdrFile(const fs::path& path, HdrImage& out, std::string* error) {
+    std::vector<uint8_t> bytes;
+    if (!ReadFile(path, bytes, error)) return false;
+    if (!DecodeHdrImage(bytes, out, error)) {
+        if (error) *error = std::format("{}: {}", ToUtf8(path.filename()), *error);
+        return false;
+    }
     return true;
 }
 

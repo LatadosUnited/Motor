@@ -18,6 +18,8 @@ struct LightComponent {
     float range = 10.0f;       // pontual e spot
     float innerAngle = 25.0f;  // spot: meio ângulo (graus) com luz total
     float outerAngle = 35.0f;  // spot: meio ângulo (graus) onde a luz acaba
+    bool castShadows = true;   // projeta sombra (direcional: cascatas; pontual/spot: cubo, até kMaxPointShadows)
+    ShadowQuality shadowQuality = ShadowQuality::Medium;
 };
 
 // Na cena o tipo é gravado como texto ("Directional", "Point", "Spot"); números também são aceitos.
@@ -25,8 +27,15 @@ template <> struct FieldTraits<LightType> {
     static CustomFieldType Describe();
 };
 
+// Gravada como texto ("Low", "Medium", "High"); números também são aceitos.
+template <> struct FieldTraits<ShadowQuality> {
+    static CustomFieldType Describe();
+};
+
 const char* LightTypeName(LightType type);   // identificador gravado na cena
 const char* LightTypeLabel(LightType type);  // nome no editor ("Pontual")
+const char* ShadowQualityName(ShadowQuality quality);   // "Low", "Medium", "High"
+const char* ShadowQualityLabel(ShadowQuality quality);  // nome no editor ("Média (2048)")
 
 // Luz do renderer a partir do componente e da matriz de mundo da entidade.
 Light MakeLight(const LightComponent& component, const glm::mat4& world);
