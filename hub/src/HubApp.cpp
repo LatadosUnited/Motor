@@ -749,6 +749,7 @@ void HubApp::DrawVersionsTab() {
 
     const float statusHeight = m_status.empty() ? 0.0f : ImGui::GetFrameHeightWithSpacing() * 1.6f;
     ImGui::BeginChild("ListaVersoes", ImVec2(0, -statusHeight));
+    ImGui::SeparatorText("Instaladas");
     const InstalledVersion* def = DefaultVersion(m_versions, m_config.defaultVersion);
     if (m_versions.empty()) {
         ImGui::TextColored(kOrange, "Nenhuma versão instalada: baixe uma abaixo ou adicione de uma pasta.");
@@ -914,7 +915,7 @@ void HubApp::DrawRemoteSection() {
 }
 
 void HubApp::DrawServersSection() {
-    if (!ImGui::CollapsingHeader("Servidores", m_config.servers.empty() ? ImGuiTreeNodeFlags_DefaultOpen : 0)) return;
+    if (!ImGui::CollapsingHeader("Servidores", ImGuiTreeNodeFlags_DefaultOpen)) return;
     std::string toRemove;
     for (const std::string& url : m_config.servers) {
         ImGui::PushID(url.c_str());

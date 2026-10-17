@@ -23,6 +23,7 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Áudio (miniaudio: som 2D/3D, `AudioSource`, `AudioListener`, API para scripts) | ✅ pronto (Fase 8) |
 | Exportar o jogo (Player sem o editor, só os assets usados, Arquivo > Exportar jogo) | ✅ pronto (Fase 10) |
 | Hub de projetos e versões (`MotorHub.exe`, versões instaladas lado a lado) | ✅ pronto (Fase 14) |
+| Instalador do Hub e servidor de versões (`MotorSetup.exe`, `MotorServidor.exe`) | ✅ pronto (Fase 15) |
 | Git + testes `ctest` | ✅ pronto (Fase 0) |
 | Editor (hierarquia, inspector, viewport, gizmos, desfazer) | ✅ pronto |
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
@@ -386,7 +387,7 @@ CMake nos caminhos do build que a montou; o editor aberto pelo hub não tem cons
 Depois: o hub como repositório próprio; o editor avisar antes de abrir um projeto de versão mais nova que a
 dele. Baixar versões e o instalador ficaram para a Fase 15.
 
-## Fase 15 — Instalador e servidor de versões
+## Fase 15 — Instalador e servidor de versões ✅
 
 O hub instalado de verdade (fora de pastas de build) e as versões do Motor distribuídas por um servidor, para
 quem não compila o Motor. Sem bibliotecas novas: HTTP com a cpp-httplib (já usada pelo MCP do editor), SHA-256
@@ -412,6 +413,25 @@ pela API do Windows (BCrypt), arquivos um a um sem compressão (nada de zip).
 **Pronto quando:** de ponta a ponta numa pasta temporária: servidor no ar, versão Release publicada, instalação
 silenciosa baixando a versão do servidor, hub instalado listando a versão e criando/abrindo "Jogo Ação",
 desinstalação limpando tudo.
+
+Feito: `distrib/` (`Sha256`, `Manifest` com a pasta de publicações, `Download` com retomada e instalação atômica
+em `Versões\.baixando\<versão>\`, `InstallPlan`, `Platform`), `server/` (`ServerCore` testável, `main.cpp`),
+`installer/` (`Setup`, `SetupApp`, `main.cpp`; Hub embutido como RCDATA) e recurso VERSIONINFO no Hub, no servidor
+e no instalador (`cmake/MotorVersionInfo.cmake`). Hub 0.2.0 com `hub.json` formato 2. `tests/test_distribuicao.cpp`
+cobre SHA-256, caminhos inseguros, manifesto tolerante, publicar/remover, planos de instalação e desinstalação,
+`hub.json` 2 e, em loopback, Range, caminhos recusados, download inteiro, cancelar e retomar, arquivo corrompido e
+manifesto que muda com o servidor no ar. Conferido de ponta a ponta em Release numa pasta temporária: Motor 0.2.0
+publicado (550 arquivos, 22,8 MB), instalador baixado da página `/`, instalação silenciosa baixando a versão,
+hub instalado (pasta de dados do `instalacao.json`) criando e reabrindo "Jogo Ação" no editor baixado (MCP:
+projeto e versão certos, script compilado com o SDK instalado), download morto no meio e retomado (6,7 MB pela
+rede, 16,1 MB aproveitados), desinstalação de dentro da pasta (cópia em `%TEMP%`, que se apaga) levando tudo
+para a Lixeira; atalhos e chave de registro testados com `--atalhos-em` e `--chave-registro`.
+
+Limitações: só http (a cpp-httplib está sem SSL; para a rede local); o editor instalado continua precisando do
+MSYS2 e do CMake nos caminhos do `MotorSDK.json` da versão; desinstalação silenciosa de dentro da pasta devolve 0
+assim que a cópia temporária começa (o resultado sai no mesmo console/pipe). Depois: https/assinatura dos
+arquivos para servidores fora da rede local; atualizar o Hub pelo próprio Hub (hoje ele avisa e abre o link do
+instalador); ícone próprio para o Hub e o instalador.
 
 ## Anotado para a alpha 2
 
