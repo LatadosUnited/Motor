@@ -93,6 +93,8 @@ std::optional<Toolchain> LoadToolchain(const fs::path& sdkJson, std::string* err
         t.cxxCompiler = motor::PathFromUtf8(j.value("cxxCompiler", std::string()));
         t.buildType = j.value("buildType", std::string("Debug"));
         t.sdkCMake = motor::PathFromUtf8(j.value("sdkCMake", std::string()));
+        // Pasta instalada (alvo motor_package): o MotorSDK.cmake fica ao lado do .json, com caminho relativo.
+        if (!t.sdkCMake.empty() && t.sdkCMake.is_relative()) t.sdkCMake = sdkJson.parent_path() / t.sdkCMake;
         if (t.cmake.empty() || t.generator.empty() || t.cxxCompiler.empty() || t.sdkCMake.empty()) {
             SetError(error, std::format("SDK do Motor incompleto: '{}'.", ToUtf8(sdkJson)));
             return std::nullopt;

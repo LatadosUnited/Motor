@@ -176,3 +176,27 @@ if(MOTOR_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# Fase 14: pasta de instalação autossuficiente desta versão (editor, Player, DLLs, engine/, templates/, SDK dos
+# scripts e motor-version.json), para o Hub registrar: cmake --build build --target motor_package
+set(MOTOR_PACKAGE_DIR ${CMAKE_BINARY_DIR}/package/Motor-${PROJECT_VERSION} CACHE PATH "Pasta montada pelo alvo motor_package")
+add_custom_target(motor_package
+    COMMAND ${CMAKE_COMMAND}
+        -DOUT=${MOTOR_PACKAGE_DIR}
+        -DBIN=${CMAKE_BINARY_DIR}/bin
+        -DSRC=${PROJECT_SOURCE_DIR}
+        -DVERSION=${PROJECT_VERSION}
+        -DBUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DIMPLIB=$<TARGET_LINKER_FILE:Motor>
+        -DIMGUI_DIR=${imgui_SOURCE_DIR}
+        -DGLM_DIR=${glm_SOURCE_DIR}
+        -DGEN_DIR=${CMAKE_BINARY_DIR}/generated/include  # motor/core/Version.h
+        -DCMAKE_EXE=${CMAKE_COMMAND}
+        -DGENERATOR=${CMAKE_GENERATOR}
+        -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -P ${PROJECT_SOURCE_DIR}/cmake/MotorPackage.cmake
+    DEPENDS MotorEditor Player
+    COMMENT "Montando a pasta de instalação do Motor ${PROJECT_VERSION}"
+    VERBATIM)
