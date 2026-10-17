@@ -107,3 +107,9 @@ endif()
 
 # Renderização avançada (Fase 7) sem GPU: cascatas, recorte, BRDF, harmônicos do céu, HDR e formatos novos.
 motor_add_test(test_render)
+
+# Exportar o jogo (Fase 10): assets referenciados (cenas, prefabs, materiais, glTF, fontes, Recursos, scripts) e a
+# pasta exportada (Player, DLLs, engine/, Dados/), com arquivos falsos no lugar do Player e das DLLs.
+motor_add_test(test_export ${PROJECT_SOURCE_DIR}/editor/src/GameExport.cpp)
+target_include_directories(test_export PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_export PRIVATE nlohmann_json::nlohmann_json)
