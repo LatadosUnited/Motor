@@ -28,9 +28,9 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 **Alpha 1 concluída** (16/10/2026): Fases 0 a 7, 9, 11, 12 e 13. Dá para montar e jogar dentro do editor
 cenas com visual moderno (PBR, sombras, céu HDR, pós-processamento), luzes, física, scripts com recarga,
 modelos glTF animados e HUD, e um agente consegue fazer o mesmo pelo servidor MCP.
-**Ainda não:** entregar um jogo. Falta exportar (Fase 10) e som (8), que abrem a alpha 2 junto com a fase
-"Ambiente" (água, terreno, partículas e vegetação sobre a base da Fase 7). O uso real pelo editor foi pouco
-testado à mão (ver "Anotado para a alpha 2").
+**Ainda não:** entregar um jogo. Falta exportar (Fase 10) e som (8), os próximos passos, que abrem a alpha
+2. Depois deles vem uma validação de uso real (o editor foi pouco testado à mão; ver "Anotado para a alpha
+2") e, então, a fase "Ambiente" (água, terreno, partículas e vegetação sobre a base da Fase 7).
 
 ## Prioridades
 
@@ -44,8 +44,18 @@ Próximas fases, nesta ordem de importância:
 | 4 | ~~Fase 12 — Documentação de scripts~~ ✅ | quem faz o jogo precisa saber escrever scripts sem ler o código da engine | — |
 
 As quatro estão prontas, e as Fases 13 (servidor MCP) e 7 (renderização avançada) também: a Alpha 1 está
-fechada. Próximas (alpha 2): Fase 10 (exportar), Fase 8 (áudio) e a fase "Ambiente". A 11 depende da 6
-(o glTF traz materiais); 6 e 11 mexem nos mesmos arquivos de assets e não devem rodar ao mesmo tempo.
+fechada. A 11 depende da 6 (o glTF traz materiais); 6 e 11 mexem nos mesmos arquivos de assets e não devem
+rodar ao mesmo tempo.
+
+Alpha 2, nesta ordem:
+
+| # | Passo | Por quê | Pode rodar junto com |
+|---|---|---|---|
+| 5 | Fase 10 — Exportar o jogo | sem exportar não há jogo entregue, só o editor | 8 |
+| 6 | Fase 8 — Áudio | jogo sem som não está completo | 10 (a exportação precisa empacotar os sons) |
+| 7 | Validação de uso real | depois de 8 e 10: fazer um jogo pequeno do começo ao fim, exportado, testando à mão o que o MCP não cobre (ver "Anotado para a alpha 2") | — |
+| 8 | Desfazer que escala e arquivos grandes divididos | ver "Anotado para a alpha 2" | Ambiente (áreas diferentes) |
+| 9 | Fase "Ambiente" | água, terreno, partículas e vegetação sobre a base da Fase 7 | — |
 
 ---
 
@@ -309,7 +319,24 @@ Problemas encontrados por um agente testando o editor pelo MCP (16/10/2026):
   último projeto do usuário virou um projeto de teste. Saída: opção para o editor usar outro arquivo de
   configuração ou não gravar nenhum (ex.: `--settings <arquivo>` ou `--no-settings`), usada pelos agentes.
 - **Falta testar à mão** (o MCP não cobre): teclado e mouse de verdade no viewport (câmera livre, seleção
-  por clique, foco do jogo), menus, gizmo e arrastar arquivos (do painel Projeto e do Explorer).
+  por clique, foco do jogo), menus, gizmo e arrastar arquivos (do painel Projeto e do Explorer). Entra na
+  validação de uso real, depois das Fases 8 e 10: um jogo pequeno feito no editor do começo ao fim e exportado.
+
+Pontos de atenção da revisão do código (17/10/2026):
+
+- **Desfazer não escala.** `UndoHistory::Track` compara a cena inteira com a foto anterior a cada quadro
+  (`Scene::operator==`) e guarda até 100 cópias completas da cena. É simples e correto hoje, mas com cenas
+  de milhares de entidades (ou terreno e vegetação da fase "Ambiente") pesa em CPU e memória. Saídas
+  possíveis: comparar só as entidades marcadas como alteradas no quadro (marca de "sujo" ao escrever num
+  campo), guardar diferenças por entidade em vez da cena inteira, ou limitar o histórico por memória e não
+  por número de passos. Medir antes (cena de teste com 5000 entidades) e manter o desfazer automático: o
+  componente novo continua entrando nele sem código extra.
+- **Arquivos crescendo.** `editor/src/ProjectPanel.cpp` (~1200 linhas) e `engine/src/physics/PhysicsSystem.cpp`
+  (~940) são os maiores; vêm depois `AssetLibrary.cpp`, `SceneSerializer.cpp`, `SceneViewport.cpp`,
+  `McpController.cpp` e `SceneDocument.cpp` (~580 a 600). Dividir por assunto sem mudar comportamento (ex.:
+  no painel Projeto, a árvore de pastas, a grade de arquivos, as operações de arquivo e a importação; na
+  física, corpos, personagem, eventos e consultas), um arquivo por vez, cada um num commit, com o `ctest`
+  passando. Melhor fazer quando a área não tiver outra tarefa em andamento.
 
 ## Depois
 
