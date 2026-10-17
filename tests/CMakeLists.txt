@@ -104,3 +104,6 @@ if(WIN32)
     target_link_libraries(test_mcp PRIVATE ws2_32)
     target_compile_definitions(test_mcp PRIVATE _WIN32_WINNT=0x0A00)
 endif()
+
+# Renderização avançada (Fase 7) sem GPU: cascatas, recorte, BRDF, harmônicos do céu, HDR e formatos novos.
+motor_add_test(test_render)

@@ -118,8 +118,8 @@ int main() {
         const motor::MeshRenderer* renderer = ctx.scene.Find(baseId)->Get<motor::MeshRenderer>();
         CHECK(renderer && renderer->material.color.r == 1.0f && renderer->material.color.g == 0.0f);
 
-        CHECK(Call(protocol, "component_set", {{"entity", baseId}, {"type", "MeshRenderer"}, {"values", {{"shininess", 12}}}})["isError"] == false);
-        CHECK(renderer && renderer->material.shininess == 12.0f);
+        CHECK(Call(protocol, "component_set", {{"entity", baseId}, {"type", "MeshRenderer"}, {"values", {{"roughness", 0.25}}}})["isError"] == false);
+        CHECK(renderer && renderer->material.roughness == 0.25f);
         const Json wrongField = Call(protocol, "component_set", {{"entity", baseId}, {"type", "MeshRenderer"}, {"values", {{"cor_errada", 1}}}});
         CHECK(wrongField["isError"] == true && wrongField["text"].get<std::string>().find("color") != std::string::npos);
         CHECK(Call(protocol, "component_add", {{"entity", baseId}, {"type", "NaoExiste"}})["isError"] == true);

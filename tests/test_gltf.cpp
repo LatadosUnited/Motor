@@ -233,7 +233,12 @@ GltfBuilder MakeBoneco(const std::string& imageUri = {}) {
     d["materials"] = json::array({
         {{"name", "Pele"},
          {"pbrMetallicRoughness", {{"baseColorFactor", {0.5, 0.5, 0.5, 1.0}}, {"baseColorTexture", {{"index", 0}}}, {"roughnessFactor", 0.5}}}},
-        {{"name", "Metal/Vermelho"}, {"pbrMetallicRoughness", {{"baseColorFactor", {1.0, 0.0, 0.0, 1.0}}, {"roughnessFactor", 0.0}}}},
+        {{"name", "Metal/Vermelho"}, {"pbrMetallicRoughness", {{"baseColorFactor", {1.0, 0.0, 0.0, 1.0}}, {"roughnessFactor", 0.0},
+                                                               {"metallicFactor", 0.75}, {"metallicRoughnessTexture", {{"index", 0}}}}},
+         // Mapas da Fase 7 (a mesma imagem serve de exemplo para todos).
+         {"normalTexture", {{"index", 0}, {"scale", 0.5}}}, {"occlusionTexture", {{"index", 0}, {"strength", 0.25}}},
+         {"emissiveFactor", {1.0, 0.25, 0.0}}, {"emissiveTexture", {{"index", 0}}},
+         {"extensions", {{"KHR_materials_emissive_strength", {{"emissiveStrength", 3.0}}}}}},
     });
 
     // Clipes.
@@ -277,7 +282,15 @@ void CheckBonecoData(const ModelData& m, bool embeddedImage) {
     if (m.materials.size() == 2) {
         CHECK(m.materials[0].name == "Pele" && m.materials[0].image == 0);
         CHECK(Near(m.materials[0].color.r, std::pow(0.5f, 1.0f / 2.2f), 1e-3f));  // linear -> sRGB
-        CHECK(m.materials[1].image == -1 && m.materials[1].shininess > m.materials[0].shininess);
+        CHECK(m.materials[1].image == -1 && m.materials[1].roughness < m.materials[0].roughness);
+        // PBR (Fase 7): metal, rugosidade e os mapas de normal, metal/rugosidade, oclusão e emissão.
+        const ModelMaterial& metal = m.materials[1];
+        CHECK(Near(metal.metallic, 0.75f) && Near(metal.roughness, 0.0f) && Near(m.materials[0].roughness, 0.5f));
+        CHECK(Near(m.materials[0].metallic, 1.0f));  // padrão do glTF
+        CHECK(metal.metallicRoughnessImage == 0 && metal.normalImage == 0 && metal.occlusionImage == 0 && metal.emissiveImage == 0);
+        CHECK(Near(metal.normalScale, 0.5f) && Near(metal.occlusionStrength, 0.25f) && Near(metal.emissiveIntensity, 3.0f));
+        CHECK(Near(metal.emissive.r, 1.0f) && Near(metal.emissive.g, std::pow(0.25f, 1.0f / 2.2f), 1e-3f));
+        CHECK(m.materials[0].normalImage == -1 && m.materials[0].emissiveImage == -1);
     }
     CHECK(m.images.size() == 1);
     if (m.images.size() == 1) {
@@ -609,6 +622,12 @@ int main(int argc, char** argv) {
         const std::string rostoGuid = assets.Database().FindGuid(imported.folder / "Rosto.png");
         CHECK(!rostoGuid.empty() && pele.find(rostoGuid) != std::string::npos);
         CHECK(pele.find("Assets/Modelos/Boneco_materiais/Rosto.png") != std::string::npos);
+        // Material PBR gravado com os mapas (normal, metal/rugosidade, oclusão, emissão) apontando para a imagem.
+        const std::string metal = ReadText(imported.folder / "Metal_Vermelho.mmat");
+        CHECK(metal.find("\"metallic\": 0.75") != std::string::npos && metal.find("\"normalStrength\": 0.5") != std::string::npos);
+        CHECK(metal.find("\"normalMap\": {\"guid\":\"" + rostoGuid) != std::string::npos);
+        CHECK(metal.find("\"emissiveMap\": {\"guid\":\"" + rostoGuid) != std::string::npos);
+        CHECK(metal.find("\"texture\": null") != std::string::npos);
         // Raiz, Pele (com pele, filha da raiz), Base (2 partes) com Topo. Ossos e Vazio não viram entidade.
         CHECK(imported.entities == 6);
 

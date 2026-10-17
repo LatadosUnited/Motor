@@ -49,7 +49,7 @@ int main() {
     const auto& registry = ComponentRegistry::Instance();
     CHECK(registry.Find("MeshRenderer") != nullptr);
     CHECK(ComponentRegistry::TypeOf<MeshRenderer>() == registry.Find("MeshRenderer"));
-    CHECK(registry.Find("MeshRenderer")->fields.size() == 6);  // malha, material (asset) e os 4 do material próprio
+    CHECK(registry.Find("MeshRenderer")->fields.size() == 15);  // malha, material (asset) e os 13 do material próprio (PBR, Fase 7)
     RegisterTestComponents();
     const ComponentType* tudo = registry.Find("Tudo");
     CHECK(tudo && tudo->fields.size() == 9);
@@ -84,7 +84,7 @@ int main() {
     copy.Find(id)->Get<Tudo>()->apelido = "vilão";
     CHECK(!(copy == scene));
     copy = scene;
-    copy.Find(id)->Get<MeshRenderer>()->material.shininess = 5.0f;
+    copy.Find(id)->Get<MeshRenderer>()->material.roughness = 0.9f;
     CHECK(!(copy == scene));
     copy = scene;
     copy.Find(id)->Remove<MeshRenderer>();
@@ -103,7 +103,7 @@ int main() {
     e.Get<MeshRenderer>()->material.color = {0.5f, 0.6f, 0.7f, 1.0f};
     AssetLibrary assets;
     const std::string text = SceneSerializer::ToJson(scene, assets);
-    CHECK(text.find("\"version\": 5") != std::string::npos);
+    CHECK(text.find("\"version\": 6") != std::string::npos);
     CHECK(text.find("\"type\": \"Tudo\"") != std::string::npos);
     CHECK(text.find("estadoInterno") == std::string::npos);
 
@@ -147,7 +147,9 @@ int main() {
     CHECK(SceneSerializer::FromJson(v2, old, assets, &error));
     const Entity* oe = old.Entities().empty() ? nullptr : old.Entities().front().get();
     const MeshRenderer* omr = oe ? oe->Get<MeshRenderer>() : nullptr;
-    CHECK(omr && omr->material.color == glm::vec4(1, 0, 0, 1) && omr->material.shininess == 64.0f);
+    CHECK(omr && omr->material.color == glm::vec4(1, 0, 0, 1));
+    // Brilho (Blinn-Phong) das cenas antigas vira rugosidade (Fase 7).
+    CHECK(omr && std::abs(omr->material.roughness - RoughnessFromShininess(64.0f)) < 1e-5f);
     CHECK(omr && omr->material.specular == 0.1f);
 
     SECTION("Versão futura é recusada");

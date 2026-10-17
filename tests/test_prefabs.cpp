@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
         Entity* towerAgain = reopened.FindByName("Torre");
         CHECK(towerAgain && ColorOf(Child(reopened, towerAgain->id, "Base")) == green);  // mudança de fora
         CHECK(towerAgain && towerAgain->transform.position == glm::vec3(5.0f, 0.0f, 0.0f));
-        CHECK(SceneSerializer::ToJson(reopened, freshAssets).find("\"version\": 5") != std::string::npos);
+        CHECK(SceneSerializer::ToJson(reopened, freshAssets).find("\"version\": 6") != std::string::npos);
     }
 
     SECTION("Prefab mudou no disco: ReloadChanged");
