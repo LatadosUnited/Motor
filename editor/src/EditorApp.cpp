@@ -33,26 +33,24 @@ EditorApp::EditorApp(Options options)
                   .requestClose = [this] { GetWindow().RequestClose(); },
                   .setWindowTitle = [this](const std::string& title) { SetWindowTitle(title); },
                   .projectClosing = [this] { m_scripts.CloseProject(); },
-                  .projectOpened = [this] { m_scripts.OpenProject(); }}),
+                  .projectOpened = [this] { m_scripts.OpenProject(); },
+                  .exportGame = [this] { m_export.Open(); }}),
       m_scripts(m_ctx, m_history, m_document, m_play),
+      m_export({.ctx = m_ctx, .document = m_document, .scripts = m_scripts}),
       m_mcp({.ctx = m_ctx,
              .document = m_document,
              .play = m_play,
              .scripts = m_scripts,
              .viewport = m_viewport,
-             .requestHistory = [this](int direction) { m_historyRequest = direction; }}),
+             .requestHistory = [this](int direction) { m_historyRequest = direction; },
+             .exporter = m_export}),
       m_startupProject(std::move(options.project)),
       m_startupMcpPort(options.mcpPort) {}
 
 void EditorApp::OnInit() {
     m_viewport.Init();
 
-    AssetLibrary& assets = m_ctx.assets;
-    assets.AddMesh("Cubo", Mesh::CreateCube());
-    assets.AddMesh("Esfera", Mesh::CreateSphere());
-    assets.AddMesh("Plano", Mesh::CreatePlane());
-    assets.AddTexture("Xadrez", Texture2D::CreateChecker(512, 16, {215, 215, 220, 255}, {150, 155, 165, 255}));
-    assets.AddTexture("Xadrez grosso", Texture2D::CreateChecker(256, 4, {240, 240, 240, 255}, {60, 60, 70, 255}));
+    AddBuiltinAssets(m_ctx.assets);  // os mesmos do Player (jogo exportado)
 
     // Projeto da linha de comando, senão o último usado; sem projeto, mostra a cena de exemplo.
     m_settings = EditorSettings::Load();
@@ -220,6 +218,7 @@ void EditorApp::OnImGui() {
     if (!m_ctx.pendingError.empty()) m_document.ShowError(std::exchange(m_ctx.pendingError, {}));
     m_document.DrawPopups();
     m_scripts.DrawNewScriptPopup();
+    m_export.DrawPopup();
     ApplyPendingChanges(!IsInteracting());
 }
 
