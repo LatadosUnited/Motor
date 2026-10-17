@@ -507,7 +507,8 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus` |
 
   As mudanças viram passos de **desfazer**, como as feitas na interface. Durante o Play, a cena é a do jogo:
-  o que mudar é descartado ao parar.
+  o que mudar é descartado ao parar. O servidor atende também com a janela do editor **minimizada**. Nesse
+  caso o viewport não é redesenhado, então o `viewport_capture` devolve o último quadro desenhado.
 - **Segurança:** o servidor só escuta em `127.0.0.1` e recusa pedidos vindos de páginas da web (cabeçalhos
   `Origin`/`Host` de fora). Ele não tem senha: enquanto estiver ligado, qualquer programa deste computador pode
   usá-lo. Desligue quando não estiver usando.

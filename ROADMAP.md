@@ -249,6 +249,12 @@ Para um agente (Claude Code) usar o editor como uma pessoa usaria, sem simular m
 - Testado no editor de verdade: um script recebeu tecla e clique simulados, e a captura do Play saiu pela câmera
   do jogo.
 
+Corrigido depois (5a95745): com a janela minimizada o MCP parava de responder. Minimizado, o loop pulava o
+quadro inteiro, inclusive o `OnImGui`, onde rodava o `Pump` do MCP, e os pedidos davam tempo esgotado (o editor
+parecia travado); sem o `SwapBuffers` também não havia espera do vsync e o loop girava a milhares de FPS. Agora
+a parte do quadro sem interface (pedidos de Play e desfazer, `Pump` do MCP, exclusões, prefabs e o passo de
+desfazer) roda também minimizado (`EditorApp::UpdateMinimized`), e o loop dorme 10 ms por volta.
+
 Pendências: mover a câmera do editor para um ponto escolhido, além de focar uma entidade; arrastar o gizmo e
 outras ações só de mouse; notificações para o agente (hoje ele pergunta com `editor_status` e `log_read`).
 
