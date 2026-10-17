@@ -1,5 +1,6 @@
 # Pastas que o graphify não deve indexar
 build/
+build-*/
 out/
 .claude/
 graphify-out/
