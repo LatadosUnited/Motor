@@ -22,6 +22,7 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Servidor MCP do editor (agentes veem e mexem no editor e testam o jogo) | ✅ pronto (Fase 13) |
 | Áudio (miniaudio: som 2D/3D, `AudioSource`, `AudioListener`, API para scripts) | ✅ pronto (Fase 8) |
 | Exportar o jogo (Player sem o editor, só os assets usados, Arquivo > Exportar jogo) | ✅ pronto (Fase 10) |
+| Hub de projetos e versões (`MotorHub.exe`, versões instaladas lado a lado) | ✅ pronto (Fase 14) |
 | Git + testes `ctest` | ✅ pronto (Fase 0) |
 | Editor (hierarquia, inspector, viewport, gizmos, desfazer) | ✅ pronto |
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
@@ -56,7 +57,7 @@ Alpha 2, nesta ordem:
 |---|---|---|---|
 | 5 | ~~Fase 10 — Exportar o jogo~~ ✅ | sem exportar não há jogo entregue, só o editor | 8 |
 | 6 | ~~Fase 8 — Áudio~~ ✅ | jogo sem som não está completo | 10 (a exportação precisa empacotar os sons) |
-| 7 | Fase 14 — Hub de projetos e versões | várias versões do Motor instaladas lado a lado e cada projeto abrindo com a sua; criar e achar projetos sem abrir o editor | — |
+| 7 | ~~Fase 14 — Hub de projetos e versões~~ ✅ | várias versões do Motor instaladas lado a lado e cada projeto abrindo com a sua; criar e achar projetos sem abrir o editor | — |
 | 8 | Validação de uso real | depois de 8 e 10: fazer um jogo pequeno do começo ao fim, exportado, testando à mão o que o MCP não cobre (ver "Anotado para a alpha 2") | — |
 | 9 | Desfazer que escala e arquivos grandes divididos | ver "Anotado para a alpha 2" | Ambiente (áreas diferentes) |
 | 10 | Fase "Ambiente" | água, terreno, partículas e vegetação sobre a base da Fase 7 | — |
@@ -345,7 +346,7 @@ desfazer) roda também minimizado (`EditorApp::UpdateMinimized`), e o loop dorme
 Pendências: mover a câmera do editor para um ponto escolhido, além de focar uma entidade; arrastar o gizmo e
 outras ações só de mouse; notificações para o agente (hoje ele pergunta com `editor_status` e `log_read`).
 
-## Fase 14 — Hub de projetos e versões
+## Fase 14 — Hub de projetos e versões ✅
 
 Um programa separado do editor, como o Unity Hub, para versionamento: cada versão do Motor fica instalada na
 sua pasta e cada projeto abre com a versão em que foi feito.
@@ -364,7 +365,26 @@ sua pasta e cada projeto abre com a versão em que foi feito.
 **Pronto quando:** montar a pasta de instalação da versão atual, registrá-la no hub, criar um projeto
 "Jogo Ação" pelo hub e abri-lo no editor dessa versão.
 
-Depois: baixar versões pela internet; o hub como repositório próprio.
+Feito: versão 0.2.0 em `project(Motor VERSION ...)`, no header gerado `motor/core/Version.h`, no título, no log,
+em Ajuda > Sobre, no `editor_status` do MCP e em `--version`. `.mproject` formato 2 com `engineVersion`
+(`Project::Save` grava a versão da engine, com `.tmp` e renomear; o editor atualiza o campo ao abrir um projeto de
+outra versão). Opções do editor `--project`, `--create`, `--settings`, `--no-settings` e ferramenta MCP
+`project_create` (as duas pendências da alpha 2 abaixo). Alvo `motor_package` (`cmake/MotorPackage.cmake`): a
+lista de DLLs é a `kRuntimeDlls` da exportação, lida do `GameExport.h`; o SDK dos scripts vai junto, com caminhos
+relativos (o editor aceita `sdkCMake` relativo). O CMakeLists gerado dos scripts deixou de passar as bibliotecas
+por arquivo de resposta: o `ld` não achava a `libMotor.dll.a` dentro de `Versões\` (acento).
+Hub em `hub/`: `HubCore` (sem janela; `tests/test_hub.cpp`), `HubPlatform` (Windows), `HubApp` (janela ImGui e
+ações), `main.cpp` (linha de comando com as mesmas ações, para agentes: `--add-version`, `--create`, `--open`,
+`--list`..., `--data` para outra pasta de dados e `--` para passar argumentos ao editor). Hub com versão própria
+(0.1.0), GLFW, ImGui e runtime do GCC estáticos. Conferido de ponta a ponta: pasta montada, registrada no hub
+(pasta de dados de teste com acento), "Jogo Ação" criado pelo hub e aberto no editor da versão instalada (MCP:
+projeto e versões certos, scripts compilados com o SDK da pasta instalada), abrir pelo hub com a versão do
+projeto e com outra versão (projeto do formato 1 atualizado), cartões e aba Versões capturados por PrintWindow.
+
+Limitações: a pasta montada é Debug enquanto o build for Debug (~200 MB); o editor instalado depende do MSYS2 e do
+CMake nos caminhos do build que a montou; o editor aberto pelo hub não tem console (log pelo MCP `log_read`).
+Depois: baixar versões pela internet; instalador; o hub como repositório próprio; o editor avisar antes de
+abrir um projeto de versão mais nova que a dele.
 
 ## Anotado para a alpha 2
 
@@ -373,12 +393,14 @@ Problemas encontrados por um agente testando o editor pelo MCP (16/10/2026):
 - **Pasta vazia não vira projeto.** Abrir o editor numa pasta vazia mostra só a cena de exemplo, e o MCP
   não tem como criar projeto. O agente precisou montar o `.mproject` e a pasta `Scripts/` à mão, copiando os
   modelos da engine, e reabrir o editor apontando para o projeto. Saídas possíveis (dá para fazer as duas):
-  - ferramenta `project_create` no MCP (nome e pasta), com o mesmo resultado de Arquivo > Novo projeto;
+  - ferramenta `project_create` no MCP (nome e pasta), com o mesmo resultado de Arquivo > Novo projeto
+    (**feito na Fase 14**, junto com `MotorEditor --create <pasta-pai> <nome>`);
   - criar o projeto sozinho quando o editor abre uma pasta vazia.
 - **Agentes mexem na configuração do usuário.** Abrir o editor grava `%APPDATA%\Motor\editor.json` (último
   projeto, recentes). Testes automáticos esquecem a cópia que o CLAUDE.md pede; aconteceu duas vezes: o
   último projeto do usuário virou um projeto de teste. Saída: opção para o editor usar outro arquivo de
   configuração ou não gravar nenhum (ex.: `--settings <arquivo>` ou `--no-settings`), usada pelos agentes.
+  **Feito na Fase 14** (`--settings <arquivo>` e `--no-settings`).
 - **Falta testar à mão** (o MCP não cobre): teclado e mouse de verdade no viewport (câmera livre, seleção
   por clique, foco do jogo), menus, gizmo e arrastar arquivos (do painel Projeto e do Explorer). Entra na
   validação de uso real, depois das Fases 8 e 10: um jogo pequeno feito no editor do começo ao fim e exportado.

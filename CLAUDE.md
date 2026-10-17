@@ -102,8 +102,10 @@ ctest --test-dir build --output-on-failure
 - Para ver o editor: abra-o com um projeto de teste na pasta temporária e capture a janela com
   `PrintWindow` (flag `PW_RENDERFULLCONTENT`, funciona sem foco), depois encerre o processo.
   Ex.: `MotorEditor.exe "C:\...\scratchpad\Projeto Teste"`.
-- Abrir o editor grava `%APPDATA%\Motor\editor.json` (último projeto, recentes). **Faça cópia antes e
-  restaure depois** — é a configuração real do usuário.
+- Abrir o editor grava `%APPDATA%\Motor\editor.json` (último projeto, recentes). **Use `--no-settings`** (ou
+  `--settings <arquivo>`) em testes automáticos e, mesmo assim, faça cópia antes e restaure depois — é a
+  configuração real do usuário. Projeto de teste novo: `--create <pasta-pai> <nome>` ou a ferramenta MCP
+  `project_create`. O Hub (`MotorHub.exe`) tem `--data <pasta>` para não mexer no `%LOCALAPPDATA%\Motor`.
 - O que o MCP não cobre (menus, arrastar, atalhos, gizmo) fica como "não testado" no relatório, com passos
   para o usuário conferir.
 
@@ -180,7 +182,7 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
 | 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
 
-Prioridade atual (ver `ROADMAP.md`, "Prioridades"): Alpha 1 fechada; 8 e 10 prontas; próximas a validação de uso real e "Ambiente".
+Prioridade atual (ver `ROADMAP.md`, "Prioridades"): Alpha 1 fechada; 8, 10 e 14 prontas; próximas a validação de uso real e "Ambiente".
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com
