@@ -1,5 +1,6 @@
 #include "PlayMode.h"
 
+#include <motor/audio/AudioSystem.h>
 #include <motor/core/Log.h>
 
 #include <utility>
@@ -31,7 +32,10 @@ void PlayMode::Stop(motor::Scene& scene, motor::EntityId& selected) {
 }
 
 void PlayMode::SetPaused(bool paused) {
-    if (IsActive()) m_paused = paused;
+    if (!IsActive()) return;
+    m_paused = paused;
+    // Em pausa o runtime não roda: o áudio, que toca sozinho na thread de som, precisa ser pausado à parte.
+    if (auto* audio = m_runtime->GetSystem<motor::AudioSystem>()) audio->SetPaused(paused);
 }
 
 void PlayMode::Update(float dt) {
@@ -77,6 +81,9 @@ void PlayMode::ApplySceneRequest() {
     ++m_scenesLoaded;
     motor::log::Info("Cena trocada pelo jogo: {}", request);
     m_runtime->Start();
+    if (m_paused) {  // trocou de cena num "Avançar um quadro": os sons da cena nova esperam o Continuar
+        if (auto* audio = m_runtime->GetSystem<motor::AudioSystem>()) audio->SetPaused(true);
+    }
 }
 
 } // namespace editor
