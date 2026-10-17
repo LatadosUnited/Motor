@@ -170,6 +170,7 @@ add_subdirectory(engine)
 add_subdirectory(sandbox)
 add_subdirectory(player)  # Fase 10: executável do jogo exportado
 add_subdirectory(editor)
+add_subdirectory(hub)     # Fase 14: Hub de projetos e versões (não liga na libMotor.dll)
 
 option(MOTOR_BUILD_TESTS "Compila os testes (ctest)" ON)
 if(MOTOR_BUILD_TESTS)
