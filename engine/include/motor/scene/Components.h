@@ -11,3 +11,5 @@
 #include "motor/scene/CharacterControllerComponent.h"
 #include "motor/scene/PrefabInstance.h"
 #include "motor/scene/Animator.h"
+#include "motor/scene/AudioSource.h"
+#include "motor/scene/AudioListener.h"
