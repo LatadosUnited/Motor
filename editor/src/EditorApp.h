@@ -14,6 +14,7 @@
 #include <motor/Motor.h>
 
 #include <filesystem>
+#include <string>
 
 namespace editor {
 
@@ -25,6 +26,8 @@ public:
     struct Options {
         std::filesystem::path project;  // pasta ou .mproject; vazio = reabre o último projeto
         int mcpPort = 0;                // > 0: liga o servidor MCP nesta porta (--mcp na linha de comando)
+        std::filesystem::path createParent;  // --create <pasta-pai> <nome>: cria o projeto e abre (Fase 14)
+        std::string createName;
     };
     explicit EditorApp(Options options);
 
@@ -51,6 +54,7 @@ private:
     void StopPlay();  // volta à edição (nada acontece se já estiver editando)
     void OnPlayStopped();
     void DrawProjectPanel();
+    void DrawAboutPopup();  // Ajuda > Sobre
 
     EditorContext m_ctx;
     EditorSettings m_settings;
@@ -64,11 +68,14 @@ private:
     McpController m_mcp;         // depois de todas as peças que as ferramentas usam
 
     std::filesystem::path m_startupProject;
+    std::filesystem::path m_createParent;
+    std::string m_createName;
     int m_startupMcpPort = 0;
     int m_historyRequest = 0;  // -1 desfazer, +1 refazer (executado no início do próximo frame)
     float m_assetRefreshTimer = 0.0f;
     bool m_resetLayout = true;  // constrói o layout padrão se não houver um salvo
     bool m_showDemo = false;
+    bool m_openAbout = false;
 };
 
 } // namespace editor

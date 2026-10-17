@@ -1,7 +1,10 @@
 #include "EditorApp.h"
 
 #include <motor/core/Paths.h>
+#include <motor/core/Version.h>
+#include <motor/scene/ScriptModule.h>
 
+#include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <string>
@@ -33,11 +36,55 @@ std::vector<std::string> Arguments([[maybe_unused]] int argc, [[maybe_unused]] c
     return args;
 }
 
-// Uso: MotorEditor [pasta-do-projeto | arquivo.mproject] [--mcp[=porta]]
-editor::EditorApp::Options ParseOptions(const std::vector<std::string>& args) {
-    editor::EditorApp::Options options;
-    for (const std::string& arg : args) {
-        if (arg == "--mcp") {
+constexpr const char* kUsage =
+    "Uso: MotorEditor [pasta-do-projeto | arquivo.mproject] [opções]\n"
+    "  --project <pasta>          abre o projeto (o mesmo que passar a pasta sozinha)\n"
+    "  --create <pasta-pai> <nome> cria o projeto <pasta-pai>/<nome> (como Arquivo > Novo projeto) e abre\n"
+    "  --settings <arquivo>       usa outro arquivo de configuração do editor\n"
+    "  --no-settings              não lê nem grava a configuração do editor (%APPDATA%\\Motor\\editor.json)\n"
+    "  --mcp[=porta]              liga o servidor MCP (porta padrão 47800)\n"
+    "  --version                  mostra a versão e sai\n";
+
+struct ParsedOptions {
+    editor::EditorApp::Options app;
+    bool exit = false;  // --version/--help: já respondeu, não abre o editor
+    int exitCode = 0;
+};
+
+// Uso: ver kUsage. Os caminhos chegam em UTF-8 (Arguments).
+ParsedOptions ParseOptions(const std::vector<std::string>& args) {
+    ParsedOptions parsed;
+    editor::EditorApp::Options& options = parsed.app;
+    const auto fail = [&](const std::string& message) {
+        std::fprintf(stderr, "%s\n%s", message.c_str(), kUsage);
+        parsed.exit = true;
+        parsed.exitCode = 2;
+        return parsed;
+    };
+    for (size_t i = 0; i < args.size(); ++i) {
+        const std::string& arg = args[i];
+        const size_t remaining = args.size() - i - 1;
+        if (arg == "--version") {
+            std::printf("Motor Editor %s (API de scripts %d)\n", motor::kVersion, motor::kScriptApiVersion);
+            parsed.exit = true;
+            return parsed;
+        } else if (arg == "--help" || arg == "-h") {
+            std::printf("%s", kUsage);
+            parsed.exit = true;
+            return parsed;
+        } else if (arg == "--project") {
+            if (remaining < 1) return fail("--project precisa da pasta do projeto.");
+            options.project = motor::PathFromUtf8(args[++i]);
+        } else if (arg == "--create") {
+            if (remaining < 2) return fail("--create precisa da pasta-pai e do nome do projeto.");
+            options.createParent = motor::PathFromUtf8(args[++i]);
+            options.createName = args[++i];
+        } else if (arg == "--settings") {
+            if (remaining < 1) return fail("--settings precisa do arquivo.");
+            editor::EditorSettings::UseFile(motor::PathFromUtf8(args[++i]));
+        } else if (arg == "--no-settings") {
+            editor::EditorSettings::Disable();
+        } else if (arg == "--mcp") {
             options.mcpPort = editor::mcp::Server::kDefaultPort;
         } else if (arg.starts_with("--mcp=")) {
             try {
@@ -46,17 +93,21 @@ editor::EditorApp::Options ParseOptions(const std::vector<std::string>& args) {
                 motor::log::Warn("Porta inválida em {}: usando {}", arg, editor::mcp::Server::kDefaultPort);
                 options.mcpPort = editor::mcp::Server::kDefaultPort;
             }
+        } else if (arg.starts_with("--")) {
+            return fail("Opção desconhecida: " + arg);
         } else if (options.project.empty()) {
             options.project = motor::PathFromUtf8(arg);
         }
     }
-    return options;
+    return parsed;
 }
 } // namespace
 
 int main(int argc, char** argv) {
+    const ParsedOptions parsed = ParseOptions(Arguments(argc, argv));
+    if (parsed.exit) return parsed.exitCode;
     try {
-        editor::EditorApp app(ParseOptions(Arguments(argc, argv)));
+        editor::EditorApp app(parsed.app);
         app.Run();
     } catch (const std::exception& e) {
         motor::log::Error("Erro fatal: {}", e.what());

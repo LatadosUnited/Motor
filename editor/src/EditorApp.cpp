@@ -1,10 +1,13 @@
 #include "EditorApp.h"
 
 #include <imgui.h>
+#include <motor/core/Version.h>
 #include <motor/scene/ModelImport.h>
+#include <motor/scene/ScriptModule.h>
 #include <imgui_internal.h>  // DockBuilder
 #include <ImGuizmo.h>
 
+#include <format>
 #include <string>
 #include <utility>
 
@@ -16,7 +19,7 @@ namespace fs = std::filesystem;
 namespace {
 ApplicationDesc MakeDesc() {
     ApplicationDesc desc;
-    desc.window.title = "Motor Editor";
+    desc.window.title = std::format("Motor Editor {}", kVersion);
     desc.window.width = 1600;
     desc.window.height = 900;
     desc.enableImGui = true;
@@ -45,9 +48,13 @@ EditorApp::EditorApp(Options options)
              .requestHistory = [this](int direction) { m_historyRequest = direction; },
              .exporter = m_export}),
       m_startupProject(std::move(options.project)),
+      m_createParent(std::move(options.createParent)),
+      m_createName(std::move(options.createName)),
       m_startupMcpPort(options.mcpPort) {}
 
 void EditorApp::OnInit() {
+    log::Info("Motor Editor {} (API de scripts {})", kVersion, kScriptApiVersion);
+    if (EditorSettings::IsDisabled()) log::Info("Configuração do editor desligada (--no-settings)");
     m_viewport.Init();
 
     AddBuiltinAssets(m_ctx.assets);  // os mesmos do Player (jogo exportado)
@@ -56,8 +63,16 @@ void EditorApp::OnInit() {
     m_settings = EditorSettings::Load();
     m_projectPanel.SetView({m_settings.projectGridView, m_settings.projectIconSize});
     std::error_code ec;
-    const fs::path project = m_startupProject.empty() ? m_settings.lastProject : m_startupProject;
-    const bool opened = !project.empty() && fs::exists(project, ec) && m_document.OpenProjectAt(project, true);
+    bool opened = false;
+    if (!m_createName.empty()) {
+        // --create (Hub de projetos): o mesmo que Arquivo > Novo projeto; se falhar, avisa e segue sem projeto.
+        std::string error;
+        opened = m_document.CreateProjectAt(m_createParent, m_createName, error);
+        if (!opened) m_document.ShowError(error);
+    } else {
+        const fs::path project = m_startupProject.empty() ? m_settings.lastProject : m_startupProject;
+        opened = !project.empty() && fs::exists(project, ec) && m_document.OpenProjectAt(project, true);
+    }
     if (!opened) {
         BuildDefaultScene();
         m_history.Reset(m_ctx.scene, kNullEntity);
@@ -219,6 +234,7 @@ void EditorApp::OnImGui() {
     m_document.DrawPopups();
     m_scripts.DrawNewScriptPopup();
     m_export.DrawPopup();
+    DrawAboutPopup();
     ApplyPendingChanges(!IsInteracting());
 }
 
@@ -314,6 +330,10 @@ void EditorApp::DrawMenuBar() {
     }
     m_play.DrawMenu();
     m_scripts.DrawMenu();
+    if (ImGui::BeginMenu("Ajuda")) {
+        if (ImGui::MenuItem("Sobre o Motor")) m_openAbout = true;
+        ImGui::EndMenu();
+    }
     m_play.DrawStatus();
     m_scripts.DrawStatus();
     m_mcp.DrawStatus();
@@ -381,6 +401,23 @@ void EditorApp::Redo() {
         m_ctx.pendingDelete = kNullEntity;
         m_document.HasUnsavedChanges();
     }
+}
+
+void EditorApp::DrawAboutPopup() {
+    constexpr const char* kTitle = "Sobre o Motor";
+    if (m_openAbout) {
+        ImGui::OpenPopup(kTitle);
+        m_openAbout = false;
+    }
+    if (!ImGui::BeginPopupModal(kTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    ImGui::Text("Motor Editor %s", kVersion);
+    ImGui::TextDisabled("API de scripts %d", kScriptApiVersion);
+    ImGui::Separator();
+    ImGui::TextUnformatted("Engine 3D em C++20 e OpenGL 4.5.");
+    ImGui::TextUnformatted("Projetos e versões instaladas: Hub do Motor (MotorHub.exe).");
+    ImGui::Text("Pasta do editor: %s", ToUtf8(ExecutableDir()).c_str());
+    if (ImGui::Button("Fechar", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
 }
 
 void EditorApp::DrawProjectPanel() {

@@ -16,7 +16,23 @@ using json = nlohmann::ordered_json;
 using motor::PathFromUtf8;
 using motor::ToUtf8;
 
+namespace {
+std::filesystem::path g_fileOverride;  // --settings
+bool g_disabled = false;              // --no-settings
+} // namespace
+
+void EditorSettings::UseFile(const std::filesystem::path& file) {
+    std::error_code ec;
+    g_fileOverride = std::filesystem::absolute(file, ec);
+    if (ec) g_fileOverride = file;
+}
+
+void EditorSettings::Disable() { g_disabled = true; }
+
+bool EditorSettings::IsDisabled() { return g_disabled; }
+
 std::filesystem::path EditorSettings::FilePath() {
+    if (!g_fileOverride.empty()) return g_fileOverride;
 #ifdef _WIN32
     if (const wchar_t* appData = _wgetenv(L"APPDATA")) {  // versão wide: a ANSI estraga acentos
         return std::filesystem::path(appData) / "Motor" / "editor.json";
@@ -31,6 +47,7 @@ std::filesystem::path EditorSettings::FilePath() {
 
 EditorSettings EditorSettings::Load() {
     EditorSettings settings;
+    if (g_disabled) return settings;
     std::ifstream in(FilePath(), std::ios::binary);
     if (!in) return settings;  // primeira execução
 
@@ -54,6 +71,7 @@ EditorSettings EditorSettings::Load() {
 }
 
 void EditorSettings::Save() const {
+    if (g_disabled) return;
     json root;
     root["lastProject"] = ToUtf8(lastProject);
     root["lastScene"] = ToUtf8(lastScene);

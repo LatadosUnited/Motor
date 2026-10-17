@@ -9,6 +9,7 @@
 #include "McpSceneTools.h"
 
 #include <motor/core/Paths.h>
+#include <motor/core/Version.h>
 #include <motor/renderer/Framebuffer.h>
 #include <motor/audio/AudioSystem.h>
 #include <motor/ui/UiSystem.h>
@@ -197,10 +198,13 @@ void McpController::AddEditorTools() {
         .run = [this](const Json&) {
             Json j;
             if (Project* project = m_host.document.GetProject()) {
-                j["project"] = {{"name", project->Name()}, {"root", ToUtf8(project->RootDir())}};
+                j["project"] = {{"name", project->Name()},
+                                {"root", ToUtf8(project->RootDir())},
+                                {"engine_version", project->EngineVersion()}};
             } else {
                 j["project"] = nullptr;
             }
+            j["editor_version"] = kVersion;
             const fs::path& scene = m_host.document.ScenePath();
             j["scene"] = {{"path", scene.empty() ? Json(nullptr) : Json(ToUtf8(scene))},
                           {"unsaved_changes", m_host.document.HasUnsavedChanges()},
@@ -314,6 +318,30 @@ void McpController::AddFileTools() {
             std::string error;
             if (!m_host.document.NewSceneDirect(DiscardArg(args), error)) throw ToolError(error);
             return ToolResult::Text("cena nova aberta");
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "project_create",
+        .description = "Cria um projeto novo, como Arquivo > Novo projeto: pasta <parent>/<name> com Assets/, Scripts/ "
+                       "(script de exemplo) e a cena inicial, e abre no editor (fecha o projeto aberto). Recusa se a "
+                       "cena aberta tiver alterações não salvas, a menos que discard_changes seja true.",
+        .inputSchema = Schema({{"parent", Prop("string", "pasta onde o projeto será criado (caminho absoluto)")},
+                               {"name", Prop("string", "nome do projeto (também o nome da pasta)")},
+                               {"discard_changes", discardProp}},
+                              {"parent", "name"}),
+        .run = [this](const Json& args) {
+            const fs::path parent = PathFromUtf8(args["parent"].get<std::string>());
+            if (!parent.is_absolute()) throw ToolError("'parent' precisa ser um caminho absoluto");
+            m_host.document.StopPlay();
+            if (!DiscardArg(args) && m_host.document.HasUnsavedChanges()) {
+                throw ToolError("a cena aberta tem alterações não salvas (salve com scene_save ou use discard_changes)");
+            }
+            std::string error;
+            if (!m_host.document.CreateProjectAt(parent, args["name"].get<std::string>(), error)) throw ToolError(error);
+            const Project* project = m_host.document.GetProject();
+            return ToolResult::Text(std::format("projeto criado e aberto: {} (cena {})", ToUtf8(project->RootDir()),
+                                                ToUtf8(m_host.document.ScenePath())));
         },
     });
 
