@@ -107,3 +107,7 @@ endif()
 
 # Renderização avançada (Fase 7) sem GPU: cascatas, recorte, BRDF, harmônicos do céu, HDR e formatos novos.
 motor_add_test(test_render)
+
+# Áudio (Fase 8) sem dispositivo de som: clipes como assets com GUID, som 3D (distância e lado), som 2D tocado
+# por script, pausa, fontes desativadas/excluídas e arquivos inválidos. Gera os próprios .wav.
+motor_add_test(test_audio)
