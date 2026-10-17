@@ -328,6 +328,22 @@ int main(int argc, char** argv) {
         CHECK(c.servers.size() == 1 && c.servers[0] == "http://127.0.0.1:47900");
     }
 
+    SECTION("Pasta de publicações padrão: Publicacoes ao lado do .exe, se existir");
+    {
+        const fs::path exeDir = base / PathFromUtf8("Servidor Portátil");
+        const fs::path fallback = base / "LocalAppData" / "Motor" / "Servidor";
+        fs::create_directories(exeDir);
+        CHECK(DefaultPublishRoot(exeDir, fallback) == fallback);  // sem a pasta: a de sempre
+        fs::create_directories(exeDir / kPortablePublishFolder);
+        CHECK(DefaultPublishRoot(exeDir, fallback) == exeDir / kPortablePublishFolder);
+        CHECK(DefaultPublishRoot(fs::path(), fallback) == fallback);
+        // Um arquivo com esse nome não conta: só pasta.
+        const fs::path other = base / "Outro Servidor";
+        fs::create_directories(other);
+        std::ofstream(other / kPortablePublishFolder) << "não é pasta";
+        CHECK(DefaultPublishRoot(other, fallback) == fallback);
+    }
+
     SECTION("Servidor e cliente em loopback");
     {
         DistribServer server(publishRoot);

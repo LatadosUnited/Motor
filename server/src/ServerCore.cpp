@@ -206,4 +206,11 @@ code{background:#2a2d32;padding:2px 6px;border-radius:3px}
     return html;
 }
 
+fs::path DefaultPublishRoot(const fs::path& exeDir, const fs::path& fallback) {
+    std::error_code ec;
+    const fs::path portable = exeDir / kPortablePublishFolder;
+    if (!exeDir.empty() && fs::is_directory(portable, ec)) return portable;
+    return fallback;
+}
+
 } // namespace distrib

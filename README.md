@@ -736,8 +736,10 @@ Código em `installer/` (`Setup`: instalar e desinstalar; `SetupApp`: janela) so
 ## Servidor de versões
 
 `MotorServidor.exe` distribui as versões do Motor e o Hub numa rede local, por HTTP (sem internet, sem
-bibliotecas novas: cpp-httplib e o SHA-256 do Windows). Ele serve uma **pasta de publicações**
-(padrão `%LOCALAPPDATA%\Motor\Servidor`, ou `--pasta <dir>`):
+bibliotecas novas: cpp-httplib e o SHA-256 do Windows). Ele serve uma **pasta de publicações**: a de
+`--pasta <dir>`; sem ela, a pasta **`Publicacoes` ao lado do `MotorServidor.exe`**, se existir (instalação
+portátil: copie o `.exe` para `C:\MotorServidor`, publique em `C:\MotorServidor\Publicacoes` e os dois cliques
+no `.exe` já servem essa pasta); senão `%LOCALAPPDATA%\Motor\Servidor`:
 
 ```bash
 # 1. Monte a versão (de preferência Release: ~25 MB em vez de ~200 MB) e publique

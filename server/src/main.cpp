@@ -26,7 +26,8 @@ namespace fs = std::filesystem;
 constexpr const char* kUsage =
     "Uso: MotorServidor [--pasta <dir>] [opções] [ação]\n"
     "Sem ação, serve a pasta de publicações por HTTP até ser fechado (Ctrl+C).\n"
-    "  --pasta <dir>                 pasta de publicações (padrão %LOCALAPPDATA%\\Motor\\Servidor)\n"
+    "  --pasta <dir>                 pasta de publicações (padrão: a pasta Publicacoes ao lado do .exe, se\n"
+    "                                existir; senão %LOCALAPPDATA%\\Motor\\Servidor)\n"
     "  --porta <n>                   porta (padrão 47900)\n"
     "  --local                       só aceita conexões desta máquina (127.0.0.1); sem isso, a rede local\n"
     "  --version                     mostra a versão do servidor e sai\n"
@@ -145,7 +146,11 @@ int ServerMain() {
             return Fail("Opção desconhecida ou incompleta: " + arg + "\n" + kUsage);
         }
     }
-    if (root.empty()) root = distrib::platform::KnownFolder(distrib::platform::Folder::LocalAppData) / "Motor" / "Servidor";
+    if (root.empty()) {
+        root = distrib::DefaultPublishRoot(distrib::platform::ExecutablePath().parent_path(),
+                                           distrib::platform::KnownFolder(distrib::platform::Folder::LocalAppData) /
+                                               "Motor" / "Servidor");
+    }
     std::error_code ec;
     root = fs::absolute(root, ec);
 

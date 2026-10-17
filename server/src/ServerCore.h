@@ -63,4 +63,11 @@ private:
 // do pedido (o endereço que quem abriu a página usou).
 std::string RenderIndexPage(const Manifest& manifest, const std::string& host);
 
+// Nome da pasta de publicações que fica ao lado do MotorServidor.exe numa instalação portátil (ex.: C:\MotorServidor).
+inline constexpr const char* kPortablePublishFolder = "Publicacoes";
+
+// Pasta de publicações quando não há --pasta: a `Publicacoes` ao lado do .exe, se ela existir (dois cliques no
+// .exe servem o que foi publicado ali); senão `fallback` (%LOCALAPPDATA%\Motor\Servidor).
+std::filesystem::path DefaultPublishRoot(const std::filesystem::path& exeDir, const std::filesystem::path& fallback);
+
 } // namespace distrib
