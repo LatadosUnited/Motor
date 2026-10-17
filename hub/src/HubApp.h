@@ -7,7 +7,14 @@
 #include "HubCore.h"
 #include "HubPlatform.h"
 
+#include <Download.h>
+#include <Manifest.h>
+
+#include <atomic>
+#include <functional>
 #include <future>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -39,7 +46,21 @@ public:
     bool RemoveVersion(const std::string& version, std::string& message);  // para a Lixeira
     bool SetDefaultVersion(const std::string& version, std::string& message);
 
-    int RunWindow(int initialTab = 0);  // abre a janela (0 Projetos, 1 Versões) e roda até fechar
+    // Servidores de versões (Fase 15).
+    struct RemoteServer {
+        std::string url;
+        std::optional<distrib::Manifest> manifest;
+        std::string error;
+    };
+    static std::vector<RemoteServer> FetchServers(const std::vector<std::string>& urls);
+    bool AddServer(const std::string& url, std::string& message);
+    bool RemoveServer(const std::string& url, std::string& message);
+    // Baixa e instala `version` ("mais-recente" = a mais nova dos servidores). `server` vazio = os do hub.json,
+    // na ordem. Linha de comando; a janela baixa em segundo plano (StartDownload).
+    bool DownloadVersion(const std::string& version, const std::string& server,
+                         const std::function<void(const distrib::ReleaseProgress&)>& progress, std::string& message);
+
+        int RunWindow(int initialTab = 0);  // abre a janela (0 Projetos, 1 Versões) e roda até fechar
 
 private:
     void SaveConfig();
@@ -57,6 +78,12 @@ private:
     void DrawAddingVersionPopup();
     void RequestOpen(size_t index, bool chooseVersion);  // abre direto ou pergunta a versão
     void StartAddVersion(const fs::path& source);
+    void DrawRemoteSection();
+    void DrawServersSection();
+    void DrawHubUpdateNotice();
+    void StartFetch();
+    void PollBackground();
+    void StartDownload(const std::string& server, const distrib::Release& release);
 
     platform::Paths m_paths;
     std::vector<std::string> m_editorArgs;
@@ -93,6 +120,23 @@ private:
     };
     std::future<AddResult> m_adding;
     fs::path m_addingSource;
+
+    // Servidores e versões disponíveis (lidos em segundo plano: servidor fora do ar não trava a janela)
+    std::vector<RemoteServer> m_remote;
+    std::future<std::vector<RemoteServer>> m_fetching;
+    bool m_fetchedOnce = false;
+    std::string m_newServer;
+
+    // Download de uma versão (uma por vez)
+    struct DownloadJob {
+        std::string server;
+        distrib::Release release;
+        std::atomic<bool> cancel{false};
+        std::mutex mutex;
+        distrib::ReleaseProgress progress;
+        std::future<distrib::ReleaseOutcome> result;
+    };
+    std::unique_ptr<DownloadJob> m_download;
 };
 
 } // namespace hub

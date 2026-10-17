@@ -59,6 +59,11 @@ ctest --test-dir build --output-on-failure
   nlohmann_json estáticos: **não** liga na `libMotor.dll` nem inclui headers da engine (pode virar repositório
   próprio). Fala com o editor só pela linha de comando (`--project`, `--create`, `--version`) e lendo
   `.mproject` e `motor-version.json`.
+- `distrib/`, `server/`, `installer/` — distribuição (Fase 15). `distrib/` é o núcleo sem janela (manifesto
+  `motor-releases`, SHA-256 com BCrypt, download com retomada, plano de instalação), testado em
+  `tests/test_distribuicao.cpp`; `server/` é o `MotorServidor.exe` (cpp-httplib, publica e serve versões);
+  `installer/` é o `MotorSetup.exe` (Hub embutido como recurso, atalhos, registro de desinstalação no HKCU).
+  Como o hub, não ligam na `libMotor.dll`.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -149,6 +154,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: painéis | `editor/src/{Hierarchy,Inspector,Scene,Project}Panel.*`, `FieldDrawers.*` |
 | Editor: MCP | `editor/src/mcp/` |
 | Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
+| Distribuição | `distrib/`, `server/`, `installer/` (Fase 15: servidor de versões, download, instalador) |
 | Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
 
 Componente novo da engine = `scene/<Nome>.h` + `scene/<Nome>.cpp` próprios (`MOTOR_COMPONENT_MODULE`), não
@@ -181,6 +187,7 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
 | 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
 | 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
+| 15 Instalador | `distrib/`, `server/`, `installer/` | `hub/` (aba Versões, `hub.json` formato 2, `--baixar`) | 14 |
 
 Prioridade atual (ver `ROADMAP.md`, "Prioridades"): Alpha 1 fechada; 8, 10 e 14 prontas; próximas a validação de uso real e "Ambiente".
 

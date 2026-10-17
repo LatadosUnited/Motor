@@ -6,6 +6,8 @@
 #include <imgui_impl_opengl3.h>
 #include <imgui_stdlib.h>
 
+#include <Platform.h>
+
 #include <algorithm>
 #include <cstdio>
 #include <format>
@@ -202,6 +204,145 @@ bool HubApp::RemoveVersion(const std::string& version, std::string& message) {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Servidores de versões (Fase 15)
+// ---------------------------------------------------------------------------
+
+std::vector<HubApp::RemoteServer> HubApp::FetchServers(const std::vector<std::string>& urls) {
+    std::vector<RemoteServer> out;
+    for (const std::string& url : urls) {
+        RemoteServer server;
+        server.url = url;
+        distrib::Client client(url);
+        server.manifest = client.FetchManifest(&server.error);
+        out.push_back(std::move(server));
+    }
+    return out;
+}
+
+bool HubApp::AddServer(const std::string& url, std::string& message) {
+    std::string error;
+    if (!distrib::ParseServerUrl(url, &error)) {
+        message = error;
+        return false;
+    }
+    const std::string normalized = distrib::NormalizeServerUrl(url);
+    if (!m_config.AddServer(normalized)) {
+        message = std::format("{} já está na lista.", normalized);
+        return false;
+    }
+    SaveConfig();
+    message = std::format("Servidor {} adicionado.", normalized);
+    return true;
+}
+
+bool HubApp::RemoveServer(const std::string& url, std::string& message) {
+    if (!m_config.RemoveServer(url)) {
+        message = "O servidor não está na lista.";
+        return false;
+    }
+    SaveConfig();
+    message = std::format("Servidor {} saiu da lista.", url);
+    return true;
+}
+
+bool HubApp::DownloadVersion(const std::string& version, const std::string& server,
+                             const std::function<void(const distrib::ReleaseProgress&)>& progress,
+                             std::string& message) {
+    const std::vector<std::string> urls = server.empty() ? m_config.servers : std::vector<std::string>{server};
+    if (urls.empty()) {
+        message = "Nenhum servidor de versões configurado (use --servidor <URL>).";
+        return false;
+    }
+    const bool latest = version == "mais-recente" || version == "latest";
+    std::string chosenServer;
+    std::optional<distrib::Release> chosen;
+    std::string errors;
+    for (const RemoteServer& s : FetchServers(urls)) {
+        if (!s.manifest) {
+            errors += "\n  " + s.error;
+            continue;
+        }
+        const distrib::Release* r = latest ? s.manifest->Latest() : s.manifest->Find(version);
+        if (r && (!chosen || (latest && CompareVersions(r->version, chosen->version) > 0))) {
+            chosen = *r;
+            chosenServer = s.url;
+            if (!latest) break;  // o primeiro servidor da lista que tiver a versão
+        }
+    }
+    if (!chosen) {
+        message = (latest ? std::string("Nenhuma versão publicada nos servidores.")
+                          : std::format("O Motor {} não está publicado nos servidores.", version)) +
+                  errors;
+        return false;
+    }
+    if (FindVersion(m_versions, chosen->version)) {
+        message = std::format("O Motor {} já está instalado.", chosen->version);
+        return false;
+    }
+    const distrib::ReleaseOutcome outcome =
+        distrib::DownloadRelease(chosenServer, *chosen, m_paths.versionsDir, nullptr, progress);
+    RefreshProjects();
+    if (outcome.status != distrib::Status::Ok) {
+        message = outcome.error;
+        return false;
+    }
+    message = std::format("Motor {} baixado de {} ({} pela rede{}) e instalado em '{}'.", chosen->version,
+                          chosenServer, distrib::FormatSize(outcome.received),
+                          outcome.reused ? ", " + distrib::FormatSize(outcome.reused) + " retomados" : std::string(),
+                          ToUtf8(outcome.dir));
+    return true;
+}
+
+void HubApp::StartFetch() {
+    if (m_fetching.valid()) return;
+    m_fetching = std::async(std::launch::async, [urls = m_config.servers] {
+        auto result = FetchServers(urls);
+        glfwPostEmptyEvent();  // acorda o loop da janela
+        return result;
+    });
+}
+
+void HubApp::StartDownload(const std::string& server, const distrib::Release& release) {
+    if (m_download) return;
+    m_download = std::make_unique<DownloadJob>();
+    DownloadJob* job = m_download.get();
+    job->server = server;
+    job->release = release;
+    job->progress.total = release.size;
+    job->progress.filesTotal = release.files.size();
+    job->result = std::async(std::launch::async, [job, versionsDir = m_paths.versionsDir] {
+        auto outcome = distrib::DownloadRelease(job->server, job->release, versionsDir, &job->cancel,
+                                                [job](const distrib::ReleaseProgress& p) {
+                                                    std::lock_guard lock(job->mutex);
+                                                    job->progress = p;
+                                                });
+        glfwPostEmptyEvent();
+        return outcome;
+    });
+    SetStatus(std::format("Baixando o Motor {} de {}...", release.version, server), false);
+}
+
+void HubApp::PollBackground() {
+    if (m_fetching.valid() && m_fetching.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        m_remote = m_fetching.get();
+        m_fetchedOnce = true;
+    }
+    if (m_download && m_download->result.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        const distrib::ReleaseOutcome outcome = m_download->result.get();
+        const std::string version = m_download->release.version;
+        m_download.reset();
+        RefreshProjects();
+        if (outcome.status == distrib::Status::Ok) {
+            SetStatus(std::format("Motor {} baixado e instalado em '{}' ({} conferidos pelo SHA-256).", version,
+                                  ToUtf8(outcome.dir), distrib::FormatSize(outcome.received + outcome.reused)),
+                      false);
+        } else {
+            SetStatus(std::format("Motor {}: {}", version, outcome.error), outcome.status == distrib::Status::Failed);
+        }
+    }
+}
+
 bool HubApp::SetDefaultVersion(const std::string& version, std::string& message) {
     if (!FindVersion(m_versions, version)) {
         message = std::format("O Motor {} não está instalado.", version);
@@ -243,9 +384,12 @@ int HubApp::RunWindow(int initialTab) {
     ImGui_ImplOpenGL3_Init("#version 330 core");
 
     m_lastRefresh = glfwGetTime();
+    StartFetch();
     while (!glfwWindowShouldClose(m_window)) {
         // O hub fica parado quase sempre: espera eventos em vez de girar o loop.
-        glfwWaitEventsTimeout(m_adding.valid() ? 0.05 : 0.5);
+        const bool busy = m_adding.valid() || m_download || m_fetching.valid();
+        glfwWaitEventsTimeout(busy ? 0.05 : 0.5);
+        PollBackground();
         if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) continue;
         if (glfwGetTime() - m_lastRefresh > kRefreshSeconds) {
             m_lastRefresh = glfwGetTime();
@@ -268,6 +412,11 @@ int HubApp::RunWindow(int initialTab) {
     }
 
     if (m_adding.valid()) m_adding.wait();  // não abandona uma cópia pela metade
+    if (m_download) {
+        m_download->cancel = true;  // o download parcial fica para retomar depois
+        m_download->result.wait();
+    }
+    if (m_fetching.valid()) m_fetching.wait();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -290,6 +439,7 @@ void HubApp::DrawFrame() {
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
     ImGui::TextColored(kDim, "%s", MOTOR_HUB_VERSION);
+    DrawHubUpdateNotice();
 
     if (ImGui::BeginTabBar("Abas")) {
         const auto flags = [&](int tab) { return m_selectTab == tab ? ImGuiTabItemFlags_SetSelected : 0; };
@@ -598,10 +748,11 @@ void HubApp::DrawVersionsTab() {
     ImGui::Spacing();
 
     const float statusHeight = m_status.empty() ? 0.0f : ImGui::GetFrameHeightWithSpacing() * 1.6f;
-    ImGui::BeginChild("ListaVersoes", ImVec2(0, -statusHeight - ImGui::GetTextLineHeightWithSpacing() * 3.2f));
+    ImGui::BeginChild("ListaVersoes", ImVec2(0, -statusHeight));
+    ImGui::SeparatorText("Instaladas");
     const InstalledVersion* def = DefaultVersion(m_versions, m_config.defaultVersion);
     if (m_versions.empty()) {
-        ImGui::TextColored(kOrange, "Nenhuma versão instalada.");
+        ImGui::TextColored(kOrange, "Nenhuma versão instalada: baixe uma abaixo ou adicione de uma pasta.");
     } else if (ImGui::BeginTable("Versoes", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                                    ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX)) {
         ImGui::TableSetupColumn("Versão", ImGuiTableColumnFlags_WidthFixed, 150.0f);
@@ -646,15 +797,184 @@ void HubApp::DrawVersionsTab() {
         }
         ImGui::EndTable();
     }
-    ImGui::EndChild();
 
+    ImGui::Spacing();
+    DrawRemoteSection();
+    ImGui::Spacing();
+    DrawServersSection();
+
+    ImGui::Spacing();
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextColored(kDim, "Para instalar uma versão, monte a pasta dela no código do Motor "
-                             "(cmake --build build --target motor_package) e adicione aqui. O editor instalado "
-                             "precisa do MSYS2 (UCRT64) e do CMake para compilar os scripts dos projetos. "
-                             "Baixar versões pela internet: ainda não.");
+    ImGui::TextColored(kDim, "Versões vêm de um servidor de versões (MotorServidor, na rede local) ou de uma pasta "
+                             "montada no código do Motor (cmake --build build --target motor_package). O editor "
+                             "instalado precisa do MSYS2 (UCRT64) e do CMake para compilar os scripts dos projetos.");
     ImGui::PopTextWrapPos();
+    ImGui::EndChild();
     DrawStatusLine(m_status, m_statusError);
+}
+
+void HubApp::DrawRemoteSection() {
+    ImGui::SeparatorText("Disponíveis para baixar");
+    ImGui::BeginDisabled(m_fetching.valid());
+    if (ImGui::Button(m_fetching.valid() ? "Procurando..." : "Atualizar")) StartFetch();
+    ImGui::EndDisabled();
+
+    // Versões de todos os servidores, sem repetir (vale o primeiro servidor da lista que tiver a versão).
+    struct Row {
+        const distrib::Release* release;
+        std::string server;
+    };
+    std::vector<Row> rows;
+    for (const RemoteServer& s : m_remote) {
+        if (!s.manifest) continue;
+        for (const distrib::Release& r : s.manifest->releases) {
+            const bool seen = std::any_of(rows.begin(), rows.end(), [&](const Row& row) {
+                return row.release->version == r.version;
+            });
+            if (!seen) rows.push_back({&r, s.url});
+        }
+    }
+    std::stable_sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
+        return CompareVersions(a.release->version, b.release->version) > 0;
+    });
+
+    if (!m_fetchedOnce) {
+        ImGui::SameLine();
+        ImGui::TextColored(kDim, "Procurando versões nos servidores...");
+        return;
+    }
+    if (rows.empty()) {
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(kDim, m_config.servers.empty() ? "Nenhum servidor na lista (adicione um abaixo)."
+                                                          : "Nenhuma versão encontrada nos servidores.");
+        return;
+    }
+    if (!ImGui::BeginTable("Disponiveis", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                                                 ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX)) {
+        return;
+    }
+    ImGui::TableSetupColumn("Versão", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+    ImGui::TableSetupColumn("Canal", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+    ImGui::TableSetupColumn("API", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+    ImGui::TableSetupColumn("Compilação", ImGuiTableColumnFlags_WidthFixed, 85.0f);
+    ImGui::TableSetupColumn("Data e tamanho", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+    ImGui::TableSetupColumn("Servidor", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 250.0f);
+    ImGui::TableHeadersRow();
+    for (const Row& row : rows) {
+        const distrib::Release& r = *row.release;
+        ImGui::PushID(r.version.c_str());
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Motor %s", r.version.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(r.channel.c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", r.scriptApiVersion);
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(r.buildType.c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%s  %s", distrib::FormatDate(r.date).c_str(), distrib::FormatSize(r.size).c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextColored(kDim, "%s", row.server.c_str());
+        ImGui::TableNextColumn();
+        if (FindVersion(m_versions, r.version)) {
+            ImGui::TextColored(kGreen, "Instalada");
+        } else if (m_download && m_download->release.version == r.version) {
+            distrib::ReleaseProgress p;
+            {
+                std::lock_guard lock(m_download->mutex);
+                p = m_download->progress;
+            }
+            const float fraction = p.total ? static_cast<float>(static_cast<double>(p.done) / p.total) : 0.0f;
+            const std::string overlay = std::format("{} de {}", distrib::FormatSize(p.done), distrib::FormatSize(p.total));
+            ImGui::ProgressBar(fraction, ImVec2(150.0f, 0.0f), overlay.c_str());
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Arquivo %zu de %zu: %s", p.filesDone + 1, p.filesTotal, p.currentFile.c_str());
+            }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(m_download->cancel.load());
+            if (ImGui::Button("Cancelar")) m_download->cancel = true;
+            ImGui::EndDisabled();
+        } else {
+            const uint64_t staged = distrib::StagedBytes(m_paths.versionsDir, r);
+            const std::string label = staged > 0 ? std::format("Retomar ({}%)", staged * 100 / std::max<uint64_t>(r.size, 1))
+                                                 : std::string("Baixar");
+            ImGui::BeginDisabled(m_download != nullptr);
+            if (PrimaryButton(label.c_str())) StartDownload(row.server, r);
+            ImGui::EndDisabled();
+            if (staged > 0 && ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s já baixados; o resto continua de onde parou.", distrib::FormatSize(staged).c_str());
+            }
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndTable();
+}
+
+void HubApp::DrawServersSection() {
+    if (!ImGui::CollapsingHeader("Servidores", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    std::string toRemove;
+    for (const std::string& url : m_config.servers) {
+        ImGui::PushID(url.c_str());
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(url.c_str());
+        ImGui::SameLine(320.0f);
+        const auto it = std::find_if(m_remote.begin(), m_remote.end(), [&](const RemoteServer& s) { return s.url == url; });
+        if (m_fetching.valid() || it == m_remote.end()) {
+            ImGui::TextColored(kDim, "...");
+        } else if (it->manifest) {
+            ImGui::TextColored(kGreen, "no ar, %zu versão(ões)", it->manifest->releases.size());
+        } else {
+            ImGui::TextColored(kRed, "%s", it->error.c_str());
+        }
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - 90.0f);
+        if (ImGui::Button("Remover", ImVec2(90.0f, 0.0f))) toRemove = url;
+        ImGui::PopID();
+    }
+    if (!toRemove.empty()) {
+        std::string message;
+        const bool ok = RemoveServer(toRemove, message);
+        SetStatus(message, !ok);
+        StartFetch();
+    }
+    ImGui::SetNextItemWidth(320.0f);
+    const bool enter = ImGui::InputTextWithHint("##servidor", "http://servidor:47900", &m_newServer,
+                                                ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(m_newServer.empty());
+    if (ImGui::Button("Adicionar servidor") || (enter && !m_newServer.empty())) {
+        std::string message;
+        const bool ok = AddServer(m_newServer, message);
+        SetStatus(message, !ok);
+        if (ok) {
+            m_newServer.clear();
+            StartFetch();
+        }
+    }
+    ImGui::EndDisabled();
+}
+
+void HubApp::DrawHubUpdateNotice() {
+    // Hub mais novo publicado em algum servidor: aviso com o link do instalador.
+    const RemoteServer* newest = nullptr;
+    for (const RemoteServer& s : m_remote) {
+        if (!s.manifest || !s.manifest->hub) continue;
+        if (CompareVersions(s.manifest->hub->version, MOTOR_HUB_VERSION) <= 0) continue;
+        if (!newest || CompareVersions(s.manifest->hub->version, newest->manifest->hub->version) > 0) newest = &s;
+    }
+    if (!newest) return;
+    const distrib::HubRelease& h = *newest->manifest->hub;
+    ImGui::SameLine(0.0f, 24.0f);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextColored(kOrange, "Hub %s disponível em %s.", h.version.c_str(), newest->url.c_str());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Baixar o instalador")) {
+        const char* file = h.Find(distrib::kSetupExe) ? distrib::kSetupExe : distrib::kHubExe;
+        distrib::platform::OpenUrl(newest->url + distrib::HubFileUrl(file));
+    }
 }
 
 void HubApp::DrawRemoveVersionPopup() {

@@ -4,7 +4,7 @@ Engine 3D em C++20 + OpenGL 4.5, escrita do zero. Dependências externas mínima
 **GLFW** (janela/input), **GLM** (matemática), **Dear ImGui** (UI do editor, branch docking),
 **ImGuizmo** (gizmos de transform), **nlohmann/json** (cenas e projetos), **stb_image** (PNG/JPG),
 **cgltf** (modelos glTF), **Jolt Physics** (física), **miniaudio** (som) e **cpp-httplib** (servidor MCP do
-editor), baixadas
+editor e servidor de versões), baixadas
 automaticamente pelo CMake. O leitor de OBJ é próprio; as fontes da UI do jogo usam o `imstb_truetype.h` que já
 vem com o Dear ImGui.
 O carregador de OpenGL é próprio (`engine/src/renderer/GL.h`).
@@ -21,6 +21,8 @@ ctest --test-dir build --output-on-failure   # testes (sem janela)
 ./build/bin/MotorEditor.exe "C:/caminho/MeuJogo"   # abre um projeto específico
 ./build/bin/Player.exe "C:/caminho/MeuJogo"        # roda o jogo sem o editor (ver "Exportar o jogo")
 ./build/bin/MotorHub.exe       # Hub: projetos e versões instaladas (ver "Hub do Motor")
+./build/bin/MotorServidor.exe  # servidor de versões na rede local (ver "Servidor de versões")
+./build/bin/MotorSetup.exe     # instalador do Hub (ver "Instalar")
 ```
 
 Executáveis e DLLs ficam juntos em `build/bin`: a engine é a `libMotor.dll` (com ImGui e GLFW dentro), e
@@ -53,9 +55,12 @@ editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (
 sandbox/           app de demonstração
 player/            Player: o executável do jogo exportado (roda um projeto sem o editor)
 hub/               MotorHub: projetos e versões do Motor instaladas (não liga na libMotor.dll)
+distrib/           núcleo da distribuição: manifesto de versões, SHA-256, download com retomada, plano de instalação
+server/            MotorServidor: publica e serve versões do Motor e o Hub por HTTP
+installer/         MotorSetup: instalador do Hub (por usuário, Hub embutido)
 cmake/             MotorPackage.cmake: monta a pasta de instalação de uma versão (alvo motor_package)
 tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física,
-                   materiais, prefabs, glTF e animação, UI, áudio, versão do projeto, hub)
+                   materiais, prefabs, glTF e animação, UI, áudio, versão do projeto, hub, distribuição)
 ```
 
 ## Controles do Sandbox
@@ -651,9 +656,15 @@ qualquer versão do editor, inclusive as futuras.
   `MotorEditor.exe --create <pasta> <nome>` daquela versão.
 - **Versões:** instaladas em `%LOCALAPPDATA%\Motor\Versões\<versão>\`. **Adicionar de uma pasta** copia uma
   pasta montada (abaixo) para lá; **Tornar padrão** escolhe a versão dos projetos novos; **Remover** manda a
-  pasta para a Lixeira. Baixar versões pela internet ainda não existe.
-- **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 1, ...}`), separada
-  da do editor.
+  pasta para a Lixeira.
+- **Baixar versões:** em **Disponíveis para baixar**, as versões publicadas nos servidores da lista
+  **Servidores** (padrão `http://127.0.0.1:47900`, o `MotorServidor` desta máquina). **Baixar** mostra o
+  progresso e pode ser cancelado; o que já veio fica guardado e o botão vira **Retomar**. Cada arquivo é
+  conferido pelo SHA-256 do manifesto, e a versão só aparece instalada quando tudo confere (é baixada em
+  `Versões\.baixando\<versão>\` e renomeada no fim). Um Hub mais novo publicado num servidor aparece no topo,
+  com o link do instalador.
+- **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 2, ...}`, com a lista
+  `servers`; o formato 1 é lido com o servidor local na lista), separada da do editor.
 
 **Montar a pasta de instalação de uma versão** (a do código atual):
 
@@ -679,8 +690,79 @@ MotorHub --data "C:/temp/Hub Teste" ... -- --no-settings --mcp   # outra pasta d
 ```
 
 Também: `--remove-version`, `--set-default`, `--add-project`, `--remove-project`, `--aba versões` (abre a janela
-nessa aba) e `--version`. Código em `hub/`: `HubCore` (lógica sem janela, `tests/test_hub.cpp`),
+nessa aba), `--version`, `--disponiveis [--servidor URL]` (versões publicadas nos servidores) e
+`--baixar <versão|mais-recente> [--servidor URL]` (baixa, confere e instala; retoma um download interrompido).
+O hub instalado pelo `MotorSetup` com outra pasta de dados a lê do `instalacao.json` ao lado do `MotorHub.exe`. Código em `hub/`: `HubCore` (lógica sem janela, `tests/test_hub.cpp`),
 `HubPlatform` (Windows: processos, Explorer, Lixeira), `HubApp` (janela e ações), `main.cpp` (linha de comando).
+
+## Instalar
+
+Para usar o Motor sem compilá-lo: o **instalador do Hub** (`MotorSetup.exe`, um arquivo só) instala o Hub para o
+seu usuário, sem pedir administrador, e pode já instalar uma versão do Motor.
+
+1. Baixe o instalador na página do servidor de versões (`http://<servidor>:47900/`, abaixo) ou use o
+   `build/bin/MotorSetup.exe` de um build.
+2. Rode e confira: pasta do Hub (padrão `%LOCALAPPDATA%\Programs\Motor Hub\`), pasta de dados (padrão
+   `%LOCALAPPDATA%\Motor`: versões do Motor e `hub.json`), atalho no menu Iniciar e, se quiser, na área de
+   trabalho. Em **Versão do Motor**, escolha baixar a mais recente de um servidor (botão **Verificar** mostra o
+   que ele tem) ou instalar de uma pasta montada (`motor_package`), ou deixe para depois.
+3. **Instalar**. No fim, **Abrir o Hub agora**.
+
+O instalador leva o `MotorHub.exe` dentro dele (funciona sem servidor), registra a desinstalação em
+**Configurações > Aplicativos > Aplicativos instalados** ("Motor Hub") e grava `instalacao.json` na pasta do Hub
+com o que criou. Ele avisa se faltam o **MSYS2 (UCRT64)** e o **CMake**, que o editor usa para compilar os
+scripts dos projetos (<https://www.msys2.org/>; no terminal UCRT64:
+`pacman -S mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake make`), mas não os instala.
+
+**Desinstalar:** pelo Aplicativos instalados ou `MotorSetup.exe --desinstalar`. A pasta do Hub vai para a
+Lixeira e os atalhos e o registro saem; a pergunta "também as versões do Motor e o hub.json" decide se
+`Versões\` e `hub.json` da pasta de dados vão junto. Projetos nunca são tocados. Rodando de dentro da pasta do
+Hub, o desinstalador continua numa cópia em `%TEMP%` (o Windows não move a pasta de um programa aberto), que se
+apaga sozinha no fim.
+
+Sem janela (testes e agentes; o resultado sai no console):
+
+```bash
+MotorSetup --silencioso --pasta "C:/temp/Hub" --dados "C:/temp/Dados" --servidor http://127.0.0.1:47900 --sem-atalhos --sem-registro
+MotorSetup --silencioso --versao-local build/package/Motor-0.2.0 ...   # versão de uma pasta montada
+MotorSetup --desinstalar --silencioso --pasta "C:/temp/Hub" [--apagar-dados]
+```
+
+Também: `--area-de-trabalho`, `--abrir-hub`, e para testes `--atalhos-em <pasta>` (atalhos numa pasta qualquer)
+e `--chave-registro <nome>` (outra chave em `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall`).
+Código em `installer/` (`Setup`: instalar e desinstalar; `SetupApp`: janela) sobre o plano de
+`distrib/InstallPlan` (testado em `tests/test_distribuicao.cpp`).
+
+## Servidor de versões
+
+`MotorServidor.exe` distribui as versões do Motor e o Hub numa rede local, por HTTP (sem internet, sem
+bibliotecas novas: cpp-httplib e o SHA-256 do Windows). Ele serve uma **pasta de publicações**
+(padrão `%LOCALAPPDATA%\Motor\Servidor`, ou `--pasta <dir>`):
+
+```bash
+# 1. Monte a versão (de preferência Release: ~25 MB em vez de ~200 MB) e publique
+cmake -S . -B build-release -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release -j8 --target motor_package MotorHub MotorSetup MotorServidor
+build-release/bin/MotorServidor --pasta C:/MotorServidor --publicar build-release/package/Motor-0.2.0
+build-release/bin/MotorServidor --pasta C:/MotorServidor --publicar-hub build-release/bin/MotorHub.exe
+# 2. Sirva (porta 47900; sem --local, aceita a rede local e o Firewall do Windows pode pedir permissão)
+build-release/bin/MotorServidor --pasta C:/MotorServidor
+```
+
+- `--publicar <pasta montada> [--canal <nome>]` copia a versão para `versoes/<versão>/` (via `.tmp`, renomeada
+  no fim), calcula o tamanho e o SHA-256 de cada arquivo e refaz o `manifesto.json`. Versão já publicada:
+  `--remover <versão>` antes (a pasta vai para a Lixeira).
+- `--publicar-hub <MotorHub.exe>` publica o Hub (a versão vem do recurso VERSIONINFO do .exe) e o
+  `MotorSetup.exe` que estiver ao lado (ou `--setup <arquivo>`), para baixar pela página.
+- `--listar`, `--regenerar` (refaz o manifesto a partir das pastas), `--porta <n>`, `--local` (só 127.0.0.1).
+
+Rotas: `GET /` (página com as versões e o link do instalador), `GET /api/versoes` (manifesto
+`{"format": "motor-releases", "version": 1, "releases": [{"version", "channel", "scriptApiVersion",
+"buildType", "date", "size", "files": [{"path", "size", "sha256"}]}], "hub": {...}}`),
+`GET /arquivos/<versão>/<caminho>` (aceita `Range`, para retomar), `GET /hub/latest` e `GET /hub/MotorSetup.exe`.
+Os arquivos vão um a um, sem compressão, e só o que está no manifesto é servido. Nos outros computadores, ponha
+`http://<IP do servidor>:47900` em **Servidores** no Hub ou no instalador. O servidor relê o manifesto quando
+ele muda: dá para publicar com ele no ar.
 
 ## Cenas (`.mscene`)
 
