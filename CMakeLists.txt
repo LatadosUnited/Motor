@@ -159,6 +159,7 @@ endif()
 
 add_subdirectory(engine)
 add_subdirectory(sandbox)
+add_subdirectory(player)  # Fase 10: executável do jogo exportado
 add_subdirectory(editor)
 
 option(MOTOR_BUILD_TESTS "Compila os testes (ctest)" ON)
