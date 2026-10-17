@@ -19,6 +19,7 @@ constexpr const char* kUsage =
     "Sem ações, abre a janela do hub.\n"
     "Opções:\n"
     "  --data <pasta>             pasta de dados do hub (padrão %LOCALAPPDATA%\\Motor: hub.json e Versões\\)\n"
+    "  --aba <projetos|versões>   abre a janela nesta aba\n"
     "  --version                  mostra a versão do hub e sai\n"
     "Ações (feitas na ordem; para na primeira que falhar):\n"
     "  --list                     lista as versões instaladas e os projetos\n"
@@ -125,6 +126,7 @@ int HubMain() {
     std::filesystem::path dataDir;
     std::vector<Action> actions;
     std::vector<std::string> editorArgs;
+    int initialTab = 0;
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string& arg = args[i];
         const size_t remaining = args.size() - i - 1;
@@ -146,6 +148,10 @@ int HubMain() {
         } else if (arg == "--data") {
             if (!needs(1)) return 2;
             dataDir = hub::PathFromUtf8(args[++i]);
+        } else if (arg == "--aba") {
+            if (!needs(1)) return 2;
+            const std::string tab = args[++i];
+            initialTab = tab == "versões" || tab == "versoes" ? 1 : 0;
         } else if (arg == "--engine") {
             if (!needs(1)) return 2;
             if (actions.empty() || (actions.back().name != "--create" && actions.back().name != "--open")) {
@@ -174,7 +180,7 @@ int HubMain() {
 
     try {
         hub::HubApp app(hub::platform::DefaultPaths(dataDir), std::move(editorArgs));
-        if (!console) return app.RunWindow();
+        if (!console) return app.RunWindow(initialTab);
 
         hub::platform::AttachParentConsole();
         for (const Action& action : actions) {

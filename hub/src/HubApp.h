@@ -29,8 +29,9 @@ public:
     const std::vector<ProjectInfo>& Projects() const { return m_projects; }  // na ordem de Config().projects
 
     // Ações: true se deu certo; `message` diz o que aconteceu (ou o erro), em português.
-    bool OpenProject(const fs::path& root, const InstalledVersion& version, std::string& message);
-    bool CreateProject(const fs::path& parent, const std::string& name, const InstalledVersion& version,
+    // `version` por valor: a ação relê a lista de versões (uma referência para ela ficaria inválida).
+    bool OpenProject(const fs::path& root, InstalledVersion version, std::string& message);
+    bool CreateProject(const fs::path& parent, const std::string& name, InstalledVersion version,
                        std::string& message);
     bool AddProjectFolder(const fs::path& folder, std::string& message);
     bool RemoveProject(const fs::path& root, std::string& message);  // só da lista: a pasta fica
@@ -38,7 +39,7 @@ public:
     bool RemoveVersion(const std::string& version, std::string& message);  // para a Lixeira
     bool SetDefaultVersion(const std::string& version, std::string& message);
 
-    int RunWindow();  // abre a janela e roda até fechar
+    int RunWindow(int initialTab = 0);  // abre a janela (0 Projetos, 1 Versões) e roda até fechar
 
 private:
     void SaveConfig();
@@ -65,7 +66,7 @@ private:
 
     GLFWwindow* m_window = nullptr;
     double m_lastRefresh = 0.0;
-    int m_tab = 0;  // 0 Projetos, 1 Versões
+    int m_selectTab = -1;  // aba a selecionar no próximo quadro (--aba)
     std::string m_search;
     std::string m_status;
     bool m_statusError = false;

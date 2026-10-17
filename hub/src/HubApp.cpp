@@ -119,7 +119,7 @@ void HubApp::SetStatus(std::string message, bool error) {
     m_statusError = error;
 }
 
-bool HubApp::OpenProject(const fs::path& root, const InstalledVersion& version, std::string& message) {
+bool HubApp::OpenProject(const fs::path& root, InstalledVersion version, std::string& message) {
     const ProjectInfo info = ReadProject(root);
     if (!info.found) {
         message = std::format("Projeto não encontrado em '{}': {}", ToUtf8(root), info.error);
@@ -136,7 +136,7 @@ bool HubApp::OpenProject(const fs::path& root, const InstalledVersion& version, 
     return true;
 }
 
-bool HubApp::CreateProject(const fs::path& parent, const std::string& name, const InstalledVersion& version,
+bool HubApp::CreateProject(const fs::path& parent, const std::string& name, InstalledVersion version,
                            std::string& message) {
     if (std::string problem = CheckNewProject(parent, name); !problem.empty()) {
         message = std::move(problem);
@@ -217,7 +217,8 @@ bool HubApp::SetDefaultVersion(const std::string& version, std::string& message)
 // Janela
 // ---------------------------------------------------------------------------
 
-int HubApp::RunWindow() {
+int HubApp::RunWindow(int initialTab) {
+    m_selectTab = initialTab;
     if (!glfwInit()) throw std::runtime_error("Não foi possível iniciar o GLFW.");
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -291,17 +292,17 @@ void HubApp::DrawFrame() {
     ImGui::TextColored(kDim, "%s", MOTOR_HUB_VERSION);
 
     if (ImGui::BeginTabBar("Abas")) {
-        if (ImGui::BeginTabItem("Projetos")) {
-            m_tab = 0;
+        const auto flags = [&](int tab) { return m_selectTab == tab ? ImGuiTabItemFlags_SetSelected : 0; };
+        if (ImGui::BeginTabItem("Projetos", nullptr, flags(0))) {
             DrawProjectsTab();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Versões")) {
-            m_tab = 1;
+        if (ImGui::BeginTabItem("Versões", nullptr, flags(1))) {
             DrawVersionsTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
+        m_selectTab = -1;
     }
 
     DrawNewProjectPopup();
@@ -344,12 +345,20 @@ void HubApp::DrawProjectsTab() {
 
     const float statusHeight = m_status.empty() ? 0.0f : ImGui::GetFrameHeightWithSpacing() * 1.6f;
     ImGui::BeginChild("ListaProjetos", ImVec2(0, -statusHeight), ImGuiChildFlags_None);
+    // Abertos mais recentemente primeiro; os nunca abertos pelo hub depois, na ordem da lista.
+    std::vector<size_t> order(m_projects.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        const int64_t ta = a < m_config.projects.size() ? m_config.projects[a].lastOpened : 0;
+        const int64_t tb = b < m_config.projects.size() ? m_config.projects[b].lastOpened : 0;
+        return ta > tb;
+    });
     size_t shown = 0;
-    for (size_t i = 0; i < m_projects.size(); ++i) {
+    for (const size_t i : order) {
+        if (i >= m_projects.size()) break;  // um cartão removeu um projeto da lista neste quadro
         const ProjectInfo& p = m_projects[i];
         if (!MatchesSearch(p.name, m_search) && !MatchesSearch(ToUtf8(p.root), m_search)) continue;
         DrawProjectCard(i);
-        if (i >= m_projects.size()) break;  // o cartão removeu um projeto da lista
         ++shown;
     }
     if (m_projects.empty()) {
@@ -372,8 +381,7 @@ void HubApp::DrawProjectCard(size_t index) {
     const int64_t lastOpened = entry ? entry->lastOpened : 0;
 
     ImGui::PushID(static_cast<int>(index));
-    const float height = ImGui::GetTextLineHeight() * 3.0f + 24.0f;
-    ImGui::BeginChild("Cartao", ImVec2(0, height), ImGuiChildFlags_Borders);
+    ImGui::BeginChild("Cartao", ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
 
     const float buttonsWidth = 190.0f;
     const float startX = ImGui::GetCursorPosX();
@@ -433,7 +441,7 @@ void HubApp::DrawProjectCard(size_t index) {
 
 void HubApp::RequestOpen(size_t index, bool chooseVersion) {
     if (index >= m_projects.size()) return;
-    const ProjectInfo& p = m_projects[index];
+    const ProjectInfo p = m_projects[index];  // cópia: abrir relê a lista
     const VersionChoice choice = ChooseVersion(p.engineVersion, m_versions, m_config.defaultVersion);
     if (choice.match == VersionMatch::NoVersions) {
         SetStatus("Nenhuma versão do Motor instalada: adicione uma na aba Versões.", true);
@@ -618,8 +626,9 @@ void HubApp::DrawVersionsTab() {
             ImGui::TextUnformatted(v.buildType.c_str());
             ImGui::TableNextColumn();
             ImGui::TextColored(kDim, "%s", ToUtf8(v.dir).c_str());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", ToUtf8(v.dir).c_str());
             ImGui::TableNextColumn();
-            ImGui::BeginDisabled(&v == def && m_config.defaultVersion == v.version);
+            ImGui::BeginDisabled(&v == def);
             if (ImGui::Button("Tornar padrão")) {
                 std::string message;
                 const bool ok = SetDefaultVersion(v.version, message);
