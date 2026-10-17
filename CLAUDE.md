@@ -54,6 +54,11 @@ ctest --test-dir build --output-on-failure
   scripts; modelos de script em `editor/templates/Scripts/`.
 - `player/` — `Player.exe`, o executável do jogo exportado (roda um projeto sem o editor). A exportação fica em
   `editor/src/GameExport` (assets referenciados e pasta de saída) e `ExportController` (Arquivo > Exportar jogo).
+- `hub/` — `MotorHub.exe` (Fase 14): projetos e versões do Motor instaladas, separado do editor. Núcleo sem
+  janela em `hub/src/HubCore` (testado em `tests/test_hub.cpp`), interface em `HubApp`. Só GLFW, ImGui e
+  nlohmann_json estáticos: **não** liga na `libMotor.dll` nem inclui headers da engine (pode virar repositório
+  próprio). Fala com o editor só pela linha de comando (`--project`, `--create`, `--version`) e lendo
+  `.mproject` e `motor-version.json`.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -141,6 +146,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: scripts | `editor/src/Script*.*`, `editor/templates/` |
 | Editor: painéis | `editor/src/{Hierarchy,Inspector,Scene,Project}Panel.*`, `FieldDrawers.*` |
 | Editor: MCP | `editor/src/mcp/` |
+| Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
 | Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
 
 Componente novo da engine = `scene/<Nome>.h` + `scene/<Nome>.cpp` próprios (`MOTOR_COMPONENT_MODULE`), não
@@ -172,6 +178,7 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 11 Modelos 3D/animação | `assets/` (importador glTF), `renderer/` (`Mesh` na CPU, skinning) | prefabs da 6, collider de malha (`physics/`) | 6, 7 |
 | 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
 | 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
+| 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
 
 Prioridade atual (ver `ROADMAP.md`, "Prioridades"): Alpha 1 fechada; 8 e 10 prontas; próximas a validação de uso real e "Ambiente".
 

@@ -56,9 +56,10 @@ Alpha 2, nesta ordem:
 |---|---|---|---|
 | 5 | ~~Fase 10 — Exportar o jogo~~ ✅ | sem exportar não há jogo entregue, só o editor | 8 |
 | 6 | ~~Fase 8 — Áudio~~ ✅ | jogo sem som não está completo | 10 (a exportação precisa empacotar os sons) |
-| 7 | Validação de uso real | depois de 8 e 10: fazer um jogo pequeno do começo ao fim, exportado, testando à mão o que o MCP não cobre (ver "Anotado para a alpha 2") | — |
-| 8 | Desfazer que escala e arquivos grandes divididos | ver "Anotado para a alpha 2" | Ambiente (áreas diferentes) |
-| 9 | Fase "Ambiente" | água, terreno, partículas e vegetação sobre a base da Fase 7 | — |
+| 7 | Fase 14 — Hub de projetos e versões | várias versões do Motor instaladas lado a lado e cada projeto abrindo com a sua; criar e achar projetos sem abrir o editor | — |
+| 8 | Validação de uso real | depois de 8 e 10: fazer um jogo pequeno do começo ao fim, exportado, testando à mão o que o MCP não cobre (ver "Anotado para a alpha 2") | — |
+| 9 | Desfazer que escala e arquivos grandes divididos | ver "Anotado para a alpha 2" | Ambiente (áreas diferentes) |
+| 10 | Fase "Ambiente" | água, terreno, partículas e vegetação sobre a base da Fase 7 | — |
 
 ---
 
@@ -343,6 +344,27 @@ desfazer) roda também minimizado (`EditorApp::UpdateMinimized`), e o loop dorme
 
 Pendências: mover a câmera do editor para um ponto escolhido, além de focar uma entidade; arrastar o gizmo e
 outras ações só de mouse; notificações para o agente (hoje ele pergunta com `editor_status` e `log_read`).
+
+## Fase 14 — Hub de projetos e versões
+
+Um programa separado do editor, como o Unity Hub, para versionamento: cada versão do Motor fica instalada na
+sua pasta e cada projeto abre com a versão em que foi feito.
+
+- **Pré-requisitos no editor:** número de versão (`project(Motor VERSION ...)`, `motor/core/Version.h`,
+  Ajuda > Sobre, `MotorEditor.exe --version`); `.mproject` com `engineVersion` (formato 2; o 1 abre como
+  "versão desconhecida"); opções `--project`, `--create <pasta-pai> <nome>`, `--settings <arquivo>` e
+  `--no-settings`; ferramenta MCP `project_create`; pasta de instalação autossuficiente de uma versão (alvo
+  `motor_package`, com `motor-version.json`).
+- **Hub (`hub/`, `MotorHub.exe`):** não liga na `libMotor.dll` (não fica preso a uma versão). Aba Projetos
+  (cartões, abrir com a versão do projeto, adicionar, remover da lista, mostrar no Explorer, busca, versão
+  ausente), novo projeto (pela versão escolhida, com `--create`), aba Versões (instaladas em
+  `%LOCALAPPDATA%\Motor\Versões\<versão>\`, adicionar a partir de uma pasta montada, padrão, remover para
+  a Lixeira). Configuração própria em `%LOCALAPPDATA%\Motor\hub.json`.
+
+**Pronto quando:** montar a pasta de instalação da versão atual, registrá-la no hub, criar um projeto
+"Jogo Ação" pelo hub e abri-lo no editor dessa versão.
+
+Depois: baixar versões pela internet; o hub como repositório próprio.
 
 ## Anotado para a alpha 2
 
