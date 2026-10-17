@@ -116,13 +116,17 @@ struct HubProject {
     int64_t lastOpened = 0;  // segundos desde 1970 (UTC); 0 = nunca aberto pelo hub
 };
 
+inline constexpr const char* kDefaultServerUrl = "http://127.0.0.1:47900";  // MotorServidor nesta máquina
+
 struct HubConfig {
     static constexpr const char* kFormat = "motor-hub";
-    static constexpr int kVersion = 1;
+    static constexpr int kVersion = 2;  // 2: servidores de versões (Fase 15)
 
     std::vector<HubProject> projects;  // mais recentes primeiro
     std::string defaultVersion;        // vazio = a mais nova instalada
     fs::path newProjectDir;            // última pasta-pai usada em Novo projeto (vazio = Documentos\Motor)
+    // Servidores de versões (MotorServidor), na ordem de busca. Formato 1 (sem a lista) = o servidor local.
+    std::vector<std::string> servers{kDefaultServerUrl};
 
     // Leitura tolerante: arquivo ausente = configuração vazia; campo ausente = padrão. `warning` recebe o motivo
     // se o arquivo existir mas não puder ser lido (a configuração volta vazia).
@@ -133,6 +137,8 @@ struct HubConfig {
     bool AddProject(const fs::path& root);  // false se já estava na lista
     bool RemoveProject(const fs::path& root);
     void MarkOpened(const fs::path& root, int64_t now);  // adiciona se faltar e passa para o topo
+    bool AddServer(std::string_view url);     // false se já estava (ou vazio); "x:47900/" vira "http://x:47900"
+    bool RemoveServer(std::string_view url);
 };
 
 // "nunca", "agora há pouco", "há 5 min", "há 3 h", "ontem", "há 4 dias", ou a data (dd/mm/aaaa) depois de 30 dias.

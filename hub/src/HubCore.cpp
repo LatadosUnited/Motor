@@ -383,6 +383,12 @@ HubConfig HubConfig::Load(const fs::path& file, std::string* warning) {
         // Versões mais novas do formato: lê o que conhece (campos novos são ignorados).
         config.defaultVersion = root.value("defaultVersion", std::string());
         config.newProjectDir = PathFromUtf8(root.value("newProjectDir", std::string()));
+        if (root.contains("servers") && root["servers"].is_array()) {  // formato 2
+            config.servers.clear();
+            for (const json& server : root["servers"]) {
+                if (server.is_string()) config.AddServer(server.get<std::string>());
+            }
+        }
         for (const json& p : root.value("projects", json::array())) {
             if (!p.is_object()) continue;
             const std::string path = p.value("path", std::string());
@@ -408,6 +414,7 @@ bool HubConfig::Save(const fs::path& file, std::string* error) const {
     json list = json::array();
     for (const HubProject& p : projects) list.push_back({{"path", ToUtf8(p.root)}, {"lastOpened", p.lastOpened}});
     root["projects"] = std::move(list);
+    root["servers"] = servers;
 
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);
@@ -453,6 +460,29 @@ void HubConfig::MarkOpened(const fs::path& root, int64_t now) {
     if (HubProject* existing = FindProject(root)) entry.root = existing->root;
     RemoveProject(root);
     projects.insert(projects.begin(), std::move(entry));
+}
+
+namespace {
+std::string NormalizeServer(std::string_view url) {
+    std::string s(url);
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '/')) s.pop_back();
+    if (!s.empty() && s.find("://") == std::string::npos) s = "http://" + s;
+    return s;
+}
+} // namespace
+
+bool HubConfig::AddServer(std::string_view url) {
+    const std::string normalized = NormalizeServer(url);
+    if (normalized.empty() || std::find(servers.begin(), servers.end(), normalized) != servers.end()) return false;
+    servers.push_back(normalized);
+    return true;
+}
+
+bool HubConfig::RemoveServer(std::string_view url) {
+    const size_t before = servers.size();
+    std::erase(servers, NormalizeServer(url));
+    return servers.size() != before;
 }
 
 std::string FormatLastOpened(int64_t lastOpened, int64_t now) {

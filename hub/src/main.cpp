@@ -2,6 +2,9 @@
 // mesmo que o botão correspondente e sai, escrevendo o resultado no console (agentes e testes automáticos).
 #include "HubApp.h"
 
+#include <InstallPlan.h>
+#include <Platform.h>
+
 #include <cstdio>
 #include <exception>
 #include <functional>
@@ -18,7 +21,8 @@ constexpr const char* kUsage =
     "Uso: MotorHub [opções] [ações] [-- argumentos a mais para o editor]\n"
     "Sem ações, abre a janela do hub.\n"
     "Opções:\n"
-    "  --data <pasta>             pasta de dados do hub (padrão %LOCALAPPDATA%\\Motor: hub.json e Versões\\)\n"
+    "  --data <pasta>             pasta de dados do hub (padrão %LOCALAPPDATA%\\Motor: hub.json e Versões\\;\n"
+    "                             o hub instalado usa a do instalacao.json ao lado do MotorHub.exe)\n"
     "  --aba <projetos|versões>   abre a janela nesta aba\n"
     "  --version                  mostra a versão do hub e sai\n"
     "Ações (feitas na ordem; para na primeira que falhar):\n"
@@ -30,12 +34,17 @@ constexpr const char* kUsage =
     "  --remove-project <pasta>   tira o projeto da lista (a pasta fica)\n"
     "  --create <pasta-pai> <nome> [--engine <versão>]  cria o projeto com o editor daquela versão (padrão: a padrão)\n"
     "  --open <pasta> [--engine <versão>]               abre com a versão do projeto (ou a indicada; o editor\n"
-    "                             atualiza o engineVersion do projeto: faça uma cópia de segurança antes)\n";
+    "                             atualiza o engineVersion do projeto: faça uma cópia de segurança antes)\n"
+    "  --disponiveis [--servidor <URL>]                 lista as versões publicadas nos servidores\n"
+    "  --baixar <versão|mais-recente> [--servidor <URL>]\n"
+    "                             baixa a versão de um servidor (padrão: os do hub.json), confere o SHA-256 de\n"
+    "                             cada arquivo e instala em Versões\\<versão>; retoma um download interrompido\n";
 
 struct Action {
     std::string name;
     std::vector<std::string> args;
     std::string engine;  // --engine
+    std::string server;  // --servidor
 };
 
 void Print(const std::string& text) {
@@ -64,6 +73,44 @@ const hub::InstalledVersion* PickVersion(hub::HubApp& app, const std::string& wa
 int RunAction(hub::HubApp& app, const Action& a) {
     std::string message;
     bool ok = false;
+    if (a.name == "--disponiveis") {
+        const auto servers =
+            hub::HubApp::FetchServers(a.server.empty() ? app.Config().servers : std::vector<std::string>{a.server});
+        for (const auto& s : servers) {
+            if (!s.manifest) {
+                Print(s.url + ": " + s.error);
+                continue;
+            }
+            Print(s.url + ":");
+            if (s.manifest->releases.empty()) Print("  (nenhuma versão publicada)");
+            for (const distrib::Release& r : s.manifest->releases) {
+                const bool installed = hub::FindVersion(app.Versions(), r.version) != nullptr;
+                Print("  Motor " + r.version + "  canal " + r.channel + "  API " + std::to_string(r.scriptApiVersion) +
+                      "  " + r.buildType + "  " + distrib::FormatDate(r.date) + "  " + distrib::FormatSize(r.size) +
+                      (installed ? "  (instalada)" : ""));
+            }
+            if (s.manifest->hub) {
+                const bool newer = hub::CompareVersions(s.manifest->hub->version, MOTOR_HUB_VERSION) > 0;
+                Print("  Hub " + s.manifest->hub->version + (newer ? " (mais novo que este)" : ""));
+            }
+        }
+        return 0;
+    }
+    if (a.name == "--baixar") {
+        int lastPercent = -1;
+        ok = app.DownloadVersion(a.args[0], a.server, [&](const distrib::ReleaseProgress& p) {
+            const int percent = p.total ? static_cast<int>(p.done * 100 / p.total) : 0;
+            if (percent / 10 != lastPercent / 10 || (p.filesDone == p.filesTotal && percent != lastPercent)) {
+                lastPercent = percent;
+                Print("  " + std::to_string(percent) + "% (" + distrib::FormatSize(p.done) + " de " +
+                      distrib::FormatSize(p.total) + ", " + std::to_string(p.filesDone) + "/" +
+                      std::to_string(p.filesTotal) + " arquivos)");
+            }
+        }, message);
+        if (!ok) return Fail(message);
+        Print(message);
+        return 0;
+    }
     if (a.name == "--list") {
         Print("Versões instaladas (" + hub::ToUtf8(app.GetPaths().versionsDir) + "):");
         const hub::InstalledVersion* def = hub::DefaultVersion(app.Versions(), app.Config().defaultVersion);
@@ -154,6 +201,13 @@ int HubMain() {
             if (!needs(1)) return 2;
             const std::string tab = args[++i];
             initialTab = tab == "versões" || tab == "versoes" ? 1 : 0;
+        } else if (arg == "--servidor") {
+            if (!needs(1)) return 2;
+            if (actions.empty() || (actions.back().name != "--baixar" && actions.back().name != "--disponiveis")) {
+                hub::platform::AttachParentConsole();
+                return Fail("--servidor vem depois de --baixar ou --disponiveis.");
+            }
+            actions.back().server = args[++i];
         } else if (arg == "--engine") {
             if (!needs(1)) return 2;
             if (actions.empty() || (actions.back().name != "--create" && actions.back().name != "--open")) {
@@ -161,16 +215,16 @@ int HubMain() {
                 return Fail("--engine vem depois de --create ou --open.");
             }
             actions.back().engine = args[++i];
-        } else if (arg == "--list") {
-            actions.push_back({arg, {}, {}});
+        } else if (arg == "--list" || arg == "--disponiveis") {
+            actions.push_back({arg, {}, {}, {}});
         } else if (arg == "--add-version" || arg == "--remove-version" || arg == "--set-default" ||
-                   arg == "--add-project" || arg == "--remove-project" || arg == "--open") {
+                   arg == "--add-project" || arg == "--remove-project" || arg == "--open" || arg == "--baixar") {
             if (!needs(1)) return 2;
-            actions.push_back({arg, {args[i + 1]}, {}});
+            actions.push_back({arg, {args[i + 1]}, {}, {}});
             ++i;
         } else if (arg == "--create") {
             if (!needs(2)) return 2;
-            actions.push_back({arg, {args[i + 1], args[i + 2]}, {}});
+            actions.push_back({arg, {args[i + 1], args[i + 2]}, {}, {}});
             i += 2;
         } else {
             hub::platform::AttachParentConsole();
@@ -179,6 +233,13 @@ int HubMain() {
         }
     }
     const bool console = !actions.empty();
+
+    // Hub instalado pelo MotorSetup com outra pasta de dados: ela fica no instalacao.json ao lado do .exe.
+    if (dataDir.empty()) {
+        const auto record = distrib::InstallRecord::Load(distrib::platform::ExecutablePath().parent_path() /
+                                                         distrib::kInstallRecordFile);
+        if (record && !record->dataDir.empty()) dataDir = record->dataDir;
+    }
 
     try {
         hub::HubApp app(hub::platform::DefaultPaths(dataDir), std::move(editorArgs));
