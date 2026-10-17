@@ -39,7 +39,7 @@ public:
         std::vector<int> cubeLayer;       // por luz: camada do cubo de sombra, -1 = sem
     };
 
-    explicit ShadowRenderer(const std::string& shaderDir);
+    explicit ShadowRenderer(const std::filesystem::path& shaderDir);
     ~ShadowRenderer();
 
     ShadowRenderer(const ShadowRenderer&) = delete;

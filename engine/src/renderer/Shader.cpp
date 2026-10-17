@@ -1,6 +1,7 @@
 #include "motor/renderer/Shader.h"
 
 #include "motor/core/Log.h"
+#include "motor/core/Paths.h"
 #include "renderer/GL.h"
 
 #include <glm/gtc/type_ptr.hpp>
@@ -14,7 +15,7 @@ namespace motor {
 namespace {
 std::string ReadTextFile(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
-    if (!file) throw std::runtime_error(std::format("Não foi possível abrir '{}'", path.string()));
+    if (!file) throw std::runtime_error(std::format("Não foi possível abrir '{}'", ToUtf8(path)));
     std::stringstream ss;
     ss << file.rdbuf();
     return ss.str();
@@ -83,7 +84,7 @@ namespace {
 // Troca as linhas `#include "arquivo"` pelo conteúdo do arquivo (relativo ao shader, recursivo) e põe as
 // definições logo depois do `#version` (que tem de ser a primeira linha).
 std::string Preprocess(const std::filesystem::path& path, std::string_view defines, int depth = 0) {
-    if (depth > 8) throw std::runtime_error(std::format("Shader '{}': #include aninhado demais", path.string()));
+    if (depth > 8) throw std::runtime_error(std::format("Shader '{}': #include aninhado demais", ToUtf8(path)));
     const std::string text = ReadTextFile(path);
     std::string out;
     size_t pos = 0;
@@ -94,7 +95,7 @@ std::string Preprocess(const std::filesystem::path& path, std::string_view defin
         const std::string_view line(text.data() + pos, end - pos);
         if (line.starts_with("#include \"")) {
             const size_t close = line.find('"', 10);
-            if (close == std::string_view::npos) throw std::runtime_error(std::format("Shader '{}': #include sem aspas", path.string()));
+            if (close == std::string_view::npos) throw std::runtime_error(std::format("Shader '{}': #include sem aspas", ToUtf8(path)));
             out += Preprocess(path.parent_path() / std::string(line.substr(10, close - 10)), {}, depth + 1);
         } else {
             out.append(line);
@@ -110,7 +111,7 @@ std::string Preprocess(const std::filesystem::path& path, std::string_view defin
 
 std::unique_ptr<Shader> Shader::FromFiles(const std::filesystem::path& vertexPath,
                                           const std::filesystem::path& fragmentPath, std::string_view defines) {
-    std::string name = vertexPath.stem().string() + "+" + fragmentPath.stem().string();
+    std::string name = ToUtf8(vertexPath.stem()) + "+" + ToUtf8(fragmentPath.stem());
     return std::make_unique<Shader>(Preprocess(vertexPath, defines), Preprocess(fragmentPath, defines), std::move(name));
 }
 

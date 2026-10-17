@@ -1,5 +1,6 @@
 #include "motor/renderer/Renderer.h"
 
+#include "motor/core/EngineAssets.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Framebuffer.h"
 #include "motor/renderer/Pbr.h"
@@ -108,10 +109,10 @@ Renderer::Renderer() {
     }
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);  // reflexos sem costura entre as faces do cubo
 
-    const std::string dir = MOTOR_ENGINE_ASSETS "/shaders/";
-    m_litShader = Shader::FromFiles(dir + "lit.vert", dir + "lit.frag");
-    m_skinnedShader = Shader::FromFiles(dir + "skinned.vert", dir + "lit.frag");  // animação esquelética (Fase 11)
-    m_unlitShader = Shader::FromFiles(dir + "lit.vert", dir + "unlit.frag");
+    const std::filesystem::path dir = EngineAssetsDir() / "shaders";
+    m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
+    m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag");  // animação esquelética (Fase 11)
+    m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag");
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
     m_post = std::make_unique<PostProcess>(dir);
     m_shadows = std::make_unique<ShadowRenderer>(dir);

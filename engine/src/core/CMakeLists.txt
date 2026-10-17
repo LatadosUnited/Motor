@@ -2,6 +2,7 @@
 motor_add_layer(core
     SOURCES
         Log.cpp
+        EngineAssets.cpp
         Window.cpp
         Input.cpp
         ImGuiLayer.cpp

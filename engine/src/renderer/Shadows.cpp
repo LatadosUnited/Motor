@@ -38,11 +38,11 @@ GLuint CreateShadowTexture(GLenum target, int resolution, int layers) {
 }
 } // namespace
 
-ShadowRenderer::ShadowRenderer(const std::string& dir) {
-    m_directional = Shader::FromFiles(dir + "shadow.vert", dir + "shadow.frag");
-    m_directionalSkinned = Shader::FromFiles(dir + "shadow.vert", dir + "shadow.frag", "#define SKINNED\n");
-    m_point = Shader::FromFiles(dir + "shadow.vert", dir + "shadow.frag", "#define POINT\n");
-    m_pointSkinned = Shader::FromFiles(dir + "shadow.vert", dir + "shadow.frag", "#define POINT\n#define SKINNED\n");
+ShadowRenderer::ShadowRenderer(const std::filesystem::path& dir) {
+    m_directional = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag");
+    m_directionalSkinned = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define SKINNED\n");
+    m_point = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define POINT\n");
+    m_pointSkinned = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define POINT\n#define SKINNED\n");
     glCreateFramebuffers(1, &m_fbo);
     glNamedFramebufferDrawBuffer(m_fbo, GL_NONE);
     glNamedFramebufferReadBuffer(m_fbo, GL_NONE);
