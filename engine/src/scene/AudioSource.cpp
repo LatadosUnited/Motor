@@ -26,6 +26,17 @@ CustomFieldType FieldTraits<AudioClip>::Describe() {
                     clip = {};
                     return;
                 }
+                if (json.is_string()) {
+                    // Só o caminho ("Assets/Sons/x.wav"), como escreve um agente pelo MCP: o GUID vem do .meta.
+                    clip = {};
+                    clip.path = json.get<std::string>();
+                    clip.file = assets.FileForKey(clip.path);
+                    std::error_code ec;
+                    if (!clip.file.empty() && std::filesystem::is_regular_file(clip.file, ec)) {
+                        clip.guid = assets.Database().GuidFor(clip.file);
+                    }
+                    return;
+                }
                 if (!json.is_object()) return;
                 clip.guid = json.value("guid", std::string());
                 clip.path = json.value("path", std::string());

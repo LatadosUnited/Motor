@@ -452,6 +452,15 @@ int main(int argc, char** argv) {
         const Entity* oe = odd.FindByName("X");
         CHECK(oe && oe->Get<UiRect>()->anchor == UiAnchor::Center && Near(oe->Get<UiRect>()->size, {10, 20}));
         CHECK(oe && oe->Get<UiText>()->align == UiTextAlign::Right && oe->Get<UiText>()->font.IsDefault());
+
+        // Só o caminho (o que um agente manda pelo MCP): o GUID vem do .meta.
+        const CustomFieldType fontType = FieldTraits<UiFont>::Describe();
+        UiFont byPath;
+        fontType.fromJson(R"("Assets/Outra/Título.ttf")", &byPath, assets);
+        CHECK(byPath.guid == guid && byPath.path == "Assets/Outra/Título.ttf");
+        UiFont missing;
+        fontType.fromJson(R"("Assets/Nada.ttf")", &missing, assets);
+        CHECK(missing.guid.empty() && missing.path == "Assets/Nada.ttf");
     }
 
     SECTION("Menu com botão Jogar troca de cena (LoadScene + PlayMode)");

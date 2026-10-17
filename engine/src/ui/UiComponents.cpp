@@ -113,6 +113,15 @@ CustomFieldType FieldTraits<UiFont>::Describe() {
                     font = {};
                     return;
                 }
+                if (json.is_string()) {
+                    // Só o caminho ("Assets/Fontes/x.ttf"), como escreve um agente pelo MCP: o GUID vem do .meta.
+                    font = {};
+                    font.path = json.get<std::string>();
+                    const std::filesystem::path file = assets.FileForKey(font.path);
+                    std::error_code ec;
+                    if (!file.empty() && std::filesystem::is_regular_file(file, ec)) font.guid = assets.Database().GuidFor(file);
+                    return;
+                }
                 if (!json.is_object()) return;
                 font.guid = json.value("guid", std::string());
                 font.path = json.value("path", std::string());

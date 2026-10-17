@@ -162,6 +162,16 @@ int main(int argc, char** argv) {
         fs::rename(moved, loopFile);
         fs::rename(AssetDatabase::MetaPathFor(moved), AssetDatabase::MetaPathFor(loopFile));
         assets.Database().Refresh();
+
+        // Só o caminho (o que um agente manda pelo MCP): o GUID vem do .meta e o arquivo é achado.
+        const CustomFieldType clipType = FieldTraits<AudioClip>::Describe();
+        AudioClip byPath;
+        clipType.fromJson(R"("Assets/Sons/Motor ligado.wav")", &byPath, assets);
+        CHECK(byPath.guid == source.clip.guid && byPath.path == "Assets/Sons/Motor ligado.wav");
+        CHECK(!byPath.file.empty() && fs::equivalent(byPath.file, loopFile));
+        AudioClip missing;
+        clipType.fromJson(R"("Assets/Sons/Não existe.wav")", &missing, assets);
+        CHECK(missing.guid.empty() && missing.path == "Assets/Sons/Não existe.wav");
     }
 
     SECTION("Som 3D: cai com a distância e muda de lado com a câmera");
