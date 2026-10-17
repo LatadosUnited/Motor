@@ -17,6 +17,7 @@
 
 namespace editor {
 
+class ExportController;
 class PlayController;
 class SceneDocument;
 class SceneViewport;
@@ -38,6 +39,7 @@ public:
         ScriptController& scripts;
         SceneViewport& viewport;
         std::function<void(int)> requestHistory;  // -1 desfazer, +1 refazer (no início do próximo quadro)
+        ExportController& exporter;               // game_export (Fase 10)
     };
 
     explicit McpController(Host host);

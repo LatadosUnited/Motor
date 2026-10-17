@@ -1,5 +1,6 @@
 #include "McpController.h"
 
+#include "../ExportController.h"
 #include "../PlayController.h"
 #include "../SceneDocument.h"
 #include "../SceneViewport.h"
@@ -530,6 +531,37 @@ void McpController::AddPlayTools() {
             if (!s.toolchainError.empty()) j["toolchain_error"] = s.toolchainError;
             if (args.value("log", false)) j["log"] = s.log;
             return ToolResult::Data(j);
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "game_export",
+        .description = "Exporta o jogo (Arquivo > Exportar jogo): uma pasta com <Nome>.exe (o Player), a engine, os "
+                       "scripts compilados e só os assets usados. Os scripts precisam estar compilados (scripts_build "
+                       "e scripts_status). Para testar o resultado, rode o .exe com --quadros N (fecha sozinho) e "
+                       "leia o <Nome>.log ao lado dele.",
+        .inputSchema = Schema({{"scene", Prop("string", "cena inicial, relativa ao projeto (padrão: a do projeto, "
+                                                        "senão a cena aberta)")},
+                               {"output_dir", Prop("string", "pasta de saída: absoluta ou relativa ao projeto "
+                                                             "(padrão: Exportado). Precisa estar vazia ou ser uma "
+                                                             "exportação anterior")},
+                               {"set_startup", Prop("boolean", "gravar a cena como inicial no projeto (padrão: true)")}}),
+        .run = [this](const Json& args) {
+            const Project* project = m_host.document.GetProject();
+            if (!project) throw ToolError("nenhum projeto aberto");
+            fs::path out;
+            if (args.contains("output_dir")) {
+                out = PathFromUtf8(args["output_dir"].get<std::string>());
+                if (out.is_relative()) out = project->RootDir() / out;
+            }
+            const GameExport::Result r =
+                m_host.exporter.Export(args.value("scene", std::string()), out, args.value("set_startup", true));
+            if (!r.ok) throw ToolError(r.error);
+            return ToolResult::Data({{"executable", ToUtf8(r.executable)},
+                                     {"folder", ToUtf8(r.executable.parent_path())},
+                                     {"assets", r.assets},
+                                     {"warnings", r.warnings},
+                                     {"megabytes", static_cast<double>(r.bytes) / (1024.0 * 1024.0)}});
         },
     });
 }

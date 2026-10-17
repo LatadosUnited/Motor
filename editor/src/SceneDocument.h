@@ -27,6 +27,7 @@ public:
         std::function<void(const std::string&)> setWindowTitle;
         std::function<void()> projectClosing;    // antes de trocar de projeto (descarrega os scripts)
         std::function<void()> projectOpened;     // projeto novo aberto, antes de abrir a cena (carrega os scripts)
+        std::function<void()> exportGame;        // Arquivo > Exportar jogo (Fase 10)
     };
 
     enum class FileAction { None, NewScene, OpenScene, OpenScenePath, NewProject, OpenProject, OpenProjectPath, Quit };
