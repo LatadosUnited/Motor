@@ -2,15 +2,15 @@
 
 Tudo que um script do Motor pode usar, conferido com os headers da engine. Para aprender passo a passo, leia
 primeiro o [guia](scripts.md). Fontes, se quiser ir além: `engine/include/motor/scene/Script.h`,
-`ScriptModule.h`, `Scene.h`, `Component.h`, `Animator.h`, `engine/include/motor/physics/PhysicsSystem.h` e
-`engine/include/motor/ui/UiSystem.h`.
+`ScriptModule.h`, `Scene.h`, `Component.h`, `Animator.h`, `engine/include/motor/physics/PhysicsSystem.h`,
+`engine/include/motor/ui/UiSystem.h` e `engine/include/motor/audio/AudioSystem.h`.
 
 O teste `test_script_docs` confere que esta página cita todos os métodos públicos de `motor::Script`, de
-`motor::PhysicsSystem` e de `motor::UiSystem`, todas as opções de campo e os campos de `GameTime`,
-`Collision` e `UiPointer`. Mudou um desses
+`motor::PhysicsSystem`, de `motor::UiSystem` e de `motor::AudioSystem`, todas as opções de campo e os campos de
+`GameTime`, `Collision`, `UiPointer`, `AudioSettings` e `AudioVoiceInfo`. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 9 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 10 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -21,6 +21,7 @@ recompilar os scripts).
 | `<motor/scene/ScriptModule.h>` | o necessário para qualquer script: `motor::Script`, `MOTOR_SCRIPT`, `Scene`, `Entity`, `Transform`, os componentes da engine, `Key`, GLM (vetores, matrizes, quaternions) |
 | `<motor/physics/PhysicsSystem.h>` | `motor::PhysicsSystem` (forças, personagem, raios) |
 | `<motor/ui/UiSystem.h>` | `motor::UiSystem` (texto, mostrar/esconder, botões) e os componentes de UI |
+| `<motor/audio/AudioSystem.h>` | `motor::AudioSystem` (tocar, parar e volume dos sons) |
 | `<motor/scene/Animator.h>` | `motor::Animator` (já vem com o `ScriptModule.h`; inclua para deixar claro) |
 | `<glm/geometric.hpp>` | `glm::length`, `glm::normalize`, `glm::dot`, `glm::cross` (inclua para não depender de includes indiretos) |
 | `<glm/gtc/quaternion.hpp>` | `glm::angleAxis`, `glm::quatLookAt` |
@@ -220,6 +221,8 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::ColliderComponent` | Collider | `ColliderShape shape` (`Box`, `Sphere`, `Capsule`, `Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution` |
 | `motor::RigidbodyComponent` | Rigidbody | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
 | `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass` |
+| `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`; tocar e parar na seção [Som](#som-motoraudiosystem) |
+| `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
@@ -318,6 +321,37 @@ Os componentes (`motor/ui/UiComponents.h`) também podem ser lidos e mudados dir
 Na âncora, o ponto da tela e o ponto do elemento coincidem (`TopRight` prende o canto superior direito do
 elemento no canto superior direito do pai). Com `Stretch`, `position` são as margens esquerda e de cima e
 `size` as margens direita e de baixo.
+
+## Som: `motor::AudioSystem`
+
+`#include <motor/audio/AudioSystem.h>` e `auto* audio = GetSystem<motor::AudioSystem>();`. As fontes são
+entidades com `motor::AudioSource`, achadas pelo nome (a primeira com esse nome) ou pelo id. O sistema roda
+depois dos scripts (ordem `kSystemOrderAudio`): a cada passo lê volume, tom, repetir e a posição das fontes
+e do ouvinte. O dispositivo de som só abre quando o primeiro som toca; sem dispositivo, tudo funciona em
+silêncio.
+
+| Método | Efeito |
+|---|---|
+| `bool Play(entity)` | toca o clipe do AudioSource desde o começo (recomeça se já tocava); `false` sem a entidade, sem AudioSource, sem clipe ou se o arquivo não abriu (aviso no log) |
+| `bool Stop(entity)` | para o som (o próximo `Play` começa do início); `false` sem a entidade ou sem AudioSource |
+| `bool SetVolume(entity, float volume)` | muda `AudioSource::volume` (0 = mudo, 1 = normal); vale na hora |
+| `bool IsPlaying(entity) const` | o som está tocando (em pausa conta como tocando) |
+| `void StopAll()` | para todos os sons |
+| `void SetPaused(bool paused)`, `bool IsPaused() const` | pausa todos os sons e continua de onde parou; quem chama é o editor (Pausa do Play) |
+| `bool HasDevice() const` | tocando numa saída de som de verdade (`false`: sem dispositivo, ou ainda nenhum som tocou) |
+| `std::vector<float> ReadMix(int frames)`, `int SampleRate() const` | sem dispositivo, mistura `frames` quadros estéreo e devolve as amostras (para testes) |
+| `std::vector<AudioVoiceInfo> Voices() const` | as fontes que já tocaram neste Play (diagnóstico) |
+| `glm::vec3 ListenerPosition() const` | onde está o ouvinte |
+| `float OutputLevel(int channel) const` | nível (RMS) do som que saiu no último bloco, canal 0 (esquerdo) ou 1 (direito) |
+| `OnStart`, `OnUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
+
+`motor::AudioVoiceInfo`: `entity`, `clip` (caminho no projeto), `playing`, `spatial`, `distance` (até o
+ouvinte) e `gain` (volume da fonte vezes a queda com a distância). Configuração global
+(`motor::AudioSettings::Global()`: `useDevice`, `masterVolume`) é lida a cada Play; é para a aplicação e os
+testes, não para scripts.
+
+Som 3D: o volume cai com a distância pelo modelo inverso (`minDistance / distância`, cheio até
+`minDistance`, constante depois de `maxDistance`) e o lado vem da direção do ouvinte (a frente é o -Z dele).
 
 ## Teclas
 

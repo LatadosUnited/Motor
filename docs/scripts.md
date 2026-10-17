@@ -23,9 +23,10 @@ Sumário:
 10. [Receitas](#10-receitas)
 11. [Mini jogo: andar, coletar, pontuar](#11-mini-jogo-andar-coletar-pontuar)
 12. [Interface do jogo (HUD e menus)](#12-interface-do-jogo-hud-e-menus)
-13. [Recarga: o que é preservado](#13-recarga-o-que-é-preservado)
-14. [Componente "desconhecido" (script não carregado)](#14-componente-desconhecido-script-não-carregado)
-15. [Erros comuns](#15-erros-comuns)
+13. [Som](#13-som)
+14. [Recarga: o que é preservado](#14-recarga-o-que-é-preservado)
+15. [Componente "desconhecido" (script não carregado)](#15-componente-desconhecido-script-não-carregado)
+16. [Erros comuns](#16-erros-comuns)
 
 ---
 
@@ -111,14 +112,14 @@ O que cada parte faz:
 |---|---|
 | `#include <motor/scene/ScriptModule.h>` | traz tudo de que um script precisa (Script, Scene, Transform, componentes, GLM) |
 | `struct Flutuar : motor::Script` | o script. Uma struct comum: campos com valor padrão e métodos |
-| `void OnUpdate(float) override` | métodos `On...` que a engine chama no Play. Sempre com `override` (ver [Erros comuns](#15-erros-comuns)) |
+| `void OnUpdate(float) override` | métodos `On...` que a engine chama no Play. Sempre com `override` (ver [Erros comuns](#16-erros-comuns)) |
 | `GetTransform()`, `Time()`, `Log(...)` | a API do script (seções 5 e 6, e a [referência](scripts-api.md)) |
 | `MOTOR_SCRIPT(Flutuar) { ... }` | o registro: roda quando a DLL é carregada |
 | `Register<Flutuar>("Flutuar", "Flutuar")` | o 1º nome é o **identificador** gravado na cena; o 2º é o que o editor mostra |
 | `.Field("altura", "Altura", &Flutuar::altura)` | campo no Inspector: chave no arquivo, rótulo, membro |
 
 O identificador do `Register` é o que liga a cena ao script. Pode renomear a struct à vontade; se renomear o
-identificador, as entidades que usavam o nome antigo ficam com um componente "desconhecido" (seção 14) até
+identificador, as entidades que usavam o nome antigo ficam com um componente "desconhecido" (seção 15) até
 o nome voltar.
 
 ## 3. Campos no Inspector
@@ -460,7 +461,7 @@ O `Raycast` devolve um `std::optional<motor::PhysicsRaycastHit>`: teste com `if 
 
 ## 8. Sistemas do jogo (`GetSystem`)
 
-Partes da engine que rodam a cada passo do jogo (a física, a interface do jogo; depois, o áudio) são **sistemas**. Um
+Partes da engine que rodam a cada passo do jogo (a física, a interface do jogo, o áudio) são **sistemas**. Um
 script acha o sistema com `GetSystem<Tipo>()`:
 
 ```cpp
@@ -724,7 +725,52 @@ vazia `HUD` com **Scripts > HUD (vida e pontos)**. Para o menu: uma cena `Menu` 
 `Jogar` e `Creditos`, um Painel `PainelCreditos` e uma entidade `Menu` com **Scripts > Menu principal**
 (Cena do jogo = o nome da cena do mini jogo). Abra a cena `Menu` e aperte **Play**.
 
-## 13. Recarga: o que é preservado
+## 13. Som
+
+Arquivos `.wav`, `.ogg` e `.mp3` dentro de `Assets/` são **clipes de som** (aparecem no painel Projeto, com
+GUID no `.meta` como os outros assets). Um som toca numa entidade com o componente **Fonte de áudio**:
+
+| Campo | Para quê |
+|---|---|
+| **Clipe** | o arquivo de som (escolha na lista ou arraste do painel Projeto) |
+| **Volume**, **Tom** | volume (0 a 1) e tom (2 = uma oitava acima, e mais rápido) |
+| **Repetir** | toca em loop (música, motor, vento) |
+| **Tocar ao iniciar** | começa sozinho no Play; desligado, só toca quando um script chamar `Play` |
+| **Som 3D** | o volume cai com a distância e o som vem do lado certo; desligado para música e sons da UI |
+| **Distância mínima/máxima** | som 3D: volume cheio até a mínima; a partir da máxima, para de cair |
+
+Quem ouve os sons 3D é o **Ouvinte de áudio**: ponha na câmera (sem nenhum, vale a câmera principal). O
+**Volume geral** dele multiplica todos os sons. O som só toca no **Play**; **Parar** silencia tudo, e a
+**Pausa** pausa os sons junto com o jogo.
+
+Os scripts tocam e param os sons pelo sistema `motor::AudioSystem` (`#include <motor/audio/AudioSystem.h>`),
+achando a fonte pelo **nome da entidade**. Um clique de botão da UI e uma música que liga e desliga com a
+tecla M ([examples/SonsDoMenu.cpp](examples/SonsDoMenu.cpp)):
+
+```cpp
+        if (auto* ui = GetSystem<motor::UiSystem>(); ui && ui->WasClicked(botao)) {
+            audio->Play(somDoClique);  // recomeça do início se ainda estava tocando
+        }
+        if (WasKeyPressed(motor::Key::M)) {
+            if (audio->IsPlaying(musica)) {
+                audio->Stop(musica);
+            } else {
+                audio->Play(musica);
+            }
+        }
+```
+
+- `Play(nome)`, `Stop(nome)`, `SetVolume(nome, volume)` e `IsPlaying(nome)` também aceitam o id da entidade e
+  devolvem `false` se ela não existe ou não tem Fonte de áudio. `Play` também devolve `false` sem clipe ou se
+  o arquivo não abriu (com aviso no console).
+- Mudar os campos da Fonte de áudio (volume, tom, a posição da entidade) vale na hora, mesmo tocando.
+- Sem placa de som (ou sem saída), o jogo roda igual, só sem som.
+
+Para montar: crie uma entidade `SomClique` com **Fonte de áudio** (Clipe = o som do clique, Som 3D e Tocar ao
+iniciar desligados), outra `Musica` (Repetir ligado, Som 3D desligado), um **Botão** chamado `Jogar` e uma
+entidade vazia com **Scripts > Sons do menu**.
+
+## 14. Recarga: o que é preservado
 
 Ao salvar um arquivo de script com o editor aberto:
 
@@ -737,7 +783,7 @@ Ao salvar um arquivo de script com o editor aberto:
 - Com **erro de compilação** nada muda: os scripts da última compilação boa continuam carregados, e a barra
   de menus mostra "Scripts: N erro(s)".
 
-## 14. Componente "desconhecido" (script não carregado)
+## 15. Componente "desconhecido" (script não carregado)
 
 Se uma cena usa um script que não está carregado (você apagou o arquivo, mudou o identificador do
 `Register`, ou abriu a cena antes de os scripts compilarem), o componente **não some**: o Inspector o mostra
@@ -745,7 +791,7 @@ como "script não carregado", com os dados guardados. Ele é salvo de volta igua
 sozinho quando um script com aquele identificador for carregado de novo. Para se livrar dele de vez, remova o
 componente no Inspector.
 
-## 15. Erros comuns
+## 16. Erros comuns
 
 O painel Scripts lista as mensagens do compilador (GCC, em inglês). As mais comuns:
 
@@ -758,6 +804,7 @@ O painel Scripts lista as mensagens do compilador (GCC, em inglês). As mais com
 | `call to consteval function 'std::basic_format_string<...>' is not a constant expression` | o texto do `Log` tem mais `{}` do que valores (ou um `{` solto: escreva `{{`) |
 | `'Key' has not been declared` | falta o `motor::`: `motor::Key::W` (ou `using motor::Key;` dentro do método) |
 | `'PhysicsSystem' is not a member of 'motor'` | falta `#include <motor/physics/PhysicsSystem.h>` |
+| `'AudioSystem' is not a member of 'motor'` | falta `#include <motor/audio/AudioSystem.h>` |
 | `expected ';' after struct definition` | falta o `;` depois do `}` da struct |
 | `undefined reference to ...` | um método foi declarado e não tem corpo, ou um `.cpp` de que ele depende está fora da pasta `Scripts/` |
 | `redefinition of 'void MotorRegisterScript_X(...)'` | dois `MOTOR_SCRIPT(X)` com o mesmo nome no mesmo arquivo; cada script é registrado uma vez |
