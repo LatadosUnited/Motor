@@ -95,7 +95,10 @@ struct BuildTool {
     fs::path path;
     bool found = false;
 };
-std::vector<BuildTool> CheckBuildTools(const fs::path& sdkJson, const fs::path& msysRoot = "C:/msys64");
+// Sem SDK, o CMake é procurado também em `cmakeCandidates` (DefaultCMakeCandidates: Arquivos de Programas e PATH).
+std::vector<fs::path> DefaultCMakeCandidates();
+std::vector<BuildTool> CheckBuildTools(const fs::path& sdkJson, const fs::path& msysRoot = "C:/msys64",
+                                       const std::vector<fs::path>& cmakeCandidates = DefaultCMakeCandidates());
 
 // Linha de argumentos do hub instalado (vazia com a pasta de dados padrão).
 std::string HubArguments(const fs::path& dataDir);

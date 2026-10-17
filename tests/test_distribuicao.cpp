@@ -300,9 +300,13 @@ int main(int argc, char** argv) {
         }
         const auto tools = CheckBuildTools(base / "sdk" / "MotorSDK.json");
         CHECK(tools.size() == 2 && tools[0].found && !tools[1].found);
-        const auto none = CheckBuildTools(base / "sem-sdk.json", base / "msys-falso");
+        const auto none = CheckBuildTools(base / "sem-sdk.json", base / "msys-falso", {});
         CHECK(none.size() == 2 && !none[0].found && !none[1].found &&
-              none[0].path == base / "msys-falso" / "ucrt64" / "bin" / "g++.exe");
+              none[0].path == (base / "msys-falso" / "ucrt64" / "bin" / "g++.exe").make_preferred());
+        // Sem SDK, o CMake fora do MSYS2 (Arquivos de Programas, PATH) também vale.
+        WriteText(base / "outro-cmake" / "cmake.exe", "x");
+        const auto other = CheckBuildTools(base / "sem-sdk.json", base / "msys-falso", {base / "outro-cmake" / "cmake.exe"});
+        CHECK(other[1].found && other[1].path == (base / "outro-cmake" / "cmake.exe").make_preferred());
     }
 
     SECTION("hub.json formato 2: servidores");

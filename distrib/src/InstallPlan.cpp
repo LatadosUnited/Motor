@@ -3,6 +3,7 @@
 #include <HubCore.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -177,25 +178,47 @@ UninstallPlan PlanUninstall(const InstallRecord& record, bool removeData, const 
     return plan;
 }
 
-std::vector<BuildTool> CheckBuildTools(const fs::path& sdkJson, const fs::path& msysRoot) {
-    fs::path cxx = msysRoot / "ucrt64" / "bin" / "g++.exe";
-    fs::path cmake = msysRoot / "ucrt64" / "bin" / "cmake.exe";
+std::vector<fs::path> DefaultCMakeCandidates() {
+    std::vector<fs::path> out{"C:/Program Files/CMake/bin/cmake.exe"};
+#ifdef _WIN32
+    if (const wchar_t* path = _wgetenv(L"PATH")) {
+        std::wstring list = path;
+        size_t start = 0;
+        while (start <= list.size()) {
+            const size_t end = std::min(list.find(L';', start), list.size());
+            if (end > start) out.push_back(fs::path(list.substr(start, end - start)) / "cmake.exe");
+            start = end + 1;
+        }
+    }
+#endif
+    return out;
+}
+
+std::vector<BuildTool> CheckBuildTools(const fs::path& sdkJson, const fs::path& msysRoot,
+                                       const std::vector<fs::path>& cmakeCandidates) {
+    std::vector<fs::path> cxx{msysRoot / "ucrt64" / "bin" / "g++.exe"};
+    std::vector<fs::path> cmake{msysRoot / "ucrt64" / "bin" / "cmake.exe"};
+    cmake.insert(cmake.end(), cmakeCandidates.begin(), cmakeCandidates.end());
     std::ifstream in(sdkJson, std::ios::binary);
     if (in) {
+        // A versão instalada diz exatamente quais o editor vai chamar.
         std::stringstream ss;
         ss << in.rdbuf();
         try {
             const json root = json::parse(ss.str());
-            if (const std::string v = root.value("cxxCompiler", std::string()); !v.empty()) cxx = PathFromUtf8(v);
-            if (const std::string v = root.value("cmake", std::string()); !v.empty()) cmake = PathFromUtf8(v);
+            if (const std::string v = root.value("cxxCompiler", std::string()); !v.empty()) cxx = {PathFromUtf8(v)};
+            if (const std::string v = root.value("cmake", std::string()); !v.empty()) cmake = {PathFromUtf8(v)};
         } catch (const json::exception&) {
         }
     }
-    std::error_code ec;
-    std::vector<BuildTool> tools;
-    tools.push_back({"g++ (MSYS2 UCRT64)", cxx, fs::is_regular_file(cxx, ec)});
-    tools.push_back({"CMake", cmake, fs::is_regular_file(cmake, ec)});
-    return tools;
+    const auto find = [](const char* name, const std::vector<fs::path>& candidates) {
+        std::error_code ec;
+        for (const fs::path& c : candidates) {
+            if (fs::is_regular_file(c, ec)) return BuildTool{name, fs::path(c).make_preferred(), true};
+        }
+        return BuildTool{name, fs::path(candidates.front()).make_preferred(), false};
+    };
+    return {find("g++ (MSYS2 UCRT64)", cxx), find("CMake", cmake)};
 }
 
 } // namespace distrib

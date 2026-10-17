@@ -5,6 +5,7 @@
 # baixadas pelo CMakeLists.txt da raiz). Pode virar um repositório próprio: este CMakeLists só precisa dos alvos
 # glfw, imgui (objetos) e nlohmann_json::nlohmann_json.
 set(MOTOR_HUB_VERSION 0.2.0)  # versão do hub, separada da do Motor (0.2: baixa versões de servidores)
+set(MOTOR_HUB_VERSION ${MOTOR_HUB_VERSION} PARENT_SCOPE)  # o instalador (installer/) leva este hub
 
 # Núcleo sem janela (testado em tests/test_hub.cpp).
 add_library(motor_hub_core STATIC src/HubCore.cpp)
