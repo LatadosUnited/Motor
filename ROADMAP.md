@@ -363,7 +363,7 @@ Pontos de atenção da revisão do código (17/10/2026):
 ```
 Fase 0 Git/testes
    └─ Fase 1 Componentes ──┬─ Fase 2 Play ── Fase 3 Scripts ──┬─ Fase 5 Física ✅
-                           │                                  ├─ Fase 8 Áudio          ✅
+                           │                                  ├─ Fase 8 Áudio         ✅
                            ├─ Fase 4 Luzes/câmera ✅          ├─ Fase 9 HUD           ✅
                            ├─ Fase 6 Materiais/prefabs ✅     ├─ Fase 10 Exportar
                            │     └─ Fase 11 Modelos 3D ✅     └─ Fase 12 Doc. scripts ✅
