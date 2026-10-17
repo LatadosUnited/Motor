@@ -26,6 +26,7 @@ add_executable(MotorEditor
     src/UiFieldDrawers.cpp
     src/ModelRefDrawer.cpp
     src/ShadowQualityDrawer.cpp
+    src/AudioClipDrawer.cpp
     src/mcp/ImageEncode.cpp
     src/mcp/McpController.cpp
     src/mcp/McpProtocol.cpp
