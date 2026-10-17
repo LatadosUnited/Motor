@@ -37,6 +37,8 @@ ctest --test-dir build --output-on-failure
   - `renderer/GL.h`: loader OpenGL próprio (X-macro). Função GL nova = adicionar na lista de lá.
   - `ui/` (acima de scene): HUD do jogo. Componentes `Ui*`, `UiLayout` (âncoras), `Font` (atlas SDF com o
     `imstb_truetype.h` do ImGui), `UiRenderer` (sobre o `renderer/Renderer2D`), `UiSystem` (cliques).
+  - `audio/` (acima de scene): som do jogo com a miniaudio. `AudioSystem` (sistema do `SceneRuntime`);
+    componentes `AudioSource` e `AudioListener` ficam em `scene/`.
 - `editor/` — `MotorEditor`. `EditorApp` só monta as peças (loop, layout, barra de menus, atalhos,
   desfazer); `SceneViewport` (câmera livre, gizmo, seleção, arquivos soltos), `PlayController` (menu Jogo,
   botões e pedidos de Play), `SceneDocument` (cena/projeto abertos, menu Arquivo, popups, título),
@@ -50,6 +52,8 @@ ctest --test-dir build --output-on-failure
   `motor/scene/ScriptModule.h`). O editor compila uma DLL por projeto (`ScriptProject`, `ScriptBuilder`) e
   recarrega sem fechar (`ScriptHost`). A engine é a `libMotor.dll`, compartilhada pelo editor e pela DLL de
   scripts; modelos de script em `editor/templates/Scripts/`.
+- `player/` — `Player.exe`, o executável do jogo exportado (roda um projeto sem o editor). A exportação fica em
+  `editor/src/GameExport` (assets referenciados e pasta de saída) e `ExportController` (Arquivo > Exportar jogo).
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -169,7 +173,7 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
 | 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
 
-Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 6, 7, 9, 11, 12 e 13 prontas (Alpha 1); próximas 10, 8 e "Ambiente".
+Prioridade atual (ver `ROADMAP.md`, "Prioridades"): Alpha 1 fechada; 8 e 10 prontas; próximas a validação de uso real e "Ambiente".
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

@@ -20,6 +20,8 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Interface do jogo (texto, imagens, botões, fontes SDF, troca de cena) | ✅ pronto (Fase 9) |
 | Guia e referência de scripts (`docs/`), com os exemplos testados | ✅ pronto (Fase 12) |
 | Servidor MCP do editor (agentes veem e mexem no editor e testam o jogo) | ✅ pronto (Fase 13) |
+| Áudio (miniaudio: som 2D/3D, `AudioSource`, `AudioListener`, API para scripts) | ✅ pronto (Fase 8) |
+| Exportar o jogo (Player sem o editor, só os assets usados, Arquivo > Exportar jogo) | ✅ pronto (Fase 10) |
 | Git + testes `ctest` | ✅ pronto (Fase 0) |
 | Editor (hierarquia, inspector, viewport, gizmos, desfazer) | ✅ pronto |
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
@@ -28,9 +30,10 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 **Alpha 1 concluída** (16/10/2026): Fases 0 a 7, 9, 11, 12 e 13. Dá para montar e jogar dentro do editor
 cenas com visual moderno (PBR, sombras, céu HDR, pós-processamento), luzes, física, scripts com recarga,
 modelos glTF animados e HUD, e um agente consegue fazer o mesmo pelo servidor MCP.
-**Ainda não:** entregar um jogo. Falta exportar (Fase 10) e som (8), os próximos passos, que abrem a alpha
-2. Depois deles vem uma validação de uso real (o editor foi pouco testado à mão; ver "Anotado para a alpha
-2") e, então, a fase "Ambiente" (água, terreno, partículas e vegetação sobre a base da Fase 7).
+**Alpha 2 em andamento** (17/10/2026): exportar (Fase 10) e som (Fase 8) prontos; um jogo com som já sai
+numa pasta com o .exe e roda sem o editor. Próximo passo: a validação de uso real (o editor foi pouco testado
+à mão; ver "Anotado para a alpha 2") e, então, a fase "Ambiente" (água, terreno, partículas e vegetação sobre
+a base da Fase 7).
 
 ## Prioridades
 
@@ -51,8 +54,8 @@ Alpha 2, nesta ordem:
 
 | # | Passo | Por quê | Pode rodar junto com |
 |---|---|---|---|
-| 5 | Fase 10 — Exportar o jogo | sem exportar não há jogo entregue, só o editor | 8 |
-| 6 | Fase 8 — Áudio | jogo sem som não está completo | 10 (a exportação precisa empacotar os sons) |
+| 5 | ~~Fase 10 — Exportar o jogo~~ ✅ | sem exportar não há jogo entregue, só o editor | 8 |
+| 6 | ~~Fase 8 — Áudio~~ ✅ | jogo sem som não está completo | 10 (a exportação precisa empacotar os sons) |
 | 7 | Validação de uso real | depois de 8 e 10: fazer um jogo pequeno do começo ao fim, exportado, testando à mão o que o MCP não cobre (ver "Anotado para a alpha 2") | — |
 | 8 | Desfazer que escala e arquivos grandes divididos | ver "Anotado para a alpha 2" | Ambiente (áreas diferentes) |
 | 9 | Fase "Ambiente" | água, terreno, partículas e vegetação sobre a base da Fase 7 | — |
