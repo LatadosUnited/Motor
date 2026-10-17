@@ -129,21 +129,27 @@ bool ImportModel(const fs::path& modelFile, AssetLibrary& assets, ModelImportRes
     std::vector<std::shared_ptr<Material>> materials(data.materials.size());
     for (size_t i = 0; i < data.materials.size(); ++i) {
         const ModelMaterial& m = data.materials[i];
-        std::optional<AssetRef> texture;
-        if (m.image >= 0) {
-            auto it = imageRefs.find(m.image);
+        auto image = [&](int index) -> std::optional<AssetRef> {
+            if (index < 0) return std::nullopt;
+            auto it = imageRefs.find(index);
             if (it == imageRefs.end()) {
-                it = imageRefs.emplace(m.image, ImportImage(data.images[static_cast<size_t>(m.image)], result.folder, assets, result)).first;
+                it = imageRefs.emplace(index, ImportImage(data.images[static_cast<size_t>(index)], result.folder, assets, result)).first;
             }
-            texture = it->second;
-        }
+            return it->second;
+        };
+        const MaterialTextureRefs textures{image(m.image), image(m.normalImage), image(m.metallicRoughnessImage),
+                                           image(m.occlusionImage), image(m.emissiveImage)};
         Material material;
         material.color = m.color;
-        material.specular = m.specular;
-        material.shininess = m.shininess;
+        material.metallic = m.metallic;
+        material.roughness = m.roughness;
+        material.normalStrength = m.normalScale;
+        material.occlusionStrength = m.occlusionStrength;
+        material.emissive = m.emissive;
+        material.emissiveIntensity = m.emissiveIntensity;
         const fs::path file = result.folder / PathFromUtf8(SafeFileName(m.name) + kMaterialFileExtension);
         std::string problem;
-        if (!assets.WriteMaterialFile(file, material, texture, &problem)) {
+        if (!assets.WriteMaterialFile(file, material, textures, &problem)) {
             SetError(error, std::move(problem));
             return false;
         }

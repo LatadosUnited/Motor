@@ -44,6 +44,9 @@ private:
     void Undo();
     void Redo();
     void ApplyPlayRequest();
+    void ApplyRequests();                                // desfazer/refazer e Play/Parar pedidos no frame anterior
+    void ApplyPendingChanges(bool interactionFinished);  // exclusões, prefabs e o passo de desfazer do frame
+    void UpdateMinimized();                              // a parte do frame sem interface, com a janela minimizada
     void StopPlay();  // volta à edição (nada acontece se já estiver editando)
     void OnPlayStopped();
     void DrawProjectPanel();

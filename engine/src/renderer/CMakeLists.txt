@@ -1,4 +1,5 @@
-# OpenGL: loader próprio (GL.h, privado), shaders, malhas, texturas, câmera, framebuffer e renderer.
+# OpenGL: loader próprio (GL.h, privado), shaders, malhas, texturas, câmera, framebuffer e renderer
+# (Fase 7: sombras, PBR, céu e pós-processamento; ShadowMath e Pbr são só CPU, testados no ctest).
 motor_add_layer(renderer
     SOURCES
         GL.cpp
@@ -10,5 +11,10 @@ motor_add_layer(renderer
         Framebuffer.cpp
         Renderer2D.cpp
         Skeleton.cpp
+        ShadowMath.cpp
+        Pbr.cpp
+        PostProcess.cpp
+        Shadows.cpp
+        Sky.cpp
     DEPENDS core
     PRIVATE_LIBS glfw)

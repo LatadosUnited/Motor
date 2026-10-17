@@ -9,13 +9,7 @@ layout(location = 2) in vec2 aUV;
 layout(location = 3) in vec4 aJoints;   // índices na pele (float)
 layout(location = 4) in vec4 aWeights;  // somam 1
 
-layout(std140, binding = 0) uniform Frame {
-    mat4 uView;
-    mat4 uProjection;
-    vec4 uCameraPosition;
-    vec4 uAmbient;
-    vec4 uFog;  // rgb = cor do céu (linear), a = densidade
-};
+#include "frame.glsl"
 
 // Mesmo tamanho que Renderer::kMaxJoints.
 const int kMaxJoints = 128;

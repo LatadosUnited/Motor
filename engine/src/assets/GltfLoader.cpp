@@ -195,23 +195,34 @@ bool ReadPrimitive(const cgltf_primitive& p, ModelPrimitive& out, std::string& p
     return true;
 }
 
-// Material PBR (metal/rugosidade) aproximado para o Blinn-Phong do Motor.
+int ImageOf(const cgltf_data& d, const cgltf_texture_view& view) {
+    return view.texture && view.texture->image ? static_cast<int>(cgltf_image_index(&d, view.texture->image)) : -1;
+}
+
+glm::vec3 LinearToSrgb(const glm::vec3& linear) {
+    return glm::pow(glm::max(linear, glm::vec3(0.0f)), glm::vec3(1.0f / 2.2f));
+}
+
+// Material PBR (metal/rugosidade): o mesmo modelo do Motor desde a Fase 7.
 ModelMaterial ReadMaterial(const cgltf_data& d, const cgltf_material& m, const std::string& name) {
     ModelMaterial out;
     out.name = name;
-    float roughness = 1.0f;
     if (m.has_pbr_metallic_roughness) {
         const cgltf_pbr_metallic_roughness& pbr = m.pbr_metallic_roughness;
         const glm::vec3 linear{pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]};
-        out.color = glm::vec4(glm::pow(glm::max(linear, glm::vec3(0.0f)), glm::vec3(1.0f / 2.2f)), pbr.base_color_factor[3]);
-        roughness = std::clamp(pbr.roughness_factor, 0.0f, 1.0f);
-        if (pbr.base_color_texture.texture && pbr.base_color_texture.texture->image) {
-            out.image = static_cast<int>(cgltf_image_index(&d, pbr.base_color_texture.texture->image));
-        }
+        out.color = glm::vec4(LinearToSrgb(linear), pbr.base_color_factor[3]);
+        out.metallic = std::clamp(pbr.metallic_factor, 0.0f, 1.0f);
+        out.roughness = std::clamp(pbr.roughness_factor, 0.0f, 1.0f);
+        out.image = ImageOf(d, pbr.base_color_texture);
+        out.metallicRoughnessImage = ImageOf(d, pbr.metallic_roughness_texture);
     }
-    const float smooth = 1.0f - roughness;
-    out.specular = 0.05f + 0.55f * smooth;
-    out.shininess = 4.0f + 124.0f * smooth * smooth;
+    out.normalImage = ImageOf(d, m.normal_texture);
+    if (out.normalImage >= 0) out.normalScale = m.normal_texture.scale;
+    out.occlusionImage = ImageOf(d, m.occlusion_texture);
+    if (out.occlusionImage >= 0) out.occlusionStrength = std::clamp(m.occlusion_texture.scale, 0.0f, 1.0f);
+    out.emissive = LinearToSrgb(glm::make_vec3(m.emissive_factor));
+    out.emissiveImage = ImageOf(d, m.emissive_texture);
+    if (m.has_emissive_strength) out.emissiveIntensity = std::max(m.emissive_strength.emissive_strength, 0.0f);
     return out;
 }
 
@@ -291,9 +302,11 @@ bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelDat
         model.images.push_back(std::move(image));
     }
     for (ModelMaterial& m : model.materials) {
-        if (m.image >= 0 && model.images[static_cast<size_t>(m.image)].bytes.empty() &&
-            model.images[static_cast<size_t>(m.image)].file.empty()) {
-            m.image = -1;
+        for (int* image : {&m.image, &m.metallicRoughnessImage, &m.normalImage, &m.occlusionImage, &m.emissiveImage}) {
+            if (*image >= 0 && model.images[static_cast<size_t>(*image)].bytes.empty() &&
+                model.images[static_cast<size_t>(*image)].file.empty()) {
+                *image = -1;  // imagem sem dados
+            }
         }
     }
 

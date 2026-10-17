@@ -2,7 +2,12 @@
 
 #include "motor/core/Log.h"
 #include "motor/renderer/Framebuffer.h"
+#include "motor/renderer/Pbr.h"
+#include "renderer/DrawList.h"
 #include "renderer/GL.h"
+#include "renderer/PostProcess.h"
+#include "renderer/Shadows.h"
+#include "renderer/Sky.h"
 
 #include <GLFW/glfw3.h>
 #include <glm/common.hpp>
@@ -10,6 +15,7 @@
 #include <glm/trigonometric.hpp>
 #include <glm/vec4.hpp>
 #include <glm/geometric.hpp>
+#include <glm/matrix.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <algorithm>
@@ -20,13 +26,17 @@
 namespace motor {
 
 namespace {
-// Espelha o bloco "Frame" (std140) dos shaders. Só vec4/mat4 => layout idêntico ao C++.
+// Espelha o bloco "Frame" (std140) de frame.glsl. Só vec4/mat4 => layout idêntico ao C++.
 struct FrameData {
     glm::mat4 view;
     glm::mat4 projection;
     glm::vec4 cameraPosition;
     glm::vec4 ambient;
-    glm::vec4 fog;      // rgb = cor do céu (linear), a = densidade
+    glm::vec4 fog;      // rgb = cor da neblina (linear), a = densidade
+    glm::mat4 invViewProjection;
+    glm::vec4 sky;      // x = brilho do fundo, y = brilho dos reflexos, z = rotação (rad), w = mip máximo do reflexo
+    glm::vec4 sh[9];
+    glm::vec4 viewport;
 };
 
 // Espelha o bloco "Lights" (std140) do lit.frag.
@@ -34,7 +44,7 @@ struct LightData {
     glm::vec4 positionRange;   // xyz = posição, w = alcance
     glm::vec4 directionType;   // xyz = direção (normalizada), w = tipo (LightType)
     glm::vec4 color;           // rgb = cor * intensidade
-    glm::vec4 cone;            // x = cos(ângulo interno), y = cos(ângulo externo)
+    glm::vec4 cone;            // x = cos(ângulo interno), y = cos(ângulo externo), z = camada do cubo de sombra, w = cascatas
 };
 struct LightsData {
     glm::ivec4 count;  // x = número de luzes
@@ -43,13 +53,14 @@ struct LightsData {
 
 constexpr GLuint kFrameBinding = 0;
 constexpr GLuint kLightsBinding = 1;
-constexpr GLuint kJointsBinding = 2;  // skinned.vert
+constexpr GLuint kJointsBinding = 2;   // skinned.vert, shadow.vert
+constexpr GLuint kShadowsBinding = 3;  // lit.frag
 
-glm::vec3 ToLinear(const glm::vec3& srgb) {
-    return glm::pow(glm::max(srgb, glm::vec3(0.0f)), glm::vec3(2.2f));
-}
+// Unidades de textura do lit.frag.
+constexpr GLuint kUnitAlbedo = 0, kUnitNormal = 1, kUnitMetalRough = 2, kUnitOcclusion = 3, kUnitEmissive = 4;
+constexpr GLuint kUnitCascades = 5, kUnitCubes = 6, kUnitPrefiltered = 7, kUnitBrdf = 8;
 
-LightData Pack(const Light& light) {
+LightData Pack(const Light& light, int cubeLayer, bool cascades) {
     const float len = glm::length(light.direction);
     const glm::vec3 direction = len > 1e-6f ? light.direction / len : glm::vec3(0.0f, -1.0f, 0.0f);
     // Ângulos limitados para o cone não degenerar (externo > interno, abaixo de 90°).
@@ -59,7 +70,8 @@ LightData Pack(const Light& light) {
         glm::vec4(light.position, glm::max(light.range, 0.01f)),
         glm::vec4(direction, static_cast<float>(light.type)),
         glm::vec4(light.color * glm::max(light.intensity, 0.0f), 1.0f),
-        glm::vec4(std::cos(glm::radians(inner)), std::cos(glm::radians(outer)), 0.0f, 0.0f),
+        glm::vec4(std::cos(glm::radians(inner)), std::cos(glm::radians(outer)), static_cast<float>(cubeLayer),
+                  cascades ? 1.0f : 0.0f),
     };
 }
 
@@ -70,6 +82,10 @@ void APIENTRY OnGlDebug(GLenum, GLenum type, GLuint id, GLenum severity, GLsizei
     } else {
         log::Warn("OpenGL [{}]: {}", id, message);
     }
+}
+
+void BindData(GLuint unit, const std::shared_ptr<Texture2D>& texture, const Texture2D& fallback) {
+    glBindTextureUnit(unit, (texture ? *texture : fallback).LinearHandle());
 }
 } // namespace
 
@@ -90,25 +106,30 @@ Renderer::Renderer() {
         glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
         log::Info("OpenGL debug output ativo");
     }
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);  // reflexos sem costura entre as faces do cubo
 
     const std::string dir = MOTOR_ENGINE_ASSETS "/shaders/";
     m_litShader = Shader::FromFiles(dir + "lit.vert", dir + "lit.frag");
+    m_skinnedShader = Shader::FromFiles(dir + "skinned.vert", dir + "lit.frag");  // animação esquelética (Fase 11)
     m_unlitShader = Shader::FromFiles(dir + "lit.vert", dir + "unlit.frag");
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
+    m_post = std::make_unique<PostProcess>(dir);
+    m_shadows = std::make_unique<ShadowRenderer>(dir);
+    m_sky = std::make_unique<SkyRenderer>(dir);
 
     glCreateBuffers(1, &m_frameUbo);
     glNamedBufferStorage(m_frameUbo, sizeof(FrameData), nullptr, GL_DYNAMIC_STORAGE_BIT);
     glCreateBuffers(1, &m_lightsUbo);
     glNamedBufferStorage(m_lightsUbo, sizeof(LightsData), nullptr, GL_DYNAMIC_STORAGE_BIT);
-
-    // Animação esquelética (Fase 11).
-    m_skinnedShader = Shader::FromFiles(dir + "skinned.vert", dir + "lit.frag");
+    glCreateBuffers(1, &m_shadowsUbo);
+    glNamedBufferStorage(m_shadowsUbo, sizeof(ShadowRenderer::Data), nullptr, GL_DYNAMIC_STORAGE_BIT);
     glCreateBuffers(1, &m_jointsUbo);
     glNamedBufferStorage(m_jointsUbo, sizeof(glm::mat4) * kMaxJoints, nullptr, GL_DYNAMIC_STORAGE_BIT);
 }
 
 Renderer::~Renderer() {
     glDeleteBuffers(1, &m_jointsUbo);
+    glDeleteBuffers(1, &m_shadowsUbo);
     glDeleteBuffers(1, &m_lightsUbo);
     glDeleteBuffers(1, &m_frameUbo);
 }
@@ -128,126 +149,202 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     MOTOR_ASSERT(!m_inScene, "BeginScene chamado duas vezes sem EndScene");
     m_inScene = true;
     m_target = target;
-
-    if (target) {
-        target->Bind();
-    } else {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, m_windowWidth, m_windowHeight);
-    }
-
-    // Outras camadas (ex.: ImGui) mexem no estado do GL; reafirmamos o que a cena precisa.
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-    glDisable(GL_BLEND);
-    glDisable(GL_SCISSOR_TEST);
-    glEnable(GL_MULTISAMPLE);
-    glPolygonMode(GL_FRONT_AND_BACK, m_wireframe ? GL_LINE : GL_FILL);
-
-    glClearColor(environment.skyColor.r, environment.skyColor.g, environment.skyColor.b, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    const FrameData data{
-        camera.View(),
-        camera.Projection(),
-        glm::vec4(camera.position, 1.0f),
-        glm::vec4(environment.ambient, 1.0f),
-        glm::vec4(ToLinear(environment.skyColor), environment.fogDensity),
-    };
-    glNamedBufferSubData(m_frameUbo, 0, sizeof(FrameData), &data);
-    glBindBufferBase(GL_UNIFORM_BUFFER, kFrameBinding, m_frameUbo);
+    m_camera = camera;
+    m_environment = environment;
 
     if (lights.size() > kMaxLights && !std::exchange(m_warnedTooManyLights, true)) {
         log::Warn("Renderer: {} luzes na cena; só as primeiras {} são usadas", lights.size(), kMaxLights);
     }
-    const size_t count = std::min(lights.size(), kMaxLights);
-    LightsData lightsData{};
-    lightsData.count = glm::ivec4(static_cast<int>(count), 0, 0, 0);
-    for (size_t i = 0; i < count; ++i) lightsData.lights[i] = Pack(lights[i]);
-    // Só o cabeçalho e as luzes usadas: o resto do bloco o shader não lê.
-    glNamedBufferSubData(m_lightsUbo, 0, sizeof(glm::ivec4) + count * sizeof(LightData), &lightsData);
-    glBindBufferBase(GL_UNIFORM_BUFFER, kLightsBinding, m_lightsUbo);
-
-    m_litShader->Bind();
+    m_lights.assign(lights.begin(), lights.begin() + static_cast<std::ptrdiff_t>(std::min(lights.size(), kMaxLights)));
+    m_items.clear();
+    m_joints.clear();
+    m_wires.clear();
 }
 
 void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat4& model) {
     MOTOR_ASSERT(m_inScene, "Submit fora de BeginScene/EndScene");
-
-    m_litShader->SetMat4("uModel", model);
-    m_litShader->SetMat3("uNormalMatrix", glm::inverseTranspose(glm::mat3(model)));
-    m_litShader->SetVec4("uColor", material.color);
-    m_litShader->SetFloat("uSpecular", material.specular);
-    m_litShader->SetFloat("uShininess", material.shininess);
-    (material.albedo ? material.albedo : m_whiteTexture)->Bind(0);
-
-    mesh.Draw();
-
-    ++m_stats.drawCalls;
-    m_stats.triangles += mesh.IndexCount() / 3;
+    DrawItem& item = m_items.emplace_back();
+    item.mesh = &mesh;
+    item.material = material;
+    item.model = model;
+    item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
 }
 
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
     MOTOR_ASSERT(m_inScene, "SubmitWireframe fora de BeginScene/EndScene");
-
-    m_unlitShader->Bind();
-    m_unlitShader->SetMat4("uModel", model);
-    m_unlitShader->SetVec4("uColor", color);
-
-    // Puxa as linhas um pouco para a frente para não brigarem com as faces no depth buffer.
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glEnable(GL_POLYGON_OFFSET_LINE);
-    glPolygonOffset(-1.0f, -1.0f);
-    glDisable(GL_CULL_FACE);
-    mesh.Draw();
-    glEnable(GL_CULL_FACE);
-    glDisable(GL_POLYGON_OFFSET_LINE);
-    glPolygonMode(GL_FRONT_AND_BACK, m_wireframe ? GL_LINE : GL_FILL);
-
-    m_litShader->Bind();
-    ++m_stats.drawCalls;
+    m_wires.push_back({&mesh, model, color});
 }
 
 void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const glm::mat4& model,
                              std::span<const glm::mat4> joints) {
     MOTOR_ASSERT(m_inScene, "SubmitSkinned fora de BeginScene/EndScene");
-
     if (joints.size() > kMaxJoints && !std::exchange(m_warnedTooManyJoints, true)) {
         log::Warn("Renderer: malha com {} juntas; só as primeiras {} se movem", joints.size(), kMaxJoints);
     }
     const size_t count = std::min(joints.size(), kMaxJoints);
-    glNamedBufferSubData(m_jointsUbo, 0, static_cast<GLsizeiptr>(count * sizeof(glm::mat4)), joints.data());
+    DrawItem& item = m_items.emplace_back();
+    item.mesh = &mesh;
+    item.material = material;
+    item.model = model;
+    item.skinned = true;
+    item.jointOffset = static_cast<uint32_t>(m_joints.size());
+    item.jointCount = static_cast<uint32_t>(count);
+    m_joints.insert(m_joints.end(), joints.begin(), joints.begin() + static_cast<std::ptrdiff_t>(count));
+    // A pose animada sai da caixa de repouso: folga de 50% (e meio metro) para o recorte não sumir com ela.
+    const glm::vec3 center = (mesh.BoundsMin() + mesh.BoundsMax()) * 0.5f;
+    const glm::vec3 half = (mesh.BoundsMax() - mesh.BoundsMin()) * 0.75f + glm::vec3(0.5f);
+    item.bounds = TransformAabb({center - half, center + half}, model);
+}
+
+void Renderer::UploadJoints(const DrawItem& item) {
+    glNamedBufferSubData(m_jointsUbo, 0, static_cast<GLsizeiptr>(item.jointCount * sizeof(glm::mat4)),
+                         m_joints.data() + item.jointOffset);
     glBindBufferBase(GL_UNIFORM_BUFFER, kJointsBinding, m_jointsUbo);
+}
 
-    m_skinnedShader->Bind();
-    m_skinnedShader->SetMat4("uModel", model);
-    m_skinnedShader->SetMat3("uNormalMatrix", glm::inverseTranspose(glm::mat3(model)));
-    m_skinnedShader->SetVec4("uColor", material.color);
-    m_skinnedShader->SetFloat("uSpecular", material.specular);
-    m_skinnedShader->SetFloat("uShininess", material.shininess);
-    (material.albedo ? material.albedo : m_whiteTexture)->Bind(0);
-
-    mesh.Draw();
-    m_litShader->Bind();
-
-    ++m_stats.drawCalls;
-    m_stats.triangles += mesh.IndexCount() / 3;
+void Renderer::BindTarget() const {
+    if (m_target) {
+        m_target->Bind();
+    } else {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, m_windowWidth, m_windowHeight);
+    }
 }
 
 void Renderer::EndScene() {
     MOTOR_ASSERT(m_inScene, "EndScene sem BeginScene");
     m_inScene = false;
 
+    // Outras camadas (ex.: ImGui) mexem no estado do GL; reafirmamos o que a cena precisa.
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+
+    const int width = m_target ? m_target->Width() : std::max(m_windowWidth, 1);
+    const int height = m_target ? m_target->Height() : std::max(m_windowHeight, 1);
+    m_post->Resize(width, height, m_samples);
+    m_sky->Update(m_environment, *m_post);
+
+    DrawScene();
+    m_post->Resolve();
+    m_post->Apply(m_environment, [this] { BindTarget(); });
+    DrawWireframes();
+
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    if (m_target) {
-        m_target->Resolve();
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, m_windowWidth, m_windowHeight);
-        m_target = nullptr;
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    if (m_target) m_target->Resolve();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_windowWidth, m_windowHeight);
+    m_target = nullptr;
+}
+
+void Renderer::DrawScene() {
+    const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
+
+    // 1) Mapas de sombra.
+    const ShadowRenderer::Result shadows = m_shadows->Render(m_camera, m_lights, m_environment, m_items, uploadJoints, m_stats);
+
+    // 2) Blocos de dados do quadro.
+    const Environment& env = m_environment;
+    const float skyIntensity = std::max(env.skyIntensity, 0.0f);
+    const float skyLight = skyIntensity * std::max(env.skyLight, 0.0f);
+    const glm::mat4 view = m_camera.View();
+    const glm::mat4 projection = m_camera.Projection();
+    FrameData frame{};
+    frame.view = view;
+    frame.projection = projection;
+    frame.cameraPosition = glm::vec4(m_camera.position, 1.0f);
+    frame.ambient = glm::vec4(env.ambient, 1.0f);
+    frame.fog = glm::vec4(m_sky->HorizonColor() * skyIntensity, std::max(env.fogDensity, 0.0f));
+    frame.invViewProjection = glm::inverse(projection * view);
+    frame.sky = glm::vec4(skyIntensity, skyLight, glm::radians(env.skyRotation), m_sky->MaxReflectionMip());
+    for (size_t i = 0; i < 9; ++i) frame.sh[i] = glm::vec4(m_sky->Irradiance().c[i] * skyLight, 0.0f);
+    frame.viewport = glm::vec4(static_cast<float>(m_post->Width()), static_cast<float>(m_post->Height()),
+                               1.0f / static_cast<float>(m_post->Width()), 1.0f / static_cast<float>(m_post->Height()));
+    glNamedBufferSubData(m_frameUbo, 0, sizeof(FrameData), &frame);
+    glBindBufferBase(GL_UNIFORM_BUFFER, kFrameBinding, m_frameUbo);
+
+    LightsData lightsData{};
+    lightsData.count = glm::ivec4(static_cast<int>(m_lights.size()), 0, 0, 0);
+    for (size_t i = 0; i < m_lights.size(); ++i) {
+        lightsData.lights[i] = Pack(m_lights[i], shadows.cubeLayer[i], shadows.cascadeLight == static_cast<int>(i));
+    }
+    // Só o cabeçalho e as luzes usadas: o resto do bloco o shader não lê.
+    glNamedBufferSubData(m_lightsUbo, 0, static_cast<GLsizeiptr>(sizeof(glm::ivec4) + m_lights.size() * sizeof(LightData)), &lightsData);
+    glBindBufferBase(GL_UNIFORM_BUFFER, kLightsBinding, m_lightsUbo);
+    glNamedBufferSubData(m_shadowsUbo, 0, sizeof(ShadowRenderer::Data), &shadows.data);
+    glBindBufferBase(GL_UNIFORM_BUFFER, kShadowsBinding, m_shadowsUbo);
+
+    // 3) Cena em HDR.
+    m_post->BeginScene();
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glEnable(GL_MULTISAMPLE);
+    glPolygonMode(GL_FRONT_AND_BACK, m_wireframe ? GL_LINE : GL_FILL);
+
+    glBindTextureUnit(kUnitCascades, m_shadows->CascadeTexture());
+    glBindTextureUnit(kUnitCubes, m_shadows->CubeTexture());
+    glBindTextureUnit(kUnitPrefiltered, m_sky->PrefilteredCube());
+    glBindTextureUnit(kUnitBrdf, m_sky->BrdfLut());
+
+    const Frustum frustum = Frustum::FromMatrix(projection * view);
+    const Shader* bound = nullptr;
+    for (const DrawItem& item : m_items) {
+        if (!frustum.Intersects(item.bounds)) {
+            ++m_stats.culled;
+            continue;
+        }
+        Shader& shader = item.skinned ? *m_skinnedShader : *m_litShader;
+        if (bound != &shader) {
+            shader.Bind();
+            bound = &shader;
+        }
+        if (item.skinned) UploadJoints(item);
+        const Material& m = item.material;
+        shader.SetMat4("uModel", item.model);
+        shader.SetMat3("uNormalMatrix", glm::inverseTranspose(glm::mat3(item.model)));
+        shader.SetVec4("uColor", m.color);
+        shader.SetVec4("uPbr", glm::vec4(m.metallic, m.roughness, m.specular, m.normalMap ? m.normalStrength : 0.0f));
+        shader.SetVec4("uEmissive", glm::vec4(SrgbToLinear(m.emissive) * std::max(m.emissiveIntensity, 0.0f),
+                                              m.occlusionMap ? glm::clamp(m.occlusionStrength, 0.0f, 1.0f) : 0.0f));
+        (m.albedo ? m.albedo : m_whiteTexture)->Bind(kUnitAlbedo);
+        BindData(kUnitNormal, m.normalMap, *m_whiteTexture);
+        BindData(kUnitMetalRough, m.metallicRoughnessMap, *m_whiteTexture);
+        BindData(kUnitOcclusion, m.occlusionMap, *m_whiteTexture);
+        (m.emissiveMap ? m.emissiveMap : m_whiteTexture)->Bind(kUnitEmissive);
+
+        item.mesh->Draw();
+        ++m_stats.drawCalls;
+        m_stats.triangles += item.mesh->IndexCount() / 3;
+    }
+
+    // 4) Céu ao fundo, onde não há nada.
+    m_sky->DrawBackground(*m_post);
+}
+
+void Renderer::DrawWireframes() {
+    if (m_wires.empty()) return;
+    // O alvo já está vinculado (Apply). A profundidade da cena vem da textura (o alvo pode ter outro MSAA).
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    m_unlitShader->Bind();
+    glBindTextureUnit(0, m_post->SceneDepth());
+    for (const WireItem& wire : m_wires) {
+        m_unlitShader->SetMat4("uModel", wire.model);
+        m_unlitShader->SetVec4("uColor", wire.color);
+        wire.mesh->Draw();
+        ++m_stats.drawCalls;
     }
 }
+
+unsigned int Renderer::SceneDepthTexture() const { return m_post->SceneDepth(); }
+unsigned int Renderer::SceneColorTexture() const { return m_post->SceneColor(); }
+unsigned int Renderer::SkyCubemap() const { return m_sky->EnvironmentCube(); }
+unsigned int Renderer::ReflectionCubemap() const { return m_sky->PrefilteredCube(); }
 
 } // namespace motor

@@ -79,10 +79,39 @@ Shader::~Shader() {
     if (m_program) glDeleteProgram(m_program);
 }
 
+namespace {
+// Troca as linhas `#include "arquivo"` pelo conteúdo do arquivo (relativo ao shader, recursivo) e põe as
+// definições logo depois do `#version` (que tem de ser a primeira linha).
+std::string Preprocess(const std::filesystem::path& path, std::string_view defines, int depth = 0) {
+    if (depth > 8) throw std::runtime_error(std::format("Shader '{}': #include aninhado demais", path.string()));
+    const std::string text = ReadTextFile(path);
+    std::string out;
+    size_t pos = 0;
+    bool first = true;
+    while (pos < text.size()) {
+        size_t end = text.find('\n', pos);
+        if (end == std::string::npos) end = text.size();
+        const std::string_view line(text.data() + pos, end - pos);
+        if (line.starts_with("#include \"")) {
+            const size_t close = line.find('"', 10);
+            if (close == std::string_view::npos) throw std::runtime_error(std::format("Shader '{}': #include sem aspas", path.string()));
+            out += Preprocess(path.parent_path() / std::string(line.substr(10, close - 10)), {}, depth + 1);
+        } else {
+            out.append(line);
+            out += '\n';
+        }
+        if (first && depth == 0) out.append(defines);
+        first = false;
+        pos = end + 1;
+    }
+    return out;
+}
+} // namespace
+
 std::unique_ptr<Shader> Shader::FromFiles(const std::filesystem::path& vertexPath,
-                                          const std::filesystem::path& fragmentPath) {
-    return std::make_unique<Shader>(ReadTextFile(vertexPath), ReadTextFile(fragmentPath),
-                                    vertexPath.stem().string());
+                                          const std::filesystem::path& fragmentPath, std::string_view defines) {
+    std::string name = vertexPath.stem().string() + "+" + fragmentPath.stem().string();
+    return std::make_unique<Shader>(Preprocess(vertexPath, defines), Preprocess(fragmentPath, defines), std::move(name));
 }
 
 void Shader::Bind() const {

@@ -169,7 +169,7 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
 | 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
 
-Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 6, 9, 11, 12 e 13 prontas; próximas 10, 8 e 7.
+Prioridade atual (ver `ROADMAP.md`, "Prioridades"): 6, 7, 9, 11, 12 e 13 prontas (Alpha 1); próximas 10, 8 e "Ambiente".
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

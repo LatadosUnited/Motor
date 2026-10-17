@@ -8,7 +8,7 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Área | Estado |
 |---|---|
 | Núcleo (janela, input, loop, log) | ✅ pronto |
-| Renderização básica (Blinn-Phong, até 32 luzes, neblina, MSAA) | ✅ pronto |
+| Renderização (PBR, sombras, céu HDR e luz do céu, HDR com bloom/tone mapping/FXAA, até 32 luzes) | ✅ pronto (Fase 7) |
 | Cena (entidades, hierarquia, transform) | ✅ pronto |
 | Sistema de componentes (registro, Inspector/serialização/desfazer automáticos) | ✅ pronto (Fase 1) |
 | Modo Play (Play/Pausa/Parar, câmera do jogo, cena restaurada ao parar) | ✅ pronto (Fase 2) |
@@ -25,10 +25,12 @@ algo que dá para usar e testar no editor, e só começa quando a anterior estiv
 | Projeto e assets (pastas, `.mscene`, PNG/JPG, OBJ, GUID em `.meta`) | ✅ pronto |
 | Base para trabalho em paralelo (camadas, peças do editor, extensões; ver CLAUDE.md) | ✅ pronto |
 
-**Usável hoje:** prototipar dentro do editor (cenas, luzes, física, scripts com recarga, Play).
-**Ainda não:** entregar um jogo. Falta exportar (Fase 10), som (8) e o visual moderno (7). O uso real pelo
-editor foi pouco testado à mão; com o servidor MCP (Fase 13) um agente consegue jogar e conferir as fases
-sem cliques.
+**Alpha 1 concluída** (16/10/2026): Fases 0 a 7, 9, 11, 12 e 13. Dá para montar e jogar dentro do editor
+cenas com visual moderno (PBR, sombras, céu HDR, pós-processamento), luzes, física, scripts com recarga,
+modelos glTF animados e HUD, e um agente consegue fazer o mesmo pelo servidor MCP.
+**Ainda não:** entregar um jogo. Falta exportar (Fase 10) e som (8), que abrem a alpha 2 junto com a fase
+"Ambiente" (água, terreno, partículas e vegetação sobre a base da Fase 7). O uso real pelo editor foi pouco
+testado à mão (ver "Anotado para a alpha 2").
 
 ## Prioridades
 
@@ -41,8 +43,8 @@ Próximas fases, nesta ordem de importância:
 | 3 | ~~Fase 11 — Modelos 3D (glTF) e animação~~ ✅ | personagens e cenários de verdade, além de OBJ | — |
 | 4 | ~~Fase 12 — Documentação de scripts~~ ✅ | quem faz o jogo precisa saber escrever scripts sem ler o código da engine | — |
 
-As quatro estão prontas, e a Fase 13 (servidor MCP) também. Próximas: Fase 10 (exportar), Fase 8 (áudio) e
-Fase 7 (renderização avançada). A 11 depende da 6
+As quatro estão prontas, e as Fases 13 (servidor MCP) e 7 (renderização avançada) também: a Alpha 1 está
+fechada. Próximas (alpha 2): Fase 10 (exportar), Fase 8 (áudio) e a fase "Ambiente". A 11 depende da 6
 (o glTF traz materiais); 6 e 11 mexem nos mesmos arquivos de assets e não devem rodar ao mesmo tempo.
 
 ---
@@ -141,13 +143,48 @@ não instanciam prefabs.
 
 **Pronto quando:** mudar a cor de um material ou de um prefab atualiza todas as instâncias na cena. ✅
 
-## Fase 7 — Renderização avançada
+## Fase 7 — Renderização avançada ✅
 
 - Sombras da luz direcional (shadow map com cascatas) e das pontuais.
 - PBR (metal/rugosidade), mapas de normal, skybox/cubemap e iluminação ambiente por imagem.
 - Pós-processamento: HDR, tone mapping, bloom, FXAA.
 
-**Pronto quando:** a mesma cena fica visivelmente "de jogo moderno" sem queda grande de FPS.
+**Pronto quando:** a mesma cena fica visivelmente "de jogo moderno" sem queda grande de FPS. ✅
+
+Feito:
+- O renderer guarda os pedidos (`Submit*`) e desenha tudo no `EndScene`, em passadas: sombras → cena em HDR
+  (RGBA16F, MSAA 4x) com o céu ao fundo → bloom → tone mapping (ACES, Reinhard, nenhum) e gama → FXAA →
+  contornos do editor (testam a profundidade da cena numa textura). Peças privadas em `engine/src/renderer/`:
+  `Shadows`, `Sky`, `PostProcess`; `Shader::FromFiles` aceita `#include` e variantes por `#define`.
+- **Sombras:** a primeira luz direcional com sombra usa 4 cascatas (divisão "prática", esfera estável e
+  centro preso à grade de texels, mistura entre cascatas, PCF com comparação no hardware); pontuais e spots
+  usam um cubemap array com a distância até a luz (até 4, as mais perto da câmera que iluminam algo
+  visível). Componente Luz com "Projeta sombra" e "Qualidade" (baixa/média/alta = 1024/2048/4096 por
+  cascata, 256/512/1024 por face). Funciona com malhas animadas (variante com pele do shader de sombra).
+  Recorte por frustum na cena e em cada passada de sombra.
+- **PBR:** Cook-Torrance com GGX e Smith com correlação. `Material` com metal, rugosidade, reflexo, mapas
+  de normal (base tangente pelas derivadas da tela, sem tangentes nos vértices), metal/rugosidade (como no
+  glTF), oclusão e emissão. Mapas de dados lidos sem sRGB (texture view linear). `.mmat` versão 2; a 1 é
+  convertida (brilho → rugosidade). O importador glTF lê fatores e mapas (inclui
+  `KHR_materials_emissive_strength`).
+- **Céu:** cor (degradê) ou imagem HDR equirretangular (`.hdr`, asset "Céu HDR", stb_image que já existia),
+  com brilho e rotação. Luz do céu: irradiância em harmônicos esféricos (calculada na CPU) e reflexo
+  pré-filtrado por rugosidade (cubemap com mips) com a tabela da BRDF (CPU). A neblina usa o horizonte.
+- **Ambiente** no painel Cena e no `scene_environment` do MCP: céu, luz do céu, neblina, luz ambiente,
+  distância das sombras, exposição, tone mapping, bloom (intensidade e limiar) e FXAA. Cena versão 6 (as
+  antigas abrem com os padrões; o "shininess" do Mesh Renderer vira "roughness"). `kScriptApiVersion` 9.
+- **Desempenho:** contadores no viewport (draws, draws e passes de sombra, triângulos). Na cena de exemplo
+  com o robô animado e uma lâmpada (editor Debug, i5): ~48 FPS contra ~50 antes; 71 draws (9 da cena, o
+  resto das 4 cascatas e das 6 faces da lâmpada).
+- Base para a fase "Ambiente": `Renderer::SceneDepthTexture()`, `SceneColorTexture()` (HDR antes do pós),
+  `SkyCubemap()` e `ReflectionCubemap()`.
+- Testes sem GPU: `test_render` (cascatas, recorte, faces do cubo, BRDF e amostragem, harmônicos, céu,
+  imagem HDR, cena v6 e migração); `test_materials`, `test_gltf` e `test_mcp` atualizados.
+- Verificado pelo servidor MCP do editor: a mesma cena antes e depois, com e sem Play, com céu HDR e de noite.
+
+Limitações: sem oclusão de ambiente na tela (SSAO), reflexos só do céu (sem probes nem SSR), sem exposição
+automática, sem objetos transparentes ordenados; modelos importados antes da Fase 7 só ganham os mapas PBR
+ao importar de novo (menu do painel Projeto); spots usam um cubo inteiro de sombra.
 
 ## Fase 8 — Áudio
 
@@ -249,6 +286,12 @@ Para um agente (Claude Code) usar o editor como uma pessoa usaria, sem simular m
 - Testado no editor de verdade: um script recebeu tecla e clique simulados, e a captura do Play saiu pela câmera
   do jogo.
 
+Corrigido depois (5a95745): com a janela minimizada o MCP parava de responder. Minimizado, o loop pulava o
+quadro inteiro, inclusive o `OnImGui`, onde rodava o `Pump` do MCP, e os pedidos davam tempo esgotado (o editor
+parecia travado); sem o `SwapBuffers` também não havia espera do vsync e o loop girava a milhares de FPS. Agora
+a parte do quadro sem interface (pedidos de Play e desfazer, `Pump` do MCP, exclusões, prefabs e o passo de
+desfazer) roda também minimizado (`EditorApp::UpdateMinimized`), e o loop dorme 10 ms por volta.
+
 Pendências: mover a câmera do editor para um ponto escolhido, além de focar uma entidade; arrastar o gizmo e
 outras ações só de mouse; notificações para o agente (hoje ele pergunta com `editor_status` e `log_read`).
 
@@ -284,7 +327,7 @@ Fase 0 Git/testes
                            ├─ Fase 4 Luzes/câmera ✅          ├─ Fase 9 HUD           ✅
                            ├─ Fase 6 Materiais/prefabs ✅     ├─ Fase 10 Exportar
                            │     └─ Fase 11 Modelos 3D ✅     └─ Fase 12 Doc. scripts ✅
-                           └─ Fase 7 Renderização avançada (depende da 4)
+                           └─ Fase 7 Renderização avançada ✅
 ```
 
 As prioridades (⭐) estão na seção "Prioridades", no topo. Fases que não dependem uma da outra podem rodar em

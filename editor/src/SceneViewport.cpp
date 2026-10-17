@@ -66,7 +66,8 @@ void DrawCameraIcon(ImDrawList* dl, const ImVec2& c, ImU32 color) {
 } // namespace
 
 void SceneViewport::Init() {
-    m_framebuffer = std::make_unique<Framebuffer>(1280, 720, 4);
+    // Sem MSAA: o renderer desenha a cena num alvo HDR próprio, com MSAA, e entrega a imagem pronta aqui.
+    m_framebuffer = std::make_unique<Framebuffer>(1280, 720, 1);
     m_ui = std::make_unique<UiRenderer>();
     m_camera.position = {0.0f, 4.0f, 9.0f};
     m_camera.LookAt({0.0f, 0.5f, 0.0f});
@@ -186,10 +187,10 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
 
     // Overlay com estatísticas.
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    char text[160];
-    std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws  |  %u tris  |  UI: %u draws  |  %dx%d", fps,
-                  stats.drawCalls, stats.triangles, m_showUi ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(),
-                  m_framebuffer->Height());
+    char text[200];
+    std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws (sombras: %u em %u passes)  |  %u tris  |  UI: %u draws  |  %dx%d",
+                  fps, stats.drawCalls, stats.shadowDrawCalls, stats.shadowPasses, stats.triangles,
+                  m_showUi ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(), m_framebuffer->Height());
     const ImVec2 pad{8.0f, 6.0f};
     const ImVec2 size = ImGui::CalcTextSize(text);
     // Na visão do jogo, embaixo: o canto de cima costuma ser do HUD do jogo.

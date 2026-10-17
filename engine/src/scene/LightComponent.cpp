@@ -11,7 +11,48 @@ namespace motor {
 
 namespace {
 constexpr LightType kLightTypes[] = {LightType::Directional, LightType::Point, LightType::Spot};
+constexpr ShadowQuality kShadowQualities[] = {ShadowQuality::Low, ShadowQuality::Medium, ShadowQuality::High};
 } // namespace
+
+const char* ShadowQualityName(ShadowQuality quality) {
+    switch (quality) {
+        case ShadowQuality::Low: return "Low";
+        case ShadowQuality::Medium: return "Medium";
+        case ShadowQuality::High: return "High";
+    }
+    return "Medium";
+}
+
+const char* ShadowQualityLabel(ShadowQuality quality) {
+    switch (quality) {
+        case ShadowQuality::Low: return "Baixa";
+        case ShadowQuality::Medium: return "Média";
+        case ShadowQuality::High: return "Alta";
+    }
+    return "?";
+}
+
+CustomFieldType FieldTraits<ShadowQuality>::Describe() {
+    return {"ShadowQuality",
+            [](const void* a, const void* b) {
+                return *static_cast<const ShadowQuality*>(a) == *static_cast<const ShadowQuality*>(b);
+            },
+            [](const void* v, const AssetLibrary&) {
+                return nlohmann::json(ShadowQualityName(*static_cast<const ShadowQuality*>(v))).dump();
+            },
+            [](std::string_view text, void* v, AssetLibrary&) {
+                const auto json = nlohmann::json::parse(text, nullptr, false);
+                auto& quality = *static_cast<ShadowQuality*>(v);
+                if (json.is_string()) {
+                    for (ShadowQuality q : kShadowQualities) {
+                        if (json.get<std::string>() == ShadowQualityName(q)) quality = q;
+                    }
+                } else if (json.is_number_integer()) {
+                    const int n = json.get<int>();
+                    if (n >= 0 && n < static_cast<int>(std::size(kShadowQualities))) quality = kShadowQualities[n];
+                }
+            }};
+}
 
 const char* LightTypeName(LightType type) {
     switch (type) {
@@ -63,6 +104,8 @@ Light MakeLight(const LightComponent& component, const glm::mat4& world) {
     light.range = component.range;
     light.innerAngle = component.innerAngle;
     light.outerAngle = component.outerAngle;
+    light.castShadows = component.castShadows;
+    light.shadowQuality = component.shadowQuality;
     return light;
 }
 
@@ -89,7 +132,13 @@ MOTOR_COMPONENT_MODULE(Light) {
                 .tooltip = "Spot: meio ângulo do cone com luz total"})
         .Field("outerAngle", "Ângulo externo", &LightComponent::outerAngle,
                {.slider = true, .min = 1.0f, .max = 89.0f, .format = "%.0f°",
-                .tooltip = "Spot: meio ângulo do cone onde a luz acaba"});
+                .tooltip = "Spot: meio ângulo do cone onde a luz acaba"})
+        .Field("castShadows", "Projeta sombra", &LightComponent::castShadows,
+               {.tooltip = "Direcional: a primeira com sombra usa cascatas. Pontual/spot: até 4 ao mesmo tempo "
+                           "(as mais perto da câmera)"})
+        .Field("shadowQuality", "Qualidade da sombra", &LightComponent::shadowQuality,
+               {.tooltip = "Resolução do mapa de sombra. Direcional: 1024/2048/4096 por cascata; "
+                           "pontual/spot: 256/512/1024 por face do cubo"});
 }
 
 } // namespace motor

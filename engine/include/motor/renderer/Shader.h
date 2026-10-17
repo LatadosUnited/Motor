@@ -23,8 +23,10 @@ public:
     Shader(const Shader&) = delete;
     Shader& operator=(const Shader&) = delete;
 
+    // Aceita `#include "arquivo.glsl"` (relativo ao shader). `defines` ("#define X\n...") entra logo depois
+    // do `#version`: o mesmo par de arquivos vira variantes (ex.: com e sem pele).
     static std::unique_ptr<Shader> FromFiles(const std::filesystem::path& vertexPath,
-                                             const std::filesystem::path& fragmentPath);
+                                             const std::filesystem::path& fragmentPath, std::string_view defines = {});
 
     void Bind() const;
 

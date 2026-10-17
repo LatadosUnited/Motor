@@ -53,7 +53,11 @@ int main(int argc, char** argv) {
     red.color = {1.0f, 0.2f, 0.1f, 1.0f};
     red.albedo = checker;
     red.specular = 0.25f;
-    red.shininess = 64.0f;
+    red.metallic = 0.75f;
+    red.roughness = 0.2f;
+    red.normalMap = checker;
+    red.emissive = {0.5f, 0.25f, 0.0f};
+    red.emissiveIntensity = 3.0f;
     CHECK(AssetTypeFromPath(redFile) == AssetType::Material);
     CHECK(assets.WriteMaterialFile(redFile, red, &error));
     CHECK(fs::exists(AssetDatabase::MetaPathFor(redFile)));
@@ -67,14 +71,17 @@ int main(int argc, char** argv) {
     const std::shared_ptr<Material> loaded = assets.GetMaterial(redKey, &error);
     CHECK(loaded != nullptr);
     CHECK(loaded && loaded->color == red.color && loaded->albedo == checker);
-    CHECK(loaded && loaded->specular == 0.25f && loaded->shininess == 64.0f);
+    CHECK(loaded && loaded->specular == 0.25f && loaded->metallic == 0.75f && loaded->roughness == 0.2f);
+    CHECK(loaded && loaded->normalMap == checker && !loaded->occlusionMap && !loaded->metallicRoughnessMap);
+    CHECK(loaded && loaded->emissive == glm::vec3(0.5f, 0.25f, 0.0f) && loaded->emissiveIntensity == 3.0f);
     CHECK(assets.GetMaterialByGuid(guid) == loaded);  // mesmo objeto: cache por GUID
     CHECK(assets.RefOf(loaded.get()) && assets.RefOf(loaded.get())->guid == guid);
 
     SECTION("Material: arquivo inválido e campos ausentes");
     Material tolerant;
     CHECK(assets.MaterialFromJson(R"({"format": "motor-material", "version": 1, "specular": 1.5})", tolerant, &error));
-    CHECK(tolerant.specular == 1.5f && tolerant.color == glm::vec4(1.0f) && tolerant.shininess == 32.0f);
+    CHECK(tolerant.specular == 1.5f && tolerant.color == glm::vec4(1.0f));
+    CHECK(std::abs(tolerant.roughness - RoughnessFromShininess(32.0f)) < 1e-5f);  // versão 1 sem brilho: o padrão de antes
     CHECK(!assets.MaterialFromJson(R"({"format": "motor-scene", "version": 1})", tolerant, &error));
     CHECK(!assets.MaterialFromJson(R"({"format": "motor-material", "version": 99})", tolerant, &error));
 
@@ -166,12 +173,13 @@ int main(int argc, char** argv) {
         CHECK(oldRenderer->mesh == assets.FindMesh("Cubo"));
         CHECK(oldRenderer->material.albedo == checker);
         CHECK(oldRenderer->material.color == glm::vec4(0.8f, 0.3f, 0.2f, 1.0f));
-        CHECK(oldRenderer->material.specular == 0.7f && oldRenderer->material.shininess == 16.0f);
+        CHECK(oldRenderer->material.specular == 0.7f);
+        CHECK(std::abs(oldRenderer->material.roughness - RoughnessFromShininess(16.0f)) < 1e-5f);
         CHECK(&oldRenderer->Resolved() == &oldRenderer->material);
     }
     // Salva na versão nova e lê de volta igual.
     const std::string upgraded = SceneSerializer::ToJson(old, assets);
-    CHECK(upgraded.find("\"version\": 5") != std::string::npos);
+    CHECK(upgraded.find("\"version\": 6") != std::string::npos);
     CHECK(upgraded.find("\"material\": null") != std::string::npos);
     Scene again;
     CHECK(SceneSerializer::FromJson(upgraded, again, assets, &error));

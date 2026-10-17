@@ -2,7 +2,9 @@
 
 #include "motor/assets/AssetDatabase.h"
 #include "motor/assets/AssetLoaders.h"
+#include "motor/renderer/Environment.h"
 #include "motor/renderer/Material.h"
+
 
 #include <filesystem>
 #include <functional>
@@ -29,6 +31,15 @@ struct Model;
 struct AssetRef {
     std::string name;
     std::string guid;
+};
+
+// Texturas de um material pela referência (sem precisar carregá-las): usado pelo importador de modelos.
+struct MaterialTextureRefs {
+    std::optional<AssetRef> albedo;
+    std::optional<AssetRef> normal;
+    std::optional<AssetRef> metallicRoughness;
+    std::optional<AssetRef> occlusion;
+    std::optional<AssetRef> emissive;
 };
 
 // Registro de malhas, texturas e materiais. Assets de arquivo são carregados do disco na primeira vez que
@@ -69,9 +80,9 @@ public:
     // Relê os .mmat em cache que mudaram no disco (editados fora do editor), no mesmo objeto. Devolve quantos.
     size_t ReloadChangedMaterials();
 
-    // Mesmo, com a textura dada pela referência (sem precisar carregá-la): usado pelo importador de modelos.
+    // Mesmo, com as texturas dadas pela referência (os campos de textura de `material` são ignorados).
     bool WriteMaterialFile(const std::filesystem::path& file, const Material& material,
-                           const std::optional<AssetRef>& texture, std::string* error = nullptr);
+                           const MaterialTextureRefs& textures, std::string* error = nullptr);
 
     // Modelos glTF (.gltf/.glb, motor/assets/Model.h). As malhas e os clipes do modelo também são achados por
     // GetMesh/GetMeshByGuid e GetClip/GetClipByGuid com "#<nome>" no fim da chave ou do GUID.
@@ -81,9 +92,14 @@ public:
     std::shared_ptr<AnimationClip> GetClip(std::string_view key, std::string* error = nullptr);
     std::shared_ptr<AnimationClip> GetClipByGuid(std::string_view guid, std::string* error = nullptr);
 
+    // Céus HDR (.hdr, AssetType::EnvironmentMap): a imagem na CPU; o renderer sobe para a GPU.
+    std::shared_ptr<const HdrImage> GetEnvironmentMap(std::string_view key, std::string* error = nullptr);
+    std::shared_ptr<const HdrImage> GetEnvironmentMapByGuid(std::string_view guid, std::string* error = nullptr);
+
     // Conteúdo de um .mmat. Texturas embutidas pelo nome; as de arquivo pelo GUID (com o caminho junto).
+    // Versão 2 (Fase 7): PBR (metal, rugosidade, mapas). A versão 1 (Blinn-Phong) é lida e convertida.
     std::string MaterialToJson(const Material& material) const;
-    std::string MaterialToJson(const Material& material, const std::optional<AssetRef>& texture) const;
+    std::string MaterialToJson(const Material& material, const MaterialTextureRefs& textures) const;
     // Campos ausentes ficam com o valor padrão; textura não encontrada vira aviso no log.
     bool MaterialFromJson(std::string_view json, Material& out, std::string* error = nullptr);
 
@@ -97,6 +113,7 @@ public:
     std::optional<AssetRef> RefOf(const Material* material) const;
     std::optional<AssetRef> RefOf(const Model* model) const;
     std::optional<AssetRef> RefOf(const AnimationClip* clip) const;
+    std::optional<AssetRef> RefOf(const HdrImage* image) const;
 
     // Separador entre o arquivo e a parte dele ("robo.glb#Corpo").
     static constexpr char kSubAssetSeparator = '#';
@@ -119,6 +136,9 @@ public:
     const std::vector<Entry<Material>>& Materials() const { return m_materials; }
     const std::vector<Entry<Model>>& Models() const { return m_models; }
 
+    // Referências das texturas que o material usa (as que não vieram desta biblioteca ficam vazias, com aviso).
+    MaterialTextureRefs TextureRefsOf(const Material& material) const;
+
 private:
     template <class T>
     std::optional<AssetRef> RefIn(const std::vector<Entry<T>>& list, const T* asset) const;
@@ -131,6 +151,7 @@ private:
     std::vector<Entry<Model>> m_models;
     TextureFactory m_textureFactory;  // vazia = Texture2D
     std::vector<Entry<AnimationClip>> m_clips;  // GUID "<modelo>#<clipe>"
+    std::vector<Entry<const HdrImage>> m_environmentMaps;
     std::map<std::string, std::filesystem::file_time_type, std::less<>> m_modelTimes;  // GUID -> data do arquivo lido
     std::map<std::string, std::filesystem::file_time_type, std::less<>> m_materialTimes;  // GUID -> data do arquivo lido
 };

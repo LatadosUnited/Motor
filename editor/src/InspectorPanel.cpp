@@ -182,9 +182,22 @@ const motor::ComponentType& MaterialFields() {
         motor::ComponentBuilder<motor::Material>(t)
             .Field("texture", "Textura", &motor::Material::albedo)
             .Field("color", "Cor", &motor::Material::color, {.color = true})
-            .Field("specular", "Especular", &motor::Material::specular, {.slider = true, .min = 0.0f, .max = 2.0f})
-            .Field("shininess", "Brilho", &motor::Material::shininess,
-                   {.slider = true, .logarithmic = true, .min = 1.0f, .max = 256.0f, .format = "%.0f"});
+            .Field("metallic", "Metal", &motor::Material::metallic, {.slider = true, .min = 0.0f, .max = 1.0f})
+            .Field("roughness", "Rugosidade", &motor::Material::roughness, {.slider = true, .min = 0.0f, .max = 1.0f})
+            .Field("specular", "Reflexo", &motor::Material::specular,
+                   {.slider = true, .min = 0.0f, .max = 1.0f, .tooltip = "Reflexo dos não metais: 0.5 = 4% (o comum)"})
+            .Field("normalMap", "Mapa de normal", &motor::Material::normalMap)
+            .Field("normalStrength", "Força da normal", &motor::Material::normalStrength,
+                   {.slider = true, .min = 0.0f, .max = 2.0f})
+            .Field("metallicRoughnessMap", "Mapa metal/rugosidade", &motor::Material::metallicRoughnessMap,
+                   {.tooltip = "Como no glTF: verde = rugosidade, azul = metal"})
+            .Field("occlusionMap", "Mapa de oclusão", &motor::Material::occlusionMap)
+            .Field("occlusionStrength", "Força da oclusão", &motor::Material::occlusionStrength,
+                   {.slider = true, .min = 0.0f, .max = 1.0f})
+            .Field("emissive", "Emissão", &motor::Material::emissive, {.color = true})
+            .Field("emissiveIntensity", "Intensidade da emissão", &motor::Material::emissiveIntensity,
+                   {.speed = 0.05f, .min = 0.0f, .max = 100.0f, .format = "%.2f"})
+            .Field("emissiveMap", "Mapa de emissão", &motor::Material::emissiveMap);
         return t;
     }();
     return type;
@@ -192,7 +205,11 @@ const motor::ComponentType& MaterialFields() {
 
 // Campos do Mesh Renderer que são o material próprio (FieldRef para MeshRenderer::material, MeshRenderer.cpp).
 bool IsOwnMaterialField(std::string_view key) {
-    return key == "texture" || key == "color" || key == "specular" || key == "shininess";
+    // Os campos do material próprio têm os mesmos nomes dos de MaterialFields.
+    for (const motor::FieldInfo& f : MaterialFields().fields) {
+        if (f.key == key) return true;
+    }
+    return false;
 }
 
 // Materiais editados no Inspector e os valores gravados por último. Quando um muda e o usuário termina a

@@ -32,13 +32,22 @@ struct ModelImage {
     std::string mimeType;         // "image/png", "image/jpeg"
 };
 
-// Material do glTF já convertido para o modelo de iluminação do Motor (ver Material.h).
+// Material PBR do glTF (metal/rugosidade), com as cores já em sRGB como no Material do Motor (Material.h).
+// Imagens: índices em ModelData::images (-1 = sem).
 struct ModelMaterial {
     std::string name;
     glm::vec4 color{1.0f};  // sRGB, como no Material (o glTF guarda linear)
-    int image = -1;         // textura de cor (índice em ModelData::images)
-    float specular = 0.5f;
-    float shininess = 32.0f;
+    int image = -1;         // textura de cor
+    float metallic = 1.0f;  // padrões do glTF
+    float roughness = 1.0f;
+    int metallicRoughnessImage = -1;  // G = rugosidade, B = metal (igual ao Motor)
+    int normalImage = -1;
+    float normalScale = 1.0f;
+    int occlusionImage = -1;
+    float occlusionStrength = 1.0f;
+    glm::vec3 emissive{0.0f};  // sRGB
+    float emissiveIntensity = 1.0f;  // KHR_materials_emissive_strength
+    int emissiveImage = -1;
 };
 
 // Uma primitiva do glTF = uma malha com um material.

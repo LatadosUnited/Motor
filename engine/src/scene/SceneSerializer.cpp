@@ -25,7 +25,9 @@ namespace {
 // 4: a luz direcional da cena ("light") virou uma entidade com o componente Luz; o ambiente foi para "environment".
 // 5: Mesh Renderer com asset de material ("material", .mmat) e instâncias de prefab (componente PrefabInstance).
 //    Cenas antigas não têm "material": continuam com o material próprio do componente (cor, textura...).
-constexpr int kFormatVersion = 5;
+// 6: renderização da Fase 7. Ambiente com céu (cor ou imagem HDR), luz do céu, sombras e pós-processamento;
+//    material PBR no Mesh Renderer (o "shininess" das cenas antigas vira "roughness"); sombra nas luzes.
+constexpr int kFormatVersion = 6;
 
 // float -> double passando pela representação decimal mais curta, para o arquivo ter "0.6" e não
 // "0.6000000238418579".
@@ -265,6 +267,78 @@ void ComponentFromJson(const ComponentType& type, const json& obj, Entity& e, As
     ReadFields(type, e.Add(type), obj, assets, e.name);
 }
 
+// Até a versão 5 o material do Mesh Renderer era Blinn-Phong: o brilho ("shininess") vira rugosidade.
+json MigrateMeshRenderer(const json& obj, int version) {
+    if (version >= 6 || !obj.contains("shininess") || obj.contains("roughness")) return obj;
+    json out = obj;
+    if (obj["shininess"].is_number()) out["roughness"] = Num(RoughnessFromShininess(obj["shininess"].get<float>()));
+    out.erase("shininess");
+    return out;
+}
+
+json AssetRefJson(const std::optional<AssetRef>& ref) {
+    if (!ref) return nullptr;
+    json j = {{"guid", ref->guid}};
+    if (!ref->name.empty()) j["path"] = ref->name;
+    return j;
+}
+
+json EnvironmentToJson(const Environment& env, const AssetLibrary& assets) {
+    std::optional<AssetRef> sky;
+    if (env.skyTexture) {
+        sky = assets.RefOf(env.skyTexture.get());
+        if (!sky) log::Warn("Salvar cena: a imagem do céu não está no AssetLibrary");
+    }
+    return {
+        {"skyColor", Vec(env.skyColor)},
+        {"fogDensity", Num(env.fogDensity)},
+        {"ambient", Vec(env.ambient)},
+        {"sky", SkyModeName(env.skyMode)},
+        {"skyTexture", AssetRefJson(sky)},
+        {"skyIntensity", Num(env.skyIntensity)},
+        {"skyRotation", Num(env.skyRotation)},
+        {"skyLight", Num(env.skyLight)},
+        {"shadowDistance", Num(env.shadowDistance)},
+        {"exposure", Num(env.exposure)},
+        {"toneMapper", ToneMapperName(env.toneMapper)},
+        {"bloom", env.bloom},
+        {"bloomIntensity", Num(env.bloomIntensity)},
+        {"bloomThreshold", Num(env.bloomThreshold)},
+        {"fxaa", env.fxaa},
+    };
+}
+
+void EnvironmentFromJson(const json& j, Environment& env, AssetLibrary& assets) {
+    Read(j, "skyColor", env.skyColor);
+    Read(j, "fogDensity", env.fogDensity);
+    Read(j, "ambient", env.ambient);
+    if (auto it = j.find("sky"); it != j.end() && it->is_string()) ParseSkyMode(it->get<std::string>(), env.skyMode);
+    if (auto it = j.find("skyTexture"); it != j.end() && it->is_object()) {
+        const std::string guid = it->value("guid", std::string());
+        const std::string path = it->value("path", std::string());
+        std::string problem;
+        if (!guid.empty()) env.skyTexture = assets.GetEnvironmentMapByGuid(guid, &problem);
+        if (!env.skyTexture && !path.empty()) env.skyTexture = assets.GetEnvironmentMap(path, nullptr);  // .meta perdido
+        if (!env.skyTexture) log::Warn("Cena: imagem do céu '{}' não carregada: {}", path, problem);
+    }
+    auto number = [&](const char* key, float& value) {
+        if (auto it = j.find(key); it != j.end() && it->is_number()) value = it->get<float>();
+    };
+    auto boolean = [&](const char* key, bool& value) {
+        if (auto it = j.find(key); it != j.end() && it->is_boolean()) value = it->get<bool>();
+    };
+    number("skyIntensity", env.skyIntensity);
+    number("skyRotation", env.skyRotation);
+    number("skyLight", env.skyLight);
+    number("shadowDistance", env.shadowDistance);
+    number("exposure", env.exposure);
+    if (auto it = j.find("toneMapper"); it != j.end() && it->is_string()) ParseToneMapper(it->get<std::string>(), env.toneMapper);
+    boolean("bloom", env.bloom);
+    number("bloomIntensity", env.bloomIntensity);
+    number("bloomThreshold", env.bloomThreshold);
+    boolean("fxaa", env.fxaa);
+}
+
 // Versões 1 a 3: a cena tinha uma luz direcional fixa ("light", com o ambiente junto), sempre presente
 // (campo ausente = valor padrão). Vira uma entidade com o componente Luz, no fim da lista.
 void ConvertSceneLight(const json& root, Scene& out) {
@@ -321,11 +395,7 @@ std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOpt
     root["version"] = kFormatVersion;
 
     if (!prefab) {
-        root["environment"] = {
-            {"skyColor", Vec(scene.environment.skyColor)},
-            {"fogDensity", Num(scene.environment.fogDensity)},
-            {"ambient", Vec(scene.environment.ambient)},
-        };
+        root["environment"] = EnvironmentToJson(scene.environment, assets);
     }
 
     json entities = json::array();
@@ -372,9 +442,7 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
         }
 
         if (auto it = root.find("environment"); it != root.end() && it->is_object()) {
-            Read(*it, "skyColor", out.environment.skyColor);
-            Read(*it, "fogDensity", out.environment.fogDensity);
-            Read(*it, "ambient", out.environment.ambient);
+            EnvironmentFromJson(*it, out.environment, assets);
         }
 
         // 1ª passada: cria tudo na ordem do arquivo. Os ids são reatribuídos, então guardamos o mapeamento.
@@ -393,7 +461,7 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
 
             // Versões 1 e 2: o único componente era o "meshRenderer", com os mesmos nomes de campo de hoje.
             if (auto m = je.find("meshRenderer"); m != je.end() && m->is_object()) {
-                ComponentFromJson(*ComponentRegistry::TypeOf<MeshRenderer>(), *m, e, assets);
+                ComponentFromJson(*ComponentRegistry::TypeOf<MeshRenderer>(), MigrateMeshRenderer(*m, version), e, assets);
             }
             if (auto list = je.find("components"); list != je.end() && list->is_array()) {
                 for (const json& jc : *list) {
@@ -406,6 +474,8 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
                         e.components.push_back(MakeMissing(typeName, jc));
                     } else if (e.Get(*type)) {
                         log::Warn("Cena: componente '{}' repetido em '{}' foi ignorado", typeName, e.name);
+                    } else if (type == ComponentRegistry::TypeOf<MeshRenderer>()) {
+                        ComponentFromJson(*type, MigrateMeshRenderer(jc, version), e, assets);
                     } else {
                         ComponentFromJson(*type, jc, e, assets);
                     }

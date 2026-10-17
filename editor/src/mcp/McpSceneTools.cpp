@@ -182,6 +182,30 @@ void ThrowPendingError(EditorContext& ctx) {
     if (!ctx.pendingError.empty()) throw ToolError(std::exchange(ctx.pendingError, {}));
 }
 
+// Ambiente da cena como o scene_environment aceita.
+static Json EnvironmentJson(const EditorContext& ctx) {
+    const Environment& env = ctx.scene.environment;
+    Json skyTexture = nullptr;
+    if (env.skyTexture) {
+        if (const auto ref = ctx.assets.RefOf(env.skyTexture.get())) skyTexture = ref->name;
+    }
+    return {{"sky_mode", SkyModeName(env.skyMode)},
+            {"sky_color", Vec3Json(env.skyColor)},
+            {"sky_texture", std::move(skyTexture)},
+            {"sky_intensity", env.skyIntensity},
+            {"sky_rotation", env.skyRotation},
+            {"sky_light", env.skyLight},
+            {"fog_density", env.fogDensity},
+            {"ambient", Vec3Json(env.ambient)},
+            {"shadow_distance", env.shadowDistance},
+            {"exposure", env.exposure},
+            {"tone_mapper", ToneMapperName(env.toneMapper)},
+            {"bloom", env.bloom},
+            {"bloom_intensity", env.bloomIntensity},
+            {"bloom_threshold", env.bloomThreshold},
+            {"fxaa", env.fxaa}};
+}
+
 void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
     protocol.AddTool({
         .name = "scene_tree",
@@ -193,12 +217,9 @@ void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
             const bool components = args.value("components", true);
             Json roots = Json::array();
             for (EntityId id : ctx.scene.Children(kNullEntity)) roots.push_back(TreeNode(ctx, *ctx.scene.Find(id), components));
-            const Environment& env = ctx.scene.environment;
             return ToolResult::Data({{"entity_count", ctx.scene.Entities().size()},
                                      {"selected", ctx.selected},
-                                     {"environment", {{"sky_color", Vec3Json(env.skyColor)},
-                                                      {"fog_density", env.fogDensity},
-                                                      {"ambient", Vec3Json(env.ambient)}}},
+                                     {"environment", EnvironmentJson(ctx)},
                                      {"entities", std::move(roots)}});
         },
     });
@@ -391,19 +412,73 @@ void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
 
     protocol.AddTool({
         .name = "scene_environment",
-        .description = "Lê ou muda o ambiente da cena: cor do céu, densidade da neblina e luz ambiente (cores RGB "
-                       "de 0 a 1). Sem argumentos, só lê.",
-        .inputSchema = Schema({{"sky_color", Vec3Prop("cor do céu [r, g, b]")},
+        .description = "Lê ou muda o ambiente da cena (cada mudança vira um passo de desfazer). Céu: cor ou imagem "
+                       "HDR (.hdr do projeto) com brilho, rotação e quanto ilumina a cena; neblina e luz ambiente; "
+                       "distância das sombras; pós-processamento (exposição, tone mapping, bloom, FXAA). Cores RGB "
+                       "de 0 a 1. Sem argumentos, só lê.",
+        .inputSchema = Schema({{"sky_color", Vec3Prop("cor do céu (horizonte) e da neblina [r, g, b]")},
+                               {"sky_mode", {{"type", "string"}, {"enum", {"Color", "Texture"}},
+                                             {"description", "céu de cor (degradê) ou imagem HDR"}}},
+                               {"sky_texture", Prop("string", "imagem .hdr do projeto (\"Assets/...\"); \"\" = nenhuma. "
+                                                              "Escolher uma imagem muda sky_mode para Texture")},
+                               {"sky_intensity", Prop("number", "brilho do céu (fundo e luz), 1 = normal")},
+                               {"sky_rotation", Prop("number", "rotação do céu em graus (eixo Y)")},
+                               {"sky_light", Prop("number", "quanto o céu ilumina a cena (difusa e reflexos), 0 = nada")},
                                {"fog_density", Prop("number", "densidade da neblina (0 = sem neblina)")},
-                               {"ambient", Vec3Prop("luz ambiente [r, g, b]")}}),
+                               {"ambient", Vec3Prop("luz ambiente extra [r, g, b]")},
+                               {"shadow_distance", Prop("number", "metros, a partir da câmera, com sombra da luz direcional")},
+                               {"exposure", Prop("number", "exposição (1 = normal)")},
+                               {"tone_mapper", {{"type", "string"}, {"enum", {"ACES", "Reinhard", "None"}}}},
+                               {"bloom", Prop("boolean", "liga o bloom (brilho que vaza das luzes fortes)")},
+                               {"bloom_intensity", Prop("number", "intensidade do bloom")},
+                               {"bloom_threshold", Prop("number", "brilho a partir do qual há bloom (1 = acima do branco)")},
+                               {"fxaa", Prop("boolean", "liga o FXAA (suaviza o serrilhado)")}}),
         .run = [&ctx](const Json& args) {
-            Environment& env = ctx.scene.environment;
+            Environment env = ctx.scene.environment;  // só aplica se tudo for válido
+            auto number = [&](const char* key, float& value) {
+                if (!args.contains(key)) return;
+                if (!args[key].is_number()) throw ToolError(std::format("{} precisa ser um número", key));
+                value = args[key].get<float>();
+            };
+            auto boolean = [&](const char* key, bool& value) {
+                if (!args.contains(key)) return;
+                if (!args[key].is_boolean()) throw ToolError(std::format("{} precisa ser true ou false", key));
+                value = args[key].get<bool>();
+            };
             if (args.contains("sky_color")) env.skyColor = ReadVec3(args["sky_color"], "sky_color");
-            if (args.contains("fog_density")) env.fogDensity = args["fog_density"].get<float>();
+            if (args.contains("sky_mode") && !(args["sky_mode"].is_string() &&
+                                               ParseSkyMode(args["sky_mode"].get<std::string>(), env.skyMode))) {
+                throw ToolError("sky_mode: use \"Color\" ou \"Texture\"");
+            }
+            if (args.contains("sky_texture")) {
+                if (!args["sky_texture"].is_string()) throw ToolError("sky_texture precisa ser o caminho de um .hdr");
+                const std::string key = args["sky_texture"].get<std::string>();
+                if (key.empty()) {
+                    env.skyTexture = nullptr;
+                } else {
+                    std::string error;
+                    env.skyTexture = ctx.assets.GetEnvironmentMap(key, &error);
+                    if (!env.skyTexture) throw ToolError(error);
+                    if (!args.contains("sky_mode")) env.skyMode = SkyMode::Texture;
+                }
+            }
+            number("sky_intensity", env.skyIntensity);
+            number("sky_rotation", env.skyRotation);
+            number("sky_light", env.skyLight);
+            number("fog_density", env.fogDensity);
             if (args.contains("ambient")) env.ambient = ReadVec3(args["ambient"], "ambient");
-            return ToolResult::Data({{"sky_color", Vec3Json(env.skyColor)},
-                                     {"fog_density", env.fogDensity},
-                                     {"ambient", Vec3Json(env.ambient)}});
+            number("shadow_distance", env.shadowDistance);
+            number("exposure", env.exposure);
+            if (args.contains("tone_mapper") && !(args["tone_mapper"].is_string() &&
+                                                  ParseToneMapper(args["tone_mapper"].get<std::string>(), env.toneMapper))) {
+                throw ToolError("tone_mapper: use \"ACES\", \"Reinhard\" ou \"None\"");
+            }
+            boolean("bloom", env.bloom);
+            number("bloom_intensity", env.bloomIntensity);
+            number("bloom_threshold", env.bloomThreshold);
+            boolean("fxaa", env.fxaa);
+            ctx.scene.environment = std::move(env);
+            return ToolResult::Data(EnvironmentJson(ctx));
         },
     });
 }
