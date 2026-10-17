@@ -383,8 +383,35 @@ projeto e com outra versão (projeto do formato 1 atualizado), cartões e aba Ve
 
 Limitações: a pasta montada é Debug enquanto o build for Debug (~200 MB); o editor instalado depende do MSYS2 e do
 CMake nos caminhos do build que a montou; o editor aberto pelo hub não tem console (log pelo MCP `log_read`).
-Depois: baixar versões pela internet; instalador; o hub como repositório próprio; o editor avisar antes de
-abrir um projeto de versão mais nova que a dele.
+Depois: o hub como repositório próprio; o editor avisar antes de abrir um projeto de versão mais nova que a
+dele. Baixar versões e o instalador ficaram para a Fase 15.
+
+## Fase 15 — Instalador e servidor de versões
+
+O hub instalado de verdade (fora de pastas de build) e as versões do Motor distribuídas por um servidor, para
+quem não compila o Motor. Sem bibliotecas novas: HTTP com a cpp-httplib (já usada pelo MCP do editor), SHA-256
+pela API do Windows (BCrypt), arquivos um a um sem compressão (nada de zip).
+
+- **Servidor (`server/`, `MotorServidor.exe`):** serve uma pasta de publicações por HTTP (porta 47900, rede local;
+  `--local` só 127.0.0.1). `GET /api/versoes` (manifesto versionado: versões, canal, API de scripts, tipo de
+  build, data, tamanho, arquivos com tamanho e SHA-256), `GET /arquivos/<versão>/<caminho>` (com Range, para
+  retomar), `GET /hub/latest` (Hub e instalador) e uma página `/` com as versões e o link do instalador.
+  `--publicar <pasta montada>`, `--publicar-hub <MotorHub.exe>` (leva o `MotorSetup.exe` junto), `--remover`
+  (para a Lixeira), `--listar`.
+- **Hub baixa versões:** aba Versões com "Servidores" (no `hub.json`, formato 2) e "Disponíveis para baixar":
+  progresso, cancelar, retomar, conferência do SHA-256 e instalação atômica (pasta temporária renomeada no fim).
+  `MotorHub --baixar <versão> [--servidor URL]`. Aviso de Hub mais novo no servidor.
+- **Instalador (`installer/`, `MotorSetup.exe`):** por usuário, sem administrador. Hub embutido como recurso,
+  instalado em `%LOCALAPPDATA%\Programs\Motor Hub\`; atalhos (menu Iniciar e, opcional, área de trabalho);
+  desinstalação registrada no HKCU (`MotorSetup.exe --desinstalar`, para a Lixeira, pergunta sobre versões e
+  `hub.json`). Opcional: baixar a versão mais recente de um servidor ou instalar de uma pasta. Avisa se faltam o
+  MSYS2 UCRT64 e o CMake (para compilar scripts). Modo silencioso para testes.
+- **Núcleo testável (`distrib/`):** manifesto, SHA-256, download com retomada, plano de instalação e de
+  desinstalação; `tests/test_distribuicao.cpp` (inclui servidor e cliente HTTP em loopback).
+
+**Pronto quando:** de ponta a ponta numa pasta temporária: servidor no ar, versão Release publicada, instalação
+silenciosa baixando a versão do servidor, hub instalado listando a versão e criando/abrindo "Jogo Ação",
+desinstalação limpando tudo.
 
 ## Anotado para a alpha 2
 
