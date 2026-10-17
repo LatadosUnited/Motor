@@ -37,3 +37,7 @@
 #include "motor/physics/PhysicsSystem.h"
 
 #include "motor/ui/Ui.h"
+
+// Fase 10 (exportar o jogo): assets embutidos e pasta dos assets da engine.
+#include "motor/assets/BuiltinAssets.h"
+#include "motor/core/EngineAssets.h"

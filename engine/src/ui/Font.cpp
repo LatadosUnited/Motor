@@ -1,5 +1,6 @@
 #include "motor/ui/Font.h"
 
+#include "motor/core/EngineAssets.h"
 #include "motor/core/Paths.h"
 
 #include <algorithm>
@@ -43,7 +44,7 @@ FontData::FontData(FontData&&) noexcept = default;
 FontData& FontData::operator=(FontData&&) noexcept = default;
 
 fs::path DefaultFontPath() {
-    return PathFromUtf8(MOTOR_ENGINE_ASSETS "/fonts/Roboto-Medium.ttf");
+    return EngineAssetsDir() / "fonts" / "Roboto-Medium.ttf";
 }
 
 char32_t NextCodepoint(std::string_view& text) {

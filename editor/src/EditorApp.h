@@ -2,6 +2,7 @@
 
 #include "EditorContext.h"
 #include "EditorSettings.h"
+#include "ExportController.h"
 #include "PlayController.h"
 #include "ProjectPanel.h"
 #include "SceneDocument.h"
@@ -59,6 +60,7 @@ private:
     PlayController m_play;
     SceneDocument m_document;  // depois dos membros que ele referencia
     ScriptController m_scripts;  // depois do documento e do Play, que ele referencia
+    ExportController m_export;   // Arquivo > Exportar jogo; depois do documento e dos scripts
     McpController m_mcp;         // depois de todas as peças que as ferramentas usam
 
     std::filesystem::path m_startupProject;

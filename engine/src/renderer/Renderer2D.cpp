@@ -1,5 +1,6 @@
 #include "motor/renderer/Renderer2D.h"
 
+#include "motor/core/EngineAssets.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Framebuffer.h"
 #include "motor/renderer/Shader.h"
@@ -49,8 +50,8 @@ void DrawList2D::AddQuads(const Texture2D* texture, std::span<const Vertex2D> ve
 // --- Renderer2D (GPU) -----------------------------------------------------------------
 
 Renderer2D::Renderer2D() {
-    const std::string dir = MOTOR_ENGINE_ASSETS "/shaders/";
-    m_shader = Shader::FromFiles(dir + "ui.vert", dir + "ui.frag");
+    const std::filesystem::path dir = EngineAssetsDir() / "shaders";
+    m_shader = Shader::FromFiles(dir / "ui.vert", dir / "ui.frag");
     m_white = Texture2D::CreateSolid({255, 255, 255, 255});
 
     glCreateVertexArrays(1, &m_vao);

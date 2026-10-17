@@ -31,6 +31,8 @@ add_executable(MotorEditor
     src/mcp/McpProtocol.cpp
     src/mcp/McpSceneTools.cpp
     src/mcp/McpServer.cpp
+    src/GameExport.cpp
+    src/ExportController.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 if(WIN32)
@@ -53,3 +55,6 @@ endif()
 add_custom_command(TARGET MotorEditor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/templates $<TARGET_FILE_DIR:MotorEditor>/templates
     COMMENT "Copiando modelos de script")
+
+# Arquivo > Exportar jogo copia o Player.exe de build/bin: compilar o editor compila o Player junto.
+add_dependencies(MotorEditor Player)

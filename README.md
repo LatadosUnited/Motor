@@ -18,6 +18,7 @@ ctest --test-dir build --output-on-failure   # testes (sem janela)
 ./build/bin/Sandbox.exe       # demo
 ./build/bin/MotorEditor.exe    # editor (reabre o último projeto)
 ./build/bin/MotorEditor.exe "C:/caminho/MeuJogo"   # abre um projeto específico
+./build/bin/Player.exe "C:/caminho/MeuJogo"        # roda o jogo sem o editor (ver "Exportar o jogo")
 ```
 
 Executáveis e DLLs ficam juntos em `build/bin`: a engine é a `libMotor.dll` (com ImGui e GLFW dentro), e
@@ -47,6 +48,7 @@ docs/              guia e referência dos scripts (scripts.md, scripts-api.md) e
 editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (docking), modo Play, scripts
   templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, Jogador, MoverWASD, Seguir)
 sandbox/           app de demonstração
+player/            Player: o executável do jogo exportado (roda um projeto sem o editor)
 tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física,
                    materiais, prefabs, glTF e animação, UI)
 ```
@@ -513,6 +515,43 @@ desfazer:
   viewport mostra "UI: N draws"). A geometria de cada elemento só é refeita quando o texto, o tamanho, a
   fonte, a cor ou o retângulo mudam; frame sem mudança não envia nada para a GPU.
 
+## Exportar o jogo
+
+**Arquivo > Exportar jogo...** monta uma pasta que roda o jogo sem o editor (e sem o MSYS2): escolha a cena
+inicial (a do projeto vem marcada; a caixa "Gravar como cena inicial" grava a escolha no `.mproject`, no
+campo `startupScene` que já existia) e a pasta de saída (padrão: `<projeto>/Exportado`). Depois de exportar,
+os botões **Abrir pasta** e **Rodar o jogo** levam ao resultado.
+
+```
+Exportado/
+  Jogo Ação.exe          o Player com o nome do projeto
+  libMotor.dll           a engine (e libstdc++-6, libgcc_s_seh-1, libwinpthread-1: runtime do GCC)
+  engine/                shaders e fontes da engine
+  Dados/                 o projeto, só com o que o jogo usa
+    Jogo Ação.mproject   com a cena inicial
+    GameScripts.dll      os scripts compilados
+    Assets/...           assets usados, com os .meta (os mesmos GUIDs do projeto)
+  motor-export.json      marca de exportação
+  Jogo Ação.log          criado ao rodar: o log do jogo
+```
+
+- **O que entra de `Assets/`:** todas as cenas (a troca de cena dos scripts é por nome, e o nome pode ser
+  montado no código); tudo o que elas citam, seguindo as referências (malhas, texturas, materiais, prefabs,
+  modelos glTF com os `.bin` e as imagens deles, fontes da UI, céus HDR, e qualquer componente novo que guarde
+  um `{guid, path}`); a pasta **`Assets/Recursos/`** inteira (para arquivos que o jogo abre por conta própria);
+  e caminhos `"Assets/..."` escritos entre aspas nos fontes de `Scripts/`. O resto fica de fora. Referências
+  quebradas (GUID sem arquivo) aparecem como aviso e o jogo é exportado mesmo assim.
+- **Scripts:** precisam estar compilados (a exportação recusa durante a compilação ou com erros). Os fontes
+  não vão, só a `GameScripts.dll`.
+- **Exportar de novo** na mesma pasta substitui a exportação anterior (só o que ela tinha criado, listado na
+  marca); uma pasta que não esteja vazia nem seja uma exportação é recusada.
+- **Player** (`build/bin/Player.exe`, pasta `player/`): o executável do jogo, compilado junto com o editor.
+  Abre `Dados/` ao lado dele, carrega a DLL de scripts e roda a cena inicial como o Play do editor (mesmo
+  `SceneRuntime`, física, HUD e câmera principal). Para testar um projeto sem exportar:
+  `Player.exe "C:/caminho/MeuJogo"`. `--quadros N` fecha sozinho depois de N quadros (testes automáticos).
+  Os shaders são procurados em `engine/` ao lado do executável e, se não houver, na pasta do código-fonte.
+- Pelo servidor MCP: ferramenta `game_export` (cena, pasta, `set_startup`). Testes: `tests/test_export.cpp`.
+
 ## Servidor MCP (agentes no editor)
 
 O editor tem um servidor [MCP](https://modelcontextprotocol.io) (Model Context Protocol): um agente como o
@@ -536,6 +575,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Arquivos | `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD) |
   | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |
+  | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus` |
 
   As mudanças viram passos de **desfazer**, como as feitas na interface. Durante o Play, a cena é a do jogo:

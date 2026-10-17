@@ -14,7 +14,7 @@ namespace motor {
 
 class PostProcess {
 public:
-    explicit PostProcess(const std::string& shaderDir);
+    explicit PostProcess(const std::filesystem::path& shaderDir);
     ~PostProcess();
 
     PostProcess(const PostProcess&) = delete;

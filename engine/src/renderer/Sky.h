@@ -22,7 +22,7 @@ public:
     static constexpr int kPrefilterSize = 128;    // face do mip 0 do reflexo
     static constexpr int kPrefilterLevels = 6;    // rugosidade 0, 0.2, ..., 1
 
-    explicit SkyRenderer(const std::string& shaderDir);
+    explicit SkyRenderer(const std::filesystem::path& shaderDir);
     ~SkyRenderer();
 
     SkyRenderer(const SkyRenderer&) = delete;

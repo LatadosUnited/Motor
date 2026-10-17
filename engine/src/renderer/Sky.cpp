@@ -54,10 +54,10 @@ GLuint CreateCube(int size, int levels) {
 }
 } // namespace
 
-SkyRenderer::SkyRenderer(const std::string& dir) {
-    m_skyShader = Shader::FromFiles(dir + "fullscreen.vert", dir + "sky.frag");
-    m_cubeShader = Shader::FromFiles(dir + "fullscreen.vert", dir + "sky_cube.frag");
-    m_prefilterShader = Shader::FromFiles(dir + "fullscreen.vert", dir + "prefilter.frag");
+SkyRenderer::SkyRenderer(const std::filesystem::path& dir) {
+    m_skyShader = Shader::FromFiles(dir / "fullscreen.vert", dir / "sky.frag");
+    m_cubeShader = Shader::FromFiles(dir / "fullscreen.vert", dir / "sky_cube.frag");
+    m_prefilterShader = Shader::FromFiles(dir / "fullscreen.vert", dir / "prefilter.frag");
     glCreateFramebuffers(1, &m_fbo);
 
     const int envLevels = static_cast<int>(std::bit_width(static_cast<unsigned>(kEnvironmentSize)));

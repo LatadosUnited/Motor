@@ -34,11 +34,11 @@ GLuint CreateColorFbo(GLuint texture) {
 }
 } // namespace
 
-PostProcess::PostProcess(const std::string& dir) {
-    m_bloomDown = Shader::FromFiles(dir + "fullscreen.vert", dir + "bloom_down.frag");
-    m_bloomUp = Shader::FromFiles(dir + "fullscreen.vert", dir + "bloom_up.frag");
-    m_composite = Shader::FromFiles(dir + "fullscreen.vert", dir + "composite.frag");
-    m_fxaa = Shader::FromFiles(dir + "fullscreen.vert", dir + "fxaa.frag");
+PostProcess::PostProcess(const std::filesystem::path& dir) {
+    m_bloomDown = Shader::FromFiles(dir / "fullscreen.vert", dir / "bloom_down.frag");
+    m_bloomUp = Shader::FromFiles(dir / "fullscreen.vert", dir / "bloom_up.frag");
+    m_composite = Shader::FromFiles(dir / "fullscreen.vert", dir / "composite.frag");
+    m_fxaa = Shader::FromFiles(dir / "fullscreen.vert", dir / "fxaa.frag");
     glCreateVertexArrays(1, &m_emptyVao);
 }
 
