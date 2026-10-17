@@ -94,7 +94,7 @@ void EditorApp::BuildDefaultScene() {
     sphere.transform.position = {0.0f, 0.6f, 0.0f};
     sphere.transform.scale = glm::vec3(1.2f);
     sphere.Get<MeshRenderer>()->material.color = {0.30f, 0.60f, 0.95f, 1.0f};
-    sphere.Get<MeshRenderer>()->material.shininess = 64.0f;
+    sphere.Get<MeshRenderer>()->material.roughness = 0.3f;
 
     Entity& group = m_ctx.CreatePrimitive(Primitive::Empty);
     group.name = "Torre";
