@@ -100,7 +100,9 @@ int RunAction(hub::HubApp& app, const Action& a) {
         const hub::ProjectInfo info = hub::ReadProject(hub::PathFromUtf8(a.args[0]));
         const hub::VersionChoice choice =
             hub::ChooseVersion(info.engineVersion, app.Versions(), app.Config().defaultVersion);
-        if (!a.engine.empty()) {
+        if (!info.found) {
+            message = "Projeto não encontrado em '" + a.args[0] + "': " + info.error;
+        } else if (!a.engine.empty()) {
             if (const hub::InstalledVersion* v = PickVersion(app, a.engine, message)) {
                 ok = app.OpenProject(info.root, *v, message);
             }
