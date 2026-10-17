@@ -46,6 +46,12 @@ bool WriteIfChanged(const fs::path& path, const std::string& text, std::string* 
     return true;
 }
 
+// Limite de caminho do Windows (MAX_PATH) e o tamanho máximo que o CMake deixa para o caminho de um objeto.
+// A folga cobre o ".d" de dependências que o GCC grava ao lado do .obj (o CMake conta bytes UTF-8, que já
+// são mais que os caracteres do Windows quando há acentos).
+constexpr size_t kMaxPath = 260;
+constexpr size_t kObjectPathMax = kMaxPath - 20;
+
 // Caminho dentro de uma string do CMake: barras normais e sem caracteres especiais soltos.
 std::string CMakePath(const fs::path& path) {
     std::string out;
@@ -140,13 +146,22 @@ std::string GenerateCMakeLists(const Paths& paths, const Toolchain& toolchain) {
     s += "# Gerado pelo Motor Editor a cada compilação dos scripts. Não edite: as mudanças seriam perdidas.\n";
     s += "# Scripts do projeto: " + ToGenericUtf8(paths.scriptsDir) + "\n";
     s += "cmake_minimum_required(VERSION 3.24)\n";
+    s += "# Objetos com nomes curtos (hash) em vez do caminho inteiro do script: o as.exe do binutils lê o caminho\n";
+    s += "# de saída fora do UTF-8 (acentos viram lixo e ele não acha a pasta) e o caminho não passa de 260 caracteres.\n";
+    s += "# Só funciona em cache e antes do project().\n";
+    s += "if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.2)\n";
+    s += "    set(CMAKE_INTERMEDIATE_DIR_STRATEGY SHORT CACHE STRING \"\")\n";
+    s += "endif()\n";
     s += std::format("project({} LANGUAGES CXX)\n\n", kTargetName);
     s += "set(CMAKE_CXX_STANDARD 20)\n";
     s += "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
     s += "set(CMAKE_CXX_EXTENSIONS OFF)\n";
     s += "# Os .obj dos scripts ficam em pastas com o caminho do projeto (acentos). O ar.exe lê o arquivo de\n";
     s += "# resposta da lista de objetos fora do UTF-8 e não os acha: passa a lista na linha de comando.\n";
-    s += "set(CMAKE_CXX_USE_RESPONSE_FILE_FOR_OBJECTS OFF)\n\n";
+    s += "set(CMAKE_CXX_USE_RESPONSE_FILE_FOR_OBJECTS OFF)\n";
+    s += "# CMake antes do 4.2: os objetos levam o caminho inteiro do script (C_/.../Scripts/X.cpp.obj) e passam fácil\n";
+    s += "# do limite de 260 caracteres do Windows. Acima deste tamanho o CMake troca as pastas por um hash.\n";
+    s += std::format("set(CMAKE_OBJECT_PATH_MAX {})\n\n", kObjectPathMax);
     s += "# SDK do Motor (headers e libMotor.dll do mesmo build do editor).\n";
     s += std::format("include(\"{}\")\n\n", CMakePath(toolchain.sdkCMake));
     s += "# Todos os .cpp da pasta Scripts (arquivos novos entram sozinhos na próxima compilação).\n";
@@ -218,8 +233,8 @@ bool NeedsConfigure(const Paths& paths) {
 
 std::string LongPathWarning(const Paths& paths) {
     // O mais longo é o teste do compilador do CMake: build/CMakeFiles/CMakeScratch/TryCompile-xxxxxx/CMakeFiles/
-    // cmTC_xxxxx.dir/testCXXCompiler.cxx.obj (~92 a mais). Os objetos dos scripts o CMake já encurta com um hash.
-    constexpr size_t kMaxPath = 260;
+    // cmTC_xxxxx.dir/testCXXCompiler.cxx.obj (~92 a mais). Os objetos dos scripts o CMake encurta com um hash
+    // (CMAKE_INTERMEDIATE_DIR_STRATEGY e CMAKE_OBJECT_PATH_MAX no CMakeLists gerado).
     if (paths.binaryDir.native().size() + 92 < kMaxPath) return {};
     const fs::path project = paths.scriptsDir.parent_path();
     return std::format("o caminho da pasta do projeto é longo demais ({} caracteres): os arquivos da compilação "
