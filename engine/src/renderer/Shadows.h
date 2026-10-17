@@ -1,0 +1,69 @@
+#pragma once
+
+// Header privado do renderer. Mapas de sombra: cascatas da luz direcional (textura array) e cubos das
+// pontuais/spots (cubemap array, distância até a luz).
+
+#include "motor/renderer/Camera.h"
+#include "motor/renderer/Environment.h"
+#include "motor/renderer/Light.h"
+#include "motor/renderer/Shader.h"
+#include "renderer/DrawList.h"
+
+#include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
+
+#include <memory>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace motor {
+
+struct RenderStats;
+
+class ShadowRenderer {
+public:
+    static constexpr int kCascades = 4;
+
+    // Espelha o bloco "Shadows" (std140) do lit.frag.
+    struct Data {
+        glm::mat4 cascadeMatrices[kCascades]{};
+        glm::vec4 cascadeSplits{0.0f};
+        glm::vec4 cascadeTexels{0.0f};
+        glm::vec4 params{0.0f};  // x = nº de cascatas, y = 1 / resolução das cascatas, z = 1 / resolução dos cubos, w = distância
+    };
+
+    struct Result {
+        Data data;
+        int cascadeLight = -1;            // índice (em `lights`) da direcional com cascatas
+        std::vector<int> cubeLayer;       // por luz: camada do cubo de sombra, -1 = sem
+    };
+
+    explicit ShadowRenderer(const std::string& shaderDir);
+    ~ShadowRenderer();
+
+    ShadowRenderer(const ShadowRenderer&) = delete;
+    ShadowRenderer& operator=(const ShadowRenderer&) = delete;
+
+    // Escolhe as luzes com sombra e desenha os mapas. Deixa o framebuffer próprio vinculado.
+    Result Render(const Camera& camera, std::span<const Light> lights, const Environment& environment,
+                  std::span<const DrawItem> items, const JointUploader& uploadJoints, RenderStats& stats);
+
+    unsigned int CascadeTexture() const { return m_cascades; }
+    unsigned int CubeTexture() const { return m_cubes; }
+
+private:
+    void EnsureCascades(int resolution);
+    void EnsureCubes(int resolution);
+    void DrawItems(std::span<const DrawItem> items, const glm::mat4& viewProjection, const Frustum& frustum,
+                   bool point, const glm::vec4& lightPositionRange, const JointUploader& uploadJoints, RenderStats& stats);
+
+    std::unique_ptr<Shader> m_directional, m_directionalSkinned, m_point, m_pointSkinned;
+    unsigned int m_fbo = 0;
+    unsigned int m_cascades = 0;
+    int m_cascadeResolution = 0;
+    unsigned int m_cubes = 0;
+    int m_cubeResolution = 0;
+};
+
+} // namespace motor

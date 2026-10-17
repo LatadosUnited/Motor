@@ -12,6 +12,7 @@ Texture2D::Texture2D(int width, int height, const uint8_t* pixels, TextureFilter
     : m_width(width), m_height(height), m_colorSpace(colorSpace) {
     const auto largest = static_cast<unsigned>(std::max(width, height));
     const GLsizei levels = static_cast<GLsizei>(std::bit_width(largest));  // 1 + floor(log2)
+    m_levels = levels;
 
     glCreateTextures(GL_TEXTURE_2D, 1, &m_id);
     glTextureStorage2D(m_id, levels, colorSpace == TextureColorSpace::Srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8, width, height);
@@ -27,7 +28,23 @@ Texture2D::Texture2D(int width, int height, const uint8_t* pixels, TextureFilter
 }
 
 Texture2D::~Texture2D() {
+    if (m_linearView) glDeleteTextures(1, &m_linearView);
     glDeleteTextures(1, &m_id);
+}
+
+unsigned int Texture2D::LinearHandle() const {
+    if (m_colorSpace == TextureColorSpace::Linear) return m_id;
+    if (!m_linearView) {
+        // glTextureView exige um nome ainda sem tipo (glGenTextures, não glCreateTextures).
+        glGenTextures(1, &m_linearView);
+        glTextureView(m_linearView, GL_TEXTURE_2D, m_id, GL_RGBA8, 0, static_cast<GLuint>(m_levels), 0, 1);
+        glTextureParameteri(m_linearView, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTextureParameteri(m_linearView, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTextureParameteri(m_linearView, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTextureParameteri(m_linearView, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTextureParameterf(m_linearView, GL_TEXTURE_MAX_ANISOTROPY, 8.0f);
+    }
+    return m_linearView;
 }
 
 void Texture2D::Bind(unsigned int unit) const {

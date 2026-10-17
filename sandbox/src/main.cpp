@@ -59,7 +59,8 @@ private:
                 o.transform.position = {x * 2.5f, 0.6f, z * 2.5f - 4.0f};
                 o.transform.scale = glm::vec3(isSphere ? 1.2f : 1.0f);
                 o.material.color = palette[i % 5];
-                o.material.shininess = isSphere ? 64.0f : 16.0f;
+                o.material.roughness = isSphere ? 0.3f : 0.6f;
+                o.material.metallic = isSphere && i % 3 == 0 ? 1.0f : 0.0f;
                 o.spinAxis = glm::normalize(glm::vec3(0.3f * x, 1.0f, 0.3f * z));
                 o.spinSpeed = isSphere ? 0.0f : 0.6f + 0.15f * static_cast<float>(i % 4);
                 m_objects.push_back(o);
@@ -97,7 +98,7 @@ private:
 
     Camera m_camera;
     FlyCameraController m_cameraController;
-    Light m_light;  // direcional
+    Light m_light{.castShadows = true};  // direcional (com sombra)
     std::vector<Object> m_objects;
 };
 

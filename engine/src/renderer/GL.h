@@ -84,7 +84,19 @@
     X(PFNGLBLITNAMEDFRAMEBUFFERPROC, glBlitNamedFramebuffer)          \
     X(PFNGLCREATERENDERBUFFERSPROC, glCreateRenderbuffers)            \
     X(PFNGLDELETERENDERBUFFERSPROC, glDeleteRenderbuffers)            \
-    X(PFNGLNAMEDRENDERBUFFERSTORAGEMULTISAMPLEPROC, glNamedRenderbufferStorageMultisample)
+    X(PFNGLNAMEDRENDERBUFFERSTORAGEMULTISAMPLEPROC, glNamedRenderbufferStorageMultisample) \
+    /* Fase 7: sombras, céu, HDR e pós-processamento */               \
+    X(PFNGLDRAWARRAYSPROC, glDrawArrays)                              \
+    X(PFNGLBLENDFUNCPROC, glBlendFunc)                                \
+    X(PFNGLGENTEXTURESPROC, glGenTextures)                            \
+    X(PFNGLTEXTUREVIEWPROC, glTextureView)                            \
+    X(PFNGLTEXTURESTORAGE3DPROC, glTextureStorage3D)                  \
+    X(PFNGLTEXTUREPARAMETERFVPROC, glTextureParameterfv)              \
+    X(PFNGLNAMEDFRAMEBUFFERTEXTURELAYERPROC, glNamedFramebufferTextureLayer) \
+    X(PFNGLNAMEDFRAMEBUFFERDRAWBUFFERPROC, glNamedFramebufferDrawBuffer) \
+    X(PFNGLNAMEDFRAMEBUFFERREADBUFFERPROC, glNamedFramebufferReadBuffer) \
+    X(PFNGLCLEARNAMEDFRAMEBUFFERFVPROC, glClearNamedFramebufferfv)    \
+    X(PFNGLCOLORMASKPROC, glColorMask)
 
 // Os ponteiros vivem num namespace próprio para não colidir com os símbolos
 // exportados pela opengl32.dll; o using-directive abaixo permite chamá-los como glXxx().

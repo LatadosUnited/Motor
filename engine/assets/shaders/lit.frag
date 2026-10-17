@@ -1,7 +1,8 @@
 #version 450 core
 
-// Blinn-Phong com N luzes (direcionais, pontuais e spots). Toda a iluminação é feita em espaço linear
-// e convertida para sRGB (gama 2.2) na saída.
+// PBR de metal/rugosidade (Cook-Torrance com GGX) com N luzes, sombras (cascatas da direcional, cubos das
+// pontuais/spots) e a luz do céu (irradiância em harmônicos esféricos + reflexo pré-filtrado). A saída é a
+// luz em HDR linear; tone mapping e gama ficam para o pós-processamento (composite.frag).
 
 in VS_OUT {
     vec3 worldPos;
@@ -9,13 +10,8 @@ in VS_OUT {
     vec2 uv;
 } fs;
 
-layout(std140, binding = 0) uniform Frame {
-    mat4 uView;
-    mat4 uProjection;
-    vec4 uCameraPosition;
-    vec4 uAmbient;
-    vec4 uFog;  // rgb = cor do céu (linear), a = densidade
-};
+#include "frame.glsl"
+#include "pbr.glsl"
 
 // Mesmo tamanho que kMaxLights (motor/renderer/Light.h).
 const int kMaxLights = 32;
@@ -27,7 +23,7 @@ struct LightData {
     vec4 positionRange;  // xyz = posição, w = alcance
     vec4 directionType;  // xyz = direção (normalizada), w = tipo
     vec4 color;          // rgb = cor * intensidade
-    vec4 cone;           // x = cos(ângulo interno), y = cos(ângulo externo)
+    vec4 cone;           // x = cos(ângulo interno), y = cos(ângulo externo), z = camada do cubo de sombra (-1 = sem), w = 1: usa as cascatas
 };
 
 layout(std140, binding = 1) uniform Lights {
@@ -35,30 +31,120 @@ layout(std140, binding = 1) uniform Lights {
     LightData uLights[kMaxLights];
 };
 
-layout(binding = 0) uniform sampler2D uAlbedo;  // textura sRGB => amostrada já linear
-uniform vec4 uColor;                            // sRGB
-uniform float uSpecular;
-uniform float uShininess;
+// Igual ao ShadowData do Renderer.cpp.
+layout(std140, binding = 3) uniform Shadows {
+    mat4 uCascadeMatrices[4];
+    vec4 uCascadeSplits;  // distância (na vista) do fim de cada cascata
+    vec4 uCascadeTexels;  // tamanho do texel de cada cascata no mundo
+    vec4 uShadowParams;   // x = nº de cascatas, y = 1 / resolução das cascatas, z = 1 / resolução dos cubos, w = distância das sombras
+};
+
+layout(binding = 0) uniform sampler2D uAlbedo;        // sRGB => amostrada já linear
+layout(binding = 1) uniform sampler2D uNormalMap;     // linear
+layout(binding = 2) uniform sampler2D uMetalRoughMap; // linear: G = rugosidade, B = metal
+layout(binding = 3) uniform sampler2D uOcclusionMap;  // linear: R
+layout(binding = 4) uniform sampler2D uEmissiveMap;   // sRGB
+layout(binding = 5) uniform sampler2DArrayShadow uCascades;
+layout(binding = 6) uniform samplerCubeArrayShadow uPointShadows;
+layout(binding = 7) uniform samplerCube uPrefiltered;
+layout(binding = 8) uniform sampler2D uBrdfLut;
+
+uniform vec4 uColor;     // sRGB
+uniform vec4 uPbr;       // x = metal, y = rugosidade, z = specular, w = força do mapa de normal (0 = sem mapa)
+uniform vec4 uEmissive;  // rgb = emissão (linear, já com a intensidade), a = força da oclusão
 
 out vec4 oColor;
 
-// Queda relativa ao alcance (a intensidade não depende do tamanho do alcance): forte perto da lâmpada,
-// chegando a zero exatamente no alcance, sem corte visível.
 float RangeAttenuation(float dist, float range) {
     float ratio = dist / range;
     float window = clamp(1.0 - ratio * ratio * ratio * ratio, 0.0, 1.0);
     return window * window / (1.0 + 4.0 * ratio * ratio);
 }
 
+// Base tangente pelas derivadas da tela (sem tangentes nos vértices; vale também para malhas com pele).
+mat3 CotangentFrame(vec3 N, vec3 p, vec2 uv) {
+    vec3 dp1 = dFdx(p), dp2 = dFdy(p);
+    vec2 duv1 = dFdx(uv), duv2 = dFdy(uv);
+    vec3 dp2perp = cross(dp2, N);
+    vec3 dp1perp = cross(N, dp1);
+    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+    float invmax = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-20));
+    return mat3(T * invmax, B * invmax, N);
+}
+
+float SampleCascade(int c, vec3 worldPos, vec3 N) {
+    vec3 offsetPos = worldPos + N * uCascadeTexels[c] * 1.5;
+    vec4 p = uCascadeMatrices[c] * vec4(offsetPos, 1.0);
+    vec3 proj = p.xyz / p.w * 0.5 + 0.5;
+    if (proj.z >= 1.0) return 1.0;
+    float texel = uShadowParams.y;
+    float sum = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            sum += texture(uCascades, vec4(proj.xy + vec2(x, y) * texel, float(c), proj.z));
+        }
+    }
+    return sum / 9.0;
+}
+
+float DirectionalShadow(vec3 worldPos, vec3 N) {
+    int count = int(uShadowParams.x + 0.5);
+    if (count == 0) return 1.0;
+    float depth = -(uView * vec4(worldPos, 1.0)).z;
+    float maxDist = uShadowParams.w;
+    if (depth >= maxDist) return 1.0;
+    int c = 0;
+    while (c < count - 1 && depth > uCascadeSplits[c]) ++c;
+    float shadow = SampleCascade(c, worldPos, N);
+    // Mistura com a próxima cascata perto da divisa (sem degrau visível).
+    float start = c == 0 ? 0.0 : uCascadeSplits[c - 1];
+    float band = (uCascadeSplits[c] - start) * 0.15;
+    float t = (depth - (uCascadeSplits[c] - band)) / max(band, 1e-4);
+    if (c < count - 1 && t > 0.0) shadow = mix(shadow, SampleCascade(c + 1, worldPos, N), clamp(t, 0.0, 1.0));
+    // Some aos poucos no fim da distância das sombras.
+    return mix(shadow, 1.0, clamp((depth - maxDist * 0.85) / (maxDist * 0.15), 0.0, 1.0));
+}
+
+float PointShadow(int layer, vec3 worldPos, vec3 N, vec3 lightPos, float range) {
+    vec3 toFrag = worldPos - lightPos;
+    float dist = length(toFrag);
+    float texelAngle = 2.0 * uShadowParams.z;  // largura de um texel do cubo, por metro de distância
+    vec3 d = toFrag + N * dist * texelAngle * 1.5;
+    float ref = length(d) / range - 0.002;
+    vec3 dn = normalize(d);
+    vec3 a = normalize(cross(dn, abs(dn.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+    vec3 b = cross(dn, a);
+    float r = length(d) * texelAngle * 1.25;
+    float sum = texture(uPointShadows, vec4(d, float(layer)), ref);
+    sum += texture(uPointShadows, vec4(d + (a + b) * r, float(layer)), ref);
+    sum += texture(uPointShadows, vec4(d + (a - b) * r, float(layer)), ref);
+    sum += texture(uPointShadows, vec4(d + (-a + b) * r, float(layer)), ref);
+    sum += texture(uPointShadows, vec4(d + (-a - b) * r, float(layer)), ref);
+    return sum / 5.0;
+}
+
 void main() {
     vec4 tint = vec4(pow(uColor.rgb, vec3(2.2)), uColor.a);
     vec4 albedo = texture(uAlbedo, fs.uv) * tint;
+    vec4 mr = texture(uMetalRoughMap, fs.uv);
+    float metallic = clamp(uPbr.x * mr.b, 0.0, 1.0);
+    float roughness = clamp(uPbr.y * mr.g, 0.045, 1.0);
+    float occlusion = mix(1.0, texture(uOcclusionMap, fs.uv).r, uEmissive.a);
 
-    vec3 N = normalize(fs.normal);
+    vec3 geometricN = normalize(fs.normal);
+    vec3 N = geometricN;
+    if (uPbr.w > 0.0) {
+        vec3 t = texture(uNormalMap, fs.uv).xyz * 2.0 - 1.0;
+        t.xy *= uPbr.w;
+        N = normalize(CotangentFrame(geometricN, fs.worldPos, fs.uv) * t);
+    }
     vec3 V = normalize(uCameraPosition.xyz - fs.worldPos);
+    float NdotV = max(dot(N, V), 1e-4);
+    vec3 f0 = BaseReflectance(albedo.rgb, metallic, uPbr.z);
+    vec3 diffuseColor = albedo.rgb * (1.0 - metallic);
 
-    vec3 diffuseSum = vec3(0.0);
-    vec3 specularSum = vec3(0.0);
+    vec3 direct = vec3(0.0);
     int count = min(uLightCount.x, kMaxLights);
     for (int i = 0; i < count; ++i) {
         LightData light = uLights[i];
@@ -80,23 +166,42 @@ void main() {
             }
         }
         if (attenuation <= 0.0) continue;
+        float NdotL = dot(N, L);
+        if (NdotL <= 0.0) continue;
 
-        float diffuse = max(dot(N, L), 0.0);
-        if (diffuse <= 0.0) continue;
+        if (light.cone.w > 0.5) {
+            attenuation *= DirectionalShadow(fs.worldPos, geometricN);
+        } else if (light.cone.z >= 0.0) {
+            attenuation *= PointShadow(int(light.cone.z + 0.5), fs.worldPos, geometricN, light.positionRange.xyz,
+                                       light.positionRange.w);
+        }
+        if (attenuation <= 0.0) continue;
+
         vec3 H = normalize(L + V);
-        float specular = pow(max(dot(N, H), 0.0), uShininess) * uSpecular;
-
-        vec3 radiance = light.color.rgb * attenuation;
-        diffuseSum += diffuse * radiance;
-        specularSum += specular * radiance;
+        float NdotH = max(dot(N, H), 0.0);
+        vec3 F = FresnelSchlick(max(dot(V, H), 0.0), f0);
+        vec3 specular = DistributionGgx(NdotH, roughness) * VisibilitySmithGgx(NdotV, NdotL, roughness) * F;
+        // A luz de intensidade 1 ilumina de frente um branco com 1 (como no Blinn-Phong de antes): o 1/PI do
+        // difuso sai, e o especular ganha o PI.
+        vec3 diffuse = (1.0 - F) * diffuseColor;
+        direct += (diffuse + specular * PI) * light.color.rgb * attenuation * NdotL;
     }
 
-    vec3 color = albedo.rgb * (uAmbient.rgb + diffuseSum) + specularSum;
+    // Luz do céu: difusa (irradiância) e reflexo (mapa pré-filtrado com a tabela da BRDF).
+    vec3 irradiance = max(EvaluateSh9(uSh, N), vec3(0.0));
+    vec3 Fr = FresnelSchlickRoughness(NdotV, f0, roughness);
+    vec3 R = RotateY(reflect(-V, N), -uSky.z);
+    vec3 prefiltered = textureLod(uPrefiltered, R, roughness * uSky.w).rgb * uSky.y;
+    vec2 brdf = texture(uBrdfLut, vec2(NdotV, roughness)).rg;
+    vec3 ambient = (1.0 - Fr) * diffuseColor * (irradiance / PI + uAmbient.rgb) + prefiltered * (f0 * brdf.x + brdf.y);
 
-    // Neblina simples de distância, para dar profundidade.
+    vec3 emissive = uEmissive.rgb * texture(uEmissiveMap, fs.uv).rgb;
+    vec3 color = direct + ambient * occlusion + emissive;
+
+    // Neblina de distância: a cor é a do horizonte do céu.
     float dist = length(uCameraPosition.xyz - fs.worldPos);
     float fog = 1.0 - exp(-pow(dist * uFog.a, 2.0));
     color = mix(color, uFog.rgb, fog);
 
-    oColor = vec4(pow(color, vec3(1.0 / 2.2)), albedo.a);
+    oColor = vec4(color, albedo.a);
 }

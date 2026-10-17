@@ -26,6 +26,9 @@ public:
     int Width() const { return m_width; }
     int Height() const { return m_height; }
     unsigned int NativeHandle() const { return m_id; }  // nome OpenGL (ex.: para ImGui::Image)
+    // Mesma imagem lida sem a conversão sRGB (mapas de normal, metal/rugosidade e oclusão guardam dados, não
+    // cor). Textura sRGB: uma "view" OpenGL criada no primeiro uso; textura linear: a própria.
+    unsigned int LinearHandle() const;
     TextureColorSpace ColorSpace() const { return m_colorSpace; }  // a UI (Renderer2D) devolve as sRGB para sRGB
 
     static std::shared_ptr<Texture2D> CreateSolid(glm::u8vec4 color);
@@ -33,6 +36,8 @@ public:
 
 private:
     unsigned int m_id = 0;
+    mutable unsigned int m_linearView = 0;
+    int m_levels = 1;
     int m_width = 0;
     int m_height = 0;
     TextureColorSpace m_colorSpace = TextureColorSpace::Srgb;
