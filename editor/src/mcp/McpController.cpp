@@ -9,6 +9,7 @@
 
 #include <motor/core/Paths.h>
 #include <motor/renderer/Framebuffer.h>
+#include <motor/audio/AudioSystem.h>
 #include <motor/ui/UiSystem.h>
 
 #include <imgui.h>
@@ -496,6 +497,32 @@ void McpController::AddPlayTools() {
             m_clickStage = 1;
             m_host.play.SetExternalInput(true);
             return ToolResult::Text(std::format("clique em {} ({:.0f}, {:.0f})", e.name, m_clickPos.x, m_clickPos.y));
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "audio_status",
+        .description = "Áudio durante o Play: se há saída de som, posição do ouvinte, nível do som que sai (RMS por "
+                       "canal, esquerdo e direito) e as fontes que já tocaram (tocando, distância até o ouvinte e "
+                       "volume com a queda da distância).",
+        .inputSchema = Schema(),
+        .readOnly = true,
+        .run = [this](const Json&) {
+            SceneRuntime* runtime = m_host.play.Runtime();
+            AudioSystem* audio = runtime ? runtime->GetSystem<AudioSystem>() : nullptr;
+            if (!audio) throw ToolError("o jogo não está rodando (play)");
+            Json voices = Json::array();
+            for (const AudioVoiceInfo& v : audio->Voices()) {
+                const Entity* e = runtime->GetScene().Find(v.entity);
+                voices.push_back({{"entity", v.entity}, {"name", e ? e->name : std::string()}, {"clip", v.clip},
+                                  {"playing", v.playing}, {"spatial", v.spatial}, {"distance", v.distance},
+                                  {"gain", v.gain}});
+            }
+            const glm::vec3 p = audio->ListenerPosition();
+            return ToolResult::Data({{"device", audio->HasDevice()}, {"paused", audio->IsPaused()},
+                                     {"sample_rate", audio->SampleRate()}, {"listener", {p.x, p.y, p.z}},
+                                     {"output_level", {audio->OutputLevel(0), audio->OutputLevel(1)}},
+                                     {"voices", std::move(voices)}});
         },
     });
 
