@@ -141,6 +141,7 @@ AssetType AssetTypeFromPath(const fs::path& path) {
     if (ext == ".ttf" || ext == ".otf") return AssetType::Font;  // fontes da UI do jogo (motor/ui/Font.h)
     if (ext == ".gltf" || ext == ".glb") return AssetType::Model;
     if (ext == ".hdr") return AssetType::EnvironmentMap;  // céu equirretangular (Fase 7)
+    if (ext == ".wav" || ext == ".ogg" || ext == ".mp3") return AssetType::Audio;  // clipes de som (Fase 8)
     return AssetType::Unknown;
 }
 
@@ -154,6 +155,7 @@ const char* AssetTypeName(AssetType type) {
         case AssetType::Font: return "Fonte";
         case AssetType::Model: return "Modelo";
         case AssetType::EnvironmentMap: return "Céu HDR";
+        case AssetType::Audio: return "Som";
         case AssetType::Unknown: break;
     }
     return "Arquivo";

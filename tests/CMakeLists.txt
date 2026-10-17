@@ -113,3 +113,6 @@ motor_add_test(test_render)
 motor_add_test(test_export ${PROJECT_SOURCE_DIR}/editor/src/GameExport.cpp)
 target_include_directories(test_export PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_export PRIVATE nlohmann_json::nlohmann_json)
+# Áudio (Fase 8) sem dispositivo de som: clipes como assets com GUID, som 3D (distância e lado), som 2D tocado
+# por script, pausa, fontes desativadas/excluídas e arquivos inválidos. Gera os próprios .wav.
+motor_add_test(test_audio)

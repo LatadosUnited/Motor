@@ -41,3 +41,4 @@
 // Fase 10 (exportar o jogo): assets embutidos e pasta dos assets da engine.
 #include "motor/assets/BuiltinAssets.h"
 #include "motor/core/EngineAssets.h"
+#include "motor/audio/AudioSystem.h"

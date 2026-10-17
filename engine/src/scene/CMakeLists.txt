@@ -17,5 +17,7 @@ motor_add_layer(scene
         Prefab.cpp
         Animator.cpp
         ModelImport.cpp
+        AudioSource.cpp
+        AudioListener.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

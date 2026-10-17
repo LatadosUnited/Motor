@@ -45,6 +45,7 @@ Icon IconFor(bool isDirectory, AssetType type) {
         case AssetType::Font: break;  // fontes da UI: ícone de arquivo
         case AssetType::Model: return Icon::Mesh;
         case AssetType::EnvironmentMap: return Icon::Texture;  // céu HDR
+        case AssetType::Audio: break;  // clipes de som: ícone de arquivo
         case AssetType::Unknown: break;
     }
     return Icon::File;

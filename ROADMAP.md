@@ -196,11 +196,24 @@ Limitações: sem oclusão de ambiente na tela (SSAO), reflexos só do céu (sem
 automática, sem objetos transparentes ordenados; modelos importados antes da Fase 7 só ganham os mapas PBR
 ao importar de novo (menu do painel Projeto); spots usam um cubo inteiro de sombra.
 
-## Fase 8 — Áudio
+## Fase 8 — Áudio ✅
 
 - Componentes **AudioSource** (som 2D/3D, loop, volume) e **AudioListener** (na câmera).
 - Biblioteca: miniaudio (um único header, como o stb_image).
 - Arquivos `.wav`/`.ogg`/`.mp3` como assets com GUID.
+
+**Pronto quando:** um projeto de teste toca um som 3D que muda com a posição da câmera e um som de UI ao
+clicar num botão.
+
+Feito: camada `audio/` com o `AudioSystem` (sistema do SceneRuntime, `kSystemOrderAudio`) sobre o miniaudio
+0.11.22 (com o stb_vorbis para `.ogg`); componentes `AudioSource` (clipe, volume, tom, repetir, tocar ao
+iniciar, som 3D, distâncias) e `AudioListener` (volume geral; sem ele, ouve a câmera principal) em `scene/`;
+campo `AudioClip` (GUID + caminho) com desenhador no Inspector; tipo de asset Som. O som só toca no Play
+(Parar silencia, a Pausa do editor pausa); o dispositivo só abre quando o primeiro som toca e, sem saída de
+som, tudo segue num dispositivo nulo. Scripts: `Play`, `Stop`, `SetVolume`, `IsPlaying` (kScriptApiVersion
+10), exemplo `docs/examples/SonsDoMenu.cpp` rodado pelo `test_script_docs`; testes em `tests/test_audio.cpp`
+(mistura lida sem dispositivo: queda com a distância, lado esquerdo/direito, pausa). MCP: `audio_status` (nível
+real da saída por canal). Para a exportação (Fase 10): `CollectAudioClips(scene)` lista os clipes de uma cena.
 
 ## Fase 9 — Interface do jogo (HUD) ✅
 
@@ -373,7 +386,7 @@ Pontos de atenção da revisão do código (17/10/2026):
 ```
 Fase 0 Git/testes
    └─ Fase 1 Componentes ──┬─ Fase 2 Play ── Fase 3 Scripts ──┬─ Fase 5 Física ✅
-                           │                                  ├─ Fase 8 Áudio
+                           │                                  ├─ Fase 8 Áudio         ✅
                            ├─ Fase 4 Luzes/câmera ✅          ├─ Fase 9 HUD           ✅
                            ├─ Fase 6 Materiais/prefabs ✅     ├─ Fase 10 Exportar
                            │     └─ Fase 11 Modelos 3D ✅     └─ Fase 12 Doc. scripts ✅

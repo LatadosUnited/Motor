@@ -3,7 +3,8 @@
 Engine 3D em C++20 + OpenGL 4.5, escrita do zero. Dependências externas mínimas:
 **GLFW** (janela/input), **GLM** (matemática), **Dear ImGui** (UI do editor, branch docking),
 **ImGuizmo** (gizmos de transform), **nlohmann/json** (cenas e projetos), **stb_image** (PNG/JPG),
-**cgltf** (modelos glTF), **Jolt Physics** (física) e **cpp-httplib** (servidor MCP do editor), baixadas
+**cgltf** (modelos glTF), **Jolt Physics** (física), **miniaudio** (som) e **cpp-httplib** (servidor MCP do
+editor), baixadas
 automaticamente pelo CMake. O leitor de OBJ é próprio; as fontes da UI do jogo usam o `imstb_truetype.h` que já
 vem com o Dear ImGui.
 O carregador de OpenGL é próprio (`engine/src/renderer/GL.h`).
@@ -40,6 +41,7 @@ engine/            camadas, de baixo para cima (cada uma só usa as de baixo; co
     app/           Application (game loop c/ fixed timestep)
     physics/       PhysicsSystem (Jolt Physics): corpos, personagem, eventos, raios; contorno dos colliders
     ui/            interface do jogo: componentes Ui*, layout com âncoras, fontes SDF, UiRenderer, UiSystem
+    audio/         AudioSystem (miniaudio): toca as Fontes de áudio no Play, som 3D pelo Ouvinte
   src/<camada>/    implementação + CMakeLists.txt da camada (+ renderer/GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine (skinned.vert: malhas animadas)
   assets/fonts/    fonte padrão da UI do jogo (Roboto Medium, Apache 2.0)
@@ -50,7 +52,7 @@ editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (
 sandbox/           app de demonstração
 player/            Player: o executável do jogo exportado (roda um projeto sem o editor)
 tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física,
-                   materiais, prefabs, glTF e animação, UI)
+                   materiais, prefabs, glTF e animação, UI, áudio)
 ```
 
 ## Controles do Sandbox
@@ -171,6 +173,7 @@ Arquivos dentro do projeto podem ser usados direto nas cenas:
 | Material | `.mmat` | do Motor: cor, textura, especular e brilho (abaixo) |
 | Prefab | `.mprefab` | do Motor: entidade com filhos (abaixo) |
 | Fonte | `.ttf` `.otf` | fonte dos textos da UI do jogo (ver "Interface do jogo") |
+| Som | `.wav` `.ogg` `.mp3` | clipe da Fonte de áudio (ver "Áudio"); via miniaudio |
 
 Como usar:
 
@@ -552,6 +555,30 @@ Exportado/
   Os shaders são procurados em `engine/` ao lado do executável e, se não houver, na pasta do código-fonte.
 - Pelo servidor MCP: ferramenta `game_export` (cena, pasta, `set_startup`). Testes: `tests/test_export.cpp`.
 
+## Áudio
+
+Sons tocam durante o Play pela camada `engine/.../audio/` (miniaudio, com o stb_vorbis para `.ogg`). São
+componentes comuns (Inspector, cena, desfazer):
+
+| Componente | Campos |
+|---|---|
+| **Fonte de áudio** (`AudioSource`) | Clipe (`.wav`/`.ogg`/`.mp3` do projeto, por GUID), Volume, Tom, Repetir, Tocar ao iniciar, Som 3D, Distância mínima e máxima |
+| **Ouvinte de áudio** (`AudioListener`) | Volume geral. Ponha na câmera; sem nenhum, ouve a câmera principal |
+
+- **Som 3D:** o volume cai com a distância até o ouvinte (modelo inverso: cheio até a distância mínima,
+  constante depois da máxima) e vem do lado certo (esquerda/direita pela direção do ouvinte). Desligado (2D),
+  para música e sons da UI, a posição não importa.
+- **Play:** o som só toca no Play. **Parar** silencia tudo; **Pausa** pausa os sons e **Continuar** retoma.
+  O dispositivo de som só abre quando o primeiro som toca; sem placa de som, o jogo roda igual, sem som.
+- **Arquivos:** até 2 MB são decodificados inteiros na primeira vez que tocam; maiores (música) são lidos aos
+  poucos durante o jogo. Arquivo que não abre vira aviso no console.
+- **Scripts:** `GetSystem<motor::AudioSystem>()` com `Play`, `Stop`, `SetVolume` e `IsPlaying` (pelo nome da
+  entidade ou pelo id). Ver a seção 13 do [guia de scripts](docs/scripts.md) e o exemplo
+  `docs/examples/SonsDoMenu.cpp` (som de clique de botão e música).
+- **Clipes de uma cena** (para exportar o jogo): `motor::CollectAudioClips(scene)` (`motor/scene/AudioSource.h`)
+  lista os clipes das Fontes de áudio; no `.mscene`, cada um é o campo `"clip"` do componente `"AudioSource"`,
+  `{"guid": ..., "path": "Assets/..."}`.
+
 ## Servidor MCP (agentes no editor)
 
 O editor tem um servidor [MCP](https://modelcontextprotocol.io) (Model Context Protocol): um agente como o
@@ -573,7 +600,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read` |
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `select`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
-  | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD) |
+  | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
   | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus` |

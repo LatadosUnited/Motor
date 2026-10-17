@@ -123,6 +123,15 @@ FetchContent_Declare(httplib
     DOWNLOAD_NO_EXTRACT TRUE)
 FetchContent_MakeAvailable(httplib)
 
+# miniaudio (domínio público/MIT-0): áudio num único header (WAV/MP3/FLAC embutidos; OGG com o stb_vorbis que
+# vem em extras/), dispositivo, mixagem e som 3D (Fase 8). Fixado na tag 0.11.22; a implementação é compilada
+# só no AudioEngine.cpp da camada de áudio. SOURCE_SUBDIR inexistente: só baixa, sem o CMakeLists de lá.
+FetchContent_Declare(miniaudio
+    URL           https://github.com/mackron/miniaudio/archive/refs/tags/0.11.22.tar.gz
+    URL_HASH      SHA256=bcb07bfb27e6fa94d34da73ba2d5642d4940b208ec2a660dbf4e52e6b7cd492f
+    SOURCE_SUBDIR nenhum)
+FetchContent_MakeAvailable(miniaudio)
+
 # Objetos do ImGui (e o GLFW) entram na libMotor.dll: o editor e a DLL de scripts usam a mesma cópia (um
 # único contexto do ImGui e uma única janela do GLFW no processo).
 add_library(imgui OBJECT

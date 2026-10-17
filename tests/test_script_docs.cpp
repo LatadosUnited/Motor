@@ -3,10 +3,10 @@
 //   modelos do editor (editor/templates/Scripts/), sem erros nem avisos.
 // - Roda os exemplos de verdade: o mini jogo do guia (andar, coletar, pontuar), a porta, o inimigo, o
 //   disparador e a bola, com a física, simulando as teclas no estado interno do Input; o HUD e o menu com a
-//   UI do jogo (UiSystem), simulando o mouse.
+//   UI do jogo (UiSystem), simulando o mouse; os sons do menu com o áudio (AudioSystem) sem dispositivo.
 // - Cada bloco ```cpp do guia é um trecho de um arquivo de exemplo, e cada exemplo é citado no guia.
-// - A referência cita todos os métodos públicos de Script, de PhysicsSystem, de UiSystem e as opções de
-//   FieldOptions.
+// - A referência cita todos os métodos públicos de Script, de PhysicsSystem, de UiSystem, de AudioSystem e
+//   as opções de FieldOptions.
 // Sem janela nem OpenGL. Demora alguns segundos (compila a DLL).
 #include "TestUtil.h"
 
@@ -15,6 +15,7 @@
 #include "ScriptProject.h"
 
 #include <motor/assets/AssetLibrary.h>
+#include <motor/audio/AudioSystem.h>
 #include <motor/core/Input.h>
 #include <motor/core/Paths.h>
 #include <motor/physics/PhysicsSystem.h>
@@ -281,13 +282,16 @@ int main(int argc, char** argv) {
         const std::string physicsH = ReadText(include / "physics" / "PhysicsSystem.h");
         const std::string componentH = ReadText(include / "scene" / "Component.h");
         const std::string uiH = ReadText(include / "ui" / "UiSystem.h");
+        const std::string audioH = ReadText(include / "audio" / "AudioSystem.h");
 
         std::set<std::string> names = DeclaredFunctions(Between(scriptH, "class Script {", "private:"));
         for (const std::string& n : DeclaredFunctions(Between(physicsH, "class PhysicsSystem", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(uiH, "class UiSystem", "private:"))) names.insert(n);
+        for (const std::string& n : DeclaredFunctions(Between(audioH, "class AudioSystem", "private:"))) names.insert(n);
         names.erase("Script");
         names.erase("PhysicsSystem");
         names.erase("UiSystem");
+        names.erase("AudioSystem");
         names.erase("FindSystem");  // detalhe de GetSystem
         CHECK(names.size() >= 30);
         for (const std::string& n : names) {
@@ -299,7 +303,7 @@ int main(int argc, char** argv) {
         const std::regex member(R"((\w+)\s*(?:=|\{))");
         const std::pair<const std::string*, const char*> structs[] = {
             {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"},
-            {&uiH, "struct UiPointer {"}};
+            {&uiH, "struct UiPointer {"}, {&audioH, "struct AudioSettings {"}, {&audioH, "struct AudioVoiceInfo {"}};
         for (const auto& [header, type] : structs) {
             const std::string body = Between(*header, type, "};");
             CHECK(!body.empty());
@@ -345,7 +349,7 @@ int main(int argc, char** argv) {
         return TestResult();
     }
     for (const char* type : {"Flutuar", "ExemploCampos", "CicloDeVida", "Projetil", "Disparador", "Placar", "Moeda",
-                             "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "Girar", "Jogador", "MoverWASD", "Seguir"}) {
+                             "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "SonsDoMenu", "Girar", "Jogador", "MoverWASD", "Seguir"}) {
         const ComponentType* t = ComponentRegistry::Instance().Find(type);
         if (!t) std::printf("  não registrado: %s\n", type);
         CHECK(t && t->IsScript());
@@ -587,6 +591,68 @@ int main(int argc, char** argv) {
         click(menuRuntime, {960.0f, 540.0f});
         CHECK(menuRuntime.HasSceneRequest() && menuRuntime.TakeSceneRequest() == "Fase1");
         menuRuntime.Stop();
+    }
+
+    SECTION("Sons do menu: clique do botão toca o som; M liga e desliga a música (sem dispositivo de áudio)");
+    {
+        const fs::path wav = root / "Assets" / "Sons" / "clique.wav";
+        fs::create_directories(wav.parent_path());
+        {
+            // WAV PCM 16 bits mono, 0,1 s de um tom quadrado.
+            std::ofstream out(wav, std::ios::binary);
+            auto u32 = [&](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
+            auto u16 = [&](uint16_t v) { out.write(reinterpret_cast<const char*>(&v), 2); };
+            const uint32_t frames = 4800;
+            out.write("RIFF", 4);
+            u32(36 + frames * 2);
+            out.write("WAVEfmt ", 8);
+            u32(16), u16(1), u16(1), u32(48000), u32(96000), u16(2), u16(16);
+            out.write("data", 4);
+            u32(frames * 2);
+            for (uint32_t i = 0; i < frames; ++i) u16(uint16_t((i / 50) % 2 ? 8000 : -8000));
+        }
+        AudioClip clip;
+        clip.path = "Assets/Sons/clique.wav";
+        clip.file = wav;
+        AudioSettings::Global().useDevice = false;
+        const glm::vec2 screen{1920.0f, 1080.0f};
+
+        Scene scene;
+        loadedScenes = {&scene};
+        Entity& jogar = scene.CreateEntity("Jogar");
+        jogar.Add<UiRect>();
+        jogar.Add<UiButton>();
+        for (const char* name : {"SomClique", "Musica"}) {
+            AudioSource& source = scene.CreateEntity(name).Add<AudioSource>();
+            source.clip = clip;
+            source.spatial = false;
+            source.playOnStart = std::string(name) == "Musica";
+            source.loop = source.playOnStart;
+        }
+        AddScript(scene.CreateEntity("Sons"), "SonsDoMenu");
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        AudioSystem* audio = runtime.GetSystem<AudioSystem>();
+        CHECK(audio && audio->IsPlaying("Musica") && !audio->IsPlaying("SomClique"));
+        CHECK(scene.FindByName("Musica")->Get<AudioSource>()->volume == 0.5f);  // volumeDaMusica no OnStart
+        UiSystem* ui = runtime.GetSystem<UiSystem>();
+        for (bool down : {true, false, false}) {  // clique no centro da tela (o botão)
+            if (ui) ui->SetPointer({screen, {960.0f, 540.0f}, true, down});
+            runtime.Update(kDt);
+        }
+        CHECK(audio && audio->IsPlaying("SomClique"));
+        Hold(Key::M, true);
+        Run(runtime, kDt);
+        Hold(Key::M, false);
+        Run(runtime, kDt);
+        CHECK(audio && !audio->IsPlaying("Musica"));
+        Hold(Key::M, true);
+        Run(runtime, kDt);
+        Hold(Key::M, false);
+        CHECK(audio && audio->IsPlaying("Musica"));
+        runtime.Stop();
+        CHECK(runtime.GetSystem<AudioSystem>() == nullptr);
     }
 
     loadedScenes.clear();

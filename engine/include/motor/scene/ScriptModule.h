@@ -34,7 +34,8 @@ namespace motor {
 // 7: Script::LoadScene (troca de cena) e a UI do jogo (componentes Ui*, UiSystem).
 // 8: componente Animator e Script::GetAnimator (animação esquelética); Mesh guarda os dados na CPU.
 // 9: Material PBR (metal, rugosidade, mapas; sem `shininess`), sombra na Luz e o ambiente novo (Fase 7).
-inline constexpr int kScriptApiVersion = 9;
+// 10: áudio (Fase 8): componentes AudioSource e AudioListener, AudioSystem.
+inline constexpr int kScriptApiVersion = 10;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";
