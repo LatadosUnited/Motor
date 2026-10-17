@@ -54,6 +54,11 @@ ctest --test-dir build --output-on-failure
   scripts; modelos de script em `editor/templates/Scripts/`.
 - `player/` — `Player.exe`, o executável do jogo exportado (roda um projeto sem o editor). A exportação fica em
   `editor/src/GameExport` (assets referenciados e pasta de saída) e `ExportController` (Arquivo > Exportar jogo).
+- `hub/` — `MotorHub.exe` (Fase 14): projetos e versões do Motor instaladas, separado do editor. Núcleo sem
+  janela em `hub/src/HubCore` (testado em `tests/test_hub.cpp`), interface em `HubApp`. Só GLFW, ImGui e
+  nlohmann_json estáticos: **não** liga na `libMotor.dll` nem inclui headers da engine (pode virar repositório
+  próprio). Fala com o editor só pela linha de comando (`--project`, `--create`, `--version`) e lendo
+  `.mproject` e `motor-version.json`.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -97,8 +102,10 @@ ctest --test-dir build --output-on-failure
 - Para ver o editor: abra-o com um projeto de teste na pasta temporária e capture a janela com
   `PrintWindow` (flag `PW_RENDERFULLCONTENT`, funciona sem foco), depois encerre o processo.
   Ex.: `MotorEditor.exe "C:\...\scratchpad\Projeto Teste"`.
-- Abrir o editor grava `%APPDATA%\Motor\editor.json` (último projeto, recentes). **Faça cópia antes e
-  restaure depois** — é a configuração real do usuário.
+- Abrir o editor grava `%APPDATA%\Motor\editor.json` (último projeto, recentes). **Use `--no-settings`** (ou
+  `--settings <arquivo>`) em testes automáticos e, mesmo assim, faça cópia antes e restaure depois — é a
+  configuração real do usuário. Projeto de teste novo: `--create <pasta-pai> <nome>` ou a ferramenta MCP
+  `project_create`. O Hub (`MotorHub.exe`) tem `--data <pasta>` para não mexer no `%LOCALAPPDATA%\Motor`.
 - O que o MCP não cobre (menus, arrastar, atalhos, gizmo) fica como "não testado" no relatório, com passos
   para o usuário conferir.
 
@@ -141,6 +148,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: scripts | `editor/src/Script*.*`, `editor/templates/` |
 | Editor: painéis | `editor/src/{Hierarchy,Inspector,Scene,Project}Panel.*`, `FieldDrawers.*` |
 | Editor: MCP | `editor/src/mcp/` |
+| Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
 | Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
 
 Componente novo da engine = `scene/<Nome>.h` + `scene/<Nome>.cpp` próprios (`MOTOR_COMPONENT_MODULE`), não
@@ -172,8 +180,9 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 11 Modelos 3D/animação | `assets/` (importador glTF), `renderer/` (`Mesh` na CPU, skinning) | prefabs da 6, collider de malha (`physics/`) | 6, 7 |
 | 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
 | 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
+| 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
 
-Prioridade atual (ver `ROADMAP.md`, "Prioridades"): Alpha 1 fechada; 8 e 10 prontas; próximas a validação de uso real e "Ambiente".
+Prioridade atual (ver `ROADMAP.md`, "Prioridades"): Alpha 1 fechada; 8, 10 e 14 prontas; próximas a validação de uso real e "Ambiente".
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

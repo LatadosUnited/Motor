@@ -1,0 +1,15 @@
+#pragma once
+
+// Gerado pelo CMake a partir de engine/include/motor/core/Version.h.in (project(Motor VERSION ...) no
+// CMakeLists.txt da raiz). Não edite o Version.h gerado: mude a versão no CMakeLists.txt.
+
+namespace motor {
+
+inline constexpr int kVersionMajor = @PROJECT_VERSION_MAJOR@;
+inline constexpr int kVersionMinor = @PROJECT_VERSION_MINOR@;
+inline constexpr int kVersionPatch = @PROJECT_VERSION_PATCH@;
+
+// "maior.menor.correção": gravada no .mproject (engineVersion) e no motor-version.json da pasta instalada.
+inline constexpr const char* kVersion = "@PROJECT_VERSION@";
+
+} // namespace motor

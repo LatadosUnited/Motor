@@ -22,6 +22,12 @@ struct EditorSettings {
     static EditorSettings Load();
     void Save() const;
 
+    // Linha de comando (antes do Load): --settings <arquivo> usa outro arquivo; --no-settings não lê nem grava
+    // nenhum (agentes e testes automáticos não tocam na configuração do usuário).
+    static void UseFile(const std::filesystem::path& file);
+    static void Disable();
+    static bool IsDisabled();
+
     void AddRecentProject(const std::filesystem::path& projectFile);
     void RemoveRecentProject(const std::filesystem::path& projectFile);
 };

@@ -49,6 +49,10 @@ public:
     bool NewSceneDirect(bool discardChanges, std::string& error);
     bool SaveSceneTo(const std::filesystem::path& path, std::string& error);
     bool OpenProjectAt(const std::filesystem::path& fileOrDir, bool restoreLastScene);
+    // Arquivo > Novo projeto sem popup (--create, ferramenta MCP project_create): cria <location>/<name> com a
+    // pasta Scripts/, o script de exemplo e a cena inicial, e abre. Não pergunta por alterações não salvas.
+    void StopPlay() { m_host.stopPlay(); }
+    bool CreateProjectAt(const std::filesystem::path& location, const std::string& name, std::string& error);
     bool CreateEmptySceneFile(const std::filesystem::path& path);
     void OnPathMoved(const std::filesystem::path& from, const std::filesystem::path& to);
     void OnPathDeleted(const std::filesystem::path& path);

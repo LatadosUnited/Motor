@@ -93,6 +93,8 @@ std::optional<Toolchain> LoadToolchain(const fs::path& sdkJson, std::string* err
         t.cxxCompiler = motor::PathFromUtf8(j.value("cxxCompiler", std::string()));
         t.buildType = j.value("buildType", std::string("Debug"));
         t.sdkCMake = motor::PathFromUtf8(j.value("sdkCMake", std::string()));
+        // Pasta instalada (alvo motor_package): o MotorSDK.cmake fica ao lado do .json, com caminho relativo.
+        if (!t.sdkCMake.empty() && t.sdkCMake.is_relative()) t.sdkCMake = sdkJson.parent_path() / t.sdkCMake;
         if (t.cmake.empty() || t.generator.empty() || t.cxxCompiler.empty() || t.sdkCMake.empty()) {
             SetError(error, std::format("SDK do Motor incompleto: '{}'.", ToUtf8(sdkJson)));
             return std::nullopt;
@@ -146,7 +148,10 @@ std::string GenerateCMakeLists(const Paths& paths, const Toolchain& toolchain) {
     s += "set(CMAKE_CXX_EXTENSIONS OFF)\n";
     s += "# Os .obj dos scripts ficam em pastas com o caminho do projeto (acentos). O ar.exe lê o arquivo de\n";
     s += "# resposta da lista de objetos fora do UTF-8 e não os acha: passa a lista na linha de comando.\n";
-    s += "set(CMAKE_CXX_USE_RESPONSE_FILE_FOR_OBJECTS OFF)\n\n";
+    s += "set(CMAKE_CXX_USE_RESPONSE_FILE_FOR_OBJECTS OFF)\n";
+    s += "# O mesmo para as bibliotecas (o ld lê o arquivo de resposta delas fora do UTF-8): a libMotor.dll.a de uma\n";
+    s += "# versão instalada pelo Hub fica em %LOCALAPPDATA%/Motor/Versões/<versão>/sdk/lib.\n";
+    s += "set(CMAKE_CXX_USE_RESPONSE_FILE_FOR_LIBRARIES OFF)\n\n";
     s += "# SDK do Motor (headers e libMotor.dll do mesmo build do editor).\n";
     s += std::format("include(\"{}\")\n\n", CMakePath(toolchain.sdkCMake));
     s += "# Todos os .cpp da pasta Scripts (arquivos novos entram sozinhos na próxima compilação).\n";

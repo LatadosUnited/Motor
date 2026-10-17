@@ -116,3 +116,20 @@ target_link_libraries(test_export PRIVATE nlohmann_json::nlohmann_json)
 # Áudio (Fase 8) sem dispositivo de som: clipes como assets com GUID, som 3D (distância e lado), som 2D tocado
 # por script, pausa, fontes desativadas/excluídas e arquivos inválidos. Gera os próprios .wav.
 motor_add_test(test_audio)
+
+# Versão da engine (Fase 14): Version.h e engineVersion no .mproject (formato 2; o 1 abre como desconhecida).
+motor_add_test(test_project_version)
+target_link_libraries(test_project_version PRIVATE nlohmann_json::nlohmann_json)
+
+# Hub do Motor (Fase 14): núcleo sem janela (versões, projetos, escolha da versão, hub.json, linha de comando do
+# editor). Sem a libMotor.dll, como o próprio hub.
+add_executable(test_hub test_hub.cpp)
+target_link_libraries(test_hub PRIVATE motor_hub_core)
+target_include_directories(test_hub PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_hub PRIVATE -Wall -Wextra)
+endif()
+if(WIN32)
+    target_link_libraries(test_hub PRIVATE shell32)  # CommandLineToArgvW
+endif()
+add_test(NAME test_hub COMMAND test_hub ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_hub)

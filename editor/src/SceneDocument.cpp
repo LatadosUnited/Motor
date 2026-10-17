@@ -6,6 +6,7 @@
 #include "ScriptProject.h"
 
 #include <imgui.h>
+#include <motor/core/Version.h>
 #include <imgui_stdlib.h>
 
 #include <cstdlib>
@@ -311,6 +312,18 @@ bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastSce
         return false;
     }
 
+    // Projeto de outra versão do Motor (ou de antes da Fase 14): passa a ser desta versão. O Hub avisa antes de
+    // abrir um projeto com uma versão diferente da dele.
+    if (project->EngineVersion() != kVersion) {
+        const std::string from = project->EngineVersion().empty() ? "desconhecida" : project->EngineVersion();
+        std::string saveError;
+        if (project->Save(&saveError)) {
+            log::Warn("Projeto da versão {} do Motor aberto na versão {}: engineVersion atualizado", from, kVersion);
+        } else {
+            log::Warn("Projeto da versão {} do Motor: não foi possível atualizar engineVersion ({})", from, saveError);
+        }
+    }
+
     if (m_project) m_host.projectClosing();
     m_project = std::move(*project);
     m_settings.lastProject = m_project->ProjectFile();
@@ -341,11 +354,12 @@ bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastSce
 
 void SceneDocument::CreateProject(const fs::path& location, const std::string& name) {
     std::string error;
+    if (!CreateProjectAt(location, name, error)) ShowError(error);
+}
+
+bool SceneDocument::CreateProjectAt(const fs::path& location, const std::string& name, std::string& error) {
     auto project = Project::Create(location, name, &error);
-    if (!project) {
-        ShowError(error);
-        return;
-    }
+    if (!project) return false;
 
     // Pasta de scripts com um exemplo, e a pasta gerada pelo editor fora do controle de versão.
     const ScriptProject::Paths scripts = ScriptProject::PathsFor(project->RootDir());
@@ -367,7 +381,11 @@ void SceneDocument::CreateProject(const fs::path& location, const std::string& n
         log::Warn("Projeto criado sem cena inicial: {}", error);
     }
 
-    OpenProjectAt(project->ProjectFile(), false);
+    if (!OpenProjectAt(project->ProjectFile(), false)) {
+        error = std::format("Projeto criado em '{}', mas não foi possível abri-lo.", ToUtf8(project->RootDir()));
+        return false;
+    }
+    return true;
 }
 
 void SceneDocument::OnPathMoved(const fs::path& from, const fs::path& to) {
@@ -413,9 +431,9 @@ void SceneDocument::UpdateWindowTitle() {
     const std::string scene = m_scenePath.empty() ? kUntitled : ToUtf8(m_scenePath.filename());
     const std::string dirty = m_dirty ? "*" : "";
     if (m_project) {
-        m_host.setWindowTitle(std::format("Motor Editor - {} - {}{}", m_project->Name(), scene, dirty));
+        m_host.setWindowTitle(std::format("Motor Editor {} - {} - {}{}", kVersion, m_project->Name(), scene, dirty));
     } else {
-        m_host.setWindowTitle(std::format("Motor Editor - {}{}", scene, dirty));
+        m_host.setWindowTitle(std::format("Motor Editor {} - {}{}", kVersion, scene, dirty));
     }
 }
 

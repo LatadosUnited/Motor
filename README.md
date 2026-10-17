@@ -20,6 +20,7 @@ ctest --test-dir build --output-on-failure   # testes (sem janela)
 ./build/bin/MotorEditor.exe    # editor (reabre o último projeto)
 ./build/bin/MotorEditor.exe "C:/caminho/MeuJogo"   # abre um projeto específico
 ./build/bin/Player.exe "C:/caminho/MeuJogo"        # roda o jogo sem o editor (ver "Exportar o jogo")
+./build/bin/MotorHub.exe       # Hub: projetos e versões instaladas (ver "Hub do Motor")
 ```
 
 Executáveis e DLLs ficam juntos em `build/bin`: a engine é a `libMotor.dll` (com ImGui e GLFW dentro), e
@@ -51,8 +52,10 @@ editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (
   templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, Jogador, MoverWASD, Seguir)
 sandbox/           app de demonstração
 player/            Player: o executável do jogo exportado (roda um projeto sem o editor)
+hub/               MotorHub: projetos e versões do Motor instaladas (não liga na libMotor.dll)
+cmake/             MotorPackage.cmake: monta a pasta de instalação de uma versão (alvo motor_package)
 tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, desfazer, scripts, Play, recarga, luzes, física,
-                   materiais, prefabs, glTF e animação, UI, áudio)
+                   materiais, prefabs, glTF e animação, UI, áudio, versão do projeto, hub)
 ```
 
 ## Controles do Sandbox
@@ -115,8 +118,8 @@ Um projeto é uma pasta:
 
 ```
 MeuJogo/
-  MeuJogo.mproject     { "format": "motor-project", "version": 1, "name": "MeuJogo",
-                         "startupScene": "Assets/Scenes/Principal.mscene" }
+  MeuJogo.mproject     { "format": "motor-project", "version": 2, "name": "MeuJogo",
+                         "engineVersion": "0.2.0", "startupScene": "Assets/Scenes/Principal.mscene" }
   Assets/
     Scenes/
       Principal.mscene
@@ -131,6 +134,22 @@ MeuJogo/
 - O editor lembra o último projeto e a última cena aberta em `%APPDATA%/Motor/editor.json`
   e os reabre ao iniciar. Sem projeto, abre a cena de exemplo.
 - A primeira cena salva num projeto sem cena inicial vira a `startupScene`.
+- `engineVersion` é a versão do Motor que salvou o projeto por último (o Hub abre cada projeto com a sua).
+  Projetos do formato 1 (sem esse campo) abrem como "versão desconhecida"; abrir um projeto de outra versão
+  no editor passa o projeto para a versão do editor (aviso no log). A versão do editor aparece no título, em
+  **Ajuda > Sobre** e em `MotorEditor --version`.
+
+### Linha de comando do editor
+
+```
+MotorEditor [pasta-do-projeto | arquivo.mproject] [opções]
+  --project <pasta>             abre o projeto (o mesmo que passar a pasta sozinha)
+  --create <pasta-pai> <nome>   cria o projeto (como Arquivo > Novo projeto) e abre
+  --settings <arquivo>          usa outro arquivo de configuração no lugar de %APPDATA%/Motor/editor.json
+  --no-settings                 não lê nem grava configuração nenhuma (agentes e testes automáticos)
+  --mcp[=porta]                 liga o servidor MCP
+  --version                     mostra a versão (e a da API de scripts) e sai
+```
 
 ### Painel Projeto
 
@@ -599,7 +618,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   |---|---|
   | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read` |
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `select`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
-  | Arquivos | `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
+  | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
   | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
@@ -615,6 +634,53 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   ferramentas em `McpSceneTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
   thread principal, uma vez por quadro. A captura sai em PNG com um compressor próprio (`ImageEncode`).
   Testes: `tests/test_mcp.cpp`.
+
+## Hub do Motor
+
+`MotorHub.exe` é um programa separado do editor, como o Unity Hub: guarda a lista de projetos e as versões do
+Motor instaladas, e abre cada projeto com o editor da versão em que ele foi feito. Ele não liga na
+`libMotor.dll` (GLFW, ImGui e nlohmann_json estáticos, runtime do GCC estático): roda sozinho e funciona com
+qualquer versão do editor, inclusive as futuras.
+
+- **Projetos:** cartões com nome, pasta, versão do Motor e última abertura; **Abrir** (ou duplo clique) usa a
+  versão do projeto. Versão ausente ou desconhecida: o hub pergunta com qual versão abrir e avisa que o
+  editor vai passar o projeto para ela (faça uma cópia de segurança antes). No menu **...**: abrir com outra
+  versão, mostrar no Explorer, remover da lista (a pasta fica). **Adicionar pasta** põe um projeto existente
+  na lista; a busca filtra por nome ou pasta.
+- **Novo projeto:** nome, pasta (padrão `Documentos\Motor`) e versão; o hub chama
+  `MotorEditor.exe --create <pasta> <nome>` daquela versão.
+- **Versões:** instaladas em `%LOCALAPPDATA%\Motor\Versões\<versão>\`. **Adicionar de uma pasta** copia uma
+  pasta montada (abaixo) para lá; **Tornar padrão** escolhe a versão dos projetos novos; **Remover** manda a
+  pasta para a Lixeira. Baixar versões pela internet ainda não existe.
+- **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 1, ...}`), separada
+  da do editor.
+
+**Montar a pasta de instalação de uma versão** (a do código atual):
+
+```bash
+cmake --build build --target motor_package     # build/package/Motor-0.2.0/
+```
+
+A pasta é autossuficiente: `MotorEditor.exe`, `Player.exe`, `libMotor.dll` e o runtime do GCC, `engine/`
+(shaders e fontes), `templates/`, `sdk/` (headers e biblioteca de importação para compilar os scripts dos
+projetos, com caminhos relativos) e `motor-version.json` (`{"version": "0.2.0", "scriptApiVersion": 10, ...}`),
+que o hub lê. Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure.
+**O editor instalado continua precisando do MSYS2 (UCRT64) e do CMake** nos mesmos caminhos do build que montou
+a pasta (estão em `sdk/MotorSDK.json`) para compilar os scripts dos projetos; o jogo exportado não precisa.
+
+**Linha de comando** (as mesmas ações dos botões, sem abrir a janela; para agentes e testes):
+
+```bash
+MotorHub --add-version build/package/Motor-0.2.0 --list
+MotorHub --create "C:/Jogos" "Jogo Ação"                 # com a versão padrão (ou --engine 0.2.0)
+MotorHub --open "C:/Jogos/Jogo Ação"                     # com a versão do projeto
+MotorHub --open "C:/Jogos/Antigo" --engine 0.2.0         # outra versão (o editor atualiza o engineVersion)
+MotorHub --data "C:/temp/Hub Teste" ... -- --no-settings --mcp   # outra pasta de dados; depois de "--": argumentos para o editor
+```
+
+Também: `--remove-version`, `--set-default`, `--add-project`, `--remove-project`, `--aba versões` (abre a janela
+nessa aba) e `--version`. Código em `hub/`: `HubCore` (lógica sem janela, `tests/test_hub.cpp`),
+`HubPlatform` (Windows: processos, Explorer, Lixeira), `HubApp` (janela e ações), `main.cpp` (linha de comando).
 
 ## Cenas (`.mscene`)
 

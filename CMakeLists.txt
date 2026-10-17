@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(Motor VERSION 0.1.0 LANGUAGES C CXX)
+project(Motor VERSION 0.2.0 LANGUAGES C CXX)  # versão da engine: motor/core/Version.h (gerado)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -170,9 +170,34 @@ add_subdirectory(engine)
 add_subdirectory(sandbox)
 add_subdirectory(player)  # Fase 10: executável do jogo exportado
 add_subdirectory(editor)
+add_subdirectory(hub)     # Fase 14: Hub de projetos e versões (não liga na libMotor.dll)
 
 option(MOTOR_BUILD_TESTS "Compila os testes (ctest)" ON)
 if(MOTOR_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# Fase 14: pasta de instalação autossuficiente desta versão (editor, Player, DLLs, engine/, templates/, SDK dos
+# scripts e motor-version.json), para o Hub registrar: cmake --build build --target motor_package
+set(MOTOR_PACKAGE_DIR ${CMAKE_BINARY_DIR}/package/Motor-${PROJECT_VERSION} CACHE PATH "Pasta montada pelo alvo motor_package")
+add_custom_target(motor_package
+    COMMAND ${CMAKE_COMMAND}
+        -DOUT=${MOTOR_PACKAGE_DIR}
+        -DBIN=${CMAKE_BINARY_DIR}/bin
+        -DSRC=${PROJECT_SOURCE_DIR}
+        -DVERSION=${PROJECT_VERSION}
+        -DBUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DIMPLIB=$<TARGET_LINKER_FILE:Motor>
+        -DIMGUI_DIR=${imgui_SOURCE_DIR}
+        -DGLM_DIR=${glm_SOURCE_DIR}
+        -DGEN_DIR=${CMAKE_BINARY_DIR}/generated/include  # motor/core/Version.h
+        -DCMAKE_EXE=${CMAKE_COMMAND}
+        -DGENERATOR=${CMAKE_GENERATOR}
+        -DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -P ${PROJECT_SOURCE_DIR}/cmake/MotorPackage.cmake
+    DEPENDS MotorEditor Player
+    COMMENT "Montando a pasta de instalação do Motor ${PROJECT_VERSION}"
+    VERBATIM)
