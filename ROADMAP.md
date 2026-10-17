@@ -220,13 +220,36 @@ ImGui; `UiRenderer` com o `Renderer2D` novo: um VBO dinâmico, lotes por textura
 No editor, a UI aparece por cima do viewport, com seleção e arraste. Exemplos `docs/examples/Hud.cpp` e
 `MenuPrincipal.cpp`, rodados pelo `test_script_docs`; testes em `tests/test_ui.cpp`.
 
-## Fase 10 — Exportar o jogo
+## Fase 10 — Exportar o jogo ✅
 
 - Executável **Player** sem o editor: abre o projeto e roda a cena inicial direto em Play.
 - Empacotar os assets usados (só os referenciados) numa pasta de saída.
 - Menu Arquivo > Exportar jogo.
 
 **Pronto quando:** uma pasta com o .exe e os assets roda o jogo num computador sem o editor.
+
+Feito: alvo `Player` (pasta `player/`, e não junto do `sandbox/`: o Sandbox é uma demo da `Application` sem
+cena nem projeto, e o Player é o produto entregue ao jogador, com ciclo de vida e dependências próprios). Ele
+usa a mesma `libMotor.dll` e a mesma DLL de scripts do editor, e roda a cena como o Play (mesmo
+`SceneRuntime`, física, HUD, câmera principal, `LoadScene`). Não tem console: o log vai para `<Jogo>.log`, e
+`--quadros N` fecha sozinho (testes). A cena inicial é o campo `startupScene` que o `.mproject` já tinha
+(formato sem mudança). A janela de exportação escolhe a cena e pode gravá-la como inicial.
+`editor/src/GameExport` coleta os assets (todas as cenas, o que elas citam por GUID ou caminho, os arquivos
+de um glTF, `Assets/Recursos/` e os `"Assets/..."` dos fontes dos scripts) e monta a pasta (`<Jogo>.exe`,
+DLLs, `engine/` com shaders e fontes, `Dados/` com o projeto e a `GameScripts.dll`). Os shaders da engine
+passaram a ser achados por `EngineAssetsDir()` (pasta `engine/` ao lado do .exe, senão a do código). Os
+assets embutidos ("Cubo", "Xadrez"...) passaram para `AddBuiltinAssets`, que o editor e o Player chamam.
+Peça `ExportController` (menu Arquivo) e ferramenta MCP `game_export`. Testes: `tests/test_export.cpp`.
+Conferido de ponta a ponta com o projeto "Jogo Ação" (HUD, física, script e textura), exportado pelo MCP e
+rodado com um PATH só do Windows.
+
+Gancho da Fase 8 (áudio): um som citado por GUID num componente entra sozinho, desde que `AssetTypeFromPath`
+o reconheça; som aberto pelo caminho num script vai em `Assets/Recursos/` (ou aparece como `"Assets/..."` no
+fonte). Formato que aponte para outros arquivos ganha um caso em `ReferencesOf` (`GameExport.cpp`). Se a
+miniaudio virar DLL à parte, ela entra em `kRuntimeDlls` (`GameExport.h`).
+
+Limitações: a pasta exportada é de Debug enquanto o build for Debug (a `libMotor.dll` tem ~90 MB); o título
+da janela mostra FPS (vem da `Application`); sem tela cheia nem resolução configurável; ícone do .exe padrão.
 
 ## Fase 11 — Modelos 3D (glTF) e animação ✅
 
