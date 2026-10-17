@@ -62,6 +62,7 @@ target_link_libraries(Motor PRIVATE imgui glfw nlohmann_json::nlohmann_json)
 
 # O que quem usa o Motor precisa: headers da engine e do ImGui, GLM.
 target_include_directories(Motor PUBLIC include ${MOTOR_IMGUI_INCLUDE_DIRS})
+target_include_directories(Motor PUBLIC ${MOTOR_GENERATED_INCLUDE_DIR})  # motor/core/Version.h
 target_link_libraries(Motor PUBLIC glm::glm)
 target_compile_definitions(Motor PUBLIC GLM_FORCE_RADIANS)
 
@@ -76,6 +77,7 @@ endif()
 # ---------------------------------------------------------------------------
 set(MOTOR_SDK_DIR ${CMAKE_BINARY_DIR}/bin/sdk)
 set(MOTOR_SDK_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include ${glm_SOURCE_DIR} ${MOTOR_IMGUI_INCLUDE_DIRS})
+list(APPEND MOTOR_SDK_INCLUDE_DIRS ${MOTOR_GENERATED_INCLUDE_DIR})
 file(GENERATE OUTPUT ${MOTOR_SDK_DIR}/MotorSDK.cmake CONTENT
 "# Gerado pelo build do Motor. Não edite.
 if(NOT TARGET Motor::Motor)

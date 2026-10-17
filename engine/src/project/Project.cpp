@@ -2,6 +2,7 @@
 
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
+#include "motor/core/Version.h"
 
 #include <nlohmann/json.hpp>
 
@@ -15,7 +16,7 @@ using json = nlohmann::ordered_json;
 
 namespace {
 constexpr const char* kFormatName = "motor-project";
-constexpr int kFormatVersion = 1;
+constexpr int kFormatVersion = 2;  // 2: engineVersion (Fase 14)
 
 void SetError(std::string* error, std::string message) {
     if (error) *error = std::move(message);
@@ -113,6 +114,7 @@ std::optional<Project> Project::Open(const std::filesystem::path& fileOrDir, std
         project.m_root = std::filesystem::absolute(file.parent_path(), ec).lexically_normal();
         project.m_name = root.value("name", ToUtf8(file.stem()));
         project.m_startupScene = root.value("startupScene", std::string());
+        project.m_engineVersion = root.value("engineVersion", std::string());  // formato 1: desconhecida
 
         std::filesystem::create_directories(project.AssetsDir(), ec);  // projeto copiado sem Assets/ ainda abre
         log::Info("Projeto aberto: {} ({})", project.m_name, ToUtf8(project.m_root));
@@ -128,14 +130,28 @@ bool Project::Save(std::string* error) const {
     root["format"] = kFormatName;
     root["version"] = kFormatVersion;
     root["name"] = m_name;
+    root["engineVersion"] = kVersion;
     root["startupScene"] = m_startupScene;
 
+    // Grava ao lado e renomeia: uma falha no meio não estraga o projeto.
     const std::filesystem::path file = ProjectFile();
-    std::ofstream out(file, std::ios::binary | std::ios::trunc);
-    if (!out || !(out << root.dump(2, ' ', false, json::error_handler_t::replace) << '\n') || !out.flush()) {
+    std::filesystem::path tmp = file;
+    tmp += ".tmp";
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out || !(out << root.dump(2, ' ', false, json::error_handler_t::replace) << '\n') || !out.flush()) {
+            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
+            return false;
+        }
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, file, ec);
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
         SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
         return false;
     }
+    m_engineVersion = kVersion;
     return true;
 }
 

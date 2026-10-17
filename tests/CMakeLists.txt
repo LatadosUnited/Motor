@@ -116,3 +116,7 @@ target_link_libraries(test_export PRIVATE nlohmann_json::nlohmann_json)
 # Áudio (Fase 8) sem dispositivo de som: clipes como assets com GUID, som 3D (distância e lado), som 2D tocado
 # por script, pausa, fontes desativadas/excluídas e arquivos inválidos. Gera os próprios .wav.
 motor_add_test(test_audio)
+
+# Versão da engine (Fase 14): Version.h e engineVersion no .mproject (formato 2; o 1 abre como desconhecida).
+motor_add_test(test_project_version)
+target_link_libraries(test_project_version PRIVATE nlohmann_json::nlohmann_json)
