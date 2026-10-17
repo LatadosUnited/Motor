@@ -37,3 +37,5 @@
 #include "motor/physics/PhysicsSystem.h"
 
 #include "motor/ui/Ui.h"
+
+#include "motor/audio/AudioSystem.h"
