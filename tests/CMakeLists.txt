@@ -133,3 +133,13 @@ if(WIN32)
     target_link_libraries(test_hub PRIVATE shell32)  # CommandLineToArgvW
 endif()
 add_test(NAME test_hub COMMAND test_hub ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_hub)
+
+# Distribuição (Fase 15): SHA-256, manifesto, pasta de publicações, plano de instalação/desinstalação, hub.json
+# formato 2 e o servidor de versões com o cliente em loopback (porta livre em 127.0.0.1). Sem a libMotor.dll.
+add_executable(test_distribuicao test_distribuicao.cpp)
+target_link_libraries(test_distribuicao PRIVATE motor_server_core motor_distrib)
+target_include_directories(test_distribuicao PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_distribuicao PRIVATE -Wall -Wextra)
+endif()
+add_test(NAME test_distribuicao COMMAND test_distribuicao ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_distribuicao)

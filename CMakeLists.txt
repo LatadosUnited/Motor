@@ -171,6 +171,8 @@ add_subdirectory(sandbox)
 add_subdirectory(player)  # Fase 10: executável do jogo exportado
 add_subdirectory(editor)
 add_subdirectory(hub)     # Fase 14: Hub de projetos e versões (não liga na libMotor.dll)
+add_subdirectory(distrib)  # Fase 15: núcleo da distribuição (manifesto, SHA-256, download, instalação)
+add_subdirectory(server)   # Fase 15: MotorServidor.exe (servidor de versões)
 
 option(MOTOR_BUILD_TESTS "Compila os testes (ctest)" ON)
 if(MOTOR_BUILD_TESTS)
