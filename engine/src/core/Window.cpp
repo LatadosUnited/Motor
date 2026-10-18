@@ -6,6 +6,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include <cstdlib>
 #include <stdexcept>
 #include <utility>
 
@@ -44,7 +45,9 @@ Window::Window(const WindowDesc& desc) {
     glfwMakeContextCurrent(m_window);
     glfwGetFramebufferSize(m_window, &m_width, &m_height);
 
-    SetVSync(desc.vsync);
+    // MOTOR_VSYNC=0 desliga o vsync (medição de desempenho: sem ele o FPS fica preso na taxa do monitor).
+    const wchar_t* vsyncEnv = _wgetenv(L"MOTOR_VSYNC");
+    SetVSync(desc.vsync && !(vsyncEnv && vsyncEnv[0] == L'0'));
     Input::Attach(m_window);
     glfwSetWindowUserPointer(m_window, this);
     glfwSetDropCallback(m_window, OnDrop);
