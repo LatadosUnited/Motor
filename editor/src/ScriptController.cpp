@@ -67,7 +67,9 @@ void ScriptController::OpenProject() {
     // atualiza se algum arquivo mudou com o editor fechado.
     std::error_code ec;
     if (fs::is_regular_file(paths.dll, ec)) {
+        const auto t0 = std::chrono::steady_clock::now();
         const ScriptHost::Result result = m_host.Load(paths.dll, paths.loadDir, AllScenes(), m_ctx.assets);
+        m_reloadSeconds = std::chrono::duration<float>(std::chrono::steady_clock::now() - t0).count();
         if (result.ok) {
             m_loadedDllTime = FileTime(paths.dll);
         } else {
@@ -82,6 +84,7 @@ void ScriptController::CloseProject() {
     m_host.Unload(AllScenes(), m_ctx.assets);
     m_buildQueued = false;
     m_reloadPending = false;
+    m_reloadSeconds = 0.0f;
     m_signature.clear();
     m_diagnostics.clear();
     m_log.clear();
@@ -104,6 +107,8 @@ ScriptController::Status ScriptController::GetStatus() const {
         s.state = "não compilado";
     }
     s.seconds = m_builder.Seconds();
+    s.timings = m_builder.GetTimings();
+    s.reloadSeconds = m_reloadSeconds;
     s.reloadPending = m_reloadPending;
     s.toolchainError = m_toolchainError;
     s.loadedTypes = m_host.Types();
@@ -133,7 +138,9 @@ void ScriptController::Reload() {
     if (!m_document.GetProject() || m_play.IsActive()) return;
     m_reloadPending = false;
     const ScriptProject::Paths paths = ScriptProject::PathsFor(m_document.GetProject()->RootDir());
+    const auto t0 = std::chrono::steady_clock::now();
     const ScriptHost::Result result = m_host.Load(paths.dll, paths.loadDir, AllScenes(), m_ctx.assets);
+    m_reloadSeconds = std::chrono::duration<float>(std::chrono::steady_clock::now() - t0).count();
     if (!result.ok) {
         m_diagnostics.push_back({Diagnostic::Kind::Error, {}, 0, 0, result.error});
         m_focusPanel = true;
@@ -159,7 +166,6 @@ void ScriptController::Update(float dt) {
             }
         }
         if (m_builder.GetState() == ScriptBuilder::State::Succeeded) {
-            log::Info("Scripts: compilados em {:.1f} s", m_builder.Seconds());
             // O make não reescreve a DLL se nada mudou: aí não há o que recarregar.
             if (!m_host.IsLoaded() || FileTime(paths.dll) != m_loadedDllTime) {
                 if (m_play.IsActive()) {
@@ -169,6 +175,9 @@ void ScriptController::Update(float dt) {
                     Reload();
                 }
             }
+            const ScriptBuilder::Timings t = m_builder.GetTimings();
+            log::Info("Scripts: compilados em {:.2f} s (configurar {:.2f} s, compilar {:.2f} s, ligar {:.2f} s, recarregar {:.3f} s)",
+                      m_builder.Seconds(), t.configure, t.compile, t.link, m_reloadSeconds);
         } else {
             log::Error("Scripts: a compilação falhou ({} erro(s)); veja o painel Scripts", CountErrors(m_diagnostics));
             m_focusPanel = true;
@@ -263,6 +272,7 @@ void ScriptController::DrawPanel() {
 
     // Situação + ações.
     const size_t errors = CountErrors(m_diagnostics);
+    const ScriptBuilder::Timings timings = m_builder.GetTimings();
     if (!m_toolchain) {
         ImGui::TextColored(kErrorColor, "Sem toolchain: %s", m_toolchainError.c_str());
     } else if (m_builder.IsRunning()) {
@@ -270,8 +280,12 @@ void ScriptController::DrawPanel() {
     } else if (m_builder.GetState() == ScriptBuilder::State::Failed) {
         ImGui::TextColored(kErrorColor, "A compilação falhou: %zu erro(s). Os scripts carregados são os da última compilação boa.",
                            errors);
+        ImGui::TextDisabled("Configurar: %.2f s  |  Compilar: %.2f s  |  Ligar: %.2f s",
+                            timings.configure, timings.compile, timings.link);
     } else if (m_builder.GetState() == ScriptBuilder::State::Succeeded) {
-        ImGui::TextColored(kOkColor, "Compilado em %.1f s", m_builder.Seconds());
+        ImGui::TextColored(kOkColor, "Compilado em %.2f s", m_builder.Seconds());
+        ImGui::TextDisabled("Configurar: %.2f s  |  Compilar: %.2f s  |  Ligar: %.2f s  |  Recarregar: %.3f s",
+                            timings.configure, timings.compile, timings.link, m_reloadSeconds);
     } else {
         ImGui::TextDisabled("Ainda não compilado.");
     }
@@ -318,7 +332,14 @@ void ScriptController::DrawPanel() {
                             ToUtf8(paths.scriptsDir).c_str());
     }
     for (const fs::path& file : files) {
-        const std::string label = ToGenericUtf8(file.lexically_relative(paths.scriptsDir));
+        const std::string rel = ToGenericUtf8(file.lexically_relative(paths.scriptsDir));
+        std::string label = rel;
+        for (const auto& ft : timings.files) {
+            if (ft.file == rel) {
+                label = std::format("{}  ({:.2f} s)", rel, ft.seconds);
+                break;
+            }
+        }
         if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick) &&
             ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             Shell::OpenWithDefaultApp(file);

@@ -26,6 +26,19 @@ class ScriptBuilder {
 public:
     enum class State { Idle, Running, Succeeded, Failed };
 
+    struct FileTiming {
+        std::string file;     // caminho relativo a Scripts/ (ex.: "Girar.cpp") ou "MotorScriptEntry.cpp"
+        float seconds = 0.0f;
+    };
+
+    struct Timings {
+        float configure = 0.0f;
+        float compile = 0.0f;
+        float link = 0.0f;
+        float total = 0.0f;
+        std::vector<FileTiming> files;
+    };
+
     ScriptBuilder() = default;
     ~ScriptBuilder();  // cancela e espera a compilação em andamento
     ScriptBuilder(const ScriptBuilder&) = delete;
@@ -40,8 +53,9 @@ public:
     // true uma única vez, no frame em que a compilação termina.
     bool Poll();
 
-    std::string Log() const;  // saída completa da última compilação
-    float Seconds() const;    // duração da última compilação (ou da atual, até agora)
+    std::string Log() const;     // saída completa da última compilação
+    float Seconds() const;       // duração da última compilação (ou da atual, até agora)
+    Timings GetTimings() const;  // tempos por etapa da última compilação
 
 private:
     void Append(const std::string& text);
@@ -54,6 +68,7 @@ private:
     std::string m_log;
     std::chrono::steady_clock::time_point m_start{};
     std::chrono::steady_clock::time_point m_end{};
+    Timings m_timings;
 };
 
 } // namespace editor

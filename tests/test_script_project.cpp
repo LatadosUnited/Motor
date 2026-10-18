@@ -60,7 +60,11 @@ bool BuildAndWait(ScriptBuilder& builder, const SP::Paths& paths, const SP::Tool
     }
     const bool ok = builder.GetState() == ScriptBuilder::State::Succeeded;
     if (ok != expectOk) std::printf("----- saída da compilação -----\n%s\n-------------------------------\n", builder.Log().c_str());
-    std::printf("  (compilação: %.1f s)\n", builder.Seconds());
+    const ScriptBuilder::Timings t = builder.GetTimings();
+    std::string filesStr;
+    for (const auto& f : t.files) filesStr += std::format("{}{}: {:.2f} s", filesStr.empty() ? "" : ", ", f.file, f.seconds);
+    std::printf("  (compilação: %.2f s | config %.2f s, compilar %.2f s [%s], ligar %.2f s)\n",
+                builder.Seconds(), t.configure, t.compile, filesStr.c_str(), t.link);
     return ok;
 }
 
@@ -71,9 +75,65 @@ ComponentPtr MissingGirar(float velocidade) {
     m.json = std::format(R"({{"type": "Girar", "velocidade": {}}})", velocidade);
     return c;
 }
+
+int RunBench(const fs::path& baseDir) {
+    std::string err;
+    const auto toolchain = SP::LoadToolchain(MOTOR_TEST_SDK_JSON, &err);
+    if (!toolchain) {
+        std::printf("Erro no SDK: %s\n", err.c_str());
+        return 1;
+    }
+    std::printf("| Caso | Configurar | Compilar | Ligar | Recarregar | Total |\n");
+    std::printf("|---|---|---|---|---|---|\n");
+    for (int count : {1, 10, 50}) {
+        const fs::path projDir = baseDir / std::format("Bench_{}", count);
+        std::error_code ec;
+        fs::remove_all(projDir, ec);
+        const SP::Paths paths = SP::PathsFor(projDir);
+        fs::create_directories(paths.scriptsDir, ec);
+        for (int i = 1; i <= count; ++i) {
+            const std::string name = std::format("BenchScript_{:02d}", i);
+            WriteText(paths.scriptsDir / (name + ".cpp"), SP::NewScriptSource(name));
+        }
+        ScriptBuilder builder;
+        ScriptHost host;
+        AssetLibrary assets;
+        Scene scene;
+        auto scenes = [&](const std::function<void(Scene&)>& fn) { fn(scene); };
+        if (!BuildAndWait(builder, paths, *toolchain)) return 1;
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto r = host.Load(paths.dll, paths.loadDir, scenes, assets);
+        const float reloadSec = std::chrono::duration<float>(std::chrono::steady_clock::now() - t0).count();
+        if (!r.ok) return 1;
+        const auto t = builder.GetTimings();
+        std::printf("| %d script(s) (do zero) | %.2f s | %.2f s | %.2f s | %.3f s | %.2f s |\n",
+                    count, t.configure, t.compile, t.link, reloadSec, t.total + reloadSec);
+        if (count == 10) {
+            // Mudar 1 arquivo num projeto de 10 scripts:
+            std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+            const fs::path one = paths.scriptsDir / "BenchScript_01.cpp";
+            WriteText(one, ReadText(one) + "\n// mudanca incremental\n");
+            if (!BuildAndWait(builder, paths, *toolchain)) return 1;
+            const auto t1 = std::chrono::steady_clock::now();
+            host.Load(paths.dll, paths.loadDir, scenes, assets);
+            const float reloadInc = std::chrono::duration<float>(std::chrono::steady_clock::now() - t1).count();
+            const auto ti = builder.GetTimings();
+            std::printf("| 10 scripts (1 arquivo editado) | %.2f s | %.2f s | %.2f s | %.3f s | %.2f s |\n",
+                        ti.configure, ti.compile, ti.link, reloadInc, ti.total + reloadInc);
+        }
+        host.Unload(scenes, assets);
+        fs::remove_all(projDir, ec);
+    }
+    return 0;
+}
 } // namespace
 
 int main(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::string_view(argv[i]) == "--bench") {
+            return RunBench(fs::temp_directory_path() / "motor_bench_scripts");
+        }
+    }
     const fs::path dir = TestDir(argc, argv, "tmp_test_script_project");
     const fs::path root = dir / PathFromUtf8("Jogo Ação");  // acentos no caminho: caso de teste padrão
     const SP::Paths paths = SP::PathsFor(root);
@@ -216,6 +276,15 @@ int main(int argc, char** argv) {
     CHECK(BuildAndWait(builder, paths, *toolchain));
     CHECK(fs::is_regular_file(paths.dll));
     CHECK(SP::ParseDiagnostics(builder.Log()).empty());  // os modelos compilam sem avisos
+    {
+        const ScriptBuilder::Timings t = builder.GetTimings();
+        CHECK(t.configure > 0.0f && t.compile > 0.0f && t.link > 0.0f && t.total > 0.0f);
+        bool foundGirar = false;
+        for (const auto& f : t.files) {
+            if (f.file == "Girar.cpp" && f.seconds > 0.0f) foundGirar = true;
+        }
+        CHECK(foundGirar);
+    }
 
     ScriptHost::Result r1 = host.Load(paths.dll, paths.loadDir, scenes, assets);
     CHECK(r1.ok);

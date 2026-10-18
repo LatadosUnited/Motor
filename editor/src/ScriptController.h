@@ -33,6 +33,8 @@ public:
     struct Status {
         std::string state;        // "sem projeto", "sem toolchain", "compilando", "ok", "falhou", "não compilado"
         float seconds = 0.0f;     // duração da última compilação (ou da atual)
+        ScriptBuilder::Timings timings;
+        float reloadSeconds = 0.0f;
         bool reloadPending = false;
         std::string toolchainError;
         std::vector<std::string> loadedTypes;
@@ -62,6 +64,7 @@ private:
     std::string m_signature;             // estado da pasta Scripts na última verificação
     std::filesystem::file_time_type m_loadedDllTime{};  // data da DLL carregada (recompilou sem mudar = não recarrega)
     float m_watchTimer = 0.0f;
+    float m_reloadSeconds = 0.0f;
     bool m_buildQueued = false;          // a pasta mudou durante a compilação: compila de novo ao terminar
     bool m_reloadPending = false;        // compilou durante o Play: recarrega ao parar
     std::string m_log;                   // cópia da saída da compilação para o painel

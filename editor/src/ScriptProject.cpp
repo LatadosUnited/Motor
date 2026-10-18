@@ -158,6 +158,7 @@ std::string GenerateCMakeLists(const Paths& paths, const Toolchain& toolchain) {
     s += "set(CMAKE_CXX_STANDARD 20)\n";
     s += "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
     s += "set(CMAKE_CXX_EXTENSIONS OFF)\n";
+    s += "set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n";
     s += "# Os .obj dos scripts ficam em pastas com o caminho do projeto (acentos). O ar.exe lê o arquivo de\n";
     s += "# resposta da lista de objetos fora do UTF-8 e não os acha: passa a lista na linha de comando.\n";
     s += "set(CMAKE_CXX_USE_RESPONSE_FILE_FOR_OBJECTS OFF)\n";

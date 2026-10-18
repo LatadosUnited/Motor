@@ -3,11 +3,11 @@ tipo: fase
 alpha: 2
 fase: 17
 titulo: Scripts mais rápidos e fáceis
-status: planejada
+status: em andamento
 prioridade: 2
 areas: [scripts, editor, docs]
-branch: 
-inicio: 
+branch: fase-17-scripts
+inicio: 2026-10-18
 fim: 
 ---
 
