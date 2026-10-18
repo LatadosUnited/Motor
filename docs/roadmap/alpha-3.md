@@ -34,6 +34,12 @@ cena de 5000 entidades sem travar; e uma ilha com terreno, água, vegetação e 
   (`editor_status`) e no Player (`--perf` grava um CSV).
 - Teste de desempenho no `ctest` (fora do conjunto rápido) que falha se um número piorar além da margem.
 - `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor.
+- **Profiler por quadro:** zonas de tempo por sistema e por função, numa linha do tempo, para saber onde vai
+  cada milissegundo (hoje só há o FPS no título da janela). Candidato: Tracy (biblioteca nova: decidir com o
+  usuário); alternativa própria: marcadores gravados num arquivo e vistos no `chrome://tracing`.
+  *(origem: conversa de 18/10/2026 sobre o que falta otimizar)*
+- **Medir também numa máquina com GPU dedicada**, para separar o que é CPU do que é GPU (na HD 530 quase toda
+  cena esbarra na GPU).
 
 ### Comparação com a Unity
 
@@ -121,8 +127,15 @@ Conclusões:
   UBOs por material e por objeto).
 - `Material` sem cópia por item (hoje copiado em cada desenho, com 6 `shared_ptr`).
 - Recorte por frustum já existe; acrescentar LOD por distância para malhas com níveis.
+- **Recorte com estrutura espacial:** hoje o recorte testa objeto por objeto. Uma árvore de volumes (BVH) ou
+  grade para os objetos estáticos descarta regiões inteiras de uma vez; a mesma estrutura serve às sombras, ao
+  raycast do editor e às consultas de área. *(origem: conversa de 18/10/2026)*
+- **Desenho guiado pela GPU,** depois do instancing: multi-draw indirect com os dados dos objetos em buffers
+  mapeados de forma persistente, para milhares de objetos em poucas chamadas e quase nada de CPU por objeto (o
+  equivalente ao GPU Resident Drawer da Unity). *(origem: conversa de 18/10/2026)*
+- Alvo medido: `cubos10000` da comparação com a Unity (hoje 68 a 69%) acima de 70%.
 
-## Fase 25 — Cena e scripts que escalam
+## Fase 25 — Cena, dados e threads
 
 *(Análise, item 4; pendência da Fase 5.)*
 
@@ -134,6 +147,19 @@ Conclusões:
   muitas entidades no mesmo quadro hoje é quadrático).
 - Índice de nomes para `FindEntity`/`FindByName`.
 - Física: os picos isolados de até ~185 ms no `test_physics_bench`. *(Pendência da Fase 5.)*
+- Física: a sincronização entre a cena e a física a cada passo (transformações para a Jolt e de volta). Alvo
+  medido: `fisica1000` da comparação com a Unity (hoje 76 a 81%) acima de 85%.
+- **Organização dos dados:** hoje cada entidade é um objeto separado na memória (`unique_ptr` com os
+  componentes dentro), e percorrer milhares delas gera falhas de cache. Guardar transforms e componentes em
+  blocos contínuos por tipo (no estilo ECS), mantendo a API dos scripts e o registro de componentes (Inspector,
+  serialização e desfazer continuam automáticos). Medir antes com a cena de referência. *(origem: conversa de
+  18/10/2026)*
+- **Trabalho em várias threads:** hoje o quadro roda numa thread só (scripts, sincronização da física,
+  recorte, montagem dos desenhos e envio), e só a Jolt usa os outros núcleos. Um sistema de tarefas (job
+  system) divide entre os núcleos o que não depende de ordem: matrizes de mundo, recorte, montagem dos lotes,
+  animação e sincronização da física; os scripts continuam numa thread (regra simples para quem programa o
+  jogo). Depois da organização dos dados, que é o que permite dividir o trabalho sem travas.
+  *(origem: conversa de 18/10/2026)*
 
 ## Fase 26 — Editor que escala
 
