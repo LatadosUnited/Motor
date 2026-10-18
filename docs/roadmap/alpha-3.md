@@ -29,6 +29,37 @@ com terreno, água, vegetação e partículas roda a 60 FPS.
   passada (timer queries), draws, triângulos e memória de vídeo por recurso; no viewport, no MCP
   (`editor_status`) e no Player (`--perf` grava um CSV).
 - Teste de desempenho no `ctest` (fora do conjunto rápido) que falha se um número piorar além da margem.
+- `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor.
+
+### Linha de base (18/10/2026)
+
+Máquina de referência (i5 de 4 núcleos, Intel HD 530), vsync desligado, FPS lido do título da janela (mediana
+de 8 a 14 segundos). Cenas geradas: um chão, N cubos em grade, 1 luz direcional, câmera de cima. O Player abre
+em 1280×720; o viewport do editor é menor, por isso o custo fixo dele é menor.
+
+| Cena | Player Release | Player Debug | Editor Release | Editor Debug |
+|---|---|---|---|---|
+| vazia (só câmera e luz) | 12,7 ms | — | 7,7 ms | 7,7 ms |
+| 100 cubos, sem sombra | 13,5 ms | 14,1 ms | 8,9 ms | 9,3 ms |
+| 100 cubos, sombra Média | 15,1 ms | 15,2 ms | 11,8 ms | 15,2 ms |
+| 100 cubos, sombra Alta | 18,7 ms | 18,7 ms | 20,4 ms | 20,9 ms |
+| 1000 cubos, sem sombra | 14,1 ms | 24,1 ms | 12,0 ms | **84,0 ms** |
+| 1000 cubos, sombra Média | 17,3 ms | 24,4 ms | 15,6 ms | **82,0 ms** |
+| 1000 cubos, sombra Alta | 21,6 ms | 26,7 ms | 26,8 ms | **95,1 ms** |
+
+Conclusões:
+
+- **O editor Debug com muitas entidades é o gargalo que se sente:** 84 ms (12 FPS) com 1000 cubos, contra
+  12 ms no editor Release. É trabalho de CPU do editor que cresce com a cena (desfazer comparando a cena
+  inteira a cada quadro, checagem de "não salvo" em JSON; Fase 26), multiplicado pelo `-O0`. Para trabalhar,
+  usar o editor Release (o que o Hub instala).
+- **Custo fixo de GPU alto:** a cena vazia já gasta 12,7 ms a 1280×720 (MSAA 4x em HDR, céu, bloom, tone
+  mapping, FXAA). Sobram ~4 ms para a cena a 60 FPS. Opções de qualidade (MSAA desligado ou 2x com FXAA, bloom
+  em resolução menor) entram nas opções do jogador (alpha 2, Fase 21) e na Fase 23.
+- **Sombras:** a Média custa 2 a 3 ms, a Alta 5 a 11 ms na HD 530. Padrão Média; Alta só em GPU dedicada.
+- **CPU do jogo em Release aguenta 1000 objetos:** de 100 para 1000 cubos sem sombra, o Player Release só
+  passa de 13,5 para 14,1 ms. O agrupamento de desenhos (Fase 24) importa a partir de milhares.
+- Os 135 ms da análise de 17/10 eram de outra cena (ilhas, sombra Alta), muito provavelmente no editor Debug.
 
 ## Fase 23 — Sombras
 
