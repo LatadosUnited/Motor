@@ -17,9 +17,13 @@ que dependem de instancing e de sombras baratas.
 **Regra da alpha:** medir antes de otimizar. Cada fase começa com a medição na cena de referência e termina com
 os números de antes e depois no README.
 
-**A alpha 3 está pronta quando:** a cena de referência (Fase 22) roda a 60 FPS no Player na máquina de
-referência com sombras na qualidade Média, o editor edita uma cena de 5000 entidades sem travar, e uma ilha
-com terreno, água, vegetação e partículas roda a 60 FPS.
+**Meta principal: pelo menos 70% do desempenho da Unity** nas mesmas cenas, na mesma máquina. Em cada cena
+do conjunto de comparação (Fase 22), o FPS do Player do Motor (Release) tem de ser **≥ 70% do FPS do player da
+Unity** com configurações equivalentes; nenhuma cena abaixo de 50%. *(origem: pedido do usuário, 18/10/2026)*
+
+**A alpha 3 está pronta quando:** a meta dos 70% é cumprida no conjunto de comparação; a cena de referência
+(Fase 22) roda a 60 FPS no Player na máquina de referência com sombras na qualidade Média; o editor edita uma
+cena de 5000 entidades sem travar; e uma ilha com terreno, água, vegetação e partículas roda a 60 FPS.
 
 ## Fase 22 — Medição
 
@@ -30,6 +34,28 @@ com terreno, água, vegetação e partículas roda a 60 FPS.
   (`editor_status`) e no Player (`--perf` grava um CSV).
 - Teste de desempenho no `ctest` (fora do conjunto rápido) que falha se um número piorar além da margem.
 - `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor.
+
+### Comparação com a Unity
+
+- **Projeto gêmeo na Unity** (Unity 6, a versão instalada mais recente que for LTS; URP, o pipeline padrão
+  dos projetos novos), com as mesmas cenas do Motor, geradas por script dos dois lados a partir de uma mesma
+  descrição (posições, escalas, luzes, câmera). Fica no repositório em `bench/unity/`.
+- **Configurações equivalentes:** 1280×720 em janela, vsync desligado (`QualitySettings.vSyncCount = 0`,
+  `targetFrameRate = -1`), HDR ligado, MSAA 4x, mesmo número de cascatas e resolução de sombra, bloom e
+  tone mapping ACES, FXAA. Build de Windows em Release (IL2CPP) contra o Player Release do Motor. O que não tiver
+  equivalente exato fica anotado na tabela.
+- **Conjunto de comparação** (cada cena isola um custo):
+  1. cena vazia (custo fixo do pipeline);
+  2. 1000 cubos estáticos sem sombra (desenho);
+  3. 1000 cubos com sombra Média (sombras);
+  4. 10 000 cubos estáticos (agrupamento e instancing);
+  5. 1000 corpos rígidos caindo numa pilha (física: Jolt contra PhysX);
+  6. 1000 entidades com um script que as move a cada quadro (scripts: C++ contra C#);
+  7. criar e destruir 200 objetos por quadro (alocação, prefabs).
+- **Medição igual dos dois lados:** mediana do tempo de quadro em 10 s depois de 5 s de aquecimento,
+  gravada num CSV (no Motor, o `--perf` desta fase; na Unity, um script de medição no projeto gêmeo).
+- **Resultado** numa tabela com a razão Motor/Unity por cena, refeita ao fim de cada fase da alpha 3 para
+  mostrar o caminho até os 70%.
 
 ### Linha de base (18/10/2026)
 
