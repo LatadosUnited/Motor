@@ -5,12 +5,13 @@
 
 namespace motor {
 
-// Câmera em perspectiva orientada por yaw/pitch (graus). Mundo: Y para cima, -Z para frente.
+// Câmera em perspectiva orientada por yaw/pitch/roll (graus). Mundo: Y para cima, -Z para frente.
 class Camera {
 public:
     glm::vec3 position{0.0f, 2.0f, 6.0f};
     float yaw = -90.0f;   // -90 => olhando para -Z
     float pitch = -10.0f;
+    float roll = 0.0f;    // rotação em torno do próprio eixo (graus)
 
     float fovY = 60.0f;   // graus
     float aspect = 16.0f / 9.0f;

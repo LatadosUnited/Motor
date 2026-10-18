@@ -263,8 +263,17 @@ int main() {
         CHECK(scene.ApplyCamera(idPri, camera));
         CHECK(Near(camera.position, {0.0f, 2.0f, 5.0f}));
         CHECK(Near(camera.Forward(), {-1.0f, 0.0f, 0.0f}));
+        CHECK(std::abs(camera.roll) < 1e-3f);
         CHECK(camera.fovY == 45.0f);
         CHECK(!scene.ApplyCamera(kNullEntity, camera));
+
+        // Roll: inclinar a entidade da câmera em torno do próprio eixo gira Right() e Up() junto.
+        principal.transform.SetEulerDegrees({15.0f, 45.0f, -35.0f});
+        CHECK(scene.ApplyCamera(idPri, camera));
+        const glm::mat4 world = scene.WorldMatrix(idPri);
+        CHECK(Near(camera.Forward(), glm::normalize(-glm::vec3(world[2]))));
+        CHECK(Near(camera.Right(), glm::normalize(glm::vec3(world[0]))));
+        CHECK(Near(camera.Up(), glm::normalize(glm::vec3(world[1]))));
 
         scene.Find(idPri)->active = false;  // inativa não conta
         CHECK(scene.FindMainCamera() == idSec);
