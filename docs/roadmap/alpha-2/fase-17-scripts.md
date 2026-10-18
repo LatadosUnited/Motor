@@ -30,14 +30,14 @@ O compilador continua o do MSYS2: integrar o compilador é a alpha 4 ([Fase 29](
 Medir antes e depois de cada passo com um projeto de referência de 1, 10 e 50 scripts; os números entram no
 README.
 
-- [ ] **Medição:** o painel Scripts e o `scripts_status` do MCP mostram o tempo de cada etapa (configurar,
+- [x] **Medição:** o painel Scripts e o `scripts_status` do MCP mostram o tempo de cada etapa (configurar,
   compilar cada arquivo, ligar, recarregar).
-- [ ] **Cabeçalho pré-compilado** com o `ScriptModule.h` e a GLM, gerado uma vez por versão do Motor no SDK.
-- [ ] **Headers mais leves:** tirar `<format>` e o que não for preciso de `Script.h`, `Scene.h` e `Component.h`;
+- [x] **Cabeçalho pré-compilado** com o `ScriptModule.h` e a GLM, gerado uma vez por versão do Motor no SDK.
+- [x] **Headers mais leves:** tirar `<format>` e o que não for preciso de `Script.h`, `Scene.h` e `Component.h`;
   declarar adiante o que der. Um teste mede o tempo de compilar um script vazio, para não piorar sem perceber.
-- [ ] **Configurar uma vez só:** o CMake só reconfigura quando entra ou sai arquivo ou muda a versão do Motor.
-- [ ] **Ligação mais rápida:** comparar `ld` com `lld` (`-fuse-ld=lld`, já vem no MSYS2) e "MSYS Makefiles" com
-  Ninja. Ferramenta nova só com aprovação do usuário.
+- [x] **Configurar uma vez só:** o CMake só reconfigura quando entra ou sai arquivo ou muda a versão do Motor.
+- [x] **Ligação mais rápida:** comparar `ld` com `lld` (`-fuse-ld=lld`, já vem no MSYS2) e "MSYS Makefiles" com
+  Ninja. Ferramenta nova só com aprovação do usuário. *(aprovado: ninja e lld instalados no MSYS2 em 18/10)*
 
 ### Facilidade
 

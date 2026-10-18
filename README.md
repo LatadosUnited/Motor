@@ -436,6 +436,29 @@ uma **cópia** da DLL (em `.motor/scripts/loaded/`), para o linker poder reescre
 compilação. A engine é uma DLL compartilhada e o runtime do C++ é dinâmico: o editor e a DLL de scripts
 usam o mesmo registro de componentes, o mesmo heap, as mesmas exceções/RTTI, o mesmo `Input` e o mesmo log.
 
+### Velocidade da compilação dos scripts
+
+- **Cabeçalho pré-compilado** (`build/bin/sdk/MotorScriptPch.h.gch`, alvo `motor_sdk_pch`), refeito quando um
+  header da engine muda e incluído em todo script.
+- **Headers leves**: `Script.h` não puxa `<format>` (o `Log("x = {:.2f}", x)` formata dentro da `libMotor.dll`),
+  `Scene.h` não puxa o renderer, e registrar campos não instancia `std::function` por campo.
+- **Configura uma vez só**: o CMakeLists gerado lista os `.cpp` (sem `GLOB ... CONFIGURE_DEPENDS`) e só muda
+  quando entra ou sai arquivo; mudar a versão do Motor ou o toolchain apaga o cache e reconfigura limpo.
+- **Ninja e lld**: se `ninja.exe` e `ld.lld.exe` estiverem ao lado do compilador (MSYS2 UCRT64:
+  `pacman -S mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-lld`), são usados; senão, make e `ld`.
+- O painel **Scripts** e a ferramenta MCP `scripts_status` mostram o tempo de cada etapa e de cada arquivo.
+
+Medido com `test_script_project --bench` (Debug, GCC 15, scripts do modelo "Novo script"):
+
+| Caso | Antes | Depois |
+|---|---|---|
+| 1 script, do zero | 8,42 s | 2,14 s |
+| 10 scripts, do zero | 22,10 s | 3,59 s |
+| 10 scripts, 1 arquivo editado (salvar → recarregado) | 9,19 s | 1,32 s |
+| 50 scripts, do zero | 90,72 s | 10,96 s |
+
+Etapas do caso "1 arquivo editado" depois: compilar ~0,7–0,9 s, ligar 0,2 s, recarregar 0,01 s.
+
 Limites atuais: os scripts precisam do Motor compilado na mesma máquina (o SDK aponta para a pasta de
 build); um erro grave dentro de um script (ponteiro inválido) derruba o editor; sem projeto aberto não há
 scripts.
