@@ -1,4 +1,6 @@
 #pragma once
+#ifndef MOTOR_SCENE_SCRIPT_MODULE_H
+#define MOTOR_SCENE_SCRIPT_MODULE_H
 
 // Registro dos scripts de um projeto. Os .cpp da pasta Scripts/ do projeto são compilados pelo editor numa
 // DLL; cada arquivo registra os seus scripts com MOTOR_SCRIPT, e o editor chama todos esses blocos ao
@@ -66,3 +68,5 @@ inline void RegisterModuleScripts(ComponentRegistry& registry) {
     static void MotorRegisterScript_##Name(::motor::ComponentRegistry& registry);                          \
     static const ::motor::detail::ScriptRegistrar g_motorScriptRegistrar_##Name{&MotorRegisterScript_##Name}; \
     static void MotorRegisterScript_##Name([[maybe_unused]] ::motor::ComponentRegistry& registry)
+
+#endif // MOTOR_SCENE_SCRIPT_MODULE_H

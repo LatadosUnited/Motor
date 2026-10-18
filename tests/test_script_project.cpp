@@ -159,6 +159,7 @@ int main(int argc, char** argv) {
         // Objetos com nome curto, sem acentos (o as.exe não lê UTF-8) e abaixo de 260 caracteres.
         CHECK(Contains(cmake, "set(CMAKE_INTERMEDIATE_DIR_STRATEGY SHORT CACHE STRING \"\")"));
         CHECK(Contains(cmake, "set(CMAKE_OBJECT_PATH_MAX 240)"));
+        CHECK(Contains(cmake, "-Winvalid-pch -include \"${MOTOR_SDK_PCH}\""));
         const std::string entry = SP::GenerateEntryPoint();
         CHECK(Contains(entry, "MotorRegisterScripts") && Contains(entry, "MotorScriptApiVersion"));
         CHECK(Contains(entry, "__declspec(dllexport)"));

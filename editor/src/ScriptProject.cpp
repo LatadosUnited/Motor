@@ -179,6 +179,9 @@ std::string GenerateCMakeLists(const Paths& paths, const Toolchain& toolchain) {
     s += std::format("target_link_libraries({} PRIVATE Motor::Motor)\n", kTargetName);
     s += "if(CMAKE_CXX_COMPILER_ID MATCHES \"GNU|Clang\")\n";
     s += std::format("    target_compile_options({} PRIVATE -Wall -Wextra)\n", kTargetName);
+    s += "    if(DEFINED MOTOR_SDK_PCH AND EXISTS \"${MOTOR_SDK_PCH}.gch\")\n";
+    s += std::format("        target_compile_options({} PRIVATE -Winvalid-pch -include \"${{MOTOR_SDK_PCH}}\")\n", kTargetName);
+    s += "    endif()\n";
     s += "endif()\n";
     s += std::format("set_target_properties({0} PROPERTIES PREFIX \"\" OUTPUT_NAME {0}\n", kTargetName);
     s += std::format("    RUNTIME_OUTPUT_DIRECTORY \"{0}\" LIBRARY_OUTPUT_DIRECTORY \"{0}\")\n",
