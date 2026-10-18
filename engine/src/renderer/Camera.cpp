@@ -9,8 +9,11 @@
 namespace motor {
 
 namespace {
-constexpr glm::vec3 kWorldUp{0.0f, 1.0f, 0.0f};
+glm::vec3 BaseRight(float yawDegrees) {
+    const float y = glm::radians(yawDegrees);
+    return {-std::sin(y), 0.0f, std::cos(y)};
 }
+} // namespace
 
 glm::vec3 Camera::Forward() const {
     const float y = glm::radians(yaw);
@@ -19,15 +22,24 @@ glm::vec3 Camera::Forward() const {
 }
 
 glm::vec3 Camera::Right() const {
-    return glm::normalize(glm::cross(Forward(), kWorldUp));
+    const glm::vec3 baseRight = BaseRight(yaw);
+    if (roll == 0.0f) return baseRight;
+    const glm::vec3 baseUp = glm::normalize(glm::cross(baseRight, Forward()));
+    const float r = glm::radians(roll);
+    return glm::normalize(std::cos(r) * baseRight + std::sin(r) * baseUp);
 }
 
 glm::vec3 Camera::Up() const {
-    return glm::cross(Right(), Forward());
+    const glm::vec3 forward = Forward();
+    const glm::vec3 baseRight = BaseRight(yaw);
+    const glm::vec3 baseUp = glm::normalize(glm::cross(baseRight, forward));
+    if (roll == 0.0f) return baseUp;
+    const float r = glm::radians(roll);
+    return glm::normalize(-std::sin(r) * baseRight + std::cos(r) * baseUp);
 }
 
 glm::mat4 Camera::View() const {
-    return glm::lookAt(position, position + Forward(), kWorldUp);
+    return glm::lookAt(position, position + Forward(), Up());
 }
 
 glm::mat4 Camera::Projection() const {
@@ -38,6 +50,7 @@ void Camera::LookAt(const glm::vec3& target) {
     const glm::vec3 d = glm::normalize(target - position);
     pitch = glm::degrees(std::asin(glm::clamp(d.y, -1.0f, 1.0f)));
     yaw = glm::degrees(std::atan2(d.z, d.x));
+    roll = 0.0f;
 }
 
 } // namespace motor

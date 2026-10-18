@@ -22,6 +22,7 @@ add_executable(MotorEditor
     src/ColliderShapeDrawer.cpp
     src/MaterialRefDrawer.cpp
     src/PrefabLinkDrawer.cpp
+    src/PrefabRefDrawer.cpp
     src/UiEditor.cpp
     src/UiFieldDrawers.cpp
     src/ModelRefDrawer.cpp

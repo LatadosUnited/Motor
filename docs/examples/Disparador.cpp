@@ -7,6 +7,7 @@
 #include <glm/geometric.hpp>
 
 struct Disparador : motor::Script {
+    motor::PrefabRef prefab;  // opcional: se preenchido no Inspector, instancia o prefab em vez de criar do zero
     float intervalo = 0.25f;  // segundos entre dois tiros
     float velocidade = 12.0f;
     float tamanho = 0.2f;
@@ -22,12 +23,15 @@ struct Disparador : motor::Script {
         const glm::vec3 posicao{mundo[3]};
         const glm::vec3 frente = -glm::normalize(glm::vec3(mundo[2]));
 
-        // Use a referência só aqui; para lembrar da entidade depois, guarde o id (tiro.id).
-        motor::Entity& tiro = CreateEntity("Projétil");
-        tiro.transform.position = posicao + frente;
-        tiro.transform.scale = glm::vec3(tamanho);
-        if (const auto* meu = GetEntity().Get<motor::MeshRenderer>()) {
-            tiro.Add<motor::MeshRenderer>() = *meu;  // copia malha e material
+        // Use o ponteiro/referência só aqui; para lembrar da entidade depois, guarde o id (tiro.id).
+        motor::Entity* instanciado = !prefab.IsEmpty() ? Instantiate(prefab, posicao + frente) : nullptr;
+        motor::Entity& tiro = instanciado ? *instanciado : CreateEntity("Projétil");
+        if (!instanciado) {
+            tiro.transform.position = posicao + frente;
+            tiro.transform.scale = glm::vec3(tamanho);
+            if (const auto* meu = GetEntity().Get<motor::MeshRenderer>()) {
+                tiro.Add<motor::MeshRenderer>() = *meu;  // copia malha e material
+            }
         }
         Projetil& projetil = tiro.Add<Projetil>();  // scripts também são componentes
         projetil.velocidade = frente * velocidade;
@@ -40,6 +44,7 @@ private:
 
 MOTOR_SCRIPT(Disparador) {
     registry.Register<Disparador>("Disparador", "Disparador")
+        .Field("prefab", "Prefab", &Disparador::prefab)
         .Field("intervalo", "Intervalo", &Disparador::intervalo, {.speed = 0.01f, .min = 0.0f, .max = 10.0f, .format = "%.2f s"})
         .Field("velocidade", "Velocidade", &Disparador::velocidade, {.speed = 0.1f, .format = "%.1f m/s"})
         .Field("tamanho", "Tamanho", &Disparador::tamanho, {.speed = 0.01f, .min = 0.01f, .max = 10.0f});

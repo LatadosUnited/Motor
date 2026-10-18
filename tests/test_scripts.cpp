@@ -74,6 +74,20 @@ struct Andar : Script {
     }
 };
 
+struct ComponenteSemRegistro {
+    int x = 0;
+};
+
+// Lança exceção no OnUpdate (como ao chamar Get<T>() de um tipo não registrado).
+struct Quebrado : Script {
+    int chamadas = 0;
+    void OnUpdate(float) override {
+        ++chamadas;
+        (void)GetEntity().Get<ComponenteSemRegistro>();  // lança via MOTOR_ASSERT
+    }
+    void OnDestroy() override { g_events.push_back("quebrado:destroy"); }
+};
+
 bool Near(const glm::vec3& a, const glm::vec3& b, float eps = 1e-3f) {
     return glm::length(a - b) < eps;
 }
@@ -85,6 +99,7 @@ void Register() {
         .Field("passos", "Passos", &Contador::passos);
     registry.Register<Diretor>("Diretor", "Diretor");
     registry.Register<Andar>("Andar", "Andar").Field("velocidade", "Velocidade", &Andar::velocidade);
+    registry.Register<Quebrado>("Quebrado", "Quebrado");
 }
 } // namespace
 
@@ -248,8 +263,17 @@ int main() {
         CHECK(scene.ApplyCamera(idPri, camera));
         CHECK(Near(camera.position, {0.0f, 2.0f, 5.0f}));
         CHECK(Near(camera.Forward(), {-1.0f, 0.0f, 0.0f}));
+        CHECK(std::abs(camera.roll) < 1e-3f);
         CHECK(camera.fovY == 45.0f);
         CHECK(!scene.ApplyCamera(kNullEntity, camera));
+
+        // Roll: inclinar a entidade da câmera em torno do próprio eixo gira Right() e Up() junto.
+        principal.transform.SetEulerDegrees({15.0f, 45.0f, -35.0f});
+        CHECK(scene.ApplyCamera(idPri, camera));
+        const glm::mat4 world = scene.WorldMatrix(idPri);
+        CHECK(Near(camera.Forward(), glm::normalize(-glm::vec3(world[2]))));
+        CHECK(Near(camera.Right(), glm::normalize(glm::vec3(world[0]))));
+        CHECK(Near(camera.Up(), glm::normalize(glm::vec3(world[1]))));
 
         scene.Find(idPri)->active = false;  // inativa não conta
         CHECK(scene.FindMainCamera() == idSec);
@@ -272,6 +296,43 @@ int main() {
         CHECK(loaded == scene);
         const Contador* lc = loaded.Entities().empty() ? nullptr : loaded.Entities()[0]->Get<Contador>();
         CHECK(lc && lc->tag == "pião" && lc->passos == -45 && !lc->HasStarted());
+    }
+
+    SECTION("Exceção em script não derruba o runtime e desativa só o script que falhou");
+    {
+        g_events.clear();
+        Scene scene;
+        Entity& ruim = scene.CreateEntity("Bomba");
+        Quebrado& q = ruim.Add<Quebrado>();
+        Entity& boa = scene.CreateEntity("Relógio");
+        Contador& c = boa.Add<Contador>();
+        c.tag = "ok";
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        CHECK(!runtime.HasError() && runtime.ErrorCount() == 0);
+
+        runtime.Update(0.016f);
+        CHECK(runtime.HasError());
+        CHECK(runtime.TakeError());
+        CHECK(!runtime.TakeError());  // já consumido
+        CHECK(runtime.ErrorCount() == 1);
+        CHECK(runtime.LastError().find("Quebrado::OnUpdate") != std::string::npos);
+        CHECK(runtime.LastError().find("'Bomba'") != std::string::npos);
+        CHECK(q.chamadas == 1);
+        CHECK(c.passos == 1);
+
+        // Nos próximos quadros o script falho não roda mais, mas o resto do jogo continua.
+        runtime.Update(0.016f);
+        runtime.FixedUpdate(0.016f);
+        CHECK(!runtime.TakeError());
+        CHECK(runtime.ErrorCount() == 1);
+        CHECK(q.chamadas == 1);
+        CHECK(c.passos == 2);
+
+        runtime.Stop();
+        CHECK(!Has("quebrado:destroy"));
+        CHECK(Has("ok:destroy"));
     }
 
     return TestResult();

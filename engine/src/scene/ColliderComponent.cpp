@@ -40,18 +40,25 @@ CustomFieldType FieldTraits<ColliderShape>::Describe() {
             [](const void* v, const AssetLibrary&) {
                 return nlohmann::json(ColliderShapeName(*static_cast<const ColliderShape*>(v))).dump();
             },
-            [](std::string_view text, void* v, AssetLibrary&) {
+            [](std::string_view text, void* v, AssetLibrary&, std::string* error) {
                 const auto json = nlohmann::json::parse(text, nullptr, false);
                 auto& shape = *static_cast<ColliderShape*>(v);
                 if (json.is_string()) {
                     for (ColliderShape s : kShapes) {
-                        if (json.get<std::string>() == ColliderShapeName(s)) shape = s;
+                        if (json.get<std::string>() == ColliderShapeName(s)) {
+                            shape = s;
+                            return true;
+                        }
                     }
                 } else if (json.is_number_integer()) {
                     const int n = json.get<int>();
-                    if (n >= 0 && n < static_cast<int>(std::size(kShapes))) shape = kShapes[n];
+                    if (n >= 0 && n < static_cast<int>(std::size(kShapes))) {
+                        shape = kShapes[n];
+                        return true;
+                    }
                 }
-                // Outro valor: fica como está (leitura tolerante).
+                if (error) *error = "esperado \"Box\", \"Sphere\", \"Capsule\" ou \"Mesh\"";
+                return false;
             }};
 }
 

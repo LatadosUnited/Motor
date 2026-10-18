@@ -48,7 +48,8 @@ public:
     bool OpenSceneDirect(const std::filesystem::path& path, bool discardChanges, std::string& error);
     bool NewSceneDirect(bool discardChanges, std::string& error);
     bool SaveSceneTo(const std::filesystem::path& path, std::string& error);
-    bool OpenProjectAt(const std::filesystem::path& fileOrDir, bool restoreLastScene);
+    bool OpenProjectAt(const std::filesystem::path& fileOrDir, bool restoreLastScene,
+                       bool allowNewerVersion = false);
     // Arquivo > Novo projeto sem popup (--create, ferramenta MCP project_create): cria <location>/<name> com a
     // pasta Scripts/, o script de exemplo e a cena inicial, e abre. Não pergunta por alterações não salvas.
     void StopPlay() { m_host.stopPlay(); }
@@ -59,7 +60,9 @@ public:
 
     void MarkSaved();
     bool HasUnsavedChanges();                   // compara a cena atual com o último estado salvo
-    void PollChanges(float dt);                 // atualiza o "*" do título de tempos em tempos
+    void PollChanges(float dt);                 // atualiza o "*" do título e grava o salvamento automático
+    void SaveRecovery(std::string_view reason = "autosave", const motor::Scene* overrideScene = nullptr);
+    void ClearRecovery();
     void ShowError(std::string message);
 
     void DrawFileMenu();
@@ -71,6 +74,8 @@ private:
     void ReplaceScene(motor::Scene&& scene, const std::filesystem::path& path);
     void RememberScene();                       // guarda a cena atual como "última" do projeto
     void CreateProject(const std::filesystem::path& location, const std::string& name);
+    void OfferNewProjectInEmptyDir(const std::filesystem::path& emptyDir);
+    void ApplyRecovery(const motor::SceneSerializer::RecoveryInfo& recovery);
     std::filesystem::path DefaultSceneDir() const;
     void UpdateWindowTitle();
     void DrawNewProjectPopup();
@@ -86,6 +91,7 @@ private:
     std::string m_savedSnapshot;         // JSON do último estado salvo/carregado
     bool m_dirty = false;
     float m_dirtyCheckTimer = 0.0f;
+    float m_autoSaveTimer = 0.0f;
 
     FileAction m_pendingAction = FileAction::None;
     std::filesystem::path m_pendingPath;
@@ -93,6 +99,17 @@ private:
     bool m_openNewProjectPopup = false;
     std::string m_newProjectName;
     std::string m_newProjectLocation;  // UTF-8
+    std::string m_newProjectEmptyDir;  // não vazio quando abriu uma pasta vazia
+
+    bool m_openNewerVersionPopup = false;
+    std::filesystem::path m_pendingNewerProjectPath;
+    bool m_pendingNewerProjectRestoreScene = true;
+    std::string m_pendingNewerProjectName;
+    std::string m_pendingNewerProjectVersion;
+
+    bool m_openRecoveryPopup = false;
+    motor::SceneSerializer::RecoveryInfo m_pendingRecovery;
+
     std::string m_errorMessage;
     bool m_openErrorPopup = false;
 };

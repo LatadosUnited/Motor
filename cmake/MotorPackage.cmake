@@ -6,6 +6,7 @@
 #     libMotor.dll + runtime do GCC   as mesmas DLLs que a exportação copia (kRuntimeDlls, editor/src/GameExport.h)
 #     engine/shaders, engine/fonts    assets da engine; achados ao lado do .exe (motor/core/EngineAssets.h)
 #     templates/Scripts/              modelos de script (projetos novos, menu Scripts)
+#     docs/                           documentação da versão (scripts.md, scripts-api.md, ...)
 #     sdk/                            para o editor compilar os scripts dos projetos sem o código-fonte:
 #       MotorSDK.json, MotorSDK.cmake   toolchain (o mesmo do build: MSYS2 UCRT64) e alvo importado Motor::Motor
 #       include/, lib/libMotor.dll.a    headers da engine, GLM e ImGui; biblioteca de importação
@@ -59,9 +60,10 @@ foreach(file MotorEditor.exe Player.exe ${runtime_dlls})
     file(COPY "${BIN}/${file}" DESTINATION "${OUT}")
 endforeach()
 
-# --- Assets da engine e modelos de script ---
+# --- Assets da engine, modelos de script e documentação ---
 file(COPY "${SRC}/engine/assets/shaders" "${SRC}/engine/assets/fonts" DESTINATION "${OUT}/engine")
 file(COPY "${SRC}/editor/templates/" DESTINATION "${OUT}/templates")
+file(COPY "${SRC}/docs/" DESTINATION "${OUT}/docs")
 
 # --- SDK dos scripts ---
 set(sdk "${OUT}/sdk")

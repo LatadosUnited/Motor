@@ -38,11 +38,16 @@ struct Girar : Script {
                                   GetTransform().rotation;
     }
 };
+
+struct Explosivo : Script {
+    void OnUpdate(float) override { throw std::runtime_error("falha no script"); }
+};
 } // namespace
 
 int main() {
     ComponentRegistry::Instance().Register<Fabrica>("Fabrica", "Fábrica").Field("velocidade", "Velocidade", &Fabrica::velocidade);
     ComponentRegistry::Instance().Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
+    ComponentRegistry::Instance().Register<Explosivo>("Explosivo", "Explosivo");
 
     Scene scene;
     Entity& fabrica = scene.CreateEntity("Fábrica");
@@ -126,6 +131,27 @@ int main() {
 
     play.Stop(scene, selected);  // parar parado: nada
     CHECK(scene.Find(novo) != nullptr);
+
+    SECTION("Erro em script pausa o Play e permite parar restaurando a cena");
+    {
+        Scene sceneWithError = original;
+        Entity& bomba = sceneWithError.CreateEntity("Armadilha");
+        bomba.Add<Explosivo>();
+        const Scene beforePlay = sceneWithError;
+
+        EntityId sel = bomba.id;
+        play.Play(sceneWithError, sel);
+        CHECK(play.IsActive() && !play.IsPaused());
+
+        play.Update(0.1f);
+        CHECK(play.IsActive() && play.IsPaused());
+        CHECK(play.Runtime() && play.Runtime()->HasError());
+        CHECK(play.Runtime()->LastError().find("Explosivo::OnUpdate") != std::string::npos);
+
+        play.Stop(sceneWithError, sel);
+        CHECK(!play.IsActive() && !play.IsPaused());
+        CHECK(sceneWithError == beforePlay);
+    }
 
     return TestResult();
 }

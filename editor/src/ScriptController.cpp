@@ -47,6 +47,7 @@ ScriptHost::ForEachScene ScriptController::AllScenes() {
     return [this](const std::function<void(Scene&)>& fn) {
         fn(m_ctx.scene);
         m_history.ForEachScene(fn);
+        m_ctx.prefabs.ForEachScene(fn);
     };
 }
 

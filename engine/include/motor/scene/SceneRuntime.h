@@ -13,12 +13,14 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace motor {
 
 class AssetLibrary;
+class PrefabLibrary;
 class Scene;
 struct Entity;
 
@@ -43,9 +45,15 @@ public:
     void SetInputEnabled(bool enabled) { m_inputEnabled = enabled; }
     bool InputEnabled() const { return m_inputEnabled; }
 
+    // Biblioteca de assets do projeto (opcional): usada por Instantiate para carregar os prefabs com as malhas,
+    // texturas e materiais do projeto. Sem ela, Instantiate usa uma biblioteca local se `prefab.file` existir.
+    void SetAssets(AssetLibrary* assets) { m_assets = assets; }
+
     // --- API usada pelos scripts ---
     Entity* FindEntity(std::string_view name);
     Entity& CreateEntity(std::string name, EntityId parent);
+    EntityId Instantiate(const PrefabRef& prefab);
+    EntityId Instantiate(const PrefabRef& prefab, const glm::vec3& position);
     void Destroy(EntityId id);  // adiada para o fim do passo atual
 
     // Troca de cena pedida por um script (Script::LoadScene). O runtime só guarda o pedido: quem roda o jogo
@@ -64,25 +72,50 @@ public:
     // Compara pelo type_info (nome do tipo), então funciona também numa DLL de scripts.
     RuntimeSystem* FindSystem(const std::type_info& type);
 
+    // Chama `fn` em cada script já iniciado e ativo da entidade `id`, com proteção contra exceções.
+    // Usado por sistemas (ex.: eventos de física) para despachar callbacks nos scripts.
+    void CallEntityScripts(EntityId id, std::string_view callback, const std::function<void(Script&)>& fn);
+
+    // Exceções capturadas em scripts ou sistemas: o script/sistema que lançou é desativado neste Play
+    // e o erro vai para o log. O editor usa TakeError() para pausar o Play quando um erro novo acontece.
+    bool HasError() const { return !m_lastError.empty(); }
+    const std::string& LastError() const { return m_lastError; }
+    bool TakeError() { return std::exchange(m_hasNewError, false); }
+    int ErrorCount() const { return m_errorCount; }
+
 private:
     struct SystemSlot {
         RuntimeSystemInfo info;
         std::unique_ptr<RuntimeSystem> system;
+        bool faulted = false;
     };
 
     // Ganchos dos sistemas antes (order < 0) ou depois (order >= 0) dos scripts.
     void RunSystems(bool beforeScripts, void (RuntimeSystem::*hook)(SceneRuntime&, float), float dt);
-    // Chama fn(script, id) para cada script de entidade ativa na hierarquia. Entidades criadas durante o
-    // laço ficam para o próximo frame.
-    void ForEachScript(const std::function<void(Script&, EntityId)>& fn);
+    // Chama fn(script, id, scriptName) para cada script não falho de entidade ativa na hierarquia.
+    // Entidades criadas durante o laço ficam para o próximo frame.
+    void ForEachScript(const std::function<void(Script&, EntityId, std::string_view)>& fn);
+    void InvokeScript(Script& script, EntityId id, std::string_view scriptName, std::string_view callback,
+                      const std::function<void()>& fn);
+    void InvokeSystem(SystemSlot& slot, std::string_view callback, const std::function<void()>& fn);
+    void ReportScriptError(EntityId id, std::string_view scriptName, std::string_view callback,
+                           std::string_view what);
+    void ReportSystemError(std::string_view systemName, std::string_view callback, std::string_view what);
     void StartPending();
     void FlushDestroyed();
     void Bind(Script& script, EntityId id);
 
     Scene& m_scene;
+    AssetLibrary* m_assets = nullptr;
+    std::unique_ptr<PrefabLibrary> m_prefabs;
+    std::unique_ptr<AssetLibrary> m_fallbackAssets;
     GameTime m_time;
     std::vector<EntityId> m_toDestroy;
     std::vector<SystemSlot> m_systems;  // na ordem de RegisteredRuntimeSystems(); vazio fora do Play
+    std::unordered_set<const Script*> m_faultedScripts;
+    std::string m_lastError;
+    bool m_hasNewError = false;
+    int m_errorCount = 0;
     bool m_running = false;
     bool m_inputEnabled = true;
     std::string m_sceneRequest;

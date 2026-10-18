@@ -44,6 +44,8 @@ public:
     // Versão do Motor que gravou o projeto por último ("0.2.0"); vazio = desconhecida (formato 1, de antes da
     // Fase 14). Save grava sempre a versão desta engine (motor::kVersion) e atualiza este valor.
     const std::string& EngineVersion() const { return m_engineVersion; }
+    // true se o projeto tem engineVersion válida e maior que motor::kVersion (não deve ser rebaixado sem avisar).
+    bool IsNewerThanCurrentEngine() const;
 
     std::filesystem::path ToAbsolute(std::string_view relative) const;
     std::string ToRelative(const std::filesystem::path& absolute) const;  // vazio se estiver fora do projeto

@@ -60,11 +60,11 @@ const ComponentType& ResolveType(const Json& args) {
                     " (veja os tipos com component_types)");
 }
 
-// Muda campos de um componente a partir de {chave: valor} no formato da cena. Chave desconhecida = erro
-// (nada é mudado antes de conferir todas).
+// Muda campos de um componente a partir de {chave: valor} no formato da cena. Chave desconhecida ou valor de
+// tipo errado = erro (nada é mudado antes de conferir todos).
 void SetFields(EditorContext& ctx, const ComponentType& type, void* data, const Json& values) {
     if (!values.is_object()) throw ToolError("'values' deve ser um objeto {campo: valor}");
-    std::vector<std::pair<const FieldInfo*, const Json*>> changes;
+    std::vector<std::pair<const FieldInfo*, std::string>> changes;
     for (auto it = values.begin(); it != values.end(); ++it) {
         auto field = std::find_if(type.fields.begin(), type.fields.end(), [&](const FieldInfo& f) {
             return f.key == it.key() || Lower(f.label) == Lower(it.key());
@@ -74,11 +74,17 @@ void SetFields(EditorContext& ctx, const ComponentType& type, void* data, const 
             for (const FieldInfo& f : type.fields) keys += (keys.empty() ? "" : ", ") + f.key;
             throw ToolError(std::format("{} não tem o campo '{}' (campos: {})", type.name, it.key(), keys));
         }
-        changes.emplace_back(&*field, &it.value());
+        changes.emplace_back(&*field, it.value().dump());
     }
-    for (const auto& [field, value] : changes) {
+    std::unique_ptr<void, std::function<void(void*)>> preview(type.clone(data), type.destroy);
+    for (const auto& [field, dumped] : changes) {
         std::string error;
-        if (!SceneSerializer::FieldValueFromJson(*field, data, value->dump(), ctx.assets, &error)) throw ToolError(error);
+        if (!SceneSerializer::FieldValueFromJson(*field, preview.get(), dumped, ctx.assets, &error)) {
+            throw ToolError(error);
+        }
+    }
+    for (const auto& [field, dumped] : changes) {
+        SceneSerializer::FieldValueFromJson(*field, data, dumped, ctx.assets, nullptr);
     }
 }
 
@@ -372,7 +378,14 @@ void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
             const bool existed = e.Get(type) != nullptr;
             void* data = e.Add(type);
             if (!existed && type.onAdd) type.onAdd(data, ctx.assets);
-            if (args.contains("values")) SetFields(ctx, type, data, args["values"]);
+            if (args.contains("values")) {
+                try {
+                    SetFields(ctx, type, data, args["values"]);
+                } catch (...) {
+                    if (!existed) e.Remove(type);
+                    throw;
+                }
+            }
             return ToolResult::Data(EntityToJson(ctx, e));
         },
     });

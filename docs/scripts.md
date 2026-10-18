@@ -143,6 +143,7 @@ Tipos de campo suportados:
 | `std::string` | texto |
 | `std::shared_ptr<motor::Mesh>` | malha (Cubo, Esfera, Plano ou um `.obj` do projeto) |
 | `std::shared_ptr<motor::Texture2D>` | textura (`.png`/`.jpg` do projeto) |
+| `motor::PrefabRef` | prefab (`.mprefab` do projeto, para `Instantiate`) |
 | `motor::ColliderShape`, `motor::LightType` | lista (os enums da engine que têm editor) |
 
 Outros tipos (`double`, `unsigned`, enums seus...) não compilam: use um dos acima (ex.: `float` em vez de
@@ -345,17 +346,27 @@ objetos que usam aquele material. Para mudar só este objeto, solte o asset ante
 (`renderer->sharedMaterial = nullptr;`) e mexa em `material`. `renderer->Resolved()` devolve o que está
 valendo.
 
-**Criar.** `CreateEntity("Nome")` cria uma entidade na raiz (ou `CreateEntity("Nome", idDoPai)` como filha).
-Ela nasce vazia (sem malha): adicione os componentes. Os scripts dela começam no frame seguinte.
-O [examples/Disparador.cpp](examples/Disparador.cpp) cria um projétil com a malha do próprio objeto:
+**Criar.** Há dois jeitos de criar entidades durante o Play:
+
+- `Instantiate(prefab, posicao)` (ou `Instantiate(prefab)`) instancia um prefab (`.mprefab`) escolhido num
+  campo `motor::PrefabRef` do Inspector e devolve a entidade raiz (`motor::Entity*`, ou `nullptr` se o campo
+  estiver vazio).
+- `CreateEntity("Nome")` cria uma entidade na raiz (ou `CreateEntity("Nome", idDoPai)` como filha), vazia
+  (sem malha), para montar os componentes pelo código.
+
+Os scripts das entidades criadas começam no frame seguinte. O [examples/Disparador.cpp](examples/Disparador.cpp)
+usa o prefab quando um foi escolhido no Inspector, ou cria um projétil com a malha do próprio objeto:
 
 ```cpp
-        // Use a referência só aqui; para lembrar da entidade depois, guarde o id (tiro.id).
-        motor::Entity& tiro = CreateEntity("Projétil");
-        tiro.transform.position = posicao + frente;
-        tiro.transform.scale = glm::vec3(tamanho);
-        if (const auto* meu = GetEntity().Get<motor::MeshRenderer>()) {
-            tiro.Add<motor::MeshRenderer>() = *meu;  // copia malha e material
+        // Use o ponteiro/referência só aqui; para lembrar da entidade depois, guarde o id (tiro.id).
+        motor::Entity* instanciado = !prefab.IsEmpty() ? Instantiate(prefab, posicao + frente) : nullptr;
+        motor::Entity& tiro = instanciado ? *instanciado : CreateEntity("Projétil");
+        if (!instanciado) {
+            tiro.transform.position = posicao + frente;
+            tiro.transform.scale = glm::vec3(tamanho);
+            if (const auto* meu = GetEntity().Get<motor::MeshRenderer>()) {
+                tiro.Add<motor::MeshRenderer>() = *meu;  // copia malha e material
+            }
         }
         Projetil& projetil = tiro.Add<Projetil>();  // scripts também são componentes
         projetil.velocidade = frente * velocidade;

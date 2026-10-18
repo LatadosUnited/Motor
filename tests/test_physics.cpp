@@ -66,9 +66,14 @@ struct Jogador : Script {
     }
 };
 
+struct SensorQuebrado : Script {
+    void OnTriggerEnter(EntityId) override { throw std::runtime_error("erro no trigger"); }
+};
+
 void Register() {
     auto& registry = ComponentRegistry::Instance();
     registry.Register<Sensor>("SensorDeTeste", "Sensor de teste");
+    registry.Register<SensorQuebrado>("SensorQuebradoDeTeste", "Sensor quebrado de teste");
     registry.Register<Jogador>("JogadorDeTeste", "Jogador de teste").Field("velocidade", "Velocidade", &Jogador::velocidade);
 }
 
@@ -134,9 +139,9 @@ int main() {
         // Leitura tolerante: número também vale; texto desconhecido mantém o valor.
         const auto* field = &registry.Find("Collider")->fields[0];
         ColliderShape shape = ColliderShape::Box;
-        field->custom->fromJson("2", &shape, assets);
+        CHECK(field->custom->fromJson("2", &shape, assets, nullptr));
         CHECK(shape == ColliderShape::Capsule);
-        field->custom->fromJson("\"Triangulo\"", &shape, assets);
+        CHECK(!field->custom->fromJson("\"Triangulo\"", &shape, assets, nullptr));
         CHECK(shape == ColliderShape::Capsule);
     }
 
@@ -371,8 +376,18 @@ int main() {
         Run(runtime, 2.0f);
         CHECK(Near(scene.Find(playerId)->transform.position.y, 0.9f, 0.05f) && fisica->IsGrounded(playerId));
 
-        // Queda alta e rápida não atravessa o chão.
+        // Queda alta e rápida não atravessa o chão, e teleportar no meio da queda zera a velocidade.
         scene.Find(playerId)->transform.position = {0.0f, 40.0f, 0.0f};
+        jogador.velocidade = 4.0f;
+        Run(runtime, 1.0f);  // caindo rápido (~-9,8 m/s) e andando em +X
+        CHECK(fisica->GetCharacterVelocity(playerId).y < -5.0f);
+        jogador.velocidade = 0.0f;
+        fisica->MoveCharacter(playerId, {6.0f, 0.0f, 0.0f});  // velocidade guardada antes do teleporte
+        scene.Find(playerId)->transform.position = {0.0f, 20.0f, 0.0f};
+        runtime.FixedUpdate(kDt);  // um único passo após o teleporte: só a gravidade deste passo
+        const glm::vec3 velAfterTeleport = fisica->GetCharacterVelocity(playerId);
+        CHECK(velAfterTeleport.y > -0.5f && Near(velAfterTeleport.x, 0.0f, 1e-4f));
+        CHECK(scene.Find(playerId)->transform.position.y > 19.9f);
         Run(runtime, 4.0f);
         CHECK(Near(scene.Find(playerId)->transform.position.y, 0.9f, 0.05f));
 
@@ -464,6 +479,25 @@ int main() {
         const glm::vec3 mn(-1.0f, 0.0f, -1.0f), mx(1.0f, 0.0f, 1.0f);
         AppendColliderLines(mesh, glm::mat4(1.0f), lines, &mn, &mx);
         CHECK(lines.size() == 12);
+    }
+
+    SECTION("Exceção em evento de física não derruba a física nem os outros scripts");
+    {
+        Scene scene;
+        Entity& zona = scene.CreateEntity("ZonaPerigosa");
+        zona.Add<ColliderComponent>().isTrigger = true;
+        zona.Add<SensorQuebrado>();
+        Sensor& sensorBom = zona.Add<Sensor>();
+
+        Entity& bola = AddBox(scene, {0.0f, 0.0f, 0.0f}, "Bola");
+        (void)bola;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        runtime.FixedUpdate(kDt);
+        CHECK(runtime.HasError());
+        CHECK(runtime.LastError().find("SensorQuebradoDeTeste::OnTriggerEnter") != std::string::npos);
+        CHECK(sensorBom.triggerEnters == 1);
     }
 
     return TestResult();

@@ -236,6 +236,7 @@ private:
 
     void StartRuntime() {
         m_runtime = std::make_unique<SceneRuntime>(m_scene);
+        m_runtime->SetAssets(&m_assets);
         m_runtime->Start();
     }
 

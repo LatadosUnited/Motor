@@ -160,8 +160,17 @@ bool Scene::ApplyCamera(EntityId id, Camera& camera) const {
     const glm::mat4 world = WorldMatrix(id);
     const glm::vec3 forward = -glm::vec3(world[2]);
     if (glm::length(forward) < 1e-6f) return false;  // escala zero: sem direção
+    const glm::vec3 dir = glm::normalize(forward);
     camera.position = glm::vec3(world[3]);
-    camera.LookAt(camera.position + glm::normalize(forward));
+    camera.LookAt(camera.position + dir);
+
+    glm::vec3 entityUp = glm::vec3(world[1]);
+    entityUp -= glm::dot(entityUp, dir) * dir;
+    if (glm::length(entityUp) > 1e-6f) {
+        const glm::vec3 baseRight = camera.Right();
+        const glm::vec3 baseUp = camera.Up();
+        camera.roll = glm::degrees(std::atan2(-glm::dot(entityUp, baseRight), glm::dot(entityUp, baseUp)));
+    }
     camera.fovY = cam->fov;
     camera.nearPlane = cam->nearPlane;
     camera.farPlane = cam->farPlane;

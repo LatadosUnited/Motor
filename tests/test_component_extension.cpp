@@ -43,14 +43,18 @@ template <> struct FieldTraits<Faixa> {
                     const auto& f = *static_cast<const Faixa*>(v);
                     return "[" + std::to_string(f.min) + ", " + std::to_string(f.max) + "]";
                 },
-                [](std::string_view json, void* v, AssetLibrary&) {
+                [](std::string_view json, void* v, AssetLibrary&, std::string* error) {
                     // "[a, b]" (sem biblioteca de JSON no teste: basta para o formato gravado acima).
                     const size_t open = json.find('['), comma = json.find(','), close = json.find(']');
-                    if (open == std::string_view::npos || comma == std::string_view::npos || close == std::string_view::npos) return;
+                    if (open == std::string_view::npos || comma == std::string_view::npos || close == std::string_view::npos) {
+                        if (error) *error = "esperado [min, max]";
+                        return false;
+                    }
                     auto& f = *static_cast<Faixa*>(v);
                     f.min = ParseInt(json.substr(open + 1, comma - open - 1), f.min);
                     const std::string_view second = json.substr(comma + 1, close - comma - 1);
                     f.max = ParseInt(second.substr(second.find_first_not_of(' ')), f.max);
+                    return true;
                 }};
     }
 };

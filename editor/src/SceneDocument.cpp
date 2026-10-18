@@ -107,18 +107,20 @@ void SceneDocument::RequestFileAction(FileAction action, const fs::path& path) {
 void SceneDocument::PerformFileAction(FileAction action, const fs::path& path) {
     switch (action) {
         case FileAction::NewScene:
+            ClearRecovery();
             ReplaceScene(Scene{}, {});
             log::Info("Nova cena");
             break;
         case FileAction::OpenScene:
             if (const auto chosen = FileDialog::OpenFile(FileDialog::Kind::Scene, DefaultSceneDir())) {
-                OpenSceneAt(*chosen);
+                if (OpenSceneAt(*chosen)) ClearRecovery();
             }
             break;
         case FileAction::OpenScenePath:
-            OpenSceneAt(path);
+            if (OpenSceneAt(path)) ClearRecovery();
             break;
         case FileAction::NewProject:
+            m_newProjectEmptyDir.clear();
             m_openNewProjectPopup = true;
             break;
         case FileAction::OpenProject: {
@@ -172,6 +174,7 @@ bool SceneDocument::SaveScene(bool saveAs) {
     }
     m_scenePath = path;
     MarkSaved();
+    ClearRecovery();
 
     if (m_project) {
         if (!IsInside(path, m_project->RootDir())) {
@@ -195,6 +198,7 @@ bool SceneDocument::OpenSceneDirect(const fs::path& path, bool discardChanges, s
     }
     Scene loaded;
     if (!SceneSerializer::Load(path, loaded, m_ctx.assets, &error)) return false;
+    ClearRecovery();
     ReplaceScene(std::move(loaded), path);
     RememberScene();
     return true;
@@ -206,6 +210,7 @@ bool SceneDocument::NewSceneDirect(bool discardChanges, std::string& error) {
         error = "a cena aberta tem alterações não salvas: salve antes ou peça para descartá-las";
         return false;
     }
+    ClearRecovery();
     ReplaceScene(Scene{}, {});
     log::Info("Nova cena");
     return true;
@@ -226,6 +231,7 @@ bool SceneDocument::SaveSceneTo(const fs::path& path, std::string& error) {
     if (!SceneSerializer::Save(target, m_ctx.scene, m_ctx.assets, &error)) return false;
     m_scenePath = target;
     MarkSaved();
+    ClearRecovery();
     if (m_project && IsInside(target, m_project->RootDir()) && m_project->StartupScene().empty()) {
         m_project->SetStartupScene(target);
         m_project->Save();
@@ -260,6 +266,7 @@ void SceneDocument::ReplaceScene(Scene&& scene, const fs::path& path) {
 void SceneDocument::MarkSaved() {
     m_savedSnapshot = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false});
     m_dirty = false;
+    m_autoSaveTimer = 0.0f;
     UpdateWindowTitle();
 }
 
@@ -267,6 +274,10 @@ bool SceneDocument::HasUnsavedChanges() {
     const bool dirty = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false}) != m_savedSnapshot;
     if (dirty != m_dirty) {
         m_dirty = dirty;
+        if (!m_dirty) {
+            m_autoSaveTimer = 0.0f;
+            if (!m_host.isPlaying()) ClearRecovery();
+        }
         UpdateWindowTitle();
     }
     return dirty;
@@ -275,11 +286,34 @@ bool SceneDocument::HasUnsavedChanges() {
 void SceneDocument::PollChanges(float dt) {
     // Compara o JSON da cena com o salvo a cada meio segundo (cenas pequenas, custo baixo).
     // No Play a cena é a do jogo (descartada ao parar): não conta.
+    if (m_host.isPlaying()) return;
     m_dirtyCheckTimer += dt;
-    if (m_dirtyCheckTimer >= 0.5f && !m_host.isPlaying()) {
+    if (m_dirtyCheckTimer >= 0.5f) {
         m_dirtyCheckTimer = 0.0f;
         HasUnsavedChanges();
     }
+    if (m_dirty) {
+        m_autoSaveTimer += dt;
+        constexpr float kAutoSaveIntervalSeconds = 120.0f;
+        if (m_autoSaveTimer >= kAutoSaveIntervalSeconds) {
+            m_autoSaveTimer = 0.0f;
+            SaveRecovery("autosave");
+        }
+    }
+}
+
+void SceneDocument::SaveRecovery(std::string_view reason, const Scene* overrideScene) {
+    if (!m_project) return;
+    const Scene& scene = overrideScene ? *overrideScene : m_ctx.scene;
+    std::string error;
+    if (!SceneSerializer::SaveRecovery(m_project->RootDir(), scene, m_ctx.assets, m_scenePath, reason, &error)) {
+        log::Warn("Não foi possível gravar a recuperação da cena: {}", error);
+    }
+}
+
+void SceneDocument::ClearRecovery() {
+    if (!m_project) return;
+    SceneSerializer::ClearRecovery(m_project->RootDir());
 }
 
 void SceneDocument::RememberScene() {
@@ -302,7 +336,13 @@ bool SceneDocument::CreateEmptySceneFile(const fs::path& path) {
 // Projetos
 // ---------------------------------------------------------------------------
 
-bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastScene) {
+bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastScene, bool allowNewerVersion) {
+    std::error_code ec;
+    if (fs::is_directory(fileOrDir, ec) && fs::is_empty(fileOrDir, ec)) {
+        OfferNewProjectInEmptyDir(fileOrDir);
+        return false;
+    }
+
     std::string error;
     auto project = Project::Open(fileOrDir, &error);
     if (!project) {
@@ -312,8 +352,19 @@ bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastSce
         return false;
     }
 
-    // Projeto de outra versão do Motor (ou de antes da Fase 14): passa a ser desta versão. O Hub avisa antes de
-    // abrir um projeto com uma versão diferente da dele.
+    // Projeto de versão mais nova que a deste editor: avisa antes e não rebaixa o .mproject sem confirmação.
+    if (project->IsNewerThanCurrentEngine() && !allowNewerVersion) {
+        m_pendingNewerProjectPath = project->ProjectFile();
+        m_pendingNewerProjectRestoreScene = restoreLastScene;
+        m_pendingNewerProjectName = project->Name();
+        m_pendingNewerProjectVersion = project->EngineVersion();
+        m_openNewerVersionPopup = true;
+        log::Warn("Projeto '{}' foi salvo na versão {} do Motor (atual: {}): aguardando confirmação",
+                  project->Name(), project->EngineVersion(), kVersion);
+        return false;
+    }
+
+    // Projeto de outra versão do Motor (ou de antes da Fase 14): passa a ser desta versão.
     if (project->EngineVersion() != kVersion) {
         const std::string from = project->EngineVersion().empty() ? "desconhecida" : project->EngineVersion();
         std::string saveError;
@@ -324,13 +375,17 @@ bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastSce
         }
     }
 
-    if (m_project) m_host.projectClosing();
+    if (m_project) {
+        ClearRecovery();
+        m_host.projectClosing();
+    }
     m_project = std::move(*project);
     m_settings.lastProject = m_project->ProjectFile();
     m_settings.AddRecentProject(m_project->ProjectFile());
 
+    const auto recovery = SceneSerializer::CheckRecovery(m_project->RootDir());
+
     // Qual cena abrir: a última usada neste projeto, senão a cena inicial, senão qualquer uma.
-    std::error_code ec;
     fs::path scene;
     if (restoreLastScene && IsInside(m_settings.lastScene, m_project->RootDir()) &&
         fs::is_regular_file(m_settings.lastScene, ec)) {
@@ -346,10 +401,62 @@ bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastSce
     m_host.projectOpened();  // antes da cena: com a DLL de scripts já carregada, os componentes abrem ligados
     if (!scene.empty()) OpenSceneAt(scene);
 
+    if (recovery) {
+        m_pendingRecovery = *recovery;
+        m_openRecoveryPopup = true;
+        log::Warn("Recuperação encontrada para o projeto '{}' ({})", m_project->Name(), recovery->reason);
+    }
+
     m_settings.Save();
     m_projectPanel.Refresh();
     UpdateWindowTitle();
     return true;
+}
+
+void SceneDocument::OfferNewProjectInEmptyDir(const fs::path& emptyDir) {
+    std::error_code ec;
+    const fs::path abs = fs::absolute(emptyDir, ec).lexically_normal();
+    const fs::path clean = abs.filename().empty() ? abs.parent_path() : abs;
+    m_newProjectEmptyDir = ToUtf8(clean);
+    m_newProjectLocation = ToUtf8(clean.parent_path());
+    m_newProjectName = ToUtf8(clean.filename());
+    if (!Project::ValidateName(m_newProjectName).empty()) m_newProjectName = "MeuJogo";
+    m_openNewProjectPopup = true;
+}
+
+void SceneDocument::ApplyRecovery(const SceneSerializer::RecoveryInfo& recovery) {
+    Scene recovered;
+    std::string error;
+    if (!SceneSerializer::Load(recovery.sceneFile, recovered, m_ctx.assets, &error)) {
+        ShowError(error);
+        return;
+    }
+
+    const fs::path targetPath = recovery.originalPath.empty() ? m_scenePath : recovery.originalPath;
+
+    // Compara com a cena que está no disco para manter o '*' de alterações não salvas até o usuário salvar.
+    std::string diskSnapshot;
+    std::error_code ec;
+    if (!targetPath.empty() && fs::is_regular_file(targetPath, ec)) {
+        Scene onDisk;
+        if (SceneSerializer::Load(targetPath, onDisk, m_ctx.assets)) {
+            diskSnapshot = SceneSerializer::ToJson(onDisk, m_ctx.assets, {.pathHints = false});
+        }
+    }
+
+    m_ctx.scene = std::move(recovered);
+    m_ctx.selected = kNullEntity;
+    m_ctx.pendingDelete = kNullEntity;
+    m_ctx.eulerEntity = kNullEntity;
+    m_scenePath = targetPath;
+    m_history.Reset(m_ctx.scene, kNullEntity);
+    m_savedSnapshot = std::move(diskSnapshot);
+    m_dirty = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false}) != m_savedSnapshot;
+    m_autoSaveTimer = 0.0f;
+    ClearRecovery();
+    RememberScene();
+    UpdateWindowTitle();
+    log::Info("Cena recuperada de '{}'", ToUtf8(recovery.sceneFile));
 }
 
 void SceneDocument::CreateProject(const fs::path& location, const std::string& name) {
@@ -471,10 +578,20 @@ void SceneDocument::DrawFileMenu() {
 
 void SceneDocument::DrawPopups() {
     const char* unsavedTitle = "Alterações não salvas";
+    const char* newerVersionTitle = "Projeto de versão mais nova";
+    const char* recoveryTitle = "Recuperar alterações não salvas";
     const char* errorTitle = "Erro";
     if (m_openUnsavedPopup) {
         ImGui::OpenPopup(unsavedTitle);
         m_openUnsavedPopup = false;
+    }
+    if (m_openNewerVersionPopup) {
+        ImGui::OpenPopup(newerVersionTitle);
+        m_openNewerVersionPopup = false;
+    }
+    if (m_openRecoveryPopup) {
+        ImGui::OpenPopup(recoveryTitle);
+        m_openRecoveryPopup = false;
     }
     if (m_openErrorPopup) {
         ImGui::OpenPopup(errorTitle);
@@ -500,6 +617,7 @@ void SceneDocument::DrawPopups() {
         ImGui::SameLine();
         if (ImGui::Button("Não salvar", buttonSize)) {
             close = true;
+            ClearRecovery();
             action = m_pendingAction;
         }
         ImGui::SameLine();
@@ -514,6 +632,62 @@ void SceneDocument::DrawPopups() {
         ImGui::EndPopup();
         // Executa depois de fechar o popup: algumas ações abrem outro diálogo modal.
         if (action != FileAction::None) PerformFileAction(action, path);
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(newerVersionTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+        ImGui::Text("O projeto \"%s\" foi salvo no Motor %s, mais novo que este editor (%s).",
+                    m_pendingNewerProjectName.c_str(), m_pendingNewerProjectVersion.c_str(), kVersion);
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Abrir aqui pode ignorar campos novos e atualizar o projeto para esta versão.");
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+
+        const ImVec2 wideButton{160.0f, 0.0f};
+        const bool openAnyway = ImGui::Button("Abrir mesmo assim", wideButton);
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button("Cancelar", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        const fs::path path = m_pendingNewerProjectPath;
+        const bool restore = m_pendingNewerProjectRestoreScene;
+        if (openAnyway || cancel) {
+            ImGui::CloseCurrentPopup();
+            m_pendingNewerProjectPath.clear();
+        }
+        ImGui::EndPopup();
+        if (openAnyway) OpenProjectAt(path, restore, true);
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(recoveryTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+        const std::string sceneLabel = m_pendingRecovery.originalPath.empty()
+                                           ? std::string(kUntitled)
+                                           : ToUtf8(m_pendingRecovery.originalPath.filename());
+        const char* reasonText =
+            m_pendingRecovery.reason == "play" ? "antes do Play" : "pelo salvamento automático";
+        ImGui::Text("Foi encontrado um estado não salvo da cena \"%s\" (gravado %s).",
+                    sceneLabel.c_str(), reasonText);
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Deseja recuperar essas alterações?");
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+
+        const bool recover = ImGui::Button("Recuperar", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+        ImGui::SameLine();
+        const bool discard = ImGui::Button("Descartar", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        SceneSerializer::RecoveryInfo info;
+        if (recover || discard) {
+            info = std::move(m_pendingRecovery);
+            m_pendingRecovery = {};
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+        if (recover) {
+            ApplyRecovery(info);
+        } else if (discard) {
+            ClearRecovery();
+        }
     }
 
     DrawNewProjectPopup();
@@ -534,8 +708,10 @@ void SceneDocument::DrawNewProjectPopup() {
     if (m_openNewProjectPopup) {
         ImGui::OpenPopup(title);
         m_openNewProjectPopup = false;
-        m_newProjectName = "MeuJogo";
-        if (m_newProjectLocation.empty()) m_newProjectLocation = ToUtf8(DefaultProjectsDir());
+        if (m_newProjectEmptyDir.empty()) {
+            m_newProjectName = "MeuJogo";
+            if (m_newProjectLocation.empty()) m_newProjectLocation = ToUtf8(DefaultProjectsDir());
+        }
     }
 
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -543,6 +719,13 @@ void SceneDocument::DrawNewProjectPopup() {
 
     const float fieldWidth = ImGui::GetFontSize() * 28.0f;
     const ImVec2 buttonSize{110.0f, 0.0f};
+
+    if (!m_newProjectEmptyDir.empty()) {
+        ImGui::PushTextWrapPos(fieldWidth);
+        ImGui::Text("A pasta \"%s\" está vazia. Deseja criar um projeto nela?", m_newProjectEmptyDir.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+    }
 
     ImGui::TextUnformatted("Nome");
     if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
@@ -587,7 +770,10 @@ void SceneDocument::DrawNewProjectPopup() {
     ImGui::SameLine();
     const bool cancel = ImGui::Button("Cancelar", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
 
-    if (create || cancel) ImGui::CloseCurrentPopup();
+    if (create || cancel) {
+        m_newProjectEmptyDir.clear();
+        ImGui::CloseCurrentPopup();
+    }
     ImGui::EndPopup();
 
     if (create) CreateProject(location, m_newProjectName);

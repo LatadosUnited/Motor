@@ -3,11 +3,30 @@
 #include "motor/scene/Component.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace motor {
+
+// Referência a um prefab (.mprefab do projeto) num campo de componente ou script: aparece no Inspector como
+// um seletor de prefabs (que aceita arrastar do painel Projeto) e pode ser instanciado durante o jogo com
+// Script::Instantiate(prefab) ou Script::Instantiate(prefab, posição).
+struct PrefabRef {
+    std::string guid;
+    std::string path;  // relativo ao projeto ("Assets/Prefabs/Bala.mprefab")
+    // Arquivo no disco, resolvido pela AssetLibrary ao ler a cena (ou ao escolher no editor). Não entra na
+    // comparação de igualdade nem no JSON da cena.
+    std::filesystem::path file;
+
+    bool IsEmpty() const { return guid.empty() && path.empty(); }
+    bool operator==(const PrefabRef& other) const { return guid == other.guid && path == other.path; }
+};
+
+template <> struct FieldTraits<PrefabRef> {
+    static CustomFieldType Describe();
+};
 
 // Vínculo de uma entidade com a entidade correspondente de um prefab (.mprefab, ver Prefab.h).
 //

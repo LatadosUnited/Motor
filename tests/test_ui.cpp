@@ -456,11 +456,13 @@ int main(int argc, char** argv) {
         // Só o caminho (o que um agente manda pelo MCP): o GUID vem do .meta.
         const CustomFieldType fontType = FieldTraits<UiFont>::Describe();
         UiFont byPath;
-        fontType.fromJson(R"("Assets/Outra/Título.ttf")", &byPath, assets);
+        CHECK(fontType.fromJson(R"("Assets/Outra/Título.ttf")", &byPath, assets, nullptr));
         CHECK(byPath.guid == guid && byPath.path == "Assets/Outra/Título.ttf");
         UiFont missing;
-        fontType.fromJson(R"("Assets/Nada.ttf")", &missing, assets);
+        CHECK(fontType.fromJson(R"("Assets/Nada.ttf")", &missing, assets, nullptr));
         CHECK(missing.guid.empty() && missing.path == "Assets/Nada.ttf");
+        std::string fontErr;
+        CHECK(!fontType.fromJson("123", &byPath, assets, &fontErr) && !fontErr.empty());
     }
 
     SECTION("Menu com botão Jogar troca de cena (LoadScene + PlayMode)");

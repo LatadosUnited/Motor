@@ -12,6 +12,7 @@
 
 #include "motor/core/Input.h"
 #include "motor/core/Log.h"
+#include "motor/scene/PrefabInstance.h"
 #include "motor/scene/RuntimeSystem.h"
 
 #include <glm/vec2.hpp>
@@ -85,6 +86,10 @@ protected:
     // --- Cena ---
     Entity* FindEntity(std::string_view name);  // primeira com esse nome, ou nullptr
     Entity& CreateEntity(std::string name, EntityId parent = 0);
+    // Instancia um prefab (.mprefab referenciado por um campo PrefabRef) na cena; devolve a entidade raiz criada
+    // (ou nullptr se o prefab estiver vazio/ausente). Os scripts da instância iniciam (OnStart) no próximo passo.
+    Entity* Instantiate(const PrefabRef& prefab);
+    Entity* Instantiate(const PrefabRef& prefab, const glm::vec3& position);
     void Destroy(EntityId id);  // no fim do frame (com os descendentes); OnDestroy é chamado antes
     void DestroySelf();
     // Troca de cena no fim deste passo: a cena atual para (OnDestroy) e a nova começa do zero. `scene`: nome

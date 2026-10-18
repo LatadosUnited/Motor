@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <memory>
@@ -235,7 +236,7 @@ void FieldFromJson(const FieldInfo& f, void* c, const json& value, AssetLibrary&
             if (!texture) log::Warn("Cena: textura de '{}' não carregada: {}", owner, problem);
             break;
         }
-        case FieldType::Custom: f.custom->fromJson(value.dump(), f.Get(c), assets); break;
+        case FieldType::Custom: f.custom->fromJson(value.dump(), f.Get(c), assets, nullptr); break;
     }
 }
 
@@ -384,8 +385,111 @@ bool FieldValueFromJson(const FieldInfo& field, void* component, std::string_vie
         SetError(error, "valor não é JSON válido: " + std::string(text));
         return false;
     }
-    FieldFromJson(field, component, value, assets, field.key);
-    return true;
+    switch (field.type) {
+        case FieldType::Bool:
+            if (!value.is_boolean()) {
+                SetError(error, std::format("campo '{}' espera bool (true ou false)", field.key));
+                return false;
+            }
+            field.As<bool>(component) = value.get<bool>();
+            return true;
+        case FieldType::Int:
+            if (!value.is_number_integer()) {
+                SetError(error, std::format("campo '{}' espera int (número inteiro, ex.: 0)", field.key));
+                return false;
+            }
+            field.As<int>(component) = value.get<int>();
+            return true;
+        case FieldType::Float:
+            if (!value.is_number()) {
+                SetError(error, std::format("campo '{}' espera float (número, ex.: 1.0)", field.key));
+                return false;
+            }
+            field.As<float>(component) = value.get<float>();
+            return true;
+        case FieldType::Vec2:
+            if (!FloatsFrom(value, &field.As<glm::vec2>(component).x, 2)) {
+                SetError(error, std::format("campo '{}' espera vec2 (lista de 2 números, ex.: [0, 0])", field.key));
+                return false;
+            }
+            return true;
+        case FieldType::Vec3:
+            if (!FloatsFrom(value, &field.As<glm::vec3>(component).x, 3)) {
+                SetError(error, std::format("campo '{}' espera vec3 (lista de 3 números, ex.: [0, 0, 0])", field.key));
+                return false;
+            }
+            return true;
+        case FieldType::Vec4:
+            if (!FloatsFrom(value, &field.As<glm::vec4>(component).x, 4)) {
+                SetError(error, std::format("campo '{}' espera vec4 (lista de 4 números, ex.: [1, 1, 1, 1])", field.key));
+                return false;
+            }
+            return true;
+        case FieldType::String:
+            if (!value.is_string()) {
+                SetError(error, std::format("campo '{}' espera string (texto entre aspas)", field.key));
+                return false;
+            }
+            field.As<std::string>(component) = value.get<std::string>();
+            return true;
+        case FieldType::Mesh: {
+            auto& mesh = field.As<std::shared_ptr<Mesh>>(component);
+            if (value.is_null()) {
+                mesh = nullptr;
+                return true;
+            }
+            if (!value.is_string() && !(value.is_object() && (value.contains("guid") || value.contains("path")))) {
+                SetError(error, std::format("campo '{}' espera mesh (nome embutido como \"Cubo\", caminho \"Assets/...\", "
+                                            "objeto {{\"path\": \"Assets/...\"}} ou null)",
+                                            field.key));
+                return false;
+            }
+            std::string problem;
+            auto loaded = ResolveRef<Mesh>(
+                value, [&](std::string_view k, std::string* err) { return assets.GetMesh(k, err); },
+                [&](std::string_view g, std::string* err) { return assets.GetMeshByGuid(g, err); }, problem);
+            if (!loaded) {
+                SetError(error, std::format("campo '{}': {}", field.key, problem.empty() ? "malha não encontrada" : problem));
+                return false;
+            }
+            mesh = std::move(loaded);
+            return true;
+        }
+        case FieldType::Texture: {
+            auto& texture = field.As<std::shared_ptr<Texture2D>>(component);
+            if (value.is_null()) {
+                texture = nullptr;
+                return true;
+            }
+            if (!value.is_string() && !(value.is_object() && (value.contains("guid") || value.contains("path")))) {
+                SetError(error, std::format("campo '{}' espera texture (nome embutido como \"Branco\", caminho "
+                                            "\"Assets/...\", objeto {{\"path\": \"Assets/...\"}} ou null)",
+                                            field.key));
+                return false;
+            }
+            std::string problem;
+            auto loaded = ResolveRef<Texture2D>(
+                value, [&](std::string_view k, std::string* err) { return assets.GetTexture(k, err); },
+                [&](std::string_view g, std::string* err) { return assets.GetTextureByGuid(g, err); }, problem);
+            if (!loaded) {
+                SetError(error,
+                         std::format("campo '{}': {}", field.key, problem.empty() ? "textura não encontrada" : problem));
+                return false;
+            }
+            texture = std::move(loaded);
+            return true;
+        }
+        case FieldType::Custom: {
+            std::string problem;
+            if (!field.custom->fromJson(text, field.Get(component), assets, &problem)) {
+                SetError(error, std::format("campo '{}' ({}): {}", field.key, field.custom->name,
+                                            problem.empty() ? "valor inválido" : problem));
+                return false;
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOptions& options) {
@@ -580,6 +684,121 @@ bool Load(const std::filesystem::path& path, Scene& out, AssetLibrary& assets, s
     if (!FromJson(ss.str(), out, assets, error)) return false;
     log::Info("Cena carregada: {} ({} entidades)", ToUtf8(path), out.Entities().size());
     return true;
+}
+
+namespace {
+constexpr const char* kRecoveryFormat = "motor-recovery";
+constexpr int kRecoveryVersion = 1;
+
+std::filesystem::path RecoveryDir(const std::filesystem::path& projectRoot) {
+    return projectRoot / ".motor" / "recuperacao";
+}
+} // namespace
+
+bool SaveRecovery(const std::filesystem::path& projectRoot, const Scene& scene, const AssetLibrary& assets,
+                  const std::filesystem::path& originalScenePath, std::string_view reason, std::string* error) {
+    if (projectRoot.empty()) {
+        SetError(error, "Sem pasta de projeto para gravar a recuperação.");
+        return false;
+    }
+    std::error_code ec;
+    const std::filesystem::path dir = RecoveryDir(projectRoot);
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        SetError(error, std::format("Não foi possível criar '{}': {}", ToUtf8(dir), ec.message()));
+        return false;
+    }
+
+    const std::filesystem::path sceneFile = dir / "cena.mscene";
+    const std::string text = ToJson(scene, assets);
+    std::filesystem::path tempScene = sceneFile;
+    tempScene += ".tmp";
+    {
+        std::ofstream out(tempScene, std::ios::binary | std::ios::trunc);
+        if (!out || !(out << text) || !out.flush()) {
+            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(tempScene)));
+            return false;
+        }
+    }
+    std::filesystem::rename(tempScene, sceneFile, ec);
+    if (ec) {
+        std::filesystem::remove(sceneFile, ec);
+        std::filesystem::rename(tempScene, sceneFile, ec);
+    }
+    if (ec) {
+        SetError(error, std::format("Não foi possível salvar '{}': {}", ToUtf8(sceneFile), ec.message()));
+        return false;
+    }
+
+    const auto now = std::chrono::system_clock::now();
+    const int64_t savedAt = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+    std::string relScene;
+    if (!originalScenePath.empty()) {
+        relScene = IsInside(originalScenePath, projectRoot)
+                       ? ToGenericUtf8(originalScenePath.lexically_normal().lexically_relative(projectRoot))
+                       : ToUtf8(originalScenePath);
+    }
+    json meta;
+    meta["format"] = kRecoveryFormat;
+    meta["version"] = kRecoveryVersion;
+    meta["scenePath"] = relScene;
+    meta["reason"] = std::string(reason);
+    meta["savedAt"] = savedAt;
+
+    const std::filesystem::path metaFile = dir / "recuperacao.json";
+    std::filesystem::path tempMeta = metaFile;
+    tempMeta += ".tmp";
+    {
+        std::ofstream out(tempMeta, std::ios::binary | std::ios::trunc);
+        if (!out || !(out << meta.dump(2) << '\n') || !out.flush()) {
+            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(tempMeta)));
+            return false;
+        }
+    }
+    std::filesystem::rename(tempMeta, metaFile, ec);
+    if (ec) {
+        std::filesystem::remove(metaFile, ec);
+        std::filesystem::rename(tempMeta, metaFile, ec);
+    }
+    if (ec) {
+        SetError(error, std::format("Não foi possível salvar '{}': {}", ToUtf8(metaFile), ec.message()));
+        return false;
+    }
+    return true;
+}
+
+std::optional<RecoveryInfo> CheckRecovery(const std::filesystem::path& projectRoot) {
+    if (projectRoot.empty()) return std::nullopt;
+    std::error_code ec;
+    const std::filesystem::path dir = RecoveryDir(projectRoot);
+    const std::filesystem::path sceneFile = dir / "cena.mscene";
+    const std::filesystem::path metaFile = dir / "recuperacao.json";
+    if (!std::filesystem::is_regular_file(sceneFile, ec) || !std::filesystem::is_regular_file(metaFile, ec)) {
+        return std::nullopt;
+    }
+    std::ifstream in(metaFile, std::ios::binary);
+    if (!in) return std::nullopt;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    const json meta = json::parse(ss.str(), nullptr, false);
+    if (!meta.is_object() || meta.value("format", std::string()) != kRecoveryFormat) return std::nullopt;
+
+    RecoveryInfo info;
+    info.sceneFile = sceneFile;
+    const std::string savedPath = meta.value("scenePath", std::string());
+    if (!savedPath.empty()) {
+        const std::filesystem::path p = PathFromUtf8(savedPath);
+        info.originalPath = (p.is_absolute() ? p : projectRoot / p).lexically_normal();
+    }
+    info.reason = meta.value("reason", std::string("autosave"));
+    info.savedAt = meta.value("savedAt", int64_t{0});
+    return info;
+}
+
+void ClearRecovery(const std::filesystem::path& projectRoot) {
+    if (projectRoot.empty()) return;
+    std::error_code ec;
+    std::filesystem::remove_all(RecoveryDir(projectRoot), ec);
 }
 
 } // namespace motor::SceneSerializer

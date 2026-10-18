@@ -203,19 +203,6 @@ private:
     EntityId m_ignore;
 };
 
-// Scripts já iniciados de uma entidade ativa (lista copiada: o script pode mexer nos componentes).
-std::vector<Script*> StartedScripts(Scene& scene, EntityId id) {
-    std::vector<Script*> scripts;
-    Entity* entity = scene.Find(id);
-    if (!entity || !scene.IsActiveInHierarchy(id)) return scripts;
-    for (ComponentPtr& component : entity->components) {
-        if (!component.Type().IsScript()) continue;
-        Script* script = component.Type().asScript(component.Data());
-        if (script && script->HasStarted()) scripts.push_back(script);
-    }
-    return scripts;
-}
-
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -565,6 +552,9 @@ struct PhysicsSystem::World {
             r.seen = frame;
             if (position != r.written) {  // teleporte pelo script ou pelo editor
                 r.character->SetPosition(ToJolt(position));
+                r.character->SetLinearVelocity(JPH::Vec3::sZero());
+                r.walk = glm::vec3(0.0f);
+                r.jump = 0.0f;
                 r.written = position;
             }
             if (dt > 0.0f) UpdateCharacter(r, dt);
@@ -697,7 +687,7 @@ struct PhysicsSystem::World {
     // Contatos do passo -> OnCollision*/OnTrigger* dos scripts. Um par de entidades entra uma vez e sai quando
     // não sobra contato entre elas (WereBodiesInContact cobre as várias sub-formas, ex.: triângulos de malha).
     // O Jolt também tira os contatos de quem dorme e os devolve ao acordar: isso não vira Exit/Enter.
-    void DispatchEvents(Scene& scene) {
+    void DispatchEvents(SceneRuntime& runtime) {
         JPH::BodyInterface& bi = Bodies();
         std::vector<ContactAdded> enters;
         for (const ContactAdded& e : contacts.m_added) {
@@ -740,20 +730,25 @@ struct PhysicsSystem::World {
 
         for (const ContactAdded& e : enters) {
             if (e.trigger) {
-                for (Script* s : StartedScripts(scene, e.entityA)) s->OnTriggerEnter(e.entityB);
-                for (Script* s : StartedScripts(scene, e.entityB)) s->OnTriggerEnter(e.entityA);
+                runtime.CallEntityScripts(e.entityA, "OnTriggerEnter",
+                                          [&](Script& s) { s.OnTriggerEnter(e.entityB); });
+                runtime.CallEntityScripts(e.entityB, "OnTriggerEnter",
+                                          [&](Script& s) { s.OnTriggerEnter(e.entityA); });
             } else {
-                for (Script* s : StartedScripts(scene, e.entityA)) {
-                    s->OnCollisionEnter({e.entityB, e.point, -e.normal, e.speed});
-                }
-                for (Script* s : StartedScripts(scene, e.entityB)) {
-                    s->OnCollisionEnter({e.entityA, e.point, e.normal, e.speed});
-                }
+                runtime.CallEntityScripts(e.entityA, "OnCollisionEnter", [&](Script& s) {
+                    s.OnCollisionEnter({e.entityB, e.point, -e.normal, e.speed});
+                });
+                runtime.CallEntityScripts(e.entityB, "OnCollisionEnter", [&](Script& s) {
+                    s.OnCollisionEnter({e.entityA, e.point, e.normal, e.speed});
+                });
             }
         }
         for (const Exit& e : exits) {
-            for (Script* s : StartedScripts(scene, e.a)) e.trigger ? s->OnTriggerExit(e.b) : s->OnCollisionExit(e.b);
-            for (Script* s : StartedScripts(scene, e.b)) e.trigger ? s->OnTriggerExit(e.a) : s->OnCollisionExit(e.a);
+            const std::string_view cb = e.trigger ? "OnTriggerExit" : "OnCollisionExit";
+            runtime.CallEntityScripts(
+                e.a, cb, [&](Script& s) { e.trigger ? s.OnTriggerExit(e.b) : s.OnCollisionExit(e.b); });
+            runtime.CallEntityScripts(
+                e.b, cb, [&](Script& s) { e.trigger ? s.OnTriggerExit(e.a) : s.OnCollisionExit(e.a); });
         }
     }
 
@@ -808,6 +803,7 @@ PhysicsSystem::~PhysicsSystem() = default;
 void PhysicsSystem::OnStart(SceneRuntime& runtime) {
     m_settings = PhysicsSettings::Global();
     Scene& scene = runtime.GetScene();
+    m_scene = &scene;
     if (!SceneHasPhysics(scene)) return;  // sem física na cena: nem threads nem mundo
     m_world = std::make_unique<World>(m_settings);
     // Corpos prontos antes do OnStart dos scripts (raios e GetVelocity já funcionam lá).
@@ -817,6 +813,7 @@ void PhysicsSystem::OnStart(SceneRuntime& runtime) {
 
 void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
     Scene& scene = runtime.GetScene();
+    m_scene = &scene;
     if (!m_world) {
         if (!SceneHasPhysics(scene)) return;
         m_world = std::make_unique<World>(m_settings);
@@ -843,7 +840,7 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
 
     start = std::chrono::steady_clock::now();
     w.WriteBack(scene);
-    w.DispatchEvents(scene);
+    w.DispatchEvents(runtime);
     m_stats.writeMs = MillisecondsSince(start);
 
     m_stats.bodies = static_cast<int>(w.physics.GetNumBodies());
@@ -854,6 +851,17 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
 
 void PhysicsSystem::OnStop(SceneRuntime&) {
     m_world.reset();
+    m_scene = nullptr;
+}
+
+void PhysicsSystem::EnsureWorldAndBodies() {
+    if (!m_scene) return;
+    if (!m_world) {
+        if (!SceneHasPhysics(*m_scene)) return;
+        m_world = std::make_unique<World>(m_settings);
+    }
+    m_world->SyncBodies(*m_scene, 0.0f);
+    m_world->SyncCharacters(*m_scene, 0.0f);
 }
 
 std::optional<PhysicsRaycastHit> PhysicsSystem::Raycast(const glm::vec3& origin, const glm::vec3& direction,
@@ -879,6 +887,7 @@ std::optional<PhysicsRaycastHit> PhysicsSystem::Raycast(const glm::vec3& origin,
 }
 
 bool PhysicsSystem::AddForce(EntityId id, const glm::vec3& force) {
+    if (!m_world || !m_world->bodies.contains(id)) EnsureWorldAndBodies();
     const JPH::BodyID* body = m_world ? m_world->DynamicBody(id) : nullptr;
     if (!body) return false;
     m_world->Bodies().AddForce(*body, ToJolt(force));
@@ -886,6 +895,7 @@ bool PhysicsSystem::AddForce(EntityId id, const glm::vec3& force) {
 }
 
 bool PhysicsSystem::AddImpulse(EntityId id, const glm::vec3& impulse) {
+    if (!m_world || !m_world->bodies.contains(id)) EnsureWorldAndBodies();
     const JPH::BodyID* body = m_world ? m_world->DynamicBody(id) : nullptr;
     if (!body) return false;
     m_world->Bodies().AddImpulse(*body, ToJolt(impulse));
@@ -893,6 +903,7 @@ bool PhysicsSystem::AddImpulse(EntityId id, const glm::vec3& impulse) {
 }
 
 bool PhysicsSystem::SetVelocity(EntityId id, const glm::vec3& velocity) {
+    if (!m_world || !m_world->bodies.contains(id)) EnsureWorldAndBodies();
     const JPH::BodyID* body = m_world ? m_world->DynamicBody(id) : nullptr;
     if (!body) return false;
     m_world->Bodies().SetLinearVelocity(*body, ToJolt(velocity));
@@ -906,12 +917,14 @@ glm::vec3 PhysicsSystem::GetVelocity(EntityId id) const {
 }
 
 void PhysicsSystem::MoveCharacter(EntityId id, const glm::vec3& velocity) {
+    if (!m_world || !m_world->characters.contains(id)) EnsureWorldAndBodies();
     if (!m_world) return;
     auto it = m_world->characters.find(id);
     if (it != m_world->characters.end()) it->second.walk = glm::vec3(velocity.x, 0.0f, velocity.z);
 }
 
 bool PhysicsSystem::Jump(EntityId id, float speed) {
+    if (!m_world || !m_world->characters.contains(id)) EnsureWorldAndBodies();
     if (!m_world || speed <= 0.0f || !IsGrounded(id)) return false;
     m_world->characters.at(id).jump = speed;
     return true;

@@ -42,8 +42,9 @@ struct CustomFieldType {
     std::function<bool(const void* a, const void* b)> equal;
     // Valor como texto JSON (qualquer valor JSON: número, texto, objeto...). Referências a assets usam `assets`.
     std::function<std::string(const void* value, const AssetLibrary& assets)> toJson;
-    // Lê o valor do texto JSON gravado por toJson. JSON inesperado: deixe o valor como está.
-    std::function<void(std::string_view json, void* value, AssetLibrary& assets)> fromJson;
+    // Lê o valor do texto JSON gravado por toJson. JSON inesperado: deixe o valor como está, preencha `error`
+    // (se não for nulo) com o formato esperado e devolva false.
+    std::function<bool(std::string_view json, void* value, AssetLibrary& assets, std::string* error)> fromJson;
 };
 
 // Para usar um tipo T novo em campos de componente, especialize no namespace motor:
@@ -53,7 +54,7 @@ struct CustomFieldType {
 //           return {"LightKind",
 //                   [](const void* a, const void* b) { return *(const LightKind*)a == *(const LightKind*)b; },
 //                   [](const void* v, const AssetLibrary&) { return std::to_string(int(*(const LightKind*)v)); },
-//                   [](std::string_view json, void* v, AssetLibrary&) { ... }};
+//                   [](std::string_view json, void* v, AssetLibrary&, std::string* error) { ... }};
 //       }
 //   };
 template <class F> struct FieldTraits;

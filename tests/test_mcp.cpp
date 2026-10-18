@@ -122,6 +122,24 @@ int main() {
         CHECK(renderer && renderer->material.roughness == 0.25f);
         const Json wrongField = Call(protocol, "component_set", {{"entity", baseId}, {"type", "MeshRenderer"}, {"values", {{"cor_errada", 1}}}});
         CHECK(wrongField["isError"] == true && wrongField["text"].get<std::string>().find("color") != std::string::npos);
+
+        // Valores de tipo errado respondem com erro e o formato esperado, sem alterar o componente.
+        const Json badFloat = Call(protocol, "component_set",
+                                   {{"entity", baseId}, {"type", "MeshRenderer"}, {"values", {{"roughness", "texto"}}}});
+        CHECK(badFloat["isError"] == true && badFloat["text"].get<std::string>().find("float") != std::string::npos);
+        CHECK(renderer && renderer->material.roughness == 0.25f);
+
+        const Json badVec4 = Call(protocol, "component_set",
+                                  {{"entity", baseId}, {"type", "MeshRenderer"}, {"values", {{"roughness", 0.9}, {"color", {1, 2}}}}});
+        CHECK(badVec4["isError"] == true && badVec4["text"].get<std::string>().find("vec4") != std::string::npos);
+        CHECK(renderer && renderer->material.roughness == 0.25f);  // atômico: nem o primeiro campo mudou
+
+        // Enum inválido em component_add: responde com os valores aceitos e não deixa o componente adicionado.
+        const Json badEnum = Call(protocol, "component_add",
+                                  {{"entity", baseId}, {"type", "Collider"}, {"values", {{"shape", "Triangulo"}}}});
+        CHECK(badEnum["isError"] == true && badEnum["text"].get<std::string>().find("Box") != std::string::npos);
+        CHECK(!ctx.scene.Find(baseId)->Has<motor::ColliderComponent>());
+
         CHECK(Call(protocol, "component_add", {{"entity", baseId}, {"type", "NaoExiste"}})["isError"] == true);
         CHECK(Call(protocol, "entity_get", {{"entity", "Ninguém"}})["isError"] == true);
 
