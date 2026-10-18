@@ -106,6 +106,15 @@ std::optional<Toolchain> LoadToolchain(const fs::path& sdkJson, std::string* err
             SetError(error, std::format("SDK do Motor incompleto: '{}'.", ToUtf8(sdkJson)));
             return std::nullopt;
         }
+        // Se o ninja.exe estiver ao lado do compilador (MSYS2 UCRT64), usa o Ninja nos scripts do projeto:
+        // evita criar vários processos do make.exe do MSYS a cada compilação incremental.
+        if (t.generator != "Ninja") {
+            const fs::path ninja = t.cxxCompiler.parent_path() / "ninja.exe";
+            if (fs::is_regular_file(ninja, ec)) {
+                t.generator = "Ninja";
+                t.makeProgram = ninja;
+            }
+        }
         return t;
     } catch (const nlohmann::json::exception& e) {
         SetError(error, std::format("SDK do Motor inválido ('{}'): {}", ToUtf8(sdkJson), e.what()));
@@ -184,9 +193,16 @@ std::string GenerateCMakeLists(const Paths& paths, const Toolchain& toolchain) {
     s += std::format("target_include_directories({} PRIVATE \"{}\")\n", kTargetName, CMakePath(paths.scriptsDir));
     s += std::format("target_link_libraries({} PRIVATE Motor::Motor)\n", kTargetName);
     s += "if(CMAKE_CXX_COMPILER_ID MATCHES \"GNU|Clang\")\n";
-    s += std::format("    target_compile_options({} PRIVATE -Wall -Wextra)\n", kTargetName);
+    s += std::format("    target_compile_options({} PRIVATE -Wall -Wextra -pipe)\n", kTargetName);
+    s += "    if(CMAKE_CXX_COMPILER_ID STREQUAL \"GNU\")\n";
+    s += std::format("        target_compile_options({} PRIVATE -femit-struct-debug-baseonly)\n", kTargetName);
+    s += "    endif()\n";
     s += "    if(DEFINED MOTOR_SDK_PCH AND EXISTS \"${MOTOR_SDK_PCH}.gch\")\n";
     s += std::format("        target_compile_options({} PRIVATE -Winvalid-pch -include \"${{MOTOR_SDK_PCH}}\")\n", kTargetName);
+    s += "    endif()\n";
+    s += "    get_filename_component(MOTOR_CXX_DIR \"${CMAKE_CXX_COMPILER}\" DIRECTORY)\n";
+    s += "    if(EXISTS \"${MOTOR_CXX_DIR}/ld.lld.exe\" OR EXISTS \"${MOTOR_CXX_DIR}/ld.lld\")\n";
+    s += std::format("        target_link_options({} PRIVATE -fuse-ld=lld)\n", kTargetName);
     s += "    endif()\n";
     s += "endif()\n";
     s += std::format("set_target_properties({0} PROPERTIES PREFIX \"\" OUTPUT_NAME {0}\n", kTargetName);
@@ -242,6 +258,9 @@ std::vector<std::string> ConfigureCommand(const Paths& paths, const Toolchain& t
 }
 
 std::vector<std::string> BuildCommand(const Paths& paths, const Toolchain& toolchain) {
+    if (toolchain.generator == "Ninja" && !toolchain.makeProgram.empty()) {
+        return {ToUtf8(toolchain.makeProgram), "-C", ToUtf8(paths.binaryDir)};
+    }
     return {ToUtf8(toolchain.cmake), "--build", ToUtf8(paths.binaryDir), "--parallel"};
 }
 
