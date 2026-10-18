@@ -20,3 +20,15 @@ graphify-out/
 /.obsidian/
 docs/.obsidian/workspace*.json
 docs/.obsidian/cache
+
+# Projeto gêmeo da Unity (bench/unity): só Assets, Packages e ProjectSettings vão para o git.
+bench/unity/MotorBench/Library/
+bench/unity/MotorBench/Temp/
+bench/unity/MotorBench/Logs/
+bench/unity/MotorBench/obj/
+bench/unity/MotorBench/UserSettings/
+bench/unity/MotorBench/*.csproj
+bench/unity/MotorBench/*.sln
+bench/unity/MotorBench/*.slnx
+bench/unity/Build/
+bench/resultados.csv

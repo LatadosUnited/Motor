@@ -4,3 +4,5 @@ build-*/
 out/
 .claude/
 graphify-out/
+# Projeto da Unity e build da comparação de desempenho
+bench/unity/
