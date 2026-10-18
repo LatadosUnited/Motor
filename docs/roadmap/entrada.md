@@ -12,6 +12,7 @@ Formato: `- AAAA-MM-DD — quem achou — o quê — onde (arquivo:linha, se sou
 
 ## Para triar
 
-- 2026-10-18 — Claude (correção do projeto antigo) — `test_export` falhou uma vez com o `ctest -j4` e passou
+- 2026-10-18 — Claude (correção do projeto antigo) — testes intermitentes com o `ctest -j4`: `test_export` e, noutra
+  rodada, `test_distribuicao` falharam uma vez cada; o `test_export` falhou uma vez com o `ctest -j4` e passou
   sozinho e nas duas rodadas inteiras seguintes: intermitente com os testes em paralelo (pasta ou arquivo
-  disputado com outro teste?). A mensagem da falha não foi guardada — `tests/test_export.cpp`
+  disputado com outro teste?). As mensagens não foram guardadas — `tests/test_export.cpp`, `tests/test_distribuicao.cpp`
