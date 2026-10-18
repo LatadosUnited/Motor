@@ -1,6 +1,6 @@
 # Roteiro do Motor
 
-O roteiro fica em [`docs/roadmap/`](docs/roadmap/), que é também o vault do Obsidian ([`docs/`](docs/Início.md)):
+O roteiro fica em [`docs/roadmap/`](docs/roadmap/), que é também o vault do Obsidian ([`docs/inicio.md`](docs/inicio.md)):
 
 | Alpha | Foco | Arquivo |
 |---|---|---|

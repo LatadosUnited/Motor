@@ -1,3 +1,10 @@
+---
+tipo: alpha
+alpha: 3
+status: planejada
+foco: Desempenho
+---
+
 # Roteiro da Alpha 3 — Desempenho (rascunho)
 
 > **Rascunho.** Começa depois da alpha 2 ([alpha-2.md](alpha-2.md)). Os números das fases e a ordem

@@ -1,3 +1,10 @@
+---
+tipo: alpha
+alpha: 4
+status: planejada
+foco: Ferramentas
+---
+
 # Roteiro da Alpha 4 — Ferramentas (rascunho)
 
 > **Rascunho.** Começa depois da alpha 3 ([`alpha-3.md`](alpha-3.md)). Os números das fases e a ordem podem

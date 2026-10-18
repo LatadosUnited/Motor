@@ -1,3 +1,8 @@
+---
+tipo: guia
+atualizado: 2026-10-17
+---
+
 # Guia de scripts do Motor
 
 Este guia ensina a programar o comportamento do seu jogo no Motor com scripts em C++. Ele começa do zero

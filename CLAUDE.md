@@ -1,9 +1,10 @@
 # Motor — instruções para o Claude
 
 Engine 3D em C++20 + OpenGL 4.5 feita do zero, com editor (Dear ImGui). Visão geral e uso: `README.md`.
-Plano por fases: `docs/roadmap/alpha-2.md` (atual; o `ROADMAP.md` da raiz só aponta para lá), com o histórico
-da alpha 1 e os rascunhos das alphas 3 e 4 na mesma pasta. `docs/` é também o vault do Obsidian do usuário:
-Markdown comum com links relativos (nada de `[[wikilinks]]`), nota inicial `docs/Início.md`. O usuário fala português: responda, comente o código e escreva textos de
+Plano por fases: `docs/roadmap/alpha-2.md` (índice da alpha atual) e uma nota por fase em
+`docs/roadmap/alpha-2/`; o `ROADMAP.md` da raiz só aponta para lá. `docs/` é também o vault do Obsidian do
+usuário e segue o **padrão em `docs/padrao.md`** (leia antes de criar ou mudar notas): nomes sem acento,
+links Markdown relativos (nada de `[[wikilinks]]`), propriedades no topo, tarefas como `- [ ]` com a origem. O usuário fala português: responda, comente o código e escreva textos de
 interface e logs em **português**.
 
 ## Compilar e testar (Windows, MSYS2 UCRT64)
@@ -133,7 +134,8 @@ ctest --test-dir build --output-on-failure
 ## Fluxo de trabalho
 
 - Git: cada fase/assunto do roteiro em um branch próprio; commits pequenos com mensagem em português.
-- Ao terminar uma tarefa: build sem avisos, `ctest` passando, README atualizado se mudou o uso.
+- Ao terminar uma tarefa: build sem avisos, `ctest` passando, README atualizado se mudou o uso, e a nota da
+  fase atualizada (tarefas marcadas com o commit, `status`, seções Feito e Limitações; ver `docs/padrao.md`).
 
 ## Trabalho em paralelo (vários agentes)
 
@@ -172,7 +174,9 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 - `engine/include/motor/Motor.h`, `engine/include/motor/scene/Components.h`
 - `CMakeLists.txt` da raiz (`FetchContent`: biblioteca nova só com aprovação do usuário), `editor/CMakeLists.txt`
 - `editor/src/EditorApp.*` (só para montar uma peça nova: membro, chamada no loop, item de menu) e `EditorContext.*`
-- `README.md` e `docs/roadmap/alpha-<n>.md` (só a seção da sua fase), `CLAUDE.md`
+- `README.md`, `CLAUDE.md` e o índice da alpha (`docs/roadmap/alpha-<n>.md`, só a linha da sua fase). A nota
+  da sua fase (`docs/roadmap/alpha-<n>/fase-<NN>-*.md`) é da sua área; achados fora dela vão no fim de
+  `docs/roadmap/entrada.md`
 - Headers públicos de outra área (`engine/include/motor/...`): mudança de API é tarefa própria, combinada antes
 
 ### Fases do roteiro: onde cada uma mexe
@@ -193,7 +197,7 @@ Alpha 1 (feitas; histórico em `docs/roadmap/alpha-1.md`):
 | 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
 | 15 Instalador | `distrib/`, `server/`, `installer/` | `hub/` (aba Versões, `hub.json` formato 2, `--baixar`) | 14 |
 
-Alpha 2 (`docs/roadmap/alpha-2.md`):
+Alpha 2 (`docs/roadmap/alpha-2.md` e `docs/roadmap/alpha-2/`):
 
 | Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
 |---|---|---|---|

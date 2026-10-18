@@ -1,3 +1,10 @@
+---
+tipo: alpha
+alpha: 1
+status: fechada
+foco: Base da engine, editor, jogo exportado, Hub e instalador
+---
+
 # Roteiro da Alpha 1 (arquivo)
 
 > **Fechado em 17/10/2026.** Este é o histórico das Fases 0 a 15 (as 8, 10, 14 e 15 foram feitas na

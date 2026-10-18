@@ -1,0 +1,28 @@
+filters:
+  and:
+    - tipo == "fase"
+views:
+  - type: table
+    name: Fases
+    order:
+      - fase
+      - titulo
+      - alpha
+      - status
+      - prioridade
+      - branch
+      - inicio
+      - fim
+    sort:
+      - property: fase
+        direction: ASC
+  - type: table
+    name: Em andamento
+    filters:
+      and:
+        - status == "em andamento"
+    order:
+      - fase
+      - titulo
+      - branch
+      - inicio

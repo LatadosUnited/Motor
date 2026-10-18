@@ -1,3 +1,8 @@
+---
+tipo: guia
+atualizado: 2026-10-17
+---
+
 # Referência da API dos scripts
 
 Tudo que um script do Motor pode usar, conferido com os headers da engine. Para aprender passo a passo, leia
