@@ -78,7 +78,7 @@ script, editar com IntelliSense e clicar num erro para ir à linha funciona sem 
   sorteio e `PrefabRef`). Popup "Novo script..." com a lista de modelos, também em **+ Criar** do painel
   Projeto e na ferramenta MCP `script_create`; o arquivo criado abre no editor de código. Os cinco modelos
   compilam sem avisos no `test_script_docs`.
-- **VS Code** (`editor/src/ScriptIde`): ao abrir o projeto, `.vscode/` com `c_cpp_properties.json` (o
+- **VS Code** (`editor/src/scripts/ScriptIde`): ao abrir o projeto, `.vscode/` com `c_cpp_properties.json` (o
   `compile_commands.json` da compilação dos scripts), `tasks.json` (compilar com o mesmo comando do editor,
   erros no painel Problemas), `launch.json` (gdb anexado ao MotorEditor) e `extensions.json`. Só reescreve os
   arquivos que começam com `// Gerado pelo Motor Editor`. Menu Scripts > Abrir no VS Code; duplo clique num

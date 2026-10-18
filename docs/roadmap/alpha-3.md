@@ -170,8 +170,9 @@ Conclusões:
   componente novo continua entrando no desfazer sem código extra.
 - "Alterações não salvas" sem serializar a cena inteira em JSON a cada 0,5 s (`SceneDocument`): usar a mesma
   marca de alteração do desfazer.
-- Dividir os arquivos grandes que sobraram da Fase 20: `PhysicsSystem.cpp` (~940 linhas), `McpController.cpp`,
-  `AssetLibrary.cpp`, `SceneSerializer.cpp`.
+- ~~Dividir os arquivos grandes que sobraram da Fase 20: `PhysicsSystem.cpp` (~940 linhas), `McpController.cpp`,
+  `AssetLibrary.cpp`, `SceneSerializer.cpp`.~~ Feito na [Organização do código](alpha-2/organizacao-do-codigo.md)
+  (alpha 2).
 
 ## Fase 27 — Ambiente
 
