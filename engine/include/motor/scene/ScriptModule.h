@@ -17,10 +17,13 @@
 //       registry.Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
 //   }
 //
+// Ou, sem rótulos próprios: MOTOR_FIELDS(Girar, velocidade) (abaixo).
+//
 // O nome passado para Register é o que vai no arquivo da cena: renomear a struct não perde dados, renomear
 // o nome registrado sim (o componente antigo fica guardado como "desconhecido" até o nome voltar).
 
 #include "motor/scene/Component.h"
+#include "motor/scene/EntityRef.h"
 #include "motor/scene/Scene.h"
 #include "motor/scene/Script.h"
 #include "motor/scene/Transform.h"
@@ -36,13 +39,26 @@ namespace motor {
 // 9: Material PBR (metal, rugosidade, mapas; sem `shininess`), sombra na Luz e o ambiente novo (Fase 7).
 // 10: áudio (Fase 8): componentes AudioSource e AudioListener, AudioSystem.
 // 11: Fase 16: PrefabRef e Script::Instantiate; roll na câmera.
-inline constexpr int kScriptApiVersion = 11;
+// 12: Fase 17: EntityRef, Script::OnMessage/Send/Broadcast, temporizadores, aleatórios, GetComponent,
+//     FieldOptions::formerKey.
+inline constexpr int kScriptApiVersion = 12;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";
 inline constexpr const char* kRegisterScriptsSymbol = "MotorRegisterScripts";
 using ScriptApiVersionFn = int (*)();
 using RegisterScriptsFn = void (*)(ComponentRegistry&);
+
+template <class T>
+T* Script::GetComponent() {
+    return GetEntity().template Get<T>();
+}
+
+template <class T>
+T* Script::GetComponent(EntityId id) {
+    Entity* e = GetEntity(id);
+    return e ? e->template Get<T>() : nullptr;
+}
 
 namespace detail {
 // Lista encadeada dos blocos MOTOR_SCRIPT do módulo (inline: cada DLL tem a sua própria lista, sem alocar heap).
@@ -70,5 +86,28 @@ inline void RegisterModuleScripts(ComponentRegistry& registry) {
     static void MotorRegisterScript_##Name(::motor::ComponentRegistry& registry);                   \
     static ::motor::detail::ScriptRegistrar g_motorScriptRegistrar_##Name{&MotorRegisterScript_##Name}; \
     static void MotorRegisterScript_##Name([[maybe_unused]] ::motor::ComponentRegistry& registry)
+
+// Registro curto: o script com o nome da struct e os campos listados, com o rótulo tirado do nome do campo
+// ("velocidadeMaxima" aparece como "Velocidade maxima"). Para rótulo próprio, slider, cor ou tooltip, use o
+// bloco MOTOR_SCRIPT com .Field(...) completo.
+//
+//   MOTOR_FIELDS(Jogador, velocidade, pulo, vidas)
+#define MOTOR_FIELDS(Type, ...)                                                                       \
+    MOTOR_SCRIPT(Type) {                                                                              \
+        registry.Register<Type>(#Type, #Type) MOTOR_DETAIL_FOR_EACH(MOTOR_DETAIL_FIELD, Type, __VA_ARGS__); \
+    }
+
+#define MOTOR_DETAIL_FIELD(Type, member) .Field(#member, &Type::member)
+// Repete `macro(Type, x)` para cada x da lista (C++20 __VA_OPT__; até 256 itens).
+#define MOTOR_DETAIL_PARENS ()
+#define MOTOR_DETAIL_EXPAND(...) MOTOR_DETAIL_EXPAND3(MOTOR_DETAIL_EXPAND3(MOTOR_DETAIL_EXPAND3(MOTOR_DETAIL_EXPAND3(__VA_ARGS__))))
+#define MOTOR_DETAIL_EXPAND3(...) MOTOR_DETAIL_EXPAND2(MOTOR_DETAIL_EXPAND2(MOTOR_DETAIL_EXPAND2(MOTOR_DETAIL_EXPAND2(__VA_ARGS__))))
+#define MOTOR_DETAIL_EXPAND2(...) MOTOR_DETAIL_EXPAND1(MOTOR_DETAIL_EXPAND1(MOTOR_DETAIL_EXPAND1(MOTOR_DETAIL_EXPAND1(__VA_ARGS__))))
+#define MOTOR_DETAIL_EXPAND1(...) __VA_ARGS__
+#define MOTOR_DETAIL_FOR_EACH(macro, Type, ...) \
+    __VA_OPT__(MOTOR_DETAIL_EXPAND(MOTOR_DETAIL_FOR_EACH_HELPER(macro, Type, __VA_ARGS__)))
+#define MOTOR_DETAIL_FOR_EACH_HELPER(macro, Type, first, ...) \
+    macro(Type, first) __VA_OPT__(MOTOR_DETAIL_FOR_EACH_AGAIN MOTOR_DETAIL_PARENS(macro, Type, __VA_ARGS__))
+#define MOTOR_DETAIL_FOR_EACH_AGAIN() MOTOR_DETAIL_FOR_EACH_HELPER
 
 #endif // MOTOR_SCENE_SCRIPT_MODULE_H

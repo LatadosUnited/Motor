@@ -81,6 +81,10 @@ struct FieldOptions {
     float max = 0.0f;
     const char* format = nullptr;  // printf; nulo = padrão do tipo
     const char* tooltip = nullptr;
+    // Nome antigo do campo: ao ler uma cena (ou recarregar os scripts) sem o nome atual, usa o valor gravado
+    // com este. Renomeie o campo sem perder os valores já ajustados: .Field("forca", "Força", &X::forca,
+    // {.formerKey = "velocidade"}).
+    const char* formerKey = nullptr;
 };
 
 struct FieldInfo {
@@ -131,6 +135,29 @@ bool ComponentsEqual(const ComponentType& type, const void* a, const void* b);
 [[noreturn]] void ThrowUnregisteredComponent();
 
 namespace detail {
+// Rótulo do Inspector a partir do nome do campo: "velocidadeMaxima" e "velocidade_maxima" -> "Velocidade maxima".
+inline std::string LabelFromKey(std::string_view key) {
+    std::string label;
+    auto isUpper = [](char c) { return c >= 'A' && c <= 'Z'; };
+    auto isLowerOrDigit = [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'); };
+    for (size_t i = 0; i < key.size(); ++i) {
+        const char c = key[i];
+        if (c == '_') {
+            if (!label.empty() && label.back() != ' ') label += ' ';
+        } else if (isUpper(c) && i > 0 && isLowerOrDigit(key[i - 1])) {
+            // "velocidadeMaxima": nova palavra, em minúscula; "corRGB": a sigla fica como está.
+            label += ' ';
+            const bool acronym = i + 1 < key.size() && isUpper(key[i + 1]);
+            label += acronym ? c : static_cast<char>(c - 'A' + 'a');
+        } else {
+            label += c;
+        }
+    }
+    while (!label.empty() && label.back() == ' ') label.pop_back();
+    if (!label.empty() && label[0] >= 'a' && label[0] <= 'z') label[0] = static_cast<char>(label[0] - 'a' + 'A');
+    return label;
+}
+
 void AddComponentField(ComponentType& type, const char* key, const char* label, FieldType fieldType,
                        const CustomFieldType* custom, const FieldOptions& options,
                        std::function<void*(void*)> access);
@@ -170,6 +197,13 @@ template <class T>
 class ComponentBuilder {
 public:
     explicit ComponentBuilder(ComponentType& type) : m_type(type) {}
+
+    // Campo com o rótulo tirado do nome: .Field("velocidadeMaxima", &Girar::velocidadeMaxima) aparece como
+    // "Velocidade maxima" no Inspector.
+    template <class F>
+    ComponentBuilder& Field(const char* key, F T::*member, FieldOptions options = {}) {
+        return Field(key, detail::LabelFromKey(key).c_str(), member, options);
+    }
 
     // Campo direto: .Field("velocidade", "Velocidade", &Girar::velocidade)
     template <class F>

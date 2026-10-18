@@ -1,4 +1,5 @@
 #include "motor/scene/Scene.h"
+#include "motor/scene/EntityRef.h"
 
 #include "motor/renderer/Camera.h"
 #include "motor/renderer/Mesh.h"
@@ -105,12 +106,23 @@ EntityId Scene::Duplicate(EntityId id) {
     const Entity* source = Find(id);
     if (!source) return kNullEntity;
     const Entity copy = *source;  // cópia: CreateEntity pode realocar o vetor
-    const EntityId clone = CloneRecursive(copy, copy.parent);
+    std::vector<std::pair<EntityId, EntityId>> copies;
+    const EntityId clone = CloneRecursive(copy, copy.parent, copies);
     Find(clone)->name = copy.name + " (cópia)";
+    // Referências para dentro da sub-árvore copiada apontam para as cópias (ex.: o script do inimigo e a arma filha).
+    for (const auto& [original, duplicate] : copies) {
+        RemapEntityRefs(*Find(duplicate), [&](EntityId id) {
+            for (const auto& [from, to] : copies) {
+                if (from == id) return to;
+            }
+            return id;
+        });
+    }
     return clone;
 }
 
-EntityId Scene::CloneRecursive(const Entity& source, EntityId newParent) {
+EntityId Scene::CloneRecursive(const Entity& source, EntityId newParent,
+                               std::vector<std::pair<EntityId, EntityId>>& copies) {
     const std::vector<EntityId> children = Children(source.id);
 
     Entity& clone = CreateEntity(source.name, newParent);
@@ -118,10 +130,11 @@ EntityId Scene::CloneRecursive(const Entity& source, EntityId newParent) {
     clone.transform = source.transform;
     clone.components = source.components;
     const EntityId cloneId = clone.id;
+    copies.emplace_back(source.id, cloneId);
 
     for (EntityId child : children) {
         const Entity childCopy = *Find(child);
-        CloneRecursive(childCopy, cloneId);
+        CloneRecursive(childCopy, cloneId, copies);
     }
     return cloneId;
 }

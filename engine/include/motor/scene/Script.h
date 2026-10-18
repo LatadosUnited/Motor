@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -32,6 +33,7 @@ struct Transform;
 class Scene;
 class SceneRuntime;
 using EntityId = uint32_t;
+using TimerId = uint32_t;  // devolvido por After/Every, para CancelTimer
 
 namespace detail {
 // Argumento de Script::Log empacotado sem puxar <format> em cada script.
@@ -81,6 +83,13 @@ struct Collision {
     float relativeSpeed = 0.0f;  // velocidade de aproximação no contato (m/s); 0 se só encostaram
 };
 
+// Mensagem entre scripts (Send, Broadcast), recebida no OnMessage.
+struct Message {
+    std::string_view text;  // o que aconteceu ("abrir", "dano"...); só vale durante o OnMessage
+    EntityId from = 0;      // entidade do script que mandou
+    float value = 0.0f;     // número opcional (ex.: quanto de dano)
+};
+
 class Script {
 public:
     Script() = default;
@@ -104,6 +113,9 @@ public:
     virtual void OnTriggerEnter(EntityId /*other*/) {}
     virtual void OnTriggerExit(EntityId /*other*/) {}
 
+    // Mensagem de outro script (Send para esta entidade, ou Broadcast). Chega na hora, dentro do Send.
+    virtual void OnMessage(const Message& /*message*/) {}
+
     bool HasStarted() const { return m_started; }
 
 protected:
@@ -115,6 +127,12 @@ protected:
 
     // --- Cena ---
     Entity* FindEntity(std::string_view name);  // primeira com esse nome, ou nullptr
+    // Entidade pelo id ou por um campo EntityRef (GetEntity(alvo)); nullptr se não existe (foi destruída).
+    Entity* GetEntity(EntityId id);
+    // Componente do tipo T desta entidade, ou de outra (id ou EntityRef); nullptr se ela não tiver um.
+    //   if (auto* corpo = GetComponent<motor::Rigidbody>(alvo)) ...
+    template <class T> T* GetComponent();
+    template <class T> T* GetComponent(EntityId id);
     Entity& CreateEntity(std::string name, EntityId parent = 0);
     // Instancia um prefab (.mprefab referenciado por um campo PrefabRef) na cena; devolve a entidade raiz criada
     // (ou nullptr se o prefab estiver vazio/ausente). Os scripts da instância iniciam (OnStart) no próximo passo.
@@ -134,6 +152,26 @@ protected:
     bool WasKeyPressed(Key key) const;
     bool IsMouseDown(MouseButton button) const;
     glm::vec2 MouseDelta() const;
+
+    // --- Temporizadores (tempo do jogo: não contam na pausa) ---
+    // Chama `fn` daqui a `seconds` segundos (After) ou a cada `seconds` segundos (Every), antes do OnUpdate
+    // daquele frame. Param sozinhos quando este script ou a entidade somem.
+    //   After(2.0f, [this] { DestroySelf(); });
+    TimerId After(float seconds, std::function<void()> fn);
+    TimerId Every(float seconds, std::function<void()> fn);
+    void CancelTimer(TimerId id);
+    void CancelTimers();  // todos os deste script
+
+    // --- Mensagens entre scripts ---
+    // Chama OnMessage nos scripts da entidade `target` (Send) ou de todas as entidades ativas (Broadcast).
+    void Send(EntityId target, std::string_view text, float value = 0.0f);
+    void Broadcast(std::string_view text, float value = 0.0f);
+
+    // --- Números aleatórios (um gerador por Play; SetRandomSeed repete a mesma sequência) ---
+    float Random(float min, float max);  // entre min e max
+    int RandomInt(int min, int max);     // de min a max, os dois inclusive
+    bool Chance(float probability);      // true com essa probabilidade (0 a 1)
+    void SetRandomSeed(uint32_t seed);
 
     // --- Sistemas do jogo (física, áudio..., ver RuntimeSystem.h) ---
     // Sistema do tipo T deste Play, ou nullptr (não registrado). Já existe no OnStart e ainda no OnDestroy.

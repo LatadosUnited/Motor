@@ -13,3 +13,4 @@
 #include "motor/scene/Animator.h"
 #include "motor/scene/AudioSource.h"
 #include "motor/scene/AudioListener.h"
+#include "motor/scene/EntityRef.h"

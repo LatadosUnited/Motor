@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace motor {
 
@@ -57,9 +58,18 @@ bool FieldValueFromJson(const FieldInfo& field, void* component, std::string_vie
 // não tem mais nenhum objeto desses tipos (o tipo pode ser desregistrado). Devolve quantos trocou.
 size_t DetachComponents(Scene& scene, const std::function<bool(const ComponentType&)>& which,
                         const AssetLibrary& assets);
-// Religa os MissingComponent cujo tipo está registrado agora, lendo os campos do JSON guardado (campos que
-// sumiram do tipo são ignorados; os novos ficam com o valor padrão). Devolve quantos religou.
-size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets);
+// Valor guardado que não coube no componente religado: o campo sumiu do tipo (renomeado sem
+// FieldOptions::formerKey, ou apagado) ou mudou de tipo. `value` é o JSON do valor perdido.
+struct FieldWarning {
+    std::string type;    // tipo do componente ("Jogador")
+    std::string entity;  // nome da entidade
+    std::string field;   // nome do campo no arquivo
+    std::string value;
+    bool typeChanged = false;  // false: o campo não existe mais
+};
+// Religa os MissingComponent cujo tipo está registrado agora, lendo os campos do JSON guardado (os novos ficam
+// com o valor padrão). Os valores que não couberam vão para `warnings`, se não for nulo. Devolve quantos religou.
+size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets, std::vector<FieldWarning>* warnings = nullptr);
 
 // Grava num .tmp e renomeia no fim. `options.format` = kPrefabFormat grava um prefab.
 bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibrary& assets,

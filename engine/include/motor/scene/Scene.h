@@ -118,7 +118,9 @@ public:
     Environment environment;
 
 private:
-    EntityId CloneRecursive(const Entity& source, EntityId newParent);
+    // `copies`: pares (original, cópia) de cada entidade copiada, para ajustar as EntityRef.
+    EntityId CloneRecursive(const Entity& source, EntityId newParent,
+                            std::vector<std::pair<EntityId, EntityId>>& copies);
 
     std::vector<std::unique_ptr<Entity>> m_entities;
     std::unordered_map<EntityId, Entity*> m_byId;

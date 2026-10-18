@@ -143,3 +143,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(test_distribuicao PRIVATE -Wall -Wextra)
 endif()
 add_test(NAME test_distribuicao COMMAND test_distribuicao ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_distribuicao)
+
+# API dos scripts da Fase 17 (sem DLL): temporizadores, mensagens, aleatórios, GetComponent, EntityRef (cópias e
+# prefabs), MOTOR_FIELDS e campos renomeados ou perdidos na recarga.
+motor_add_test(test_script_api)
