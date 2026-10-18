@@ -52,7 +52,7 @@ bool PlayController::Stop(EditorContext& ctx) {
     if (!m_mode.IsActive()) return false;
     m_mode.Stop(ctx.scene, ctx.selected);
     ctx.pendingDelete = kNullEntity;
-    ctx.eulerEntity = kNullEntity;  // o Inspector recalcula os ângulos da cena restaurada
+    ctx.ForgetAngles();  // o Inspector recalcula os ângulos da cena restaurada
     return true;
 }
 

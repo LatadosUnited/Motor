@@ -34,11 +34,6 @@ struct EditorContext {
     EntityId selected = kNullEntity;
     EntityId pendingDelete = kNullEntity;  // processado no fim do frame, fora da iteração dos painéis
 
-    // Cache dos ângulos de Euler mostrados no Inspector, para evitar "saltos" na conversão quat <-> euler.
-    EntityId eulerEntity = kNullEntity;
-    glm::quat eulerSource{1.0f, 0.0f, 0.0f, 0.0f};
-    glm::vec3 eulerDegrees{0.0f};
-
     std::string pendingError;  // mostrado pelo EditorApp num popup
 
     // Prefabs do projeto (.mprefab) e o asset mostrado no Inspector quando nenhuma entidade está
@@ -50,6 +45,16 @@ struct EditorContext {
     enum class PrefabAction { None, Apply, Revert, Unpack };
     PrefabAction pendingPrefabAction = PrefabAction::None;
     EntityId pendingPrefabEntity = kNullEntity;
+
+    // Cena trocada inteira (abrir, recuperar): sem seleção, sem exclusão pendente e com os ângulos do Inspector
+    // recalculados.
+    void ResetSceneState();
+    // O Inspector guarda os ângulos de Euler que mostra (a conversão quat -> euler "salta"). Rotação mudada fora
+    // dele: ForgetAngles(id) recalcula os de `id`; sem id (cena restaurada, scripts recarregados), os de todos.
+    void ForgetAngles(EntityId id = kNullEntity);
+    // Usado pelo Inspector a cada desenho do Transform: true se os ângulos de `id` precisam ser recalculados.
+    // Consome os pedidos feitos até aqui.
+    bool TakeForgottenAngles(EntityId id);
 
     motor::Entity& CreatePrimitive(Primitive type, EntityId parent = kNullEntity);
     // Nova entidade com a malha de um arquivo .obj do projeto. nullptr (e pendingError) se falhar.
@@ -84,6 +89,8 @@ struct EditorContext {
 
 private:
     std::filesystem::path m_prefabRoot;  // projeto do cache de prefabs (trocou = limpa o cache)
+    bool m_forgetAllAngles = false;
+    std::vector<EntityId> m_forgottenAngles;
 };
 
 // Itens de menu "criar" reutilizados no menu principal e nos menus de contexto.

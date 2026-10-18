@@ -53,13 +53,23 @@ bool Has(const OverrideCheck& overridden, std::string_view key) {
     return overridden && overridden(key);
 }
 
+// Ângulos de Euler mostrados na Rotação, guardados para não "saltarem" na conversão quat <-> euler: só são
+// recalculados quando a entidade muda, a rotação muda por fora ou alguém pede (EditorContext::ForgetAngles).
+struct EulerCache {
+    EntityId entity = kNullEntity;
+    glm::quat source{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 degrees{0.0f};
+};
+EulerCache g_euler;
+
 void DrawTransform(EditorContext& ctx, motor::Entity& e, const OverrideCheck& overridden) {
     motor::Transform& t = e.transform;
 
-    if (ctx.eulerEntity != e.id || ctx.eulerSource != t.rotation) {
-        ctx.eulerDegrees = glm::degrees(glm::eulerAngles(t.rotation)) + 0.0f;  // + 0 elimina o "-0.0"
-        ctx.eulerEntity = e.id;
-        ctx.eulerSource = t.rotation;
+    const bool forgotten = ctx.TakeForgottenAngles(e.id);
+    if (forgotten || g_euler.entity != e.id || g_euler.source != t.rotation) {
+        g_euler.degrees = glm::degrees(glm::eulerAngles(t.rotation)) + 0.0f;  // + 0 elimina o "-0.0"
+        g_euler.entity = e.id;
+        g_euler.source = t.rotation;
     }
 
     if (!BeginProperties("##transform")) return;
@@ -68,9 +78,9 @@ void DrawTransform(EditorContext& ctx, motor::Entity& e, const OverrideCheck& ov
     ImGui::DragFloat3("##position", &t.position.x, 0.05f, 0.0f, 0.0f, "%.2f");
 
     Property("Rotação", Has(overridden, "rotation"));
-    if (ImGui::DragFloat3("##rotation", &ctx.eulerDegrees.x, 0.5f, 0.0f, 0.0f, "%.1f°")) {
-        t.SetEulerDegrees(ctx.eulerDegrees);
-        ctx.eulerSource = t.rotation;
+    if (ImGui::DragFloat3("##rotation", &g_euler.degrees.x, 0.5f, 0.0f, 0.0f, "%.1f°")) {
+        t.SetEulerDegrees(g_euler.degrees);
+        g_euler.source = t.rotation;
     }
 
     Property("Escala", Has(overridden, "scale"));

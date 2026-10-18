@@ -284,6 +284,25 @@ void EditorContext::DuplicateSelected() {
     if (scene.Find(selected)) selected = scene.Duplicate(selected);
 }
 
+void EditorContext::ResetSceneState() {
+    selected = kNullEntity;
+    pendingDelete = kNullEntity;
+    ForgetAngles();
+}
+
+void EditorContext::ForgetAngles(EntityId id) {
+    if (id == kNullEntity) m_forgetAllAngles = true;
+    else m_forgottenAngles.push_back(id);
+}
+
+bool EditorContext::TakeForgottenAngles(EntityId id) {
+    const bool forgotten = m_forgetAllAngles ||
+                           std::find(m_forgottenAngles.begin(), m_forgottenAngles.end(), id) != m_forgottenAngles.end();
+    m_forgetAllAngles = false;
+    m_forgottenAngles.clear();
+    return forgotten;
+}
+
 void EditorContext::ApplyPendingDelete() {
     if (pendingDelete == kNullEntity) return;
     scene.DestroyEntity(pendingDelete);

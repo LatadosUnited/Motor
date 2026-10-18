@@ -204,9 +204,7 @@ bool SceneDocument::OpenSceneAt(const fs::path& path) {
 
 void SceneDocument::ReplaceScene(Scene&& scene, const fs::path& path) {
     m_ctx.scene = std::move(scene);
-    m_ctx.selected = kNullEntity;
-    m_ctx.pendingDelete = kNullEntity;
-    m_ctx.eulerEntity = kNullEntity;
+    m_ctx.ResetSceneState();
     m_scenePath = path;
     m_history.Reset(m_ctx.scene, kNullEntity);  // o histórico é de uma cena só
     MarkSaved();

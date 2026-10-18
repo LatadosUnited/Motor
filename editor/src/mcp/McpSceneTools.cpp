@@ -92,7 +92,7 @@ void ApplyTransformArgs(EditorContext& ctx, Entity& e, const Json& args) {
     if (args.contains("position")) e.transform.position = ReadVec3(args["position"], "position");
     if (args.contains("rotation")) {
         e.transform.SetEulerDegrees(ReadVec3(args["rotation"], "rotation"));
-        if (ctx.eulerEntity == e.id) ctx.eulerEntity = kNullEntity;  // o Inspector recalcula os ângulos
+        ctx.ForgetAngles(e.id);  // o Inspector recalcula os ângulos
     }
     if (args.contains("scale")) e.transform.scale = ReadVec3(args["scale"], "scale");
 }

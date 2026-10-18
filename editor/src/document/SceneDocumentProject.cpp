@@ -180,9 +180,7 @@ void SceneDocument::ApplyRecovery(const SceneSerializer::RecoveryInfo& recovery)
     }
 
     m_ctx.scene = std::move(recovered);
-    m_ctx.selected = kNullEntity;
-    m_ctx.pendingDelete = kNullEntity;
-    m_ctx.eulerEntity = kNullEntity;
+    m_ctx.ResetSceneState();
     m_scenePath = targetPath;
     m_history.Reset(m_ctx.scene, kNullEntity);
     m_savedSnapshot = std::move(diskSnapshot);
