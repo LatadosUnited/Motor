@@ -96,6 +96,9 @@ int main(int argc, char** argv) {
         CHECK(Contains(cmake, "CONFIGURE_DEPENDS \"" + ToGenericUtf8(paths.scriptsDir) + "/*.cpp\""));  // UTF-8, barras '/'
         CHECK(Contains(cmake, "Jogo Ação/Scripts"));
         CHECK(!Contains(cmake, "\\"));  // nenhuma barra invertida
+        // Objetos com nome curto, sem acentos (o as.exe não lê UTF-8) e abaixo de 260 caracteres.
+        CHECK(Contains(cmake, "set(CMAKE_INTERMEDIATE_DIR_STRATEGY SHORT CACHE STRING \"\")"));
+        CHECK(Contains(cmake, "set(CMAKE_OBJECT_PATH_MAX 240)"));
         const std::string entry = SP::GenerateEntryPoint();
         CHECK(Contains(entry, "MotorRegisterScripts") && Contains(entry, "MotorScriptApiVersion"));
         CHECK(Contains(entry, "__declspec(dllexport)"));
