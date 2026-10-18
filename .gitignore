@@ -14,3 +14,9 @@ imgui.ini
 
 # Grafo de conhecimento gerado pelo graphify (recriável com /graphify)
 graphify-out/
+
+# Obsidian: o vault é a pasta docs/ (configuração compartilhada no git); layout de janelas e cache são pessoais.
+# Um vault aberto na raiz não é usado.
+/.obsidian/
+docs/.obsidian/workspace*.json
+docs/.obsidian/cache

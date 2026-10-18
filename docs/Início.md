@@ -1,0 +1,22 @@
+# Motor — documentação
+
+Pasta `docs/` do repositório, aberta também como vault do Obsidian. Os arquivos são Markdown comum, com links
+relativos: funcionam no Obsidian, no GitHub e para os agentes. Edite aqui ou no editor de código, tanto faz.
+
+## Roteiro
+
+- [Alpha 2 — funcionalidades e pendências (atual)](roadmap/alpha-2.md)
+- [Alpha 3 — desempenho (rascunho)](roadmap/alpha-3.md)
+- [Alpha 4 — ferramentas (rascunho)](roadmap/alpha-4.md)
+- [Alpha 1 — histórico das Fases 0 a 15](roadmap/alpha-1.md)
+
+## Scripts
+
+- [Guia de scripts](scripts.md): do primeiro script a um mini jogo.
+- [Referência da API dos scripts](scripts-api.md).
+- Exemplos testados: pasta `examples/` (arquivos `.cpp`, abertos pelo editor de código).
+
+## Fora desta pasta
+
+- `README.md` (raiz do repositório): visão geral, compilar, editor, formatos de arquivo, Hub, instalador.
+- `CLAUDE.md` (raiz): regras para os agentes que trabalham no código.
