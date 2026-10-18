@@ -1,7 +1,9 @@
 # Motor — instruções para o Claude
 
 Engine 3D em C++20 + OpenGL 4.5 feita do zero, com editor (Dear ImGui). Visão geral e uso: `README.md`.
-Plano por fases: `ROADMAP.md`. O usuário fala português: responda, comente o código e escreva textos de
+Plano por fases: `docs/roadmap/alpha-2.md` (atual; o `ROADMAP.md` da raiz só aponta para lá), com o histórico
+da alpha 1 e os rascunhos das alphas 3 e 4 na mesma pasta. `docs/` é também o vault do Obsidian do usuário:
+Markdown comum com links relativos (nada de `[[wikilinks]]`), nota inicial `docs/Início.md`. O usuário fala português: responda, comente o código e escreva textos de
 interface e logs em **português**.
 
 ## Compilar e testar (Windows, MSYS2 UCRT64)
@@ -130,7 +132,7 @@ ctest --test-dir build --output-on-failure
 
 ## Fluxo de trabalho
 
-- Git: cada fase/assunto do `ROADMAP.md` em um branch próprio; commits pequenos com mensagem em português.
+- Git: cada fase/assunto do roteiro em um branch próprio; commits pequenos com mensagem em português.
 - Ao terminar uma tarefa: build sem avisos, `ctest` passando, README atualizado se mudou o uso.
 
 ## Trabalho em paralelo (vários agentes)
@@ -170,10 +172,12 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 - `engine/include/motor/Motor.h`, `engine/include/motor/scene/Components.h`
 - `CMakeLists.txt` da raiz (`FetchContent`: biblioteca nova só com aprovação do usuário), `editor/CMakeLists.txt`
 - `editor/src/EditorApp.*` (só para montar uma peça nova: membro, chamada no loop, item de menu) e `EditorContext.*`
-- `README.md` e `ROADMAP.md` (só a seção da sua fase), `CLAUDE.md`
+- `README.md` e `docs/roadmap/alpha-<n>.md` (só a seção da sua fase), `CLAUDE.md`
 - Headers públicos de outra área (`engine/include/motor/...`): mudança de API é tarefa própria, combinada antes
 
 ### Fases do roteiro: onde cada uma mexe
+
+Alpha 1 (feitas; histórico em `docs/roadmap/alpha-1.md`):
 
 | Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
 |---|---|---|---|
@@ -189,7 +193,20 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 | 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
 | 15 Instalador | `distrib/`, `server/`, `installer/` | `hub/` (aba Versões, `hub.json` formato 2, `--baixar`) | 14 |
 
-Prioridade atual (ver `ROADMAP.md`, "Prioridades"): Alpha 1 fechada; 8, 10 e 14 prontas; próximas a validação de uso real e "Ambiente".
+Alpha 2 (`docs/roadmap/alpha-2.md`):
+
+| Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
+|---|---|---|---|
+| 16 Robustez e correções | `SceneRuntime` (proteção dos scripts), `PlayMode`/`SceneDocument` (recuperação), cada correção na sua área | `kScriptApiVersion` se a API dos scripts mudar | 17 só no item do caminho longo |
+| 17 Scripts | `editor/src/Script*.*`, `editor/templates/`, headers que os scripts incluem (`Script.h`, `ScriptModule.h`) | `motor_package` (SDK com o cabeçalho pré-compilado), `docs/`, painel Projeto (criar script), `kScriptApiVersion` | 16 (caminho longo) |
+| 18 Funcionalidades | `physics/` (camadas, consultas), `audio/` (vozes, grupos), `renderer/` (transparência), formas em `assets/` | API dos scripts (`kScriptApiVersion`), `docs/` | — |
+| 19 Validação | `docs/teste-manual.md` | correções pequenas viram itens da 16 | — |
+| 20 Editor produtivo | `SceneViewport`, painéis, `SceneDocument` (divididos antes) | prefabs (`assets/`), MCP | — |
+| 21 Jogo entregue | `player/`, exportação (`GameExport`) | entrada (`core/`), API dos scripts | — |
+
+Alphas 3 (desempenho, Fases 22 a 28) e 4 (ferramentas, Fases 29 a 31): rascunhos em `docs/roadmap/`.
+
+Prioridade atual (ver `docs/roadmap/alpha-2.md`, "Prioridades"): alpha 1 fechada (Fases 0 a 15); alpha 2 (funcionalidades e pendências) começa pelas Fases 16 (robustez e correções), 17 (scripts) e 18 (funcionalidades de jogo).
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com
