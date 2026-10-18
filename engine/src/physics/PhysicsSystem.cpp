@@ -565,6 +565,9 @@ struct PhysicsSystem::World {
             r.seen = frame;
             if (position != r.written) {  // teleporte pelo script ou pelo editor
                 r.character->SetPosition(ToJolt(position));
+                r.character->SetLinearVelocity(JPH::Vec3::sZero());
+                r.walk = glm::vec3(0.0f);
+                r.jump = 0.0f;
                 r.written = position;
             }
             if (dt > 0.0f) UpdateCharacter(r, dt);

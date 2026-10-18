@@ -371,8 +371,18 @@ int main() {
         Run(runtime, 2.0f);
         CHECK(Near(scene.Find(playerId)->transform.position.y, 0.9f, 0.05f) && fisica->IsGrounded(playerId));
 
-        // Queda alta e rápida não atravessa o chão.
+        // Queda alta e rápida não atravessa o chão, e teleportar no meio da queda zera a velocidade.
         scene.Find(playerId)->transform.position = {0.0f, 40.0f, 0.0f};
+        jogador.velocidade = 4.0f;
+        Run(runtime, 1.0f);  // caindo rápido (~-9,8 m/s) e andando em +X
+        CHECK(fisica->GetCharacterVelocity(playerId).y < -5.0f);
+        jogador.velocidade = 0.0f;
+        fisica->MoveCharacter(playerId, {6.0f, 0.0f, 0.0f});  // velocidade guardada antes do teleporte
+        scene.Find(playerId)->transform.position = {0.0f, 20.0f, 0.0f};
+        runtime.FixedUpdate(kDt);  // um único passo após o teleporte: só a gravidade deste passo
+        const glm::vec3 velAfterTeleport = fisica->GetCharacterVelocity(playerId);
+        CHECK(velAfterTeleport.y > -0.5f && Near(velAfterTeleport.x, 0.0f, 1e-4f));
+        CHECK(scene.Find(playerId)->transform.position.y > 19.9f);
         Run(runtime, 4.0f);
         CHECK(Near(scene.Find(playerId)->transform.position.y, 0.9f, 0.05f));
 
