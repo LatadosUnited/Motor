@@ -38,6 +38,8 @@ add_executable(MotorEditor
     src/drawers/EntityRefDrawer.cpp
     src/mcp/ImageEncode.cpp
     src/mcp/McpController.cpp
+    src/mcp/McpFileTools.cpp
+    src/mcp/McpPlayTools.cpp
     src/mcp/McpProtocol.cpp
     src/mcp/McpSceneTools.cpp
     src/mcp/McpServer.cpp
