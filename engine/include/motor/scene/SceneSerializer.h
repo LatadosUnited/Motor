@@ -3,8 +3,10 @@
 #include "motor/assets/AssetLoaders.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -63,6 +65,21 @@ size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets);
 bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibrary& assets,
           std::string* error = nullptr, const JsonOptions& options = {});
 bool Load(const std::filesystem::path& path, Scene& out, AssetLibrary& assets, std::string* error = nullptr);
+
+// Salvamento automático / recuperação (<projectRoot>/.motor/recuperacao/): gravado pelo editor ao dar Play e a
+// cada N minutos com alterações não salvas; apagado ao salvar, descartar ou fechar limpo.
+struct RecoveryInfo {
+    std::filesystem::path sceneFile;     // <projectRoot>/.motor/recuperacao/cena.mscene
+    std::filesystem::path originalPath;  // arquivo original da cena (absoluto; vazio se era "Sem título")
+    std::string reason;                  // "play" ou "autosave"
+    int64_t savedAt = 0;                 // segundos desde 1970 (UTC)
+};
+
+bool SaveRecovery(const std::filesystem::path& projectRoot, const Scene& scene, const AssetLibrary& assets,
+                  const std::filesystem::path& originalScenePath, std::string_view reason = "autosave",
+                  std::string* error = nullptr);
+std::optional<RecoveryInfo> CheckRecovery(const std::filesystem::path& projectRoot);
+void ClearRecovery(const std::filesystem::path& projectRoot);
 
 } // namespace SceneSerializer
 

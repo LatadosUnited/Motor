@@ -139,9 +139,9 @@ int main() {
         // Leitura tolerante: número também vale; texto desconhecido mantém o valor.
         const auto* field = &registry.Find("Collider")->fields[0];
         ColliderShape shape = ColliderShape::Box;
-        field->custom->fromJson("2", &shape, assets);
+        CHECK(field->custom->fromJson("2", &shape, assets, nullptr));
         CHECK(shape == ColliderShape::Capsule);
-        field->custom->fromJson("\"Triangulo\"", &shape, assets);
+        CHECK(!field->custom->fromJson("\"Triangulo\"", &shape, assets, nullptr));
         CHECK(shape == ColliderShape::Capsule);
     }
 
