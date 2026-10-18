@@ -158,6 +158,31 @@ bool SameJsonKind(const json& stored, const json& current) {
     if (stored.is_array() && current.is_array()) return stored.size() == current.size();
     return stored.type() == current.type();
 }
+
+// Campo de malha ou textura a partir de um valor JSON (FieldValueFromJson): null limpa; nome embutido, caminho ou
+// {guid, path} carrega pelo AssetLibrary. `typeName` e `example` entram na mensagem de erro.
+template <class Asset, class ByKey, class ByGuid>
+bool AssetFieldFromValue(const FieldInfo& field, std::shared_ptr<Asset>& slot, const json& value, const char* typeName,
+                         const char* example, const char* notFound, ByKey byKey, ByGuid byGuid, std::string* error) {
+    if (value.is_null()) {
+        slot = nullptr;
+        return true;
+    }
+    if (!value.is_string() && !(value.is_object() && (value.contains("guid") || value.contains("path")))) {
+        SetError(error, std::format("campo '{}' espera {} (nome embutido como \"{}\", caminho \"Assets/...\", "
+                                    "objeto {{\"path\": \"Assets/...\"}} ou null)",
+                                    field.key, typeName, example));
+        return false;
+    }
+    std::string problem;
+    auto loaded = ResolveRef<Asset>(value, byKey, byGuid, problem);
+    if (!loaded) {
+        SetError(error, std::format("campo '{}': {}", field.key, problem.empty() ? notFound : problem));
+        return false;
+    }
+    slot = std::move(loaded);
+    return true;
+}
 } // namespace
 
 namespace detail {
@@ -346,53 +371,17 @@ bool FieldValueFromJson(const FieldInfo& field, void* component, std::string_vie
             }
             field.As<std::string>(component) = value.get<std::string>();
             return true;
-        case FieldType::Mesh: {
-            auto& mesh = field.As<std::shared_ptr<Mesh>>(component);
-            if (value.is_null()) {
-                mesh = nullptr;
-                return true;
-            }
-            if (!value.is_string() && !(value.is_object() && (value.contains("guid") || value.contains("path")))) {
-                SetError(error, std::format("campo '{}' espera mesh (nome embutido como \"Cubo\", caminho \"Assets/...\", "
-                                            "objeto {{\"path\": \"Assets/...\"}} ou null)",
-                                            field.key));
-                return false;
-            }
-            std::string problem;
-            auto loaded = ResolveRef<Mesh>(
-                value, [&](std::string_view k, std::string* err) { return assets.GetMesh(k, err); },
-                [&](std::string_view g, std::string* err) { return assets.GetMeshByGuid(g, err); }, problem);
-            if (!loaded) {
-                SetError(error, std::format("campo '{}': {}", field.key, problem.empty() ? "malha não encontrada" : problem));
-                return false;
-            }
-            mesh = std::move(loaded);
-            return true;
-        }
-        case FieldType::Texture: {
-            auto& texture = field.As<std::shared_ptr<Texture2D>>(component);
-            if (value.is_null()) {
-                texture = nullptr;
-                return true;
-            }
-            if (!value.is_string() && !(value.is_object() && (value.contains("guid") || value.contains("path")))) {
-                SetError(error, std::format("campo '{}' espera texture (nome embutido como \"Branco\", caminho "
-                                            "\"Assets/...\", objeto {{\"path\": \"Assets/...\"}} ou null)",
-                                            field.key));
-                return false;
-            }
-            std::string problem;
-            auto loaded = ResolveRef<Texture2D>(
-                value, [&](std::string_view k, std::string* err) { return assets.GetTexture(k, err); },
-                [&](std::string_view g, std::string* err) { return assets.GetTextureByGuid(g, err); }, problem);
-            if (!loaded) {
-                SetError(error,
-                         std::format("campo '{}': {}", field.key, problem.empty() ? "textura não encontrada" : problem));
-                return false;
-            }
-            texture = std::move(loaded);
-            return true;
-        }
+        case FieldType::Mesh:
+            return AssetFieldFromValue(
+                field, field.As<std::shared_ptr<Mesh>>(component), value, "mesh", "Cubo", "malha não encontrada",
+                [&](std::string_view k, std::string* err) { return assets.GetMesh(k, err); },
+                [&](std::string_view g, std::string* err) { return assets.GetMeshByGuid(g, err); }, error);
+        case FieldType::Texture:
+            return AssetFieldFromValue(
+                field, field.As<std::shared_ptr<Texture2D>>(component), value, "texture", "Branco",
+                "textura não encontrada",
+                [&](std::string_view k, std::string* err) { return assets.GetTexture(k, err); },
+                [&](std::string_view g, std::string* err) { return assets.GetTextureByGuid(g, err); }, error);
         case FieldType::Custom: {
             std::string problem;
             if (!field.custom->fromJson(text, field.Get(component), assets, &problem)) {

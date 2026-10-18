@@ -21,6 +21,11 @@ namespace fs = std::filesystem;
 
 namespace {
 constexpr const char* kUntitled = "Sem título";
+constexpr const char* kUnsavedTitle = "Alterações não salvas";
+constexpr const char* kNewerVersionTitle = "Projeto de versão mais nova";
+constexpr const char* kRecoveryTitle = "Recuperar alterações não salvas";
+constexpr const char* kErrorTitle = "Erro";
+const ImVec2 kButtonSize{110.0f, 0.0f};
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -70,32 +75,34 @@ void SceneDocument::DrawFileMenu() {
 }
 
 void SceneDocument::DrawPopups() {
-    const char* unsavedTitle = "Alterações não salvas";
-    const char* newerVersionTitle = "Projeto de versão mais nova";
-    const char* recoveryTitle = "Recuperar alterações não salvas";
-    const char* errorTitle = "Erro";
     if (m_openUnsavedPopup) {
-        ImGui::OpenPopup(unsavedTitle);
+        ImGui::OpenPopup(kUnsavedTitle);
         m_openUnsavedPopup = false;
     }
     if (m_openNewerVersionPopup) {
-        ImGui::OpenPopup(newerVersionTitle);
+        ImGui::OpenPopup(kNewerVersionTitle);
         m_openNewerVersionPopup = false;
     }
     if (m_openRecoveryPopup) {
-        ImGui::OpenPopup(recoveryTitle);
+        ImGui::OpenPopup(kRecoveryTitle);
         m_openRecoveryPopup = false;
     }
     if (m_openErrorPopup) {
-        ImGui::OpenPopup(errorTitle);
+        ImGui::OpenPopup(kErrorTitle);
         m_openErrorPopup = false;
     }
 
-    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    const ImVec2 buttonSize{110.0f, 0.0f};
+    DrawUnsavedPopup();
+    DrawNewerVersionPopup();
+    DrawRecoveryPopup();
+    DrawNewProjectPopup();
+    DrawErrorPopup();
+}
 
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal(unsavedTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+// Cena com alterações não salvas antes de abrir, criar ou sair: salvar, não salvar ou cancelar.
+void SceneDocument::DrawUnsavedPopup() {
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(kUnsavedTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         const std::string name = m_scenePath.empty() ? kUntitled : ToUtf8(m_scenePath.filename());
         ImGui::Text("A cena \"%s\" tem alterações não salvas.", name.c_str());
         ImGui::TextUnformatted("Deseja salvar antes de continuar?");
@@ -103,18 +110,18 @@ void SceneDocument::DrawPopups() {
 
         FileAction action = FileAction::None;
         bool close = false;
-        if (ImGui::Button("Salvar", buttonSize)) {
+        if (ImGui::Button("Salvar", kButtonSize)) {
             close = true;
             if (SaveScene(false)) action = m_pendingAction;  // se cancelar o diálogo, não continua
         }
         ImGui::SameLine();
-        if (ImGui::Button("Não salvar", buttonSize)) {
+        if (ImGui::Button("Não salvar", kButtonSize)) {
             close = true;
             ClearRecovery();
             action = m_pendingAction;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancelar", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) close = true;
+        if (ImGui::Button("Cancelar", kButtonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) close = true;
 
         const fs::path path = m_pendingPath;
         if (close) {
@@ -126,9 +133,12 @@ void SceneDocument::DrawPopups() {
         // Executa depois de fechar o popup: algumas ações abrem outro diálogo modal.
         if (action != FileAction::None) PerformFileAction(action, path);
     }
+}
 
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal(newerVersionTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+// Projeto salvo por um Motor mais novo: abrir mesmo assim ou cancelar.
+void SceneDocument::DrawNewerVersionPopup() {
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(kNewerVersionTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
         ImGui::Text("O projeto \"%s\" foi salvo no Motor %s, mais novo que este editor (%s).",
                     m_pendingNewerProjectName.c_str(), m_pendingNewerProjectVersion.c_str(), kVersion);
@@ -140,7 +150,7 @@ void SceneDocument::DrawPopups() {
         const ImVec2 wideButton{160.0f, 0.0f};
         const bool openAnyway = ImGui::Button("Abrir mesmo assim", wideButton);
         ImGui::SameLine();
-        const bool cancel = ImGui::Button("Cancelar", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        const bool cancel = ImGui::Button("Cancelar", kButtonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
         const fs::path path = m_pendingNewerProjectPath;
         const bool restore = m_pendingNewerProjectRestoreScene;
         if (openAnyway || cancel) {
@@ -150,9 +160,12 @@ void SceneDocument::DrawPopups() {
         ImGui::EndPopup();
         if (openAnyway) OpenProjectAt(path, restore, true);
     }
+}
 
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal(recoveryTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+// Estado não salvo encontrado ao abrir o projeto: recuperar ou descartar.
+void SceneDocument::DrawRecoveryPopup() {
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(kRecoveryTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
         const std::string sceneLabel = m_pendingRecovery.originalPath.empty()
                                            ? std::string(kUntitled)
@@ -166,9 +179,9 @@ void SceneDocument::DrawPopups() {
         ImGui::PopTextWrapPos();
         ImGui::Spacing();
 
-        const bool recover = ImGui::Button("Recuperar", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+        const bool recover = ImGui::Button("Recuperar", kButtonSize) || ImGui::IsKeyPressed(ImGuiKey_Enter, false);
         ImGui::SameLine();
-        const bool discard = ImGui::Button("Descartar", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        const bool discard = ImGui::Button("Descartar", kButtonSize) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
         SceneSerializer::RecoveryInfo info;
         if (recover || discard) {
             info = std::move(m_pendingRecovery);
@@ -182,16 +195,17 @@ void SceneDocument::DrawPopups() {
             ClearRecovery();
         }
     }
+}
 
-    DrawNewProjectPopup();
-
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal(errorTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+// Mensagem de erro (m_errorMessage).
+void SceneDocument::DrawErrorPopup() {
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal(kErrorTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
         ImGui::TextUnformatted(m_errorMessage.c_str());
         ImGui::PopTextWrapPos();
         ImGui::Spacing();
-        if (ImGui::Button("OK", buttonSize) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("OK", kButtonSize) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 }

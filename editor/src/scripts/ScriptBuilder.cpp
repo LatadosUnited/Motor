@@ -288,6 +288,174 @@ std::vector<NinjaLogEntry> ReadNinjaLog(const fs::path& binaryDir) {
     }
     return entries;
 }
+
+// Nome do arquivo de um objeto compilado ("Girar.cpp"), pelo mapa do CMake ou pelo próprio nome do .obj.
+std::string ObjectName(const std::unordered_map<std::string, std::string>& objNames, const std::string& obj) {
+    if (auto it = objNames.find(obj); it != objNames.end()) return it->second;
+    return FallbackObjectName(obj);
+}
+
+// Tempos de uma compilação (configurar, compilar cada arquivo, ligar), tirados da saída do CMake/Ninja linha a
+// linha e, no Ninja, do .ninja_log (início e fim exatos de cada saída).
+class BuildTimer {
+public:
+    using Clock = std::chrono::steady_clock;
+
+    BuildTimer(const ScriptProject::Paths& paths, bool isNinja, ScriptBuilder::Timings& timings)
+        : m_paths(paths), m_isNinja(isNinja), m_timings(timings) {
+        if (m_isNinja) {
+            for (const NinjaLogEntry& e : ReadNinjaLog(paths.binaryDir)) m_ninjaBefore[e.output] = e.mtime;
+        }
+        m_buildStart = Clock::now();
+    }
+
+    void OnLine(std::string line) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        const auto now = Clock::now();
+        if (line.find("Re-running CMake...") != std::string::npos ||
+            (m_reconfigStart == Clock::time_point{} && m_compileStart == Clock::time_point{} &&
+             m_linkStart == Clock::time_point{} && line.rfind("-- ", 0) == 0)) {
+            if (m_reconfigStart == Clock::time_point{}) m_reconfigStart = now;
+        }
+        if (line.rfind("-- Build files have been written to:", 0) == 0 && m_reconfigStart != Clock::time_point{}) {
+            m_timings.configure += std::chrono::duration<float>(now - m_reconfigStart).count();
+            m_reconfigEnd = now;
+            m_reconfigStart = {};
+        }
+        constexpr std::string_view kBuilding = "Building CXX object ";
+        constexpr std::string_view kCompiling = "Compiling object ";
+        constexpr std::string_view kFromSource = " from source ";
+        if (const size_t pos = line.find(kBuilding); pos != std::string::npos) {
+            RecordObj(line.substr(pos + kBuilding.size()), now);
+        } else if (const size_t pos2 = line.find(kCompiling); pos2 != std::string::npos) {
+            const size_t objStart = pos2 + kCompiling.size();
+            const size_t fromPos = line.find(kFromSource, objStart);
+            if (fromPos != std::string::npos) {
+                RecordObj(line.substr(objStart, fromPos - objStart), now);
+            }
+        }
+        if (line.find("Linking CXX shared library ") != std::string::npos ||
+            line.find("Linking CXX shared module ") != std::string::npos) {
+            if (!m_isNinja && m_compileStart != Clock::time_point{} && m_timings.compile == 0.0f) {
+                m_timings.compile = std::chrono::duration<float>(now - m_compileStart).count();
+            }
+            if (m_linkStart == Clock::time_point{}) m_linkStart = now;
+            m_linkEnd = now;
+        }
+        if (line.find("Built target ") != std::string::npos) {
+            if (m_linkStart != Clock::time_point{} && m_timings.link == 0.0f) {
+                m_timings.link = std::chrono::duration<float>(now - m_linkStart).count();
+            }
+        }
+    }
+
+    // Fim da compilação: distribui os tempos por arquivo e fecha compilar e ligar.
+    void Finish() {
+        m_buildEnd = Clock::now();
+        if (m_reconfigStart != Clock::time_point{}) {
+            m_timings.configure += std::chrono::duration<float>(m_buildEnd - m_reconfigStart).count();
+            m_reconfigEnd = m_buildEnd;
+        }
+        m_phaseStart = m_reconfigEnd != Clock::time_point{} ? m_reconfigEnd : m_buildStart;
+        const auto objNames = LoadObjectNames(m_paths);
+        if (m_isNinja) FinishNinja(objNames);
+        else FinishMakefiles(objNames);
+    }
+
+private:
+    struct StartedFile {
+        std::string obj;
+        Clock::time_point eventSteady{};
+        fs::file_time_type startFile{};
+    };
+
+    void RecordObj(std::string obj, Clock::time_point now) {
+        while (!obj.empty() && (obj.back() == ' ' || obj.back() == '\t')) obj.pop_back();
+        std::replace(obj.begin(), obj.end(), '\\', '/');
+        if (m_compileStart == Clock::time_point{}) m_compileStart = now;
+        m_lastObjSteady = now;
+        m_startedFiles.push_back({std::move(obj), now, fs::file_time_type::clock::now()});
+    }
+
+    // Ninja: o .ninja_log tem início e fim (ms) de cada saída que mudou nesta compilação.
+    void FinishNinja(const std::unordered_map<std::string, std::string>& objNames) {
+        std::unordered_map<std::string, NinjaLogEntry> changed;
+        for (const NinjaLogEntry& e : ReadNinjaLog(m_paths.binaryDir)) {
+            auto it = m_ninjaBefore.find(e.output);
+            if (it == m_ninjaBefore.end() || it->second != e.mtime) {
+                changed[e.output] = e;
+            }
+        }
+        bool usedNinjaLog = false;
+        int64_t minObjStart = INT64_MAX;
+        int64_t maxObjEnd = 0;
+        for (const StartedFile& sf : m_startedFiles) {
+            float sec = 0.0f;
+            if (auto it = changed.find(sf.obj); it != changed.end()) {
+                sec = static_cast<float>(std::max<int64_t>(1, it->second.endMs - it->second.startMs)) / 1000.0f;
+                minObjStart = std::min(minObjStart, it->second.startMs);
+                maxObjEnd = std::max(maxObjEnd, it->second.endMs);
+                usedNinjaLog = true;
+            } else {
+                sec = std::max(0.001f, std::chrono::duration<float>(sf.eventSteady - m_phaseStart).count());
+            }
+            m_timings.files.push_back({ObjectName(objNames, sf.obj), sec});
+        }
+        if (usedNinjaLog && maxObjEnd >= minObjStart) {
+            m_timings.compile = static_cast<float>( std::max<int64_t>(1, maxObjEnd - minObjStart)) / 1000.0f;
+        } else if (m_lastObjSteady != Clock::time_point{}) {
+            m_timings.compile = std::max(0.001f, std::chrono::duration<float>(m_lastObjSteady - m_phaseStart).count());
+        }
+        const std::string dllName = motor::ToGenericUtf8(m_paths.dll.filename());
+        if (auto it = changed.find(dllName); it != changed.end()) {
+            m_timings.link = static_cast<float>(std::max<int64_t>(1, it->second.endMs - it->second.startMs)) / 1000.0f;
+        } else if (m_linkEnd != Clock::time_point{}) {
+            const auto lStart = m_lastObjSteady != Clock::time_point{} ? m_lastObjSteady : m_phaseStart;
+            m_timings.link = std::max(0.001f, std::chrono::duration<float>(m_linkEnd - lStart).count());
+        }
+    }
+
+    // Makefiles: sem log com tempos; cada arquivo vai do aviso "Building" até o .obj ser gravado.
+    void FinishMakefiles(const std::unordered_map<std::string, std::string>& objNames) {
+        if (m_compileStart != Clock::time_point{} && m_timings.compile == 0.0f) {
+            const auto end = m_linkStart != Clock::time_point{} ? m_linkStart : m_buildEnd;
+            m_timings.compile = std::chrono::duration<float>(end - m_compileStart).count();
+        }
+        if (m_linkStart != Clock::time_point{} && m_timings.link == 0.0f) {
+            m_timings.link = std::chrono::duration<float>(m_buildEnd - m_linkStart).count();
+        }
+        const auto compileEndSteady = m_linkStart != Clock::time_point{} ? m_linkStart : m_buildEnd;
+        for (size_t i = 0; i < m_startedFiles.size(); ++i) {
+            const StartedFile& sf = m_startedFiles[i];
+            float sec = 0.0f;
+            std::error_code ec;
+            const fs::path objPath = m_paths.binaryDir / motor::PathFromUtf8(sf.obj);
+            const auto writeTime = fs::last_write_time(objPath, ec);
+            if (!ec && writeTime > sf.startFile) {
+                sec = std::chrono::duration<float>(writeTime - sf.startFile).count();
+            } else {
+                const auto nextSteady = (i + 1 < m_startedFiles.size()) ? m_startedFiles[i + 1].eventSteady : compileEndSteady;
+                sec = std::chrono::duration<float>(nextSteady - sf.eventSteady).count();
+            }
+            m_timings.files.push_back({ObjectName(objNames, sf.obj), std::max(0.0f, sec)});
+        }
+    }
+
+    const ScriptProject::Paths& m_paths;
+    const bool m_isNinja;
+    ScriptBuilder::Timings& m_timings;
+    std::unordered_map<std::string, std::string> m_ninjaBefore;  // saída -> mtime antes de compilar
+    std::vector<StartedFile> m_startedFiles;
+    Clock::time_point m_buildStart{};
+    Clock::time_point m_reconfigStart{};
+    Clock::time_point m_reconfigEnd{};
+    Clock::time_point m_compileStart{};
+    Clock::time_point m_lastObjSteady{};
+    Clock::time_point m_linkStart{};
+    Clock::time_point m_linkEnd{};
+    Clock::time_point m_buildEnd{};
+    Clock::time_point m_phaseStart{};
+};
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -352,161 +520,13 @@ bool ScriptBuilder::Start(const ScriptProject::Paths& paths, const ScriptProject
             timings.configure += std::chrono::duration<float>(Clock::now() - t0).count();
         }
         if (ok) {
-            const bool isNinja = toolchain.generator.find("Ninja") != std::string::npos;
-            std::unordered_map<std::string, std::string> ninjaBefore;
-            if (isNinja) {
-                for (const NinjaLogEntry& e : ReadNinjaLog(paths.binaryDir)) {
-                    ninjaBefore[e.output] = e.mtime;
-                }
-            }
-
-            struct StartedFile {
-                std::string obj;
-                Clock::time_point eventSteady{};
-                fs::file_time_type startFile{};
-            };
-            std::vector<StartedFile> startedFiles;
-            const Clock::time_point buildStart = Clock::now();
-            Clock::time_point reconfigStart{};
-            Clock::time_point reconfigEnd{};
-            Clock::time_point compileStart{};
-            Clock::time_point lastObjSteady{};
-            Clock::time_point linkStart{};
-            Clock::time_point linkEnd{};
-
-            auto recordObj = [&](std::string obj, Clock::time_point now) {
-                while (!obj.empty() && (obj.back() == ' ' || obj.back() == '\t')) obj.pop_back();
-                std::replace(obj.begin(), obj.end(), '\\', '/');
-                if (compileStart == Clock::time_point{}) compileStart = now;
-                lastObjSteady = now;
-                startedFiles.push_back({std::move(obj), now, fs::file_time_type::clock::now()});
-            };
-
-            auto parseLine = [&](std::string line) {
-                if (!line.empty() && line.back() == '\r') line.pop_back();
-                const auto now = Clock::now();
-                if (line.find("Re-running CMake...") != std::string::npos ||
-                    (reconfigStart == Clock::time_point{} && compileStart == Clock::time_point{} &&
-                     linkStart == Clock::time_point{} && line.rfind("-- ", 0) == 0)) {
-                    if (reconfigStart == Clock::time_point{}) reconfigStart = now;
-                }
-                if (line.rfind("-- Build files have been written to:", 0) == 0 && reconfigStart != Clock::time_point{}) {
-                    timings.configure += std::chrono::duration<float>(now - reconfigStart).count();
-                    reconfigEnd = now;
-                    reconfigStart = {};
-                }
-                constexpr std::string_view kBuilding = "Building CXX object ";
-                constexpr std::string_view kCompiling = "Compiling object ";
-                constexpr std::string_view kFromSource = " from source ";
-                if (const size_t pos = line.find(kBuilding); pos != std::string::npos) {
-                    recordObj(line.substr(pos + kBuilding.size()), now);
-                } else if (const size_t pos2 = line.find(kCompiling); pos2 != std::string::npos) {
-                    const size_t objStart = pos2 + kCompiling.size();
-                    const size_t fromPos = line.find(kFromSource, objStart);
-                    if (fromPos != std::string::npos) {
-                        recordObj(line.substr(objStart, fromPos - objStart), now);
-                    }
-                }
-                if (line.find("Linking CXX shared library ") != std::string::npos ||
-                    line.find("Linking CXX shared module ") != std::string::npos) {
-                    if (!isNinja && compileStart != Clock::time_point{} && timings.compile == 0.0f) {
-                        timings.compile = std::chrono::duration<float>(now - compileStart).count();
-                    }
-                    if (linkStart == Clock::time_point{}) linkStart = now;
-                    linkEnd = now;
-                }
-                if (line.find("Built target ") != std::string::npos) {
-                    if (linkStart != Clock::time_point{} && timings.link == 0.0f) {
-                        timings.link = std::chrono::duration<float>(now - linkStart).count();
-                    }
-                }
-            };
-
+            BuildTimer timer(paths, toolchain.generator.find("Ninja") != std::string::npos, timings);
             ok = run(ScriptProject::BuildCommand(paths, toolchain), [&](const std::string& chunk) {
                 std::istringstream in(chunk);
                 std::string line;
-                while (std::getline(in, line)) parseLine(std::move(line));
+                while (std::getline(in, line)) timer.OnLine(std::move(line));
             });
-
-            const auto buildEnd = Clock::now();
-            if (reconfigStart != Clock::time_point{}) {
-                timings.configure += std::chrono::duration<float>(buildEnd - reconfigStart).count();
-                reconfigEnd = buildEnd;
-            }
-            const auto phaseStart = reconfigEnd != Clock::time_point{} ? reconfigEnd : buildStart;
-            const auto objNames = LoadObjectNames(paths);
-
-            bool usedNinjaLog = false;
-            if (isNinja) {
-                std::unordered_map<std::string, NinjaLogEntry> changed;
-                for (const NinjaLogEntry& e : ReadNinjaLog(paths.binaryDir)) {
-                    auto it = ninjaBefore.find(e.output);
-                    if (it == ninjaBefore.end() || it->second != e.mtime) {
-                        changed[e.output] = e;
-                    }
-                }
-                int64_t minObjStart = INT64_MAX;
-                int64_t maxObjEnd = 0;
-                for (const StartedFile& sf : startedFiles) {
-                    std::string name;
-                    if (auto it = objNames.find(sf.obj); it != objNames.end()) {
-                        name = it->second;
-                    } else {
-                        name = FallbackObjectName(sf.obj);
-                    }
-                    float sec = 0.0f;
-                    if (auto it = changed.find(sf.obj); it != changed.end()) {
-                        sec = static_cast<float>(std::max<int64_t>(1, it->second.endMs - it->second.startMs)) / 1000.0f;
-                        minObjStart = std::min(minObjStart, it->second.startMs);
-                        maxObjEnd = std::max(maxObjEnd, it->second.endMs);
-                        usedNinjaLog = true;
-                    } else {
-                        sec = std::max(0.001f, std::chrono::duration<float>(sf.eventSteady - phaseStart).count());
-                    }
-                    timings.files.push_back({std::move(name), sec});
-                }
-                if (usedNinjaLog && maxObjEnd >= minObjStart) {
-                    timings.compile = static_cast<float>( std::max<int64_t>(1, maxObjEnd - minObjStart)) / 1000.0f;
-                } else if (lastObjSteady != Clock::time_point{}) {
-                    timings.compile = std::max(0.001f, std::chrono::duration<float>(lastObjSteady - phaseStart).count());
-                }
-                const std::string dllName = motor::ToGenericUtf8(paths.dll.filename());
-                if (auto it = changed.find(dllName); it != changed.end()) {
-                    timings.link = static_cast<float>(std::max<int64_t>(1, it->second.endMs - it->second.startMs)) / 1000.0f;
-                } else if (linkEnd != Clock::time_point{}) {
-                    const auto lStart = lastObjSteady != Clock::time_point{} ? lastObjSteady : phaseStart;
-                    timings.link = std::max(0.001f, std::chrono::duration<float>(linkEnd - lStart).count());
-                }
-            } else {
-                if (compileStart != Clock::time_point{} && timings.compile == 0.0f) {
-                    const auto end = linkStart != Clock::time_point{} ? linkStart : buildEnd;
-                    timings.compile = std::chrono::duration<float>(end - compileStart).count();
-                }
-                if (linkStart != Clock::time_point{} && timings.link == 0.0f) {
-                    timings.link = std::chrono::duration<float>(buildEnd - linkStart).count();
-                }
-                const auto compileEndSteady = linkStart != Clock::time_point{} ? linkStart : buildEnd;
-                for (size_t i = 0; i < startedFiles.size(); ++i) {
-                    const StartedFile& sf = startedFiles[i];
-                    std::string name;
-                    if (auto it = objNames.find(sf.obj); it != objNames.end()) {
-                        name = it->second;
-                    } else {
-                        name = FallbackObjectName(sf.obj);
-                    }
-                    float sec = 0.0f;
-                    std::error_code ec;
-                    const fs::path objPath = paths.binaryDir / motor::PathFromUtf8(sf.obj);
-                    const auto writeTime = fs::last_write_time(objPath, ec);
-                    if (!ec && writeTime > sf.startFile) {
-                        sec = std::chrono::duration<float>(writeTime - sf.startFile).count();
-                    } else {
-                        const auto nextSteady = (i + 1 < startedFiles.size()) ? startedFiles[i + 1].eventSteady : compileEndSteady;
-                        sec = std::chrono::duration<float>(nextSteady - sf.eventSteady).count();
-                    }
-                    timings.files.push_back({std::move(name), std::max(0.0f, sec)});
-                }
-            }
+            timer.Finish();
         }
 
         {

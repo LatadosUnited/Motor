@@ -260,36 +260,9 @@ bool ReadImage(const cgltf_options& options, const cgltf_image& image, const fs:
     return true;
 }
 
-} // namespace
-
-bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelData& out, std::string* error) {
-    cgltf_options options{};
-    options.file.read = &ReadExternal;
-    options.file.release = &ReleaseExternal;
-
-    cgltf_data* raw = nullptr;
-    cgltf_result r = cgltf_parse(&options, bytes.data(), bytes.size(), &raw);
-    std::unique_ptr<cgltf_data, CgltfDeleter> data(raw);
-    if (r != cgltf_result_success) {
-        SetError(error, std::format("glTF: {}.", ResultText(r)));
-        return false;
-    }
-    // O cgltf junta o diretório do "arquivo" com o URI: passamos um nome qualquer dentro de baseDir.
-    const std::string gltfPath = ToGenericUtf8(baseDir / "modelo.gltf");
-    r = cgltf_load_buffers(&options, data.get(), gltfPath.c_str());
-    if (r != cgltf_result_success) {
-        SetError(error, std::format("glTF: buffers não carregados ({}).", ResultText(r)));
-        return false;
-    }
-    r = cgltf_validate(data.get());
-    if (r != cgltf_result_success) {
-        SetError(error, std::format("glTF: {}.", ResultText(r)));
-        return false;
-    }
-    const cgltf_data& d = *data;
-    ModelData model;
-
-    // --- Materiais e imagens ---
+// Materiais e imagens. Imagem sem dados sai dos materiais que a usavam.
+void ReadMaterialsAndImages(const cgltf_options& options, const cgltf_data& d, const fs::path& baseDir,
+                            ModelData& model) {
     UniqueNames materialNames;
     for (size_t i = 0; i < d.materials_count; ++i) {
         model.materials.push_back(ReadMaterial(d, d.materials[i], materialNames.Make(d.materials[i].name, std::format("material{}", i))));
@@ -309,8 +282,10 @@ bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelDat
             }
         }
     }
+}
 
-    // --- Malhas: uma primitiva = uma malha ---
+// Malhas: uma primitiva = uma malha. Devolve, para cada malha do glTF, os índices das suas primitivas.
+std::vector<std::vector<int>> ReadMeshes(const cgltf_data& d, ModelData& model) {
     std::vector<std::vector<int>> primitivesOfMesh(d.meshes_count);
     UniqueNames meshNames;
     for (size_t mi = 0; mi < d.meshes_count; ++mi) {
@@ -329,8 +304,12 @@ bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelDat
             model.primitives.push_back(std::move(prim));
         }
     }
+    return primitivesOfMesh;
+}
 
-    // --- Nós da cena padrão, pai antes do filho ---
+// Nós da cena padrão, pai antes do filho. Devolve nó do glTF -> índice em model.nodes.
+std::unordered_map<const cgltf_node*, int> ReadNodes(const cgltf_data& d, const std::vector<std::vector<int>>& primitivesOfMesh,
+                                                     ModelData& model) {
     std::unordered_map<const cgltf_node*, int> nodeIndex;
     UniqueNames nodeNames;
     auto addNode = [&](auto& self, const cgltf_node* node, int parent) -> void {
@@ -366,8 +345,10 @@ bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelDat
             if (!d.nodes[i].parent) addNode(addNode, &d.nodes[i], -1);
         }
     }
+    return nodeIndex;
+}
 
-    // --- Peles ---
+void ReadSkins(const cgltf_data& d, const std::unordered_map<const cgltf_node*, int>& nodeIndex, ModelData& model) {
     for (size_t si = 0; si < d.skins_count; ++si) {
         const cgltf_skin& s = d.skins[si];
         ModelSkin skin;
@@ -380,8 +361,10 @@ bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelDat
         }
         model.skins.push_back(std::move(skin));
     }
+}
 
-    // --- Clipes ---
+// Clipes de animação (translação, rotação e escala; pesos de morph ficam de fora).
+void ReadClips(const cgltf_data& d, const std::unordered_map<const cgltf_node*, int>& nodeIndex, ModelData& model) {
     UniqueNames clipNames;
     for (size_t ai = 0; ai < d.animations_count; ++ai) {
         const cgltf_animation& a = d.animations[ai];
@@ -417,6 +400,41 @@ bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelDat
         }
         model.clips.push_back(std::move(clip));
     }
+}
+
+} // namespace
+
+bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelData& out, std::string* error) {
+    cgltf_options options{};
+    options.file.read = &ReadExternal;
+    options.file.release = &ReleaseExternal;
+
+    cgltf_data* raw = nullptr;
+    cgltf_result r = cgltf_parse(&options, bytes.data(), bytes.size(), &raw);
+    std::unique_ptr<cgltf_data, CgltfDeleter> data(raw);
+    if (r != cgltf_result_success) {
+        SetError(error, std::format("glTF: {}.", ResultText(r)));
+        return false;
+    }
+    // O cgltf junta o diretório do "arquivo" com o URI: passamos um nome qualquer dentro de baseDir.
+    const std::string gltfPath = ToGenericUtf8(baseDir / "modelo.gltf");
+    r = cgltf_load_buffers(&options, data.get(), gltfPath.c_str());
+    if (r != cgltf_result_success) {
+        SetError(error, std::format("glTF: buffers não carregados ({}).", ResultText(r)));
+        return false;
+    }
+    r = cgltf_validate(data.get());
+    if (r != cgltf_result_success) {
+        SetError(error, std::format("glTF: {}.", ResultText(r)));
+        return false;
+    }
+    const cgltf_data& d = *data;
+    ModelData model;
+    ReadMaterialsAndImages(options, d, baseDir, model);
+    const std::vector<std::vector<int>> primitivesOfMesh = ReadMeshes(d, model);
+    const std::unordered_map<const cgltf_node*, int> nodeIndex = ReadNodes(d, primitivesOfMesh, model);
+    ReadSkins(d, nodeIndex, model);
+    ReadClips(d, nodeIndex, model);
 
     if (model.primitives.empty() && model.nodes.empty()) {
         SetError(error, "glTF sem malhas nem nós.");

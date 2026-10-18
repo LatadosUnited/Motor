@@ -91,42 +91,15 @@ std::optional<AssetRef> ImportImage(const ModelImage& image, const fs::path& fol
     if (guid.empty() || key.empty()) return std::nullopt;
     return AssetRef{key, guid};
 }
-} // namespace
 
-fs::path ModelPrefabPath(const fs::path& modelFile) {
-    fs::path prefab = modelFile;
-    prefab.replace_extension(kPrefabFileExtension);
-    return prefab;
-}
-
-bool ModelNeedsImport(const fs::path& modelFile) {
-    std::error_code ec;
-    const auto prefabTime = fs::last_write_time(ModelPrefabPath(modelFile), ec);
-    if (ec) return true;
-    const auto modelTime = fs::last_write_time(modelFile, ec);
-    return !ec && prefabTime < modelTime;
-}
-
-bool ImportModel(const fs::path& modelFile, AssetLibrary& assets, ModelImportResult* resultOut, std::string* error) {
-    const std::string key = assets.KeyForFile(modelFile);
-    if (key.empty()) {
-        SetError(error, std::format("'{}' está fora do projeto.", ToUtf8(modelFile.filename())));
-        return false;
-    }
-    std::shared_ptr<Model> model = assets.GetModel(key, error);
-    if (!model) return false;
-    const ModelData& data = model->data;
-
-    ModelImportResult result;
-    const std::string stem = ToUtf8(modelFile.stem());
-    result.prefab = ModelPrefabPath(modelFile);
-    result.folder = modelFile.parent_path() / PathFromUtf8(stem + "_materiais");
-
-    // --- Texturas e materiais ---
+// Texturas e materiais do modelo: um .mmat por material (e as imagens) na pasta de materiais do modelo.
+// `materials` fica com os materiais carregados, na ordem do modelo (nulo se não carregou).
+bool ImportMaterials(const ModelData& data, AssetLibrary& assets, ModelImportResult& result,
+                     std::vector<std::shared_ptr<Material>>& materials, std::string* error) {
     std::error_code ec;
     if (!data.materials.empty()) fs::create_directories(result.folder, ec);
     std::map<int, std::optional<AssetRef>> imageRefs;
-    std::vector<std::shared_ptr<Material>> materials(data.materials.size());
+    materials.assign(data.materials.size(), nullptr);
     for (size_t i = 0; i < data.materials.size(); ++i) {
         const ModelMaterial& m = data.materials[i];
         auto image = [&](int index) -> std::optional<AssetRef> {
@@ -159,9 +132,14 @@ bool ImportModel(const fs::path& modelFile, AssetLibrary& assets, ModelImportRes
         materials[i] = assets.GetMaterial(assets.KeyForFile(file), &problem);
         if (!materials[i]) log::Warn("Importar modelo: material '{}' não carregado: {}", m.name, problem);
     }
+    return true;
+}
 
-    // --- Entidades do prefab ---
-    Scene content;
+// Entidades do prefab: a raiz (com o Animator, se houver animação ou pele) e um filho por nó que tem malha
+// ou leva a um nó com malha; nó com várias primitivas ganha um filho por primitiva.
+void BuildPrefabContent(const std::shared_ptr<Model>& model, const std::vector<std::shared_ptr<Material>>& materials,
+                        const std::string& stem, Scene& content) {
+    const ModelData& data = model->data;
     uint32_t nextSource = 1;
     auto link = [&](Entity& e) { e.Add<PrefabInstance>().link.source = nextSource++; };
     auto addRenderer = [&](Entity& e, size_t primitive) {
@@ -226,6 +204,43 @@ bool ImportModel(const fs::path& modelFile, AssetLibrary& assets, ModelImportRes
             }
         }
     }
+}
+} // namespace
+
+fs::path ModelPrefabPath(const fs::path& modelFile) {
+    fs::path prefab = modelFile;
+    prefab.replace_extension(kPrefabFileExtension);
+    return prefab;
+}
+
+bool ModelNeedsImport(const fs::path& modelFile) {
+    std::error_code ec;
+    const auto prefabTime = fs::last_write_time(ModelPrefabPath(modelFile), ec);
+    if (ec) return true;
+    const auto modelTime = fs::last_write_time(modelFile, ec);
+    return !ec && prefabTime < modelTime;
+}
+
+bool ImportModel(const fs::path& modelFile, AssetLibrary& assets, ModelImportResult* resultOut, std::string* error) {
+    const std::string key = assets.KeyForFile(modelFile);
+    if (key.empty()) {
+        SetError(error, std::format("'{}' está fora do projeto.", ToUtf8(modelFile.filename())));
+        return false;
+    }
+    std::shared_ptr<Model> model = assets.GetModel(key, error);
+    if (!model) return false;
+    const ModelData& data = model->data;
+
+    ModelImportResult result;
+    const std::string stem = ToUtf8(modelFile.stem());
+    result.prefab = ModelPrefabPath(modelFile);
+    result.folder = modelFile.parent_path() / PathFromUtf8(stem + "_materiais");
+
+    std::vector<std::shared_ptr<Material>> materials;
+    if (!ImportMaterials(data, assets, result, materials, error)) return false;
+
+    Scene content;
+    BuildPrefabContent(model, materials, stem, content);
     result.entities = content.Entities().size();
 
     if (!PrefabLibrary::WriteFile(result.prefab, content, assets, error)) return false;

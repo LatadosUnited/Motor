@@ -82,6 +82,10 @@ private:
     std::filesystem::path DefaultSceneDir() const;
     void UpdateWindowTitle();
     void DrawNewProjectPopup();
+    void DrawUnsavedPopup();
+    void DrawNewerVersionPopup();
+    void DrawRecoveryPopup();
+    void DrawErrorPopup();
 
     EditorContext& m_ctx;
     UndoHistory& m_history;
