@@ -1,7 +1,7 @@
 // Modo Play do editor (PlayMode): copiar a cena ao dar Play, rodar os scripts, pausar e restaurar ao parar.
 #include "TestUtil.h"
 
-#include "PlayMode.h"
+#include "play/PlayMode.h"
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/scene/Component.h>

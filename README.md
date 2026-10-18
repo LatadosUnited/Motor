@@ -343,7 +343,7 @@ entity.Remove<Girar>();
   (`std::shared_ptr<Mesh>` / `std::shared_ptr<Texture2D>`, com o seletor de assets do projeto).
 - Tipo de campo novo (enum, referência a outro tipo de asset...): especialize `motor::FieldTraits<T>`
   (comparação e JSON do valor, ver `Component.h`) e, para editá-lo no Inspector, registre um desenhador com
-  `MOTOR_FIELD_DRAWER(NomeDoTipo)` (`editor/src/FieldDrawers.h`). Nada mais muda na engine ou no editor.
+  `MOTOR_FIELD_DRAWER(NomeDoTipo)` (`editor/src/drawers/FieldDrawers.h`). Nada mais muda na engine ou no editor.
 - Componentes da engine ficam um por arquivo (`engine/include/motor/scene/<Nome>.h` + `src/scene/<Nome>.cpp`)
   e se registram com `MOTOR_COMPONENT_MODULE(Nome) { registry.Register<...>(...); }`. A ordem no menu
   "Adicionar componente" é a ordem alfabética do nome do módulo.

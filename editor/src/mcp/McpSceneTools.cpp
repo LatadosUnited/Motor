@@ -212,7 +212,9 @@ static Json EnvironmentJson(const EditorContext& ctx) {
             {"fxaa", env.fxaa}};
 }
 
-void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
+namespace {
+// Hierarquia, ler, criar e mudar entidades.
+void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
     protocol.AddTool({
         .name = "scene_tree",
         .description = "Hierarquia da cena aberta: entidades (id, nome) com os filhos aninhados e os tipos de "
@@ -294,7 +296,10 @@ void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
             return ToolResult::Data(EntityToJson(ctx, e));
         },
     });
+}
 
+// Apagar, duplicar e selecionar entidades.
+void AddEntityEditTools(Protocol& protocol, EditorContext& ctx) {
     protocol.AddTool({
         .name = "entity_delete",
         .description = "Apaga uma entidade e todos os filhos (dá para desfazer com undo).",
@@ -336,7 +341,10 @@ void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
             return ToolResult::Text(std::format("selecionada: {} (id {})", e.name, e.id));
         },
     });
+}
 
+// Componentes: tipos registrados, adicionar, remover e mudar campos.
+void AddComponentTools(Protocol& protocol, EditorContext& ctx) {
     protocol.AddTool({
         .name = "component_types",
         .description = "Tipos de componente registrados (da engine e os scripts do projeto carregados) com os "
@@ -422,7 +430,10 @@ void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
             return ToolResult::Data(EntityToJson(ctx, e));
         },
     });
+}
 
+// Ambiente da cena: céu, luz ambiente, sombras e pós-processamento.
+void AddEnvironmentTools(Protocol& protocol, EditorContext& ctx) {
     protocol.AddTool({
         .name = "scene_environment",
         .description = "Lê ou muda o ambiente da cena (cada mudança vira um passo de desfazer). Céu: cor ou imagem "
@@ -494,6 +505,15 @@ void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
             return ToolResult::Data(EnvironmentJson(ctx));
         },
     });
+}
+
+} // namespace
+
+void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
+    AddEntityTools(protocol, ctx);
+    AddEntityEditTools(protocol, ctx);
+    AddComponentTools(protocol, ctx);
+    AddEnvironmentTools(protocol, ctx);
 }
 
 } // namespace editor::mcp

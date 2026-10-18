@@ -3,6 +3,8 @@
 motor_add_layer(physics
     SOURCES
         PhysicsSystem.cpp
+        PhysicsWorld.cpp
+        PhysicsWorldEvents.cpp
         ColliderGizmo.cpp
     DEPENDS scene
     PRIVATE_LIBS Jolt)

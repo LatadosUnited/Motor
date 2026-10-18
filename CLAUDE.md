@@ -28,9 +28,11 @@ ctest --test-dir build --output-on-failure
 - `engine/` — biblioteca `Motor`, dividida em camadas: **core → renderer → project → assets → scene → app**.
   Cada camada tem `include/motor/<camada>/`, `src/<camada>/` e o seu `CMakeLists.txt` (alvo `motor_<camada>`).
   Uma camada só inclui headers dela e das camadas de baixo; o `test_layers` falha se isso for quebrado.
-  Arquivo novo entra no `CMakeLists.txt` da sua camada. Camada nova (física, áudio...): pasta própria e
-  entrada em `MOTOR_LAYERS` (`engine/CMakeLists.txt`). Precisa subir uma dependência? Mova o código para
-  baixo ou inverta a dependência (callback, constante na camada de baixo), nunca inclua para cima.
+  Arquivo novo entra no `CMakeLists.txt` da sua camada. Header usado só dentro da camada fica em `src/<camada>/`,
+  não em `include/` (ex.: `physics/PhysicsWorld.h`, `scene/SceneJson.h`, `assets/AssetLibraryUtil.h`).
+  Camada nova (física, áudio...): pasta própria e entrada em `MOTOR_LAYERS` (`engine/CMakeLists.txt`). Precisa
+  subir uma dependência? Mova o código para baixo ou inverta a dependência (callback, constante na camada de
+  baixo), nunca inclua para cima.
   - `assets/`: `AssetLibrary` (malhas/texturas embutidas e de arquivo), `AssetDatabase` (GUIDs em `.meta`),
     `AssetLoaders` (OBJ próprio, imagens via stb_image).
   - `scene/`: `Scene` (entidades, hierarquia, cópia profunda e `operator==`), `SceneSerializer` (`.mscene`),
@@ -49,16 +51,26 @@ ctest --test-dir build --output-on-failure
   Um arquivo por painel, `EditorContext` (estado compartilhado), `UndoHistory`.
   `PlayMode` (cópia/restauração da cena no Play; o loop de jogo é `motor::SceneRuntime`).
   Recurso novo do editor vai na peça da sua área, não no `EditorApp`.
+  `editor/src/` tem uma subpasta por área e os includes partem de `editor/src` (`#include "scripts/ScriptHost.h"`):
+  `document/` (`SceneDocument`), `viewport/` (`SceneViewport`, `UiEditor`), `play/` (`PlayController`,
+  `PlayMode`), `panels/` (Hierarquia, Inspector, Cena, Projeto), `drawers/` (`FieldDrawers` e os `*Drawer.cpp`),
+  `scripts/` (`Script*`), `export/` (`GameExport`, `ExportController`), `mcp/`; na raiz, as peças comuns
+  (`EditorApp`, `EditorContext`, `EditorSettings`, `UndoHistory`, `FileDialog`). Peça grande se divide em
+  `<Peça><Parte>.cpp` (ex.: `ProjectPanelDraw.cpp`, `SceneDocumentUi.cpp`), com o que as partes dividem num
+  header interno (`ProjectPanelUtil.h`).
   `mcp/`: servidor MCP do editor (`McpProtocol` JSON-RPC, `McpServer` HTTP com cpp-httplib, `McpSceneTools`
-  ferramentas de cena testáveis sem janela, `McpController` peça do editor com as demais ferramentas).
+  ferramentas de cena testáveis sem janela, `McpController` peça do editor com as demais ferramentas, divididas
+  por grupo em `McpFileTools.cpp` e `McpPlayTools.cpp`).
 - Scripts de jogo ficam na pasta `Scripts/` de cada projeto (`motor::Script` + `MOTOR_SCRIPT`, ver
   `motor/scene/ScriptModule.h`). O editor compila uma DLL por projeto (`ScriptProject`, `ScriptBuilder`) e
   recarrega sem fechar (`ScriptHost`). A engine é a `libMotor.dll`, compartilhada pelo editor e pela DLL de
   scripts; modelos de script em `editor/templates/Scripts/`.
 - `player/` — `Player.exe`, o executável do jogo exportado (roda um projeto sem o editor). A exportação fica em
-  `editor/src/GameExport` (assets referenciados e pasta de saída) e `ExportController` (Arquivo > Exportar jogo).
+  `editor/src/export/GameExport` (assets referenciados e pasta de saída) e `ExportController` (Arquivo >
+  Exportar jogo).
 - `hub/` — `MotorHub.exe` (Fase 14): projetos e versões do Motor instaladas, separado do editor. Núcleo sem
-  janela em `hub/src/HubCore` (testado em `tests/test_hub.cpp`), interface em `HubApp`. Só GLFW, ImGui e
+  janela em `hub/src/HubCore` (testado em `tests/test_hub.cpp`), interface em `HubApp` (abas em `HubProjectsTab` e
+  `HubVersionsTab`, cores e botões em `HubWidgets`). Só GLFW, ImGui e
   nlohmann_json estáticos: **não** liga na `libMotor.dll` nem inclui headers da engine (pode virar repositório
   próprio). Fala com o editor só pela linha de comando (`--project`, `--create`, `--version`) e lendo
   `.mproject` e `motor-version.json`.
@@ -84,9 +96,9 @@ ctest --test-dir build --output-on-failure
   cópia e desfazer saem de graça dos campos registrados. Componente da engine = header + `.cpp` próprios com
   `MOTOR_COMPONENT_MODULE` (sem lista central); o header entra em `Components.h`.
 - **Tipo de campo novo** (enum, referência a asset...): especialize `motor::FieldTraits<T>` e registre o
-  desenhador do Inspector com `MOTOR_FIELD_DRAWER` (`editor/src/FieldDrawers.h`), cada um no seu `.cpp`.
-  Não acrescente valores ao enum `FieldType` (isso exigiria mexer em `ComponentsEqual`, `SceneSerializer`
-  e `DrawField` ao mesmo tempo). Exemplo completo em `tests/test_component_extension.cpp`.
+  desenhador do Inspector com `MOTOR_FIELD_DRAWER` (`editor/src/drawers/FieldDrawers.h`), cada um no seu
+  `.cpp` em `drawers/`. Não acrescente valores ao enum `FieldType` (isso exigiria mexer em `ComponentsEqual`,
+  `SceneSerializer` e `DrawField` ao mesmo tempo). Exemplo completo em `tests/test_component_extension.cpp`.
 - Desfazer é automático: `UndoHistory::Track` compara a cena a cada frame (`Scene::operator==`). Dado de
   cena fora dos componentes (luz, ambiente) precisa entrar na cópia e no `operator==` de `Scene`.
 - Estilo: o do código vizinho (4 espaços, `m_` em membros, comentários curtos explicando o porquê).
@@ -151,12 +163,13 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Projeto e assets | `engine/{include/motor,src}/{project,assets}/` |
 | Cena e componentes | `engine/{include/motor,src}/scene/` (núcleo: `Scene`, `Component`, `SceneSerializer`, `SceneRuntime`) |
 | Aplicação | `engine/{include/motor,src}/app/`, `sandbox/` |
-| Editor: viewport | `editor/src/SceneViewport.*` |
-| Editor: Play | `editor/src/PlayController.*`, `editor/src/PlayMode.*` |
-| Editor: arquivos | `editor/src/SceneDocument.*`, `FileDialog.*`, `EditorSettings.*` |
-| Editor: scripts | `editor/src/Script*.*`, `editor/templates/` |
-| Editor: painéis | `editor/src/{Hierarchy,Inspector,Scene,Project}Panel.*`, `FieldDrawers.*` |
+| Editor: viewport | `editor/src/viewport/` |
+| Editor: Play | `editor/src/play/` |
+| Editor: arquivos | `editor/src/document/`, `editor/src/FileDialog.*`, `editor/src/EditorSettings.*` |
+| Editor: scripts | `editor/src/scripts/`, `editor/templates/` |
+| Editor: painéis | `editor/src/panels/`, `editor/src/drawers/` |
 | Editor: MCP | `editor/src/mcp/` |
+| Editor: exportação | `editor/src/export/`, `player/` |
 | Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
 | Distribuição | `distrib/`, `server/`, `installer/` (Fase 15: servidor de versões, download, instalador) |
 | Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
@@ -202,7 +215,8 @@ Alpha 2 (`docs/roadmap/alpha-2.md` e `docs/roadmap/alpha-2/`):
 | Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
 |---|---|---|---|
 | 16 Robustez e correções | `SceneRuntime` (proteção dos scripts), `PlayMode`/`SceneDocument` (recuperação), cada correção na sua área | `kScriptApiVersion` se a API dos scripts mudar | 17 só no item do caminho longo |
-| 17 Scripts | `editor/src/Script*.*`, `editor/templates/`, headers que os scripts incluem (`Script.h`, `ScriptModule.h`) | `motor_package` (SDK com o cabeçalho pré-compilado), `docs/`, painel Projeto (criar script), `kScriptApiVersion` | 16 (caminho longo) |
+| 17 Scripts | `editor/src/scripts/`, `editor/templates/`, headers que os scripts incluem (`Script.h`, `ScriptModule.h`) | `motor_package` (SDK com o cabeçalho pré-compilado), `docs/`, painel Projeto (criar script), `kScriptApiVersion` | 16 (caminho longo) |
+| Organização do código | divisão de arquivos e funções grandes, subpastas de `editor/src` (sem mudar comportamento) | quase todas as áreas | todas (mexe em muitos arquivos) |
 | 18 Funcionalidades | `physics/` (camadas, consultas), `audio/` (vozes, grupos), `renderer/` (transparência), formas em `assets/` | API dos scripts (`kScriptApiVersion`), `docs/` | — |
 | 19 Validação | `docs/teste-manual.md` | correções pequenas viram itens da 16 | — |
 | 20 Editor produtivo | `SceneViewport`, painéis, `SceneDocument` (divididos antes) | prefabs (`assets/`), MCP | — |

@@ -3,7 +3,7 @@
 // e o cache de geometria da lista de desenho. Sem janela nem OpenGL.
 #include "TestUtil.h"
 
-#include "PlayMode.h"
+#include "play/PlayMode.h"
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/core/Paths.h>

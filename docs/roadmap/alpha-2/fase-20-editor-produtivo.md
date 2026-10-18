@@ -20,9 +20,9 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 
 ## Tarefas
 
-- [ ] **Antes de tudo, dividir os arquivos que esta fase vai mexer**, um por commit, sem mudar comportamento:
-  `ProjectPanel.cpp` (~1200 linhas), `SceneViewport.cpp` e `SceneDocument.cpp` (~600). *(origem: revisão do
-  código de 17/10/2026)*
+- [ ] ~~**Antes de tudo, dividir os arquivos que esta fase vai mexer**, um por commit, sem mudar comportamento:
+  `ProjectPanel.cpp` (~1200 linhas), `SceneViewport.cpp` e `SceneDocument.cpp` (~600).~~ Feito na
+  [Organização do código](organizacao-do-codigo.md). *(origem: revisão do código de 17/10/2026)*
 - [ ] **Seleção múltipla** na hierarquia e no viewport (Ctrl/Shift, retângulo), com gizmo e Inspector para vários.
 - [ ] **Copiar, recortar, colar e duplicar** várias entidades (com filhos), também entre cenas.
 - [ ] **Snapping** na grade, em ângulos e em passos de escala; grade visível configurável.

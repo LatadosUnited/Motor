@@ -10,6 +10,8 @@ motor_add_layer(scene
         Scene.cpp
         SceneRuntime.cpp
         SceneSerializer.cpp
+        SceneSerializerFields.cpp
+        SceneRecovery.cpp
         ColliderComponent.cpp
         RigidbodyComponent.cpp
         CharacterControllerComponent.cpp

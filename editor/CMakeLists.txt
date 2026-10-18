@@ -3,42 +3,52 @@ add_executable(MotorEditor
     src/EditorApp.cpp
     src/EditorContext.cpp
     src/EditorSettings.cpp
-    src/FieldDrawers.cpp
+    src/drawers/FieldDrawers.cpp
     src/FileDialog.cpp
-    src/HierarchyPanel.cpp
-    src/InspectorPanel.cpp
-    src/PlayController.cpp
-    src/PlayMode.cpp
-    src/ProjectPanel.cpp
-    src/SceneDocument.cpp
-    src/ScenePanel.cpp
-    src/SceneViewport.cpp
-    src/ScriptBuilder.cpp
-    src/ScriptController.cpp
-    src/ScriptHost.cpp
-    src/ScriptIde.cpp
-    src/ScriptProject.cpp
+    src/panels/HierarchyPanel.cpp
+    src/panels/InspectorPanel.cpp
+    src/play/PlayController.cpp
+    src/play/PlayMode.cpp
+    src/panels/ProjectPanel.cpp
+    src/panels/ProjectPanelDraw.cpp
+    src/panels/ProjectPanelFiles.cpp
+    src/panels/ProjectPanelUtil.cpp
+    src/document/SceneDocument.cpp
+    src/document/SceneDocumentProject.cpp
+    src/document/SceneDocumentUi.cpp
+    src/panels/ScenePanel.cpp
+    src/viewport/SceneViewport.cpp
+    src/viewport/SceneViewportOverlay.cpp
+    src/scripts/ScriptBuilder.cpp
+    src/scripts/ScriptController.cpp
+    src/scripts/ScriptHost.cpp
+    src/scripts/ScriptIde.cpp
+    src/scripts/ScriptProject.cpp
     src/UndoHistory.cpp
-    src/LightTypeDrawer.cpp
-    src/ColliderShapeDrawer.cpp
-    src/MaterialRefDrawer.cpp
-    src/PrefabLinkDrawer.cpp
-    src/PrefabRefDrawer.cpp
-    src/UiEditor.cpp
-    src/UiFieldDrawers.cpp
-    src/ModelRefDrawer.cpp
-    src/ShadowQualityDrawer.cpp
-    src/AudioClipDrawer.cpp
-    src/EntityRefDrawer.cpp
+    src/drawers/LightTypeDrawer.cpp
+    src/drawers/ColliderShapeDrawer.cpp
+    src/drawers/MaterialRefDrawer.cpp
+    src/drawers/PrefabLinkDrawer.cpp
+    src/drawers/PrefabRefDrawer.cpp
+    src/viewport/UiEditor.cpp
+    src/drawers/UiFieldDrawers.cpp
+    src/drawers/ModelRefDrawer.cpp
+    src/drawers/ShadowQualityDrawer.cpp
+    src/drawers/AudioClipDrawer.cpp
+    src/drawers/EntityRefDrawer.cpp
     src/mcp/ImageEncode.cpp
     src/mcp/McpController.cpp
+    src/mcp/McpFileTools.cpp
+    src/mcp/McpPlayTools.cpp
     src/mcp/McpProtocol.cpp
     src/mcp/McpSceneTools.cpp
     src/mcp/McpServer.cpp
-    src/GameExport.cpp
-    src/ExportController.cpp
+    src/export/GameExport.cpp
+    src/export/ExportController.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
+# Includes do editor a partir de src/ ("scripts/ScriptHost.h"); as peças comuns ficam na raiz de src/.
+target_include_directories(MotorEditor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 if(WIN32)
     # comdlg32: abrir/salvar; ole32/uuid: seletor de pastas (COM); shell32: Lixeira e Explorer.
     target_link_libraries(MotorEditor PRIVATE comdlg32 ole32 uuid shell32)

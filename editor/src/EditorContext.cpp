@@ -1,5 +1,5 @@
 #include "EditorContext.h"
-#include "UiEditor.h"
+#include "viewport/UiEditor.h"
 
 #include <motor/core/Paths.h>
 #include <motor/scene/ModelImport.h>

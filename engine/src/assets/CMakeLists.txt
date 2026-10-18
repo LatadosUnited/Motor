@@ -3,6 +3,7 @@ motor_add_layer(assets
     SOURCES
         AssetDatabase.cpp
         AssetLibrary.cpp
+        AssetLibraryMaterials.cpp
         AssetLoaders.cpp
         Animation.cpp
         GltfLoader.cpp

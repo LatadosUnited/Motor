@@ -70,10 +70,15 @@ private:
         std::chrono::steady_clock::time_point releaseAt;  // max() = até pedirem para soltar
     };
 
+    // Ferramentas por grupo: editor e vista em McpController.cpp, arquivos em McpFileTools.cpp, jogo e scripts
+    // em McpPlayTools.cpp.
     void AddEditorTools();
-    void AddFileTools();
+    void AddSceneFileTools();
+    void AddAssetTools();
     void AddPlayTools();
+    void AddScriptTools();
     void AddViewTools();
+    static std::string PlayState(const PlayController& play);  // "editando", "jogando" ou "pausado"
     std::filesystem::path ProjectPath(const mcp::Json& value) const;  // relativo ao projeto; erro se não houver projeto
     void UpdateUiClick();
 

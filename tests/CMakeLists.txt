@@ -30,7 +30,7 @@ motor_add_test(test_runtime_systems)
 # O histórico de desfazer e o modo Play são do editor; compilamos só eles junto com os testes.
 motor_add_test(test_undo ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)
 target_include_directories(test_undo PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
-motor_add_test(test_play ${PROJECT_SOURCE_DIR}/editor/src/PlayMode.cpp)
+motor_add_test(test_play ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp)
 target_include_directories(test_play PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 
 # Componentes desconhecidos e salvar/restaurar o estado na recarga dos scripts (sem DLL).
@@ -40,10 +40,10 @@ target_include_directories(test_hotreload PRIVATE ${PROJECT_SOURCE_DIR}/editor/s
 # Scripts por projeto: CMake gerado, diagnósticos e, de ponta a ponta, compilar uma DLL de scripts com o
 # toolchain do Motor, carregar, recarregar e descarregar (sem janela). Demora alguns segundos.
 motor_add_test(test_script_project
-    ${PROJECT_SOURCE_DIR}/editor/src/ScriptBuilder.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/ScriptHost.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/ScriptIde.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/ScriptProject.cpp)
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptBuilder.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptHost.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptIde.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptProject.cpp)
 target_include_directories(test_script_project PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_script_project PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(test_script_project PRIVATE
@@ -68,9 +68,9 @@ target_include_directories(test_prefabs PRIVATE ${PROJECT_SOURCE_DIR}/editor/src
 # Documentação dos scripts: compila os exemplos do guia (docs/examples) e os modelos do editor numa DLL de
 # scripts, roda os exemplos e confere que o guia e a referência batem com os arquivos e os headers.
 motor_add_test(test_script_docs
-    ${PROJECT_SOURCE_DIR}/editor/src/ScriptBuilder.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/ScriptHost.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/ScriptProject.cpp)
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptBuilder.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptHost.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptProject.cpp)
 target_include_directories(test_script_docs PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_script_docs PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(test_script_docs PRIVATE
@@ -82,7 +82,7 @@ set_tests_properties(test_script_docs PROPERTIES TIMEOUT 600)
 
 # Interface do jogo (camada ui/): âncoras, fontes SDF, cache da lista de desenho, cliques pelo UiSystem, API dos
 # scripts, serialização e a troca de cena pelo Play do editor (PlayMode).
-motor_add_test(test_ui ${PROJECT_SOURCE_DIR}/editor/src/PlayMode.cpp)
+motor_add_test(test_ui ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp)
 target_include_directories(test_ui PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 
 # Modelos glTF e animação esquelética (Fase 11): leitura, asset, importação como prefab, dados da malha na
@@ -94,7 +94,7 @@ target_compile_definitions(test_gltf PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_
 # Servidor MCP do editor (Fase 13): protocolo, ferramentas de cena, PNG/base64 e o transporte HTTP (cpp-httplib).
 motor_add_test(test_mcp
     ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/UiEditor.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/ImageEncode.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
@@ -111,7 +111,7 @@ motor_add_test(test_render)
 
 # Exportar o jogo (Fase 10): assets referenciados (cenas, prefabs, materiais, glTF, fontes, Recursos, scripts) e a
 # pasta exportada (Player, DLLs, engine/, Dados/), com arquivos falsos no lugar do Player e das DLLs.
-motor_add_test(test_export ${PROJECT_SOURCE_DIR}/editor/src/GameExport.cpp)
+motor_add_test(test_export ${PROJECT_SOURCE_DIR}/editor/src/export/GameExport.cpp)
 target_include_directories(test_export PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_export PRIVATE nlohmann_json::nlohmann_json)
 # Áudio (Fase 8) sem dispositivo de som: clipes como assets com GUID, som 3D (distância e lado), som 2D tocado

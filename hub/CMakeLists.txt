@@ -15,6 +15,9 @@ target_link_libraries(motor_hub_core PUBLIC nlohmann_json::nlohmann_json)
 add_executable(MotorHub
     src/main.cpp
     src/HubApp.cpp
+    src/HubProjectsTab.cpp
+    src/HubVersionsTab.cpp
+    src/HubWidgets.cpp
     src/HubPlatform.cpp)
 # Objetos do ImGui (os mesmos que vão na libMotor.dll, aqui ligados direto no .exe) e o GLFW estático.
 # motor_distrib (Fase 15, distrib/): baixar versões dos servidores; vem depois no CMakeLists da raiz, mas o alvo é

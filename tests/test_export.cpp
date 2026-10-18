@@ -2,7 +2,7 @@
 // GPU e sem o Player de verdade (arquivos falsos no lugar do .exe e das DLLs).
 #include "TestUtil.h"
 
-#include "GameExport.h"
+#include "export/GameExport.h"
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/core/Paths.h>
