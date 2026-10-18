@@ -17,7 +17,3 @@ Formato: `- AAAA-MM-DD — quem achou — o quê — onde (arquivo:linha, se sou
   quando já existia, o cache antigo fica e o `cmake --build` falha em 0,05 s com "0 erro(s)", sempre. Deve
   pegar o projeto de jogo real do usuário. Corrigir: reconfigurar também sem carimbo, ou quando o
   `CMAKE_GENERATOR` do cache não for o do toolchain — `editor/src/scripts/ScriptProject.cpp:241`
-- 2026-10-18 — Claude (verificação da Organização do código) — ferramenta MCP com argumento obrigatório
-  faltando derruba o editor em Debug: `args["parent"]` num JSON const sem a chave dispara o assert do nlohmann
-  (ex.: `project_create` com `location` no lugar de `parent`). Conferir os `required` do esquema antes do
-  `run` em `McpProtocol` (ou ler com `value`) — `editor/src/mcp/McpFileTools.cpp:97`

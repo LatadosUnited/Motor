@@ -77,8 +77,16 @@ int main() {
         CHECK(missing && (*missing)["error"]["code"] == -32601);
         CHECK(Call(protocol, "nao_existe", Json::object())["rpc_error"]["code"] == -32602);
         CHECK(Call(protocol, "eco", {{"texto", "olá"}})["text"] == "olá");
+        // Obrigatório faltando: o protocolo recusa antes de chamar a ferramenta (que leria args["texto"] direto).
         const Json bad = Call(protocol, "eco", Json::object());
-        CHECK(bad["isError"] == true && bad["text"] == "falta texto");
+        CHECK(bad["isError"] == true && bad["text"] == "falta o argumento obrigatório 'texto'");
+        protocol.AddTool({.name = "direto",
+                          .description = "lê o argumento sem conferir",
+                          .inputSchema = Schema({{"pasta", Prop("string", "a pasta")}}, {"pasta"}),
+                          .run = [](const Json& args) { return ToolResult::Text(args["pasta"].get<std::string>()); }});
+        CHECK(Call(protocol, "direto", {{"local", "C:/x"}})["isError"] == true);  // antes: assert e o editor caía
+        CHECK(Call(protocol, "direto", {{"pasta", 3}})["isError"] == true);       // tipo errado: erro, não queda
+        CHECK(Call(protocol, "direto", {{"pasta", "C:/x"}})["text"] == "C:/x");
 
         CHECK(Json::parse(protocol.HandleText("{nada"))["error"]["code"] == -32700);
         CHECK(protocol.HandleText(R"({"jsonrpc":"2.0","method":"notifications/cancelled"})").empty());
@@ -95,6 +103,8 @@ int main() {
         const Json torre = Call(protocol, "entity_create", {{"kind", "empty"}, {"name", "Torre"}, {"position", {1, 2, 3}}});
         CHECK(torre["isError"] == false && torre["data"]["name"] == "Torre");
         const int torreId = torre["data"]["id"].get<int>();
+        CHECK(ctx.selected == static_cast<motor::EntityId>(torreId));
+        CHECK(Call(protocol, "select", Json::object())["isError"] == true);  // sem 'entity': erro, seleção mantida
         CHECK(ctx.selected == static_cast<motor::EntityId>(torreId));
         CHECK(torre["data"]["transform"]["position"] == Json::array({1.0, 2.0, 3.0}));
 
