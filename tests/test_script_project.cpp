@@ -153,7 +153,8 @@ int main(int argc, char** argv) {
         CHECK(Contains(cmake, "include(\"C:/Motor/build/bin/sdk/MotorSDK.cmake\")"));
         CHECK(Contains(cmake, "add_library(GameScripts SHARED"));
         CHECK(Contains(cmake, "target_link_libraries(GameScripts PRIVATE Motor::Motor)"));
-        CHECK(Contains(cmake, "CONFIGURE_DEPENDS \"" + ToGenericUtf8(paths.scriptsDir) + "/*.cpp\""));  // UTF-8, barras '/'
+        CHECK(!Contains(cmake, "CONFIGURE_DEPENDS"));  // lista explícita: sem VerifyGlobs a cada compilação
+        CHECK(Contains(cmake, "Versão do Motor: "));
         CHECK(Contains(cmake, "Jogo Ação/Scripts"));
         CHECK(!Contains(cmake, "\\"));  // nenhuma barra invertida
         // Objetos com nome curto, sem acentos (o as.exe não lê UTF-8) e abaixo de 260 caracteres.
@@ -193,6 +194,15 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         CHECK(SP::WriteBuildFiles(paths, fake));
         CHECK(fs::last_write_time(paths.cmakeDir / "CMakeLists.txt") == t1);
+        // Mudar o toolchain/versão invalida o cache do CMake para reconfigurar limpo.
+        fs::create_directories(paths.binaryDir / "CMakeFiles");
+        { std::ofstream(paths.binaryDir / "CMakeCache.txt") << "CMAKE_GENERATOR:INTERNAL=MSYS Makefiles\n"; }
+        { std::ofstream(paths.binaryDir / "Makefile") << "all:\n"; }
+        CHECK(!SP::NeedsConfigure(paths));
+        SP::Toolchain changed = fake;
+        changed.sdkCMake = PathFromUtf8("C:/Motor2/sdk/MotorSDK.cmake");
+        CHECK(SP::WriteBuildFiles(paths, changed));
+        CHECK(SP::NeedsConfigure(paths));
         fs::remove_all(root / ".motor");
     }
 

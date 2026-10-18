@@ -1,6 +1,7 @@
 #include "ScriptProject.h"
 
 #include <motor/core/Paths.h>
+#include <motor/core/Version.h>
 #include <motor/scene/ScriptModule.h>
 
 #include <nlohmann/json.hpp>
@@ -145,7 +146,8 @@ fs::path DefaultTemplatesDir() {
 
 std::string GenerateCMakeLists(const Paths& paths, const Toolchain& toolchain) {
     std::string s;
-    s += "# Gerado pelo Motor Editor a cada compilação dos scripts. Não edite: as mudanças seriam perdidas.\n";
+    s += "# Gerado pelo Motor Editor. Não edite: as mudanças seriam perdidas.\n";
+    s += std::format("# Versão do Motor: {} (API de scripts {})\n", motor::kVersion, motor::kScriptApiVersion);
     s += "# Scripts do projeto: " + ToGenericUtf8(paths.scriptsDir) + "\n";
     s += "cmake_minimum_required(VERSION 3.24)\n";
     s += "# Objetos com nomes curtos (hash) em vez do caminho inteiro do script: o as.exe do binutils lê o caminho\n";
@@ -170,9 +172,13 @@ std::string GenerateCMakeLists(const Paths& paths, const Toolchain& toolchain) {
     s += std::format("set(CMAKE_OBJECT_PATH_MAX {})\n\n", kObjectPathMax);
     s += "# SDK do Motor (headers e libMotor.dll do mesmo build do editor).\n";
     s += std::format("include(\"{}\")\n\n", CMakePath(toolchain.sdkCMake));
-    s += "# Todos os .cpp da pasta Scripts (arquivos novos entram sozinhos na próxima compilação).\n";
-    s += std::format("file(GLOB_RECURSE MOTOR_SCRIPT_SOURCES CONFIGURE_DEPENDS \"{0}/*.cpp\" \"{0}/*.cc\" \"{0}/*.cxx\")\n",
-                     CMakePath(paths.scriptsDir));
+    s += "# Fontes da pasta Scripts (lista explícita para não rodar VerifyGlobs a cada compilação; atualizada\n";
+    s += "# pelo editor só quando entram ou saem arquivos).\n";
+    s += "set(MOTOR_SCRIPT_SOURCES\n";
+    for (const fs::path& file : ListScriptFiles(paths.scriptsDir)) {
+        if (IsScriptSource(file)) s += std::format("    \"{}\"\n", CMakePath(file));
+    }
+    s += ")\n";
     s += std::format("add_library({} SHARED \"${{CMAKE_CURRENT_LIST_DIR}}/MotorScriptEntry.cpp\" ${{MOTOR_SCRIPT_SOURCES}})\n",
                      kTargetName);
     s += std::format("target_include_directories({} PRIVATE \"{}\")\n", kTargetName, CMakePath(paths.scriptsDir));
@@ -210,7 +216,17 @@ bool WriteBuildFiles(const Paths& paths, const Toolchain& toolchain, std::string
         SetError(error, std::format("Não foi possível criar '{}': {}", ToUtf8(paths.cmakeDir), ec.message()));
         return false;
     }
-    return WriteIfChanged(paths.cmakeDir / "CMakeLists.txt", GenerateCMakeLists(paths, toolchain), error) &&
+    const std::string stamp = std::format("{}|{}|{}|{}|{}|{}|{}|{}\n",
+                                          motor::kVersion, motor::kScriptApiVersion,
+                                          ToGenericUtf8(toolchain.cmake), toolchain.generator,
+                                          ToGenericUtf8(toolchain.makeProgram), ToGenericUtf8(toolchain.cxxCompiler),
+                                          toolchain.buildType, ToGenericUtf8(toolchain.sdkCMake));
+    const fs::path stampFile = paths.cmakeDir / "toolchain.stamp";
+    if (fs::is_regular_file(stampFile, ec) && ReadFile(stampFile) != stamp) {
+        ResetConfigure(paths);
+    }
+    return WriteIfChanged(stampFile, stamp, error) &&
+           WriteIfChanged(paths.cmakeDir / "CMakeLists.txt", GenerateCMakeLists(paths, toolchain), error) &&
            WriteIfChanged(paths.cmakeDir / "MotorScriptEntry.cpp", GenerateEntryPoint(), error);
 }
 
