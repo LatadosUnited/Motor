@@ -235,7 +235,7 @@ void FieldFromJson(const FieldInfo& f, void* c, const json& value, AssetLibrary&
             if (!texture) log::Warn("Cena: textura de '{}' não carregada: {}", owner, problem);
             break;
         }
-        case FieldType::Custom: f.custom->fromJson(value.dump(), f.Get(c), assets); break;
+        case FieldType::Custom: f.custom->fromJson(value.dump(), f.Get(c), assets, nullptr); break;
     }
 }
 
@@ -384,8 +384,111 @@ bool FieldValueFromJson(const FieldInfo& field, void* component, std::string_vie
         SetError(error, "valor não é JSON válido: " + std::string(text));
         return false;
     }
-    FieldFromJson(field, component, value, assets, field.key);
-    return true;
+    switch (field.type) {
+        case FieldType::Bool:
+            if (!value.is_boolean()) {
+                SetError(error, std::format("campo '{}' espera bool (true ou false)", field.key));
+                return false;
+            }
+            field.As<bool>(component) = value.get<bool>();
+            return true;
+        case FieldType::Int:
+            if (!value.is_number_integer()) {
+                SetError(error, std::format("campo '{}' espera int (número inteiro, ex.: 0)", field.key));
+                return false;
+            }
+            field.As<int>(component) = value.get<int>();
+            return true;
+        case FieldType::Float:
+            if (!value.is_number()) {
+                SetError(error, std::format("campo '{}' espera float (número, ex.: 1.0)", field.key));
+                return false;
+            }
+            field.As<float>(component) = value.get<float>();
+            return true;
+        case FieldType::Vec2:
+            if (!FloatsFrom(value, &field.As<glm::vec2>(component).x, 2)) {
+                SetError(error, std::format("campo '{}' espera vec2 (lista de 2 números, ex.: [0, 0])", field.key));
+                return false;
+            }
+            return true;
+        case FieldType::Vec3:
+            if (!FloatsFrom(value, &field.As<glm::vec3>(component).x, 3)) {
+                SetError(error, std::format("campo '{}' espera vec3 (lista de 3 números, ex.: [0, 0, 0])", field.key));
+                return false;
+            }
+            return true;
+        case FieldType::Vec4:
+            if (!FloatsFrom(value, &field.As<glm::vec4>(component).x, 4)) {
+                SetError(error, std::format("campo '{}' espera vec4 (lista de 4 números, ex.: [1, 1, 1, 1])", field.key));
+                return false;
+            }
+            return true;
+        case FieldType::String:
+            if (!value.is_string()) {
+                SetError(error, std::format("campo '{}' espera string (texto entre aspas)", field.key));
+                return false;
+            }
+            field.As<std::string>(component) = value.get<std::string>();
+            return true;
+        case FieldType::Mesh: {
+            auto& mesh = field.As<std::shared_ptr<Mesh>>(component);
+            if (value.is_null()) {
+                mesh = nullptr;
+                return true;
+            }
+            if (!value.is_string() && !(value.is_object() && (value.contains("guid") || value.contains("path")))) {
+                SetError(error, std::format("campo '{}' espera mesh (nome embutido como \"Cubo\", caminho \"Assets/...\", "
+                                            "objeto {{\"path\": \"Assets/...\"}} ou null)",
+                                            field.key));
+                return false;
+            }
+            std::string problem;
+            auto loaded = ResolveRef<Mesh>(
+                value, [&](std::string_view k, std::string* err) { return assets.GetMesh(k, err); },
+                [&](std::string_view g, std::string* err) { return assets.GetMeshByGuid(g, err); }, problem);
+            if (!loaded) {
+                SetError(error, std::format("campo '{}': {}", field.key, problem.empty() ? "malha não encontrada" : problem));
+                return false;
+            }
+            mesh = std::move(loaded);
+            return true;
+        }
+        case FieldType::Texture: {
+            auto& texture = field.As<std::shared_ptr<Texture2D>>(component);
+            if (value.is_null()) {
+                texture = nullptr;
+                return true;
+            }
+            if (!value.is_string() && !(value.is_object() && (value.contains("guid") || value.contains("path")))) {
+                SetError(error, std::format("campo '{}' espera texture (nome embutido como \"Branco\", caminho "
+                                            "\"Assets/...\", objeto {{\"path\": \"Assets/...\"}} ou null)",
+                                            field.key));
+                return false;
+            }
+            std::string problem;
+            auto loaded = ResolveRef<Texture2D>(
+                value, [&](std::string_view k, std::string* err) { return assets.GetTexture(k, err); },
+                [&](std::string_view g, std::string* err) { return assets.GetTextureByGuid(g, err); }, problem);
+            if (!loaded) {
+                SetError(error,
+                         std::format("campo '{}': {}", field.key, problem.empty() ? "textura não encontrada" : problem));
+                return false;
+            }
+            texture = std::move(loaded);
+            return true;
+        }
+        case FieldType::Custom: {
+            std::string problem;
+            if (!field.custom->fromJson(text, field.Get(component), assets, &problem)) {
+                SetError(error, std::format("campo '{}' ({}): {}", field.key, field.custom->name,
+                                            problem.empty() ? "valor inválido" : problem));
+                return false;
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOptions& options) {

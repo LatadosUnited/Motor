@@ -43,8 +43,8 @@ bool FromJson(std::string_view json, Scene& out, AssetLibrary& assets, std::stri
 // Um campo de componente no formato da cena (texto JSON): malhas e texturas como nome ou {guid, path},
 // vetores como listas. Usado por quem lê e muda campos de fora do Inspector (o servidor MCP do editor).
 std::string FieldValueToJson(const FieldInfo& field, const void* component, const AssetLibrary& assets);
-// Lê o campo do texto JSON nesse mesmo formato. Valor do tipo errado: o campo fica como estava. false (e
-// `error`) só se o texto não for JSON válido.
+// Lê o campo do texto JSON nesse mesmo formato. Valor de tipo ou formato errado: o campo fica como estava,
+// devolve false e preenche `error` com o formato esperado.
 bool FieldValueFromJson(const FieldInfo& field, void* component, std::string_view json, AssetLibrary& assets,
                         std::string* error = nullptr);
 

@@ -153,24 +153,41 @@ CustomFieldType FieldTraits<std::shared_ptr<Model>>::Describe() {
                 if (!ref->name.empty()) j["path"] = ref->name;
                 return j.dump();
             },
-            [](std::string_view text, void* v, AssetLibrary& assets) {
+            [](std::string_view text, void* v, AssetLibrary& assets, std::string* error) {
                 auto& model = *static_cast<std::shared_ptr<Model>*>(v);
                 const json j = json::parse(text, nullptr, false);
                 if (j.is_null()) {
                     model = nullptr;
-                    return;
+                    return true;
                 }
-                if (!j.is_object()) return;
-                const std::string guid = j.value("guid", std::string());
-                const std::string path = j.value("path", std::string());
+                std::string guid;
+                std::string path;
+                if (j.is_string()) {
+                    path = j.get<std::string>();
+                } else if (j.is_object() && (j.contains("guid") || j.contains("path"))) {
+                    guid = j.value("guid", std::string());
+                    path = j.value("path", std::string());
+                } else {
+                    if (error) *error = "esperado caminho \"Assets/...\", objeto {\"path\": \"Assets/...\"} ou null";
+                    return false;
+                }
                 std::string problem;
                 std::shared_ptr<Model> loaded = guid.empty() ? nullptr : assets.GetModelByGuid(guid, &problem);
                 if (!loaded && !path.empty()) {
-                    loaded = assets.GetModel(path, nullptr);  // .meta perdido: tenta pelo caminho salvo
-                    if (loaded) log::Warn("Cena: GUID {} não encontrado; usando o modelo pelo caminho '{}'", guid, path);
+                    loaded = assets.GetModel(path, &problem);
+                    if (loaded && !guid.empty()) {
+                        log::Warn("Cena: GUID {} não encontrado; usando o modelo pelo caminho '{}'", guid, path);
+                    }
                 }
-                if (!loaded) log::Warn("Cena: modelo '{}' não carregado: {}", path, problem);
+                if (!loaded) {
+                    if (error) {
+                        *error = problem.empty() ? "modelo não encontrado" : problem;
+                        return false;
+                    }
+                    log::Warn("Cena: modelo '{}' não carregado: {}", path, problem);
+                }
                 model = std::move(loaded);
+                return true;
             }};
 }
 

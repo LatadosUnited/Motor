@@ -40,17 +40,25 @@ CustomFieldType FieldTraits<ShadowQuality>::Describe() {
             [](const void* v, const AssetLibrary&) {
                 return nlohmann::json(ShadowQualityName(*static_cast<const ShadowQuality*>(v))).dump();
             },
-            [](std::string_view text, void* v, AssetLibrary&) {
+            [](std::string_view text, void* v, AssetLibrary&, std::string* error) {
                 const auto json = nlohmann::json::parse(text, nullptr, false);
                 auto& quality = *static_cast<ShadowQuality*>(v);
                 if (json.is_string()) {
                     for (ShadowQuality q : kShadowQualities) {
-                        if (json.get<std::string>() == ShadowQualityName(q)) quality = q;
+                        if (json.get<std::string>() == ShadowQualityName(q)) {
+                            quality = q;
+                            return true;
+                        }
                     }
                 } else if (json.is_number_integer()) {
                     const int n = json.get<int>();
-                    if (n >= 0 && n < static_cast<int>(std::size(kShadowQualities))) quality = kShadowQualities[n];
+                    if (n >= 0 && n < static_cast<int>(std::size(kShadowQualities))) {
+                        quality = kShadowQualities[n];
+                        return true;
+                    }
                 }
+                if (error) *error = "esperado \"Low\", \"Medium\" ou \"High\"";
+                return false;
             }};
 }
 
@@ -78,18 +86,25 @@ CustomFieldType FieldTraits<LightType>::Describe() {
             [](const void* v, const AssetLibrary&) {
                 return nlohmann::json(LightTypeName(*static_cast<const LightType*>(v))).dump();
             },
-            [](std::string_view text, void* v, AssetLibrary&) {
+            [](std::string_view text, void* v, AssetLibrary&, std::string* error) {
                 const auto json = nlohmann::json::parse(text, nullptr, false);
                 auto& type = *static_cast<LightType*>(v);
                 if (json.is_string()) {
                     for (LightType t : kLightTypes) {
-                        if (json.get<std::string>() == LightTypeName(t)) type = t;
+                        if (json.get<std::string>() == LightTypeName(t)) {
+                            type = t;
+                            return true;
+                        }
                     }
                 } else if (json.is_number_integer()) {
                     const int n = json.get<int>();
-                    if (n >= 0 && n < static_cast<int>(std::size(kLightTypes))) type = kLightTypes[n];
+                    if (n >= 0 && n < static_cast<int>(std::size(kLightTypes))) {
+                        type = kLightTypes[n];
+                        return true;
+                    }
                 }
-                // Outro valor: fica como está (leitura tolerante).
+                if (error) *error = "esperado \"Directional\", \"Point\" ou \"Spot\"";
+                return false;
             }};
 }
 

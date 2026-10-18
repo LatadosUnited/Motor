@@ -91,7 +91,7 @@ void CopyField(const FieldInfo& f, const void* src, void* dst, AssetLibrary& ass
             f.As<std::shared_ptr<Texture2D>>(dst) = f.As<std::shared_ptr<Texture2D>>(src);
             break;
         // Tipo definido fora da engine: só sabemos copiar pelo JSON dele (o mesmo caminho do arquivo da cena).
-        case FieldType::Custom: f.custom->fromJson(f.custom->toJson(f.Get(src), assets), f.Get(dst), assets); break;
+        case FieldType::Custom: f.custom->fromJson(f.custom->toJson(f.Get(src), assets), f.Get(dst), assets, nullptr); break;
     }
 }
 

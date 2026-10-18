@@ -23,17 +23,29 @@ CustomFieldType DescribeEnum(const char* typeName, const E (&values)[N], NameFn 
     return {typeName,
             [](const void* a, const void* b) { return *static_cast<const E*>(a) == *static_cast<const E*>(b); },
             [name](const void* v, const AssetLibrary&) { return nlohmann::json(name(*static_cast<const E*>(v))).dump(); },
-            [&values, name](std::string_view text, void* v, AssetLibrary&) {
+            [&values, name](std::string_view text, void* v, AssetLibrary&, std::string* error) {
                 const auto json = nlohmann::json::parse(text, nullptr, false);
                 auto& value = *static_cast<E*>(v);
                 if (json.is_string()) {
                     for (E e : values) {
-                        if (json.get<std::string>() == name(e)) value = e;
+                        if (json.get<std::string>() == name(e)) {
+                            value = e;
+                            return true;
+                        }
                     }
                 } else if (json.is_number_integer()) {
                     const int n = json.get<int>();
-                    if (n >= 0 && n < static_cast<int>(N)) value = values[n];
+                    if (n >= 0 && n < static_cast<int>(N)) {
+                        value = values[n];
+                        return true;
+                    }
                 }
+                if (error) {
+                    std::string list;
+                    for (E e : values) list += (list.empty() ? "\"" : ", \"") + std::string(name(e)) + "\"";
+                    *error = "esperado um de: " + list;
+                }
+                return false;
             }};
 }
 } // namespace
@@ -106,12 +118,12 @@ CustomFieldType FieldTraits<UiFont>::Describe() {
                 if (font.IsDefault()) return std::string("null");
                 return nlohmann::ordered_json{{"guid", font.guid}, {"path", font.path}}.dump();
             },
-            [](std::string_view text, void* v, AssetLibrary& assets) {
+            [](std::string_view text, void* v, AssetLibrary& assets, std::string* error) {
                 const auto json = nlohmann::json::parse(text, nullptr, false);
                 auto& font = *static_cast<UiFont*>(v);
                 if (json.is_null()) {
                     font = {};
-                    return;
+                    return true;
                 }
                 if (json.is_string()) {
                     // Só o caminho ("Assets/Fontes/x.ttf"), como escreve um agente pelo MCP: o GUID vem do .meta.
@@ -120,9 +132,12 @@ CustomFieldType FieldTraits<UiFont>::Describe() {
                     const std::filesystem::path file = assets.FileForKey(font.path);
                     std::error_code ec;
                     if (!file.empty() && std::filesystem::is_regular_file(file, ec)) font.guid = assets.Database().GuidFor(file);
-                    return;
+                    return true;
                 }
-                if (!json.is_object()) return;
+                if (!json.is_object() || (!json.contains("guid") && !json.contains("path"))) {
+                    if (error) *error = "esperado caminho \"Assets/...\", objeto {\"path\": \"Assets/...\"} ou null";
+                    return false;
+                }
                 font.guid = json.value("guid", std::string());
                 font.path = json.value("path", std::string());
                 if (!font.guid.empty()) {
@@ -131,6 +146,7 @@ CustomFieldType FieldTraits<UiFont>::Describe() {
                         font.path = key;
                     }
                 }
+                return true;
             }};
 }
 

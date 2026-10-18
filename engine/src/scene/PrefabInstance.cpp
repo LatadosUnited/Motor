@@ -39,10 +39,13 @@ CustomFieldType FieldTraits<PrefabLink>::Describe() {
                 if (!link.overrides.empty()) j["overrides"] = link.overrides;
                 return j.dump(-1, ' ', false, json::error_handler_t::replace);
             },
-            [](std::string_view text, void* v, AssetLibrary& assets) {
+            [](std::string_view text, void* v, AssetLibrary& assets, std::string* error) {
                 auto& link = *static_cast<PrefabLink*>(v);
                 const json j = json::parse(text, nullptr, false);
-                if (!j.is_object()) return;
+                if (!j.is_object()) {
+                    if (error) *error = "esperado objeto {\"guid\": \"...\", \"source\": 1}";
+                    return false;
+                }
                 link.guid = j.value("guid", std::string());
                 const std::string path = j.value("path", std::string());
                 if (link.guid.empty() || assets.Database().PathFor(link.guid).empty()) {
@@ -61,6 +64,7 @@ CustomFieldType FieldTraits<PrefabLink>::Describe() {
                     }
                 }
                 link.syncedRevision = 0;
+                return true;
             }};
 }
 

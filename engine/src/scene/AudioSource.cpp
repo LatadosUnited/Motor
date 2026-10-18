@@ -19,12 +19,12 @@ CustomFieldType FieldTraits<AudioClip>::Describe() {
                 if (clip.IsEmpty()) return std::string("null");
                 return nlohmann::ordered_json{{"guid", clip.guid}, {"path", clip.path}}.dump();
             },
-            [](std::string_view text, void* v, AssetLibrary& assets) {
+            [](std::string_view text, void* v, AssetLibrary& assets, std::string* error) {
                 const auto json = nlohmann::json::parse(text, nullptr, false);
                 auto& clip = *static_cast<AudioClip*>(v);
                 if (json.is_null()) {
                     clip = {};
-                    return;
+                    return true;
                 }
                 if (json.is_string()) {
                     // Só o caminho ("Assets/Sons/x.wav"), como escreve um agente pelo MCP: o GUID vem do .meta.
@@ -35,9 +35,12 @@ CustomFieldType FieldTraits<AudioClip>::Describe() {
                     if (!clip.file.empty() && std::filesystem::is_regular_file(clip.file, ec)) {
                         clip.guid = assets.Database().GuidFor(clip.file);
                     }
-                    return;
+                    return true;
                 }
-                if (!json.is_object()) return;
+                if (!json.is_object() || (!json.contains("guid") && !json.contains("path"))) {
+                    if (error) *error = "esperado caminho \"Assets/...\", objeto {\"path\": \"Assets/...\"} ou null";
+                    return false;
+                }
                 clip.guid = json.value("guid", std::string());
                 clip.path = json.value("path", std::string());
                 clip.file.clear();
@@ -47,6 +50,7 @@ CustomFieldType FieldTraits<AudioClip>::Describe() {
                 } else if (!clip.path.empty()) {
                     clip.file = assets.FileForKey(clip.path);
                 }
+                return true;
             }};
 }
 
