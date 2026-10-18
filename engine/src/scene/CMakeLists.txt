@@ -19,5 +19,6 @@ motor_add_layer(scene
         ModelImport.cpp
         AudioSource.cpp
         AudioListener.cpp
+        EntityRef.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

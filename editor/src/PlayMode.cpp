@@ -33,6 +33,12 @@ void PlayMode::Stop(motor::Scene& scene, motor::EntityId& selected) {
     motor::log::Info("Parar: cena restaurada");
 }
 
+void PlayMode::ForEachScene(const std::function<void(motor::Scene&)>& fn) {
+    if (!IsActive()) return;
+    fn(m_backup);
+    m_runtime->ForEachPrefabScene(fn);
+}
+
 void PlayMode::SetPaused(bool paused) {
     if (!IsActive()) return;
     m_paused = paused;

@@ -799,6 +799,7 @@ void ProjectPanel::DrawCreateMenuItems(const Callbacks& callbacks) {
     if (ImGui::MenuItem("Nova pasta")) CreateFolder();
     if (ImGui::MenuItem("Nova cena")) CreateScene(callbacks);
     if (ImGui::MenuItem("Novo material")) CreateMaterial(callbacks);
+    if (callbacks.createScript && ImGui::MenuItem("Novo script...")) callbacks.createScript();
     ImGui::TextDisabled("Prefab: arraste uma entidade da Hierarquia para uma pasta");
 }
 
@@ -989,6 +990,15 @@ const ProjectPanel::Entry* ProjectPanel::FindEntry(const fs::path& path) const {
 // Operações
 // ---------------------------------------------------------------------------
 
+namespace {
+// Código C++ (scripts e headers): abre no editor de código do projeto, na pasta do projeto.
+bool IsCodeFile(const fs::path& path) {
+    std::string ext = ToUtf8(path.extension());
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".h" || ext == ".hpp" || ext == ".inl";
+}
+} // namespace
+
 void ProjectPanel::Activate(const Entry& entry, const Callbacks& callbacks) {
     if (entry.isDirectory) {
         SetCurrentDir(entry.path);
@@ -996,6 +1006,8 @@ void ProjectPanel::Activate(const Entry& entry, const Callbacks& callbacks) {
         callbacks.openScene(entry.path);
     } else if ((entry.type == AssetType::Material || entry.type == AssetType::Prefab) && callbacks.selectAsset) {
         callbacks.selectAsset(entry.path);
+    } else if (IsCodeFile(entry.path) && callbacks.openScript) {
+        callbacks.openScript(entry.path);
     } else {
         Shell::OpenWithDefaultApp(entry.path);
     }

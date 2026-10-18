@@ -32,6 +32,7 @@ public:
     void Update(float dt, bool viewportFocused);
     void FixedUpdate(float dt) { m_mode.FixedUpdate(dt); }
     motor::SceneRuntime* Runtime() { return m_mode.Runtime(); }  // nullptr fora do Play
+    void ForEachPlayScene(const std::function<void(motor::Scene&)>& fn) { m_mode.ForEachScene(fn); }
     const motor::Scene& BackupScene() const { return m_mode.BackupScene(); }
 
     void DrawMenu();       // menu "Jogo"

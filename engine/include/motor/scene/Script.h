@@ -11,29 +11,61 @@
 //   registry.Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
 
 #include "motor/core/Input.h"
-#include "motor/core/Log.h"
-#include "motor/scene/PrefabInstance.h"
 #include "motor/scene/RuntimeSystem.h"
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <cstddef>
 #include <cstdint>
-#include <format>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <typeinfo>
-#include <utility>
 
 namespace motor {
 
 struct Animator;
 struct Entity;
+struct PrefabRef;
 struct Transform;
 class Scene;
 class SceneRuntime;
 using EntityId = uint32_t;
+using TimerId = uint32_t;  // devolvido por After/Every, para CancelTimer
+
+namespace detail {
+// Argumento de Script::Log empacotado sem puxar <format> em cada script.
+struct LogArg {
+    enum class Kind : uint8_t { Int, UInt, Double, Bool, String } kind;
+    union {
+        long long i;
+        unsigned long long u;
+        double d;
+        bool b;
+    };
+    std::string_view s{};
+
+    LogArg(bool v) : kind(Kind::Bool), b(v) {}
+    LogArg(char v) : kind(Kind::Int), i(v) {}
+    LogArg(signed char v) : kind(Kind::Int), i(v) {}
+    LogArg(short v) : kind(Kind::Int), i(v) {}
+    LogArg(int v) : kind(Kind::Int), i(v) {}
+    LogArg(long v) : kind(Kind::Int), i(v) {}
+    LogArg(long long v) : kind(Kind::Int), i(v) {}
+    LogArg(unsigned char v) : kind(Kind::UInt), u(v) {}
+    LogArg(unsigned short v) : kind(Kind::UInt), u(v) {}
+    LogArg(unsigned int v) : kind(Kind::UInt), u(v) {}
+    LogArg(unsigned long v) : kind(Kind::UInt), u(v) {}
+    LogArg(unsigned long long v) : kind(Kind::UInt), u(v) {}
+    LogArg(float v) : kind(Kind::Double), d(v) {}
+    LogArg(double v) : kind(Kind::Double), d(v) {}
+    LogArg(const char* v) : kind(Kind::String), i(0), s(v ? v : "") {}
+    LogArg(std::string_view v) : kind(Kind::String), i(0), s(v) {}
+    LogArg(const std::string& v) : kind(Kind::String), i(0), s(v) {}
+};
+} // namespace detail
 
 // Tempo do jogo (não conta o tempo em pausa).
 struct GameTime {
@@ -49,6 +81,13 @@ struct Collision {
     glm::vec3 point{0.0f};       // ponto de contato, no mundo
     glm::vec3 normal{0.0f};      // aponta do outro corpo para este (para onde este é empurrado)
     float relativeSpeed = 0.0f;  // velocidade de aproximação no contato (m/s); 0 se só encostaram
+};
+
+// Mensagem entre scripts (Send, Broadcast), recebida no OnMessage.
+struct Message {
+    std::string_view text;  // o que aconteceu ("abrir", "dano"...); só vale durante o OnMessage
+    EntityId from = 0;      // entidade do script que mandou
+    float value = 0.0f;     // número opcional (ex.: quanto de dano)
 };
 
 class Script {
@@ -74,6 +113,9 @@ public:
     virtual void OnTriggerEnter(EntityId /*other*/) {}
     virtual void OnTriggerExit(EntityId /*other*/) {}
 
+    // Mensagem de outro script (Send para esta entidade, ou Broadcast). Chega na hora, dentro do Send.
+    virtual void OnMessage(const Message& /*message*/) {}
+
     bool HasStarted() const { return m_started; }
 
 protected:
@@ -85,6 +127,12 @@ protected:
 
     // --- Cena ---
     Entity* FindEntity(std::string_view name);  // primeira com esse nome, ou nullptr
+    // Entidade pelo id ou por um campo EntityRef (GetEntity(alvo)); nullptr se não existe (foi destruída).
+    Entity* GetEntity(EntityId id);
+    // Componente do tipo T desta entidade, ou de outra (id ou EntityRef); nullptr se ela não tiver um.
+    //   if (auto* corpo = GetComponent<motor::Rigidbody>(alvo)) ...
+    template <class T> T* GetComponent();
+    template <class T> T* GetComponent(EntityId id);
     Entity& CreateEntity(std::string name, EntityId parent = 0);
     // Instancia um prefab (.mprefab referenciado por um campo PrefabRef) na cena; devolve a entidade raiz criada
     // (ou nullptr se o prefab estiver vazio/ausente). Os scripts da instância iniciam (OnStart) no próximo passo.
@@ -105,6 +153,26 @@ protected:
     bool IsMouseDown(MouseButton button) const;
     glm::vec2 MouseDelta() const;
 
+    // --- Temporizadores (tempo do jogo: não contam na pausa) ---
+    // Chama `fn` daqui a `seconds` segundos (After) ou a cada `seconds` segundos (Every), antes do OnUpdate
+    // daquele frame. Param sozinhos quando este script ou a entidade somem.
+    //   After(2.0f, [this] { DestroySelf(); });
+    TimerId After(float seconds, std::function<void()> fn);
+    TimerId Every(float seconds, std::function<void()> fn);
+    void CancelTimer(TimerId id);
+    void CancelTimers();  // todos os deste script
+
+    // --- Mensagens entre scripts ---
+    // Chama OnMessage nos scripts da entidade `target` (Send) ou de todas as entidades ativas (Broadcast).
+    void Send(EntityId target, std::string_view text, float value = 0.0f);
+    void Broadcast(std::string_view text, float value = 0.0f);
+
+    // --- Números aleatórios (um gerador por Play; SetRandomSeed repete a mesma sequência) ---
+    float Random(float min, float max);  // entre min e max
+    int RandomInt(int min, int max);     // de min a max, os dois inclusive
+    bool Chance(float probability);      // true com essa probabilidade (0 a 1)
+    void SetRandomSeed(uint32_t seed);
+
     // --- Sistemas do jogo (física, áudio..., ver RuntimeSystem.h) ---
     // Sistema do tipo T deste Play, ou nullptr (não registrado). Já existe no OnStart e ainda no OnDestroy.
     //   if (auto* fisica = GetSystem<motor::PhysicsSystem>()) fisica->...
@@ -119,14 +187,18 @@ protected:
     Animator* GetAnimator();
 
     // --- Log com o nome da entidade: Log("vidas = {}", vidas) ---
+    void Log(std::string_view message) {
+        WriteLog(message, nullptr, 0);
+    }
     template <class... Args>
-    void Log(std::format_string<Args...> fmt, Args&&... args) {
-        WriteLog(std::format(fmt, std::forward<Args>(args)...));
+    void Log(std::string_view fmt, const Args&... args) {
+        const detail::LogArg list[] = {args...};
+        WriteLog(fmt, list, sizeof...(Args));
     }
 
 private:
     friend class SceneRuntime;
-    void WriteLog(const std::string& message);
+    void WriteLog(std::string_view fmt, const detail::LogArg* args, size_t count);
     bool InputEnabled() const;
     RuntimeSystem* FindSystem(const std::type_info& type);
 

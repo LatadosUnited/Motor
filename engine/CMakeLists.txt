@@ -78,8 +78,60 @@ endif()
 set(MOTOR_SDK_DIR ${CMAKE_BINARY_DIR}/bin/sdk)
 set(MOTOR_SDK_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include ${glm_SOURCE_DIR} ${MOTOR_IMGUI_INCLUDE_DIRS})
 list(APPEND MOTOR_SDK_INCLUDE_DIRS ${MOTOR_GENERATED_INCLUDE_DIR})
+
+set(MOTOR_SDK_PCH_HEADER "${MOTOR_SDK_DIR}/MotorScriptPch.h")
+file(MAKE_DIRECTORY "${MOTOR_SDK_DIR}")
+set(MOTOR_SDK_PCH_CONTENT
+"// Gerado pelo build do Motor: cabeçalho pré-compilado do SDK de scripts. Não edite.
+#pragma once
+#ifndef MOTOR_SCRIPT_PCH_H
+#define MOTOR_SCRIPT_PCH_H
+#include <motor/scene/ScriptModule.h>
+#include <glm/glm.hpp>
+#include <glm/geometric.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/trigonometric.hpp>
+#endif
+")
+if(NOT EXISTS "${MOTOR_SDK_PCH_HEADER}")
+    file(WRITE "${MOTOR_SDK_PCH_HEADER}" "${MOTOR_SDK_PCH_CONTENT}")
+endif()
+
+file(GLOB_RECURSE MOTOR_PUBLIC_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/motor/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/motor/*.inl")
+string(TOUPPER "${CMAKE_BUILD_TYPE}" MOTOR_BUILD_TYPE_UPPER)
+separate_arguments(MOTOR_PCH_CXX_FLAGS NATIVE_COMMAND "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${MOTOR_BUILD_TYPE_UPPER}}")
+# Mesma opção dos scripts (CMakeLists gerado pelo editor): .gch menor e ~10% mais rápido de carregar.
+set(MOTOR_PCH_EXTRA_FLAGS)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    list(APPEND MOTOR_PCH_EXTRA_FLAGS -femit-struct-debug-baseonly)
+endif()
+set(MOTOR_PCH_INCLUDES)
+foreach(dir IN LISTS MOTOR_SDK_INCLUDE_DIRS)
+    list(APPEND MOTOR_PCH_INCLUDES "-I${dir}")
+endforeach()
+
+add_custom_command(
+    OUTPUT "${MOTOR_SDK_PCH_HEADER}.gch"
+    COMMAND "${CMAKE_CXX_COMPILER}"
+        -DGLM_FORCE_RADIANS -DGameScripts_EXPORTS
+        ${MOTOR_PCH_INCLUDES}
+        ${MOTOR_PCH_CXX_FLAGS}
+        -std=c++20 -Wall -Wextra
+        ${MOTOR_PCH_EXTRA_FLAGS}
+        -x c++-header "${MOTOR_SDK_PCH_HEADER}"
+        -o "${MOTOR_SDK_PCH_HEADER}.gch"
+    DEPENDS "${MOTOR_SDK_PCH_HEADER}" ${MOTOR_PUBLIC_HEADERS}
+    COMMENT "Pré-compilando cabeçalho do SDK de scripts (MotorScriptPch.h.gch)"
+    VERBATIM)
+add_custom_target(motor_sdk_pch DEPENDS "${MOTOR_SDK_PCH_HEADER}.gch")
+add_dependencies(Motor motor_sdk_pch)
+
 file(GENERATE OUTPUT ${MOTOR_SDK_DIR}/MotorSDK.cmake CONTENT
 "# Gerado pelo build do Motor. Não edite.
+set(MOTOR_SDK_PCH \"\${CMAKE_CURRENT_LIST_DIR}/MotorScriptPch.h\")
 if(NOT TARGET Motor::Motor)
     add_library(Motor::Motor SHARED IMPORTED)
     set_target_properties(Motor::Motor PROPERTIES

@@ -76,10 +76,17 @@ foreach(dir "${IMGUI_DIR}" "${IMGUI_DIR}/backends" "${IMGUI_DIR}/misc/cpp")
 endforeach()
 file(COPY "${IMPLIB}" DESTINATION "${sdk}/lib")
 get_filename_component(implib_name "${IMPLIB}" NAME)
+if(EXISTS "${BIN}/sdk/MotorScriptPch.h")
+    file(COPY "${BIN}/sdk/MotorScriptPch.h" DESTINATION "${sdk}")
+endif()
+if(EXISTS "${BIN}/sdk/MotorScriptPch.h.gch")
+    file(COPY "${BIN}/sdk/MotorScriptPch.h.gch" DESTINATION "${sdk}")
+endif()
 
 # Caminhos relativos à pasta do SDK: a instalação pode ser movida (o Hub copia para Versões\<versão>).
 file(WRITE "${sdk}/MotorSDK.cmake"
 "# Gerado pelo alvo motor_package (pasta de instalação do Motor ${VERSION}). Não edite.
+set(MOTOR_SDK_PCH \"\${CMAKE_CURRENT_LIST_DIR}/MotorScriptPch.h\")
 if(NOT TARGET Motor::Motor)
     add_library(Motor::Motor SHARED IMPORTED)
     set_target_properties(Motor::Motor PROPERTIES

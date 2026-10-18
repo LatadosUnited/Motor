@@ -42,6 +42,7 @@ target_include_directories(test_hotreload PRIVATE ${PROJECT_SOURCE_DIR}/editor/s
 motor_add_test(test_script_project
     ${PROJECT_SOURCE_DIR}/editor/src/ScriptBuilder.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/ScriptHost.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/ScriptIde.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/ScriptProject.cpp)
 target_include_directories(test_script_project PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_script_project PRIVATE nlohmann_json::nlohmann_json)
@@ -143,3 +144,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(test_distribuicao PRIVATE -Wall -Wextra)
 endif()
 add_test(NAME test_distribuicao COMMAND test_distribuicao ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_distribuicao)
+
+# API dos scripts da Fase 17 (sem DLL): temporizadores, mensagens, aleatórios, GetComponent, EntityRef (cópias e
+# prefabs), MOTOR_FIELDS e campos renomeados ou perdidos na recarga.
+motor_add_test(test_script_api)

@@ -38,6 +38,9 @@ public:
 
     double ElapsedTime() const { return m_elapsed; }  // segundos desde o início do Run()
     float FramesPerSecond() const { return m_fps; }
+    // Limite de quadros por segundo (0 = sem limite além do vsync). O editor usa um limite baixo em segundo
+    // plano para não roubar processador de quem compila os scripts.
+    void SetFrameLimit(double fps) { m_frameLimit = fps; }
 
 protected:
     virtual void OnInit() {}
@@ -56,6 +59,7 @@ private:
     std::unique_ptr<ImGuiLayer> m_imgui;
     double m_elapsed = 0.0;
     float m_fps = 0.0f;
+    double m_frameLimit = 0.0;
     bool m_running = false;
 };
 

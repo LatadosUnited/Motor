@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -258,9 +259,51 @@ json ComponentToJson(const ComponentPtr& component, const AssetLibrary& assets, 
 }
 
 // Campos ausentes no arquivo ficam com o valor padrão do componente.
+// Valor gravado do campo: pelo nome atual ou, se não houver, pelo nome antigo (FieldOptions::formerKey).
+json::const_iterator StoredField(const FieldInfo& f, const json& obj) {
+    auto it = obj.find(f.key);
+    if (it == obj.end() && f.options.formerKey) it = obj.find(f.options.formerKey);
+    return it;
+}
+
 void ReadFields(const ComponentType& type, void* data, const json& obj, AssetLibrary& assets, const std::string& owner) {
     for (const FieldInfo& f : type.fields) {
-        if (auto it = obj.find(f.key); it != obj.end()) FieldFromJson(f, data, *it, assets, owner);
+        if (auto it = StoredField(f, obj); it != obj.end()) FieldFromJson(f, data, *it, assets, owner);
+    }
+}
+
+// Mesma "forma" de JSON (número, texto, lista do mesmo tamanho...): o valor gravado serve no campo atual.
+bool SameJsonKind(const json& stored, const json& current) {
+    if (stored.is_null() || current.is_null()) return true;
+    if (stored.is_number() && current.is_number()) return true;
+    if (stored.is_array() && current.is_array()) return stored.size() == current.size();
+    return stored.type() == current.type();
+}
+
+// Depois de ReadFields: o que do JSON guardado não entrou no componente (campo que sumiu ou mudou de tipo).
+void CheckStoredFields(const ComponentType& type, void* data, const json& obj, AssetLibrary& assets,
+                       const std::string& owner, std::vector<FieldWarning>& warnings) {
+    auto warn = [&](const std::string& key, const json& value, bool typeChanged) {
+        warnings.push_back({type.name, owner, key, value.dump(-1, ' ', false, json::error_handler_t::replace), typeChanged});
+    };
+    for (auto it = obj.begin(); it != obj.end(); ++it) {
+        if (it.key() == "type") continue;
+        const bool used = std::any_of(type.fields.begin(), type.fields.end(), [&](const FieldInfo& f) {
+            return f.key == it.key() || (f.options.formerKey && f.options.formerKey == it.key() && !obj.contains(f.key));
+        });
+        if (!used) warn(it.key(), it.value(), false);
+    }
+    for (const FieldInfo& f : type.fields) {
+        const auto it = StoredField(f, obj);
+        if (it == obj.end()) continue;
+        bool fits = true;
+        switch (f.type) {
+            case FieldType::Mesh:
+            case FieldType::Texture: break;  // nome ou {guid, path}: um asset que falta já vira aviso ao ler
+            case FieldType::Custom: fits = f.custom->fromJson(it->dump(), f.Get(data), assets, nullptr); break;
+            default: fits = SameJsonKind(*it, FieldToJson(f, data, assets, {}, owner)); break;
+        }
+        if (!fits) warn(it.key(), *it, true);
     }
 }
 
@@ -622,7 +665,7 @@ size_t DetachComponents(Scene& scene, const std::function<bool(const ComponentTy
     return count;
 }
 
-size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets) {
+size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets, std::vector<FieldWarning>* warnings) {
     const ComponentType& missingType = ComponentRegistry::MissingType();
     size_t count = 0;
     for (const auto& e : scene.Entities()) {
@@ -633,7 +676,10 @@ size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets) {
             if (!type || e->Get(*type)) continue;  // ainda desconhecido, ou a entidade já tem um desse tipo
             const json obj = json::parse(missing.json, nullptr, false);
             ComponentPtr real(*type);
-            if (obj.is_object()) ReadFields(*type, real.Data(), obj, assets, e->name);
+            if (obj.is_object()) {
+                ReadFields(*type, real.Data(), obj, assets, e->name);
+                if (warnings) CheckStoredFields(*type, real.Data(), obj, assets, e->name, *warnings);
+            }
             component = std::move(real);  // no mesmo lugar da lista (ordem do Inspector)
             ++count;
         }

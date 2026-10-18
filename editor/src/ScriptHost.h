@@ -1,5 +1,7 @@
 #pragma once
 
+#include <motor/scene/SceneSerializer.h>
+
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -13,13 +15,17 @@ struct ComponentType;
 
 namespace editor {
 
+// Avisos legíveis para os valores perdidos ao religar scripts (um por campo de cada tipo).
+std::vector<std::string> DescribeLostFields(const std::vector<motor::SceneSerializer::FieldWarning>& lost);
+
 // DLL de scripts carregada no editor, com recarga sem fechar (hot reload).
 //
 // Recarregar: carrega uma cópia da DLL nova (a original fica livre para o linker reescrever), troca os
 // componentes dos tipos antigos por MissingComponent com o JSON dos campos, desregistra os tipos, descarrega
-// a DLL antiga, registra os tipos da nova e religa os componentes. Quem chama não pode estar no Play (os
-// scripts estariam rodando) e passa todas as cenas que podem ter componentes de script (cena aberta e
-// fotos do desfazer).
+// a DLL antiga, registra os tipos da nova e religa os componentes. Quem chama passa todas as cenas que podem
+// ter componentes de script (cena aberta, fotos do desfazer, prefabs e, no Play, a cena guardada e os prefabs
+// do jogo) e, no Play, solta antes o que o jogo guarda dos scripts (SceneRuntime::ForgetScripts). Não pode
+// ser chamado de dentro de um script.
 class ScriptHost {
 public:
     using ForEachScene = std::function<void(const std::function<void(motor::Scene&)>&)>;
@@ -30,6 +36,8 @@ public:
         size_t detached = 0;  // componentes guardados antes de descarregar a DLL antiga
         size_t resolved = 0;  // componentes religados depois de registrar a nova
         std::vector<std::string> types;  // tipos registrados pela DLL nova
+        // Valores que não couberam nos scripts novos (campo renomeado, apagado ou com outro tipo), um por campo.
+        std::vector<std::string> warnings;
     };
 
     ScriptHost() = default;

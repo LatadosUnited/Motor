@@ -326,6 +326,12 @@ int main(int argc, char** argv) {
         CHECK(!fs::exists(paths.scriptsDir / file.filename()));  // nomes únicos entre exemplos e modelos
         fs::copy_file(file, paths.scriptsDir / file.filename());
     }
+    // Os modelos de "Novo script..." (gerados pelo editor) também compilam sem avisos.
+    std::vector<std::string> newScriptTypes;
+    for (const SP::NewScriptTemplate& t : SP::NewScriptTemplates()) {
+        newScriptTypes.push_back(std::string("Modelo_") + t.id);
+        CHECK(SP::CreateScript(paths.scriptsDir, newScriptTypes.back(), nullptr, nullptr, t.id));
+    }
     std::string toolchainError;
     const auto toolchain = SP::LoadToolchain(MOTOR_TEST_SDK_JSON, &toolchainError);
     CHECK(toolchain.has_value());
@@ -350,9 +356,15 @@ int main(int argc, char** argv) {
         return TestResult();
     }
     for (const char* type : {"Flutuar", "ExemploCampos", "CicloDeVida", "Projetil", "Disparador", "Placar", "Moeda",
-                             "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "SonsDoMenu", "Girar", "Jogador", "MoverWASD", "Seguir"}) {
+                             "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "SonsDoMenu", "Girar", "Jogador", "MoverWASD", "Seguir",
+                             "Lampada", "Interruptor", "Chuva"}) {
         const ComponentType* t = ComponentRegistry::Instance().Find(type);
         if (!t) std::printf("  não registrado: %s\n", type);
+        CHECK(t && t->IsScript());
+    }
+    for (const std::string& type : newScriptTypes) {
+        const ComponentType* t = ComponentRegistry::Instance().Find(type);
+        if (!t) std::printf("  não registrado: %s\n", type.c_str());
         CHECK(t && t->IsScript());
     }
 
@@ -549,6 +561,59 @@ int main(int argc, char** argv) {
         CHECK(Near(color.g, 0.8f, 1e-4f));  // a cor do script foi para o Mesh Renderer
         const int* passos = ScriptField<int>(scene, buoyId, "CicloDeVida", "passosFixos");
         CHECK(passos == nullptr);  // não registrado: estado interno
+        runtime.Stop();
+    }
+
+    SECTION("Interruptor e lâmpada: EntityRef, mensagem e temporizador");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        Entity& lamp = scene.CreateEntity("Lampada");
+        lamp.transform.position = {5.0f, 3.0f, 0.0f};
+        lamp.Add<MeshRenderer>().material.color = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
+        AddScript(lamp, "Lampada");
+        const EntityId lampId = lamp.id;
+        const EntityId switchId = AddTrigger(scene, "Interruptor", {0.0f, 1.0f, 0.0f}, {3.0f, 3.0f, 3.0f}, "Interruptor");
+        if (auto* ref = ScriptField<EntityRef>(scene, switchId, "Interruptor", "lampada")) ref->id = lampId;
+        if (auto* duracao = ScriptField<float>(scene, lampId, "Lampada", "duracao")) *duracao = 0.5f;
+        AddPlayer(scene, {0.0f, 1.0f, 0.0f}, false);  // já dentro da área do interruptor
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 0.2f);
+        const glm::vec4 on{1.0f, 0.9f, 0.4f, 1.0f};
+        CHECK(scene.Find(lampId)->Get<MeshRenderer>()->material.color == on);
+        Run(runtime, 0.6f);  // depois da duração: apaga sozinha
+        CHECK(scene.Find(lampId)->Get<MeshRenderer>()->material.color == glm::vec4(0.2f, 0.2f, 0.2f, 1.0f));
+        CHECK(runtime.TimerCount() == 0);
+        runtime.Stop();
+    }
+
+    SECTION("Chuva: Every cria gotas em lugares sorteados e After as destrói");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        Entity& cloud = scene.CreateEntity("Nuvem");
+        cloud.transform.position = {10.0f, 5.0f, -2.0f};
+        AddScript(cloud, "Chuva");
+        const EntityId cloudId = cloud.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 1.0f);
+        CHECK(CountNamed(scene, "Gota") >= 3 && CountNamed(scene, "Gota") <= 4);
+        Run(runtime, 2.0f);
+        const int* criadas = ScriptField<int>(scene, cloudId, "Chuva", "criadas");
+        CHECK(criadas == nullptr);  // estado do jogo: não registrado
+        const int alive = CountNamed(scene, "Gota");
+        CHECK(alive >= 5 && alive <= 7);  // 1,5 s de vida a cada 0,25 s
+        bool inside = true;
+        for (const auto& e : scene.Entities()) {
+            if (e->name != "Gota") continue;
+            const glm::vec3 p = e->transform.position;
+            inside = inside && std::abs(p.x - 10.0f) <= 4.0f && std::abs(p.z + 2.0f) <= 4.0f && p.y == 5.0f;
+        }
+        CHECK(inside);
         runtime.Stop();
     }
 

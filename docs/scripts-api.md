@@ -1,6 +1,6 @@
 ---
 tipo: guia
-atualizado: 2026-10-17
+atualizado: 2026-10-18
 ---
 
 # Referência da API dos scripts
@@ -12,10 +12,11 @@ primeiro o [guia](scripts.md). Fontes, se quiser ir além: `engine/include/motor
 
 O teste `test_script_docs` confere que esta página cita todos os métodos públicos de `motor::Script`, de
 `motor::PhysicsSystem`, de `motor::UiSystem` e de `motor::AudioSystem`, todas as opções de campo e os campos de
-`GameTime`, `Collision`, `UiPointer`, `AudioSettings` e `AudioVoiceInfo`. Mudou um desses
+`GameTime`, `Collision`, `UiPointer`, `AudioSettings` e `AudioVoiceInfo`. `Message` e `EntityRef` também
+estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 11 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 12 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -23,7 +24,7 @@ recompilar os scripts).
 
 | Include | Traz |
 |---|---|
-| `<motor/scene/ScriptModule.h>` | o necessário para qualquer script: `motor::Script`, `MOTOR_SCRIPT`, `Scene`, `Entity`, `Transform`, os componentes da engine, `Key`, GLM (vetores, matrizes, quaternions) |
+| `<motor/scene/ScriptModule.h>` | o necessário para qualquer script: `motor::Script`, `MOTOR_SCRIPT`, `MOTOR_FIELDS`, `Scene`, `Entity`, `EntityRef`, `Transform`, os componentes da engine, `Key`, GLM (vetores, matrizes, quaternions) |
 | `<motor/physics/PhysicsSystem.h>` | `motor::PhysicsSystem` (forças, personagem, raios) |
 | `<motor/ui/UiSystem.h>` | `motor::UiSystem` (texto, mostrar/esconder, botões) e os componentes de UI |
 | `<motor/audio/AudioSystem.h>` | `motor::AudioSystem` (tocar, parar e volume dos sons) |
@@ -46,6 +47,8 @@ MOTOR_SCRIPT(NomeUnico) {
   padrão e é copiável). O identificador é gravado na cena: precisa ser único entre todos os scripts e os
   componentes da engine.
 - `.Field(chave, rótulo, &T::membro, opções)`: campo editável, salvo e comparado (desfazer).
+- `.Field(chave, &T::membro, opções)`: o mesmo, com o rótulo tirado da chave (`"velocidadeMaxima"` aparece
+  como "Velocidade maxima"; `"forca_do_pulo"`, "Forca do pulo"; siglas ficam: `"corRGB"`, "Cor RGB").
 - `.FieldRef(chave, rótulo, [](T& t) -> auto& { return t.algo.membro; }, opções)`: campo que está dentro de
   outra struct.
 - `.OnAdd([](T& t, motor::AssetLibrary& assets) { ... })`: valores iniciais quando o componente é
@@ -53,10 +56,18 @@ MOTOR_SCRIPT(NomeUnico) {
 
 Um `Register` sem `.Field` é válido: script sem campos.
 
+Registro curto, sem bloco: `MOTOR_FIELDS(Struct, campo1, campo2, ...)` registra `Struct` com o identificador e
+o nome iguais ao nome da struct e cada campo com `.Field(chave, &Struct::campo)` (rótulo tirado do nome). Sem
+campos: `MOTOR_FIELDS(Struct)`. Para rótulo próprio ou opções, use o bloco `MOTOR_SCRIPT`.
+
+```text
+MOTOR_FIELDS(Jogador, velocidade, pulo, vidas)
+```
+
 ### Tipos de campo
 
 `bool`, `int`, `float`, `glm::vec2`, `glm::vec3`, `glm::vec4`, `std::string`, `std::shared_ptr<motor::Mesh>`,
-`std::shared_ptr<motor::Texture2D>`, `motor::PrefabRef`, `motor::AudioClip` e os tipos da engine com editor:
+`std::shared_ptr<motor::Texture2D>`, `motor::PrefabRef`, `motor::EntityRef`, `motor::AudioClip` e os tipos da engine com editor:
 `motor::ColliderShape`, `motor::LightType`, `motor::UiAnchor`, `motor::UiTextAlign` e `motor::UiFont`. Outro
 tipo não compila (`static assertion failed: tipo de campo não suportado`).
 
@@ -74,6 +85,7 @@ Inicializadores designados, na ordem abaixo: `{.slider = true, .min = 0.0f, .max
 | `max` | `float` | `0` | limite superior |
 | `format` | `const char*` | `nullptr` | formato `printf` (`"%.1f m/s"`); nulo = padrão do tipo |
 | `tooltip` | `const char*` | `nullptr` | texto ao passar o mouse |
+| `formerKey` | `const char*` | `nullptr` | nome antigo da chave: ao ler uma cena ou recarregar os scripts sem a chave atual, usa o valor gravado com este nome (renomear um campo sem perder os valores) |
 
 ## `motor::Script`
 
@@ -91,6 +103,7 @@ Base de todo script. Os métodos virtuais são opcionais: sobrescreva com `overr
 | `virtual void OnCollisionExit(EntityId other)` | acabou o contato (não sobrou nenhum ponto de contato entre as duas) |
 | `virtual void OnTriggerEnter(EntityId other)` | `other` entrou num trigger (este ou o outro lado é o trigger) |
 | `virtual void OnTriggerExit(EntityId other)` | `other` saiu do trigger |
+| `virtual void OnMessage(const Message& message)` | outro script mandou uma mensagem para esta entidade (`Send`) ou para todas (`Broadcast`); chega na hora, dentro da chamada de quem mandou. Ver [Mensagens](#mensagens) |
 | `bool HasStarted() const` | se o `OnStart` já rodou nesta cópia do script |
 
 Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdate`, nos dois lados do par.
@@ -103,12 +116,15 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 | `EntityId GetId() const` | o id dela |
 | `Transform& GetTransform()` | o Transform dela (local, relativo ao pai) |
 | `Scene& GetScene()` | a cena que está rodando |
+| `template <class T> T* GetComponent()` | o componente do tipo `T` desta entidade (da engine ou um script), ou `nullptr` |
 
 ### Cena
 
 | Método | Efeito |
 |---|---|
 | `Entity* FindEntity(std::string_view name)` | a primeira entidade com esse nome, ou `nullptr` |
+| `Entity* GetEntity(EntityId id)` | a entidade com esse id, ou `nullptr` se não existe (foi destruída; id 0). Aceita um campo `EntityRef`: `GetEntity(alvo)` |
+| `template <class T> T* GetComponent(EntityId id)` | o componente do tipo `T` de outra entidade (id ou `EntityRef`), ou `nullptr` se ela não existe ou não tem um |
 | `Entity& CreateEntity(std::string name, EntityId parent = 0)` | cria uma entidade vazia (na raiz, ou filha de `parent`); os scripts dela começam no próximo passo |
 | `Entity* Instantiate(const PrefabRef& prefab)` | instancia um prefab (`.mprefab`) na cena na posição original do prefab; devolve a entidade raiz (ou `nullptr` se o campo estiver vazio ou o arquivo não existir). Os scripts começam no próximo passo |
 | `Entity* Instantiate(const PrefabRef& prefab, const glm::vec3& position)` | o mesmo, colocando a raiz em `position` |
@@ -138,6 +154,47 @@ tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas se
 | `elapsed` | `double` | segundos desde o Play (sem as pausas) |
 | `frame` | `uint64_t` | quantos `OnUpdate` já rodaram |
 
+### Temporizadores
+
+| Método | Efeito |
+|---|---|
+| `TimerId After(float seconds, std::function<void()> fn)` | chama `fn` uma vez, daqui a `seconds` segundos |
+| `TimerId Every(float seconds, std::function<void()> fn)` | chama `fn` a cada `seconds` segundos, até cancelar |
+| `void CancelTimer(TimerId id)` | cancela um temporizador (o número devolvido por `After`/`Every`) |
+| `void CancelTimers()` | cancela todos os temporizadores deste script |
+
+Contam o tempo do jogo (`Time().elapsed`: param na pausa). Rodam no `Update`, antes do `OnUpdate` dos
+scripts, no máximo uma vez por frame cada (um `Every` mais curto que o frame dispara uma vez por frame).
+Com a entidade desativada, esperam. Somem sozinhos quando o script ou a entidade somem, ao parar o Play e na
+recarga dos scripts durante o Play (o `OnStart` roda de novo e os liga outra vez). Exceção dentro de `fn`
+conta como erro do script (o Play pausa, o script é desligado).
+
+### Mensagens
+
+| Método | Efeito |
+|---|---|
+| `void Send(EntityId target, std::string_view text, float value = 0.0f)` | chama `OnMessage` nos scripts iniciados de `target` (id ou `EntityRef`) |
+| `void Broadcast(std::string_view text, float value = 0.0f)` | chama `OnMessage` nos scripts iniciados de todas as entidades ativas (inclusive esta) |
+
+`motor::Message`, recebido no `OnMessage`:
+
+| Campo | Tipo | Significado |
+|---|---|---|
+| `text` | `std::string_view` | o que aconteceu (`"abrir"`, `"dano"`); só vale durante o `OnMessage` (copie para um `std::string` se precisar guardar) |
+| `from` | `EntityId` | a entidade do script que mandou |
+| `value` | `float` | o número opcional de `Send`/`Broadcast` |
+
+### Números aleatórios
+
+| Método | Devolve |
+|---|---|
+| `float Random(float min, float max)` | um número entre `min` e `max` |
+| `int RandomInt(int min, int max)` | um inteiro de `min` a `max`, os dois inclusive (`RandomInt(1, 6)`: um dado) |
+| `bool Chance(float probability)` | `true` com essa probabilidade (`0` nunca, `1` sempre) |
+| `void SetRandomSeed(uint32_t seed)` | recomeça a sequência: a mesma semente sorteia sempre os mesmos números |
+
+Um gerador por Play, compartilhado pelos scripts, com semente nova a cada Play.
+
 ### Sistemas e log
 
 | Método | Efeito |
@@ -153,6 +210,21 @@ Fora de um script (funções livres, outras structs), use `motor::log::Info(...)
 
 Copiar um script (o Play copia a cena; Ctrl+D duplica a entidade) copia os membros da struct, mas a cópia
 começa sem dono e "não iniciada". Só os campos registrados são salvos na cena.
+
+## `motor::EntityRef`
+
+Campo que aponta para outra entidade da cena (`motor/scene/EntityRef.h`, já incluído pelo `ScriptModule.h`).
+No Inspector: lista com as entidades da cena, que aceita uma entidade arrastada da Hierarquia.
+
+| Membro | Significado |
+|---|---|
+| `id` | o id da entidade (`EntityId`); `0` = nenhuma |
+| `IsEmpty()` | se está vazio |
+| conversão para `EntityId` | serve onde se espera um id: `GetEntity(alvo)`, `Destroy(alvo)`, `Send(alvo, "x")`, `GetComponent<T>(alvo)` |
+
+Na cena é gravado o id. Duplicar entidades (Ctrl+D), criar um prefab e instanciá-lo ajustam as referências que
+apontam para dentro da parte copiada; as que apontam para fora ficam iguais (num prefab, ficam vazias). Uma
+entidade destruída deixa a referência apontando para nada: `GetEntity` devolve `nullptr`.
 
 ## `motor::Collision`
 

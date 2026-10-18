@@ -2,12 +2,14 @@
 
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/AssetLoaders.h"
+#include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/scene/Prefab.h"
 #include "motor/scene/Scene.h"
 
 #include <algorithm>
 #include <exception>
+#include <random>
 #include <format>
 #include <utility>
 
@@ -167,6 +169,8 @@ void SceneRuntime::Start() {
     m_lastError.clear();
     m_hasNewError = false;
     m_errorCount = 0;
+    m_timers.clear();
+    m_random.seed(std::random_device{}());
     // Instâncias novas a cada Start: o estado dos sistemas é deste runtime e deste Play.
     for (RuntimeSystemInfo& info : RegisteredRuntimeSystems()) {
         try {
@@ -192,6 +196,7 @@ void SceneRuntime::Update(float dt) {
     m_time.elapsed += dt;
     StartPending();
     RunSystems(true, &RuntimeSystem::OnUpdate, dt);
+    RunTimers();
     ForEachScript([this, dt](Script& s, EntityId id, std::string_view scriptName) {
         if (!s.m_started) return;
         Bind(s, id);
@@ -243,6 +248,7 @@ void SceneRuntime::Stop() {
     }
     m_systems.clear();
     m_faultedScripts.clear();
+    m_timers.clear();
     m_prefabs.reset();
     m_fallbackAssets.reset();
     m_running = false;
@@ -298,6 +304,93 @@ EntityId SceneRuntime::Instantiate(const PrefabRef& ref, const glm::vec3& positi
     const EntityId id = Instantiate(ref);
     if (Entity* e = m_scene.Find(id)) e->transform.position = position;
     return id;
+}
+
+const ComponentType* SceneRuntime::ScriptTypeOf(EntityId id, const Script* script) {
+    Entity* e = m_scene.Find(id);
+    if (!e) return nullptr;
+    for (ComponentPtr& c : e->components) {
+        if (c.Type().IsScript() && c.Type().asScript(c.Data()) == script) return &c.Type();
+    }
+    return nullptr;
+}
+
+TimerId SceneRuntime::AddTimer(Script& owner, EntityId entity, float seconds, bool repeat, std::function<void()> fn) {
+    if (!fn) return 0;
+    const float interval = std::max(seconds, 0.0f);
+    const TimerId id = m_nextTimer++;
+    m_timers.push_back({id, &owner, entity, m_time.elapsed + interval, interval, repeat, std::move(fn)});
+    return id;
+}
+
+void SceneRuntime::CancelTimer(TimerId id) {
+    std::erase_if(m_timers, [&](const Timer& t) { return t.id == id; });
+}
+
+void SceneRuntime::CancelTimers(const Script& owner) {
+    std::erase_if(m_timers, [&](const Timer& t) { return t.owner == &owner; });
+}
+
+void SceneRuntime::RunTimers() {
+    // Só os que já venceram no começo: um temporizador criado ou adiado aqui espera o próximo frame (assim
+    // Every(0) dispara uma vez por frame, e não para sempre).
+    std::vector<TimerId> due;
+    for (const Timer& t : m_timers) {
+        if (t.due <= m_time.elapsed) due.push_back(t.id);
+    }
+    for (TimerId id : due) {
+        auto it = std::find_if(m_timers.begin(), m_timers.end(), [&](const Timer& t) { return t.id == id; });
+        if (it == m_timers.end()) continue;  // cancelado por outro temporizador
+        const ComponentType* type = ScriptTypeOf(it->entity, it->owner);
+        if (!type) {  // a entidade ou o script sumiram
+            m_timers.erase(it);
+            continue;
+        }
+        Script& owner = *it->owner;
+        const EntityId entity = it->entity;
+        // Entidade desativada ou script com erro: espera (dispara quando voltar).
+        if (!owner.m_started || m_faultedScripts.contains(&owner) || !m_scene.IsActiveInHierarchy(entity)) continue;
+        std::function<void()> fn = it->fn;  // cópia: o callback pode mexer na lista
+        if (it->repeat) {
+            it->due += it->interval;
+            if (it->due <= m_time.elapsed) it->due = m_time.elapsed + it->interval;  // atrasado: não acumula
+        } else {
+            m_timers.erase(it);
+        }
+        Bind(owner, entity);
+        InvokeScript(owner, entity, type->name, "temporizador", fn);
+    }
+}
+
+void SceneRuntime::Send(EntityId target, const Message& message) {
+    CallEntityScripts(target, "OnMessage", [&](Script& s) { s.OnMessage(message); });
+}
+
+void SceneRuntime::Broadcast(const Message& message) {
+    std::vector<EntityId> ids;
+    ids.reserve(m_scene.Entities().size());
+    for (const auto& e : m_scene.Entities()) ids.push_back(e->id);
+    for (EntityId id : ids) Send(id, message);
+}
+
+float SceneRuntime::Random(float min, float max) {
+    if (min > max) std::swap(min, max);
+    if (min == max) return min;
+    return std::uniform_real_distribution<float>(min, max)(m_random);
+}
+
+int SceneRuntime::RandomInt(int min, int max) {
+    if (min > max) std::swap(min, max);
+    return std::uniform_int_distribution<int>(min, max)(m_random);
+}
+
+void SceneRuntime::ForgetScripts() {
+    m_timers.clear();
+    m_faultedScripts.clear();
+}
+
+void SceneRuntime::ForEachPrefabScene(const std::function<void(Scene&)>& fn) {
+    if (m_prefabs) m_prefabs->ForEachScene(fn);
 }
 
 void SceneRuntime::Destroy(EntityId id) {
@@ -389,6 +482,54 @@ Entity* Script::Instantiate(const PrefabRef& prefab, const glm::vec3& position) 
     return m_runtime->GetScene().Find(m_runtime->Instantiate(prefab, position));
 }
 
+Entity* Script::GetEntity(EntityId id) {
+    return m_runtime && id != kNullEntity ? m_runtime->GetScene().Find(id) : nullptr;
+}
+
+TimerId Script::After(float seconds, std::function<void()> fn) {
+    MOTOR_ASSERT(m_runtime, "Script usado fora do Play");
+    return m_runtime->AddTimer(*this, m_entity, seconds, false, std::move(fn));
+}
+
+TimerId Script::Every(float seconds, std::function<void()> fn) {
+    MOTOR_ASSERT(m_runtime, "Script usado fora do Play");
+    return m_runtime->AddTimer(*this, m_entity, seconds, true, std::move(fn));
+}
+
+void Script::CancelTimer(TimerId id) {
+    if (m_runtime) m_runtime->CancelTimer(id);
+}
+
+void Script::CancelTimers() {
+    if (m_runtime) m_runtime->CancelTimers(*this);
+}
+
+void Script::Send(EntityId target, std::string_view text, float value) {
+    if (m_runtime) m_runtime->Send(target, {text, m_entity, value});
+}
+
+void Script::Broadcast(std::string_view text, float value) {
+    if (m_runtime) m_runtime->Broadcast({text, m_entity, value});
+}
+
+float Script::Random(float min, float max) {
+    MOTOR_ASSERT(m_runtime, "Script usado fora do Play");
+    return m_runtime->Random(min, max);
+}
+
+int Script::RandomInt(int min, int max) {
+    MOTOR_ASSERT(m_runtime, "Script usado fora do Play");
+    return m_runtime->RandomInt(min, max);
+}
+
+bool Script::Chance(float probability) {
+    return Random(0.0f, 1.0f) < probability;
+}
+
+void Script::SetRandomSeed(uint32_t seed) {
+    if (m_runtime) m_runtime->SetRandomSeed(seed);
+}
+
 void Script::Destroy(EntityId id) {
     if (m_runtime) m_runtime->Destroy(id);
 }
@@ -419,9 +560,53 @@ bool Script::WasKeyPressed(Key key) const { return InputEnabled() && Input::WasK
 bool Script::IsMouseDown(MouseButton button) const { return InputEnabled() && Input::IsMouseDown(button); }
 glm::vec2 Script::MouseDelta() const { return InputEnabled() ? Input::MouseDelta() : glm::vec2(0.0f); }
 
-void Script::WriteLog(const std::string& message) {
+} // namespace motor
+
+template <>
+struct std::formatter<motor::detail::LogArg> {
+    std::string_view spec;
+
+    constexpr auto parse(std::format_parse_context& ctx) {
+        auto it = ctx.begin();
+        while (it != ctx.end() && *it != '}') ++it;
+        spec = std::string_view(ctx.begin(), static_cast<size_t>(it - ctx.begin()));
+        return it;
+    }
+
+    auto format(const motor::detail::LogArg& arg, std::format_context& ctx) const {
+        std::string subFmt = "{:";
+        subFmt.append(spec);
+        subFmt.push_back('}');
+        std::string s;
+        switch (arg.kind) {
+            case motor::detail::LogArg::Kind::Int: s = std::vformat(subFmt, std::make_format_args(arg.i)); break;
+            case motor::detail::LogArg::Kind::UInt: s = std::vformat(subFmt, std::make_format_args(arg.u)); break;
+            case motor::detail::LogArg::Kind::Double: s = std::vformat(subFmt, std::make_format_args(arg.d)); break;
+            case motor::detail::LogArg::Kind::Bool: s = std::vformat(subFmt, std::make_format_args(arg.b)); break;
+            case motor::detail::LogArg::Kind::String: s = std::vformat(subFmt, std::make_format_args(arg.s)); break;
+        }
+        return std::copy(s.begin(), s.end(), ctx.out());
+    }
+};
+
+namespace motor {
+
+void Script::WriteLog(std::string_view fmt, const detail::LogArg* args, size_t count) {
     const Entity* e = m_runtime ? m_runtime->GetScene().Find(m_entity) : nullptr;
-    log::Info("[{}] {}", e ? e->name : std::string("?"), message);
+    const std::string_view entityName = e ? std::string_view(e->name) : std::string_view("?");
+    if (count == 0 || !args) {
+        log::Info("[{}] {}", entityName, fmt);
+        return;
+    }
+    try {
+        const detail::LogArg empty(std::string_view{});
+        auto at = [&](size_t i) -> const detail::LogArg& { return i < count ? args[i] : empty; };
+        const std::string message = std::vformat(
+            fmt, std::make_format_args(at(0), at(1), at(2), at(3), at(4), at(5), at(6), at(7)));
+        log::Info("[{}] {}", entityName, message);
+    } catch (const std::format_error&) {
+        log::Info("[{}] {}", entityName, fmt);
+    }
 }
 
 } // namespace motor

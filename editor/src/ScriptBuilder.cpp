@@ -3,7 +3,13 @@
 #include <motor/core/Log.h>
 #include <motor/core/Paths.h>
 
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
 #include <format>
+#include <fstream>
+#include <sstream>
+#include <unordered_map>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -179,7 +185,7 @@ int RunProcess(const std::vector<std::string>& args, const std::vector<fs::path>
             if (job) TerminateJobObject(job, 1);
             TerminateProcess(pi.hProcess, 1);
         }
-        if (WaitForSingleObject(pi.hProcess, 15) == WAIT_OBJECT_0) {
+        if (WaitForSingleObject(pi.hProcess, 2) == WAIT_OBJECT_0) {
             // Terminou: lê o que sobrou no pipe e sai (mesmo que algum neto ainda segure o pipe aberto).
             if (PeekNamedPipe(readPipe, nullptr, 0, nullptr, &available, nullptr) && available > 0) continue;
             break;
@@ -207,6 +213,83 @@ int RunProcess(const std::vector<std::string>&, const std::vector<fs::path>&, co
 }
 #endif
 
+namespace {
+// Mapeia o objeto gerado pelo CMake (ex.: ".o/6445d702/6dbd6be7.obj") para o nome legível do fonte
+// (ex.: "Girar.cpp" ou "MotorScriptEntry.cpp") a partir do compile_commands.json.
+std::unordered_map<std::string, std::string> LoadObjectNames(const ScriptProject::Paths& paths) {
+    std::unordered_map<std::string, std::string> names;
+    std::error_code ec;
+    const fs::path jsonPath = paths.binaryDir / "compile_commands.json";
+    if (!fs::is_regular_file(jsonPath, ec)) return names;
+    try {
+        std::ifstream in(jsonPath, std::ios::binary);
+        const auto j = nlohmann::json::parse(in, nullptr, false);
+        if (!j.is_array()) return names;
+        const fs::path scriptsNorm = paths.scriptsDir.lexically_normal();
+        const fs::path binaryNorm = paths.binaryDir.lexically_normal();
+        for (const auto& entry : j) {
+            if (!entry.is_object()) continue;
+            std::string output = entry.value("output", std::string());
+            const std::string file = entry.value("file", std::string());
+            if (output.empty() || file.empty()) continue;
+            std::replace(output.begin(), output.end(), '\\', '/');
+            const fs::path filePath = motor::PathFromUtf8(file).lexically_normal();
+            const fs::path rel = filePath.lexically_relative(scriptsNorm);
+            std::string display;
+            if (!rel.empty() && rel.native()[0] != '.') {
+                display = motor::ToGenericUtf8(rel);
+            } else {
+                display = motor::ToUtf8(filePath.filename());
+            }
+            const fs::path outPath = motor::PathFromUtf8(output).lexically_normal();
+            const fs::path outRel = outPath.lexically_relative(binaryNorm);
+            if (!outRel.empty() && !motor::ToGenericUtf8(outRel).starts_with("..")) {
+                names[motor::ToGenericUtf8(outRel)] = display;
+            }
+            names[std::move(output)] = std::move(display);
+        }
+    } catch (...) {
+    }
+    return names;
+}
+
+std::string FallbackObjectName(const std::string& obj) {
+    std::string name = motor::ToUtf8(motor::PathFromUtf8(obj).filename());
+    if (name.size() > 4 && name.ends_with(".obj")) {
+        const std::string stem = name.substr(0, name.size() - 4);
+        if (stem.ends_with(".cpp") || stem.ends_with(".cc") || stem.ends_with(".cxx")) return stem;
+    }
+    return name;
+}
+
+struct NinjaLogEntry {
+    int64_t startMs = 0;
+    int64_t endMs = 0;
+    std::string mtime;
+    std::string output;
+};
+
+std::vector<NinjaLogEntry> ReadNinjaLog(const fs::path& binaryDir) {
+    std::vector<NinjaLogEntry> entries;
+    std::error_code ec;
+    const fs::path logPath = binaryDir / ".ninja_log";
+    if (!fs::is_regular_file(logPath, ec)) return entries;
+    std::ifstream in(logPath, std::ios::binary);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line);
+        NinjaLogEntry e;
+        if (ss >> e.startMs >> e.endMs >> e.mtime >> e.output) {
+            std::replace(e.output.begin(), e.output.end(), '\\', '/');
+            entries.push_back(std::move(e));
+        }
+    }
+    return entries;
+}
+} // namespace
+
 // ---------------------------------------------------------------------------
 // ScriptBuilder
 // ---------------------------------------------------------------------------
@@ -231,12 +314,15 @@ bool ScriptBuilder::Start(const ScriptProject::Paths& paths, const ScriptProject
         m_log.clear();
         m_start = std::chrono::steady_clock::now();
         m_end = {};
+        m_timings = {};
     }
     m_finished = false;
     m_cancel = false;
     m_state = State::Running;
 
     m_thread = std::thread([this, paths, toolchain] {
+        using Clock = std::chrono::steady_clock;
+        Timings timings;
         bool ok = true;
         std::string error;
         if (!ScriptProject::WriteBuildFiles(paths, toolchain, &error)) {
@@ -244,23 +330,190 @@ bool ScriptBuilder::Start(const ScriptProject::Paths& paths, const ScriptProject
             ok = false;
         }
         const auto pathDirs = ScriptProject::ToolchainPathDirs(toolchain);
-        auto run = [&](const std::vector<std::string>& args) {
+        auto run = [&](const std::vector<std::string>& args,
+                       const std::function<void(const std::string&)>& onChunk = {}) {
             std::string line;
             for (const std::string& a : args) line += (line.empty() ? "" : " ") + a;
             Append("> " + line + "\n");
-            const int code = RunProcess(args, pathDirs, [this](const std::string& text) { Append(text); }, m_cancel, &error);
+            const int code = RunProcess(
+                args, pathDirs,
+                [this, &onChunk](const std::string& text) {
+                    Append(text);
+                    if (onChunk) onChunk(text);
+                },
+                m_cancel, &error);
             if (code == -1) Append(error + "\n");
             return code == 0;
         };
         if (ok && ScriptProject::NeedsConfigure(paths)) {
             ScriptProject::ResetConfigure(paths);
+            const auto t0 = Clock::now();
             ok = run(ScriptProject::ConfigureCommand(paths, toolchain));
+            timings.configure += std::chrono::duration<float>(Clock::now() - t0).count();
         }
-        if (ok) ok = run(ScriptProject::BuildCommand(paths, toolchain));
+        if (ok) {
+            const bool isNinja = toolchain.generator.find("Ninja") != std::string::npos;
+            std::unordered_map<std::string, std::string> ninjaBefore;
+            if (isNinja) {
+                for (const NinjaLogEntry& e : ReadNinjaLog(paths.binaryDir)) {
+                    ninjaBefore[e.output] = e.mtime;
+                }
+            }
+
+            struct StartedFile {
+                std::string obj;
+                Clock::time_point eventSteady{};
+                fs::file_time_type startFile{};
+            };
+            std::vector<StartedFile> startedFiles;
+            const Clock::time_point buildStart = Clock::now();
+            Clock::time_point reconfigStart{};
+            Clock::time_point reconfigEnd{};
+            Clock::time_point compileStart{};
+            Clock::time_point lastObjSteady{};
+            Clock::time_point linkStart{};
+            Clock::time_point linkEnd{};
+
+            auto recordObj = [&](std::string obj, Clock::time_point now) {
+                while (!obj.empty() && (obj.back() == ' ' || obj.back() == '\t')) obj.pop_back();
+                std::replace(obj.begin(), obj.end(), '\\', '/');
+                if (compileStart == Clock::time_point{}) compileStart = now;
+                lastObjSteady = now;
+                startedFiles.push_back({std::move(obj), now, fs::file_time_type::clock::now()});
+            };
+
+            auto parseLine = [&](std::string line) {
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                const auto now = Clock::now();
+                if (line.find("Re-running CMake...") != std::string::npos ||
+                    (reconfigStart == Clock::time_point{} && compileStart == Clock::time_point{} &&
+                     linkStart == Clock::time_point{} && line.rfind("-- ", 0) == 0)) {
+                    if (reconfigStart == Clock::time_point{}) reconfigStart = now;
+                }
+                if (line.rfind("-- Build files have been written to:", 0) == 0 && reconfigStart != Clock::time_point{}) {
+                    timings.configure += std::chrono::duration<float>(now - reconfigStart).count();
+                    reconfigEnd = now;
+                    reconfigStart = {};
+                }
+                constexpr std::string_view kBuilding = "Building CXX object ";
+                constexpr std::string_view kCompiling = "Compiling object ";
+                constexpr std::string_view kFromSource = " from source ";
+                if (const size_t pos = line.find(kBuilding); pos != std::string::npos) {
+                    recordObj(line.substr(pos + kBuilding.size()), now);
+                } else if (const size_t pos2 = line.find(kCompiling); pos2 != std::string::npos) {
+                    const size_t objStart = pos2 + kCompiling.size();
+                    const size_t fromPos = line.find(kFromSource, objStart);
+                    if (fromPos != std::string::npos) {
+                        recordObj(line.substr(objStart, fromPos - objStart), now);
+                    }
+                }
+                if (line.find("Linking CXX shared library ") != std::string::npos ||
+                    line.find("Linking CXX shared module ") != std::string::npos) {
+                    if (!isNinja && compileStart != Clock::time_point{} && timings.compile == 0.0f) {
+                        timings.compile = std::chrono::duration<float>(now - compileStart).count();
+                    }
+                    if (linkStart == Clock::time_point{}) linkStart = now;
+                    linkEnd = now;
+                }
+                if (line.find("Built target ") != std::string::npos) {
+                    if (linkStart != Clock::time_point{} && timings.link == 0.0f) {
+                        timings.link = std::chrono::duration<float>(now - linkStart).count();
+                    }
+                }
+            };
+
+            ok = run(ScriptProject::BuildCommand(paths, toolchain), [&](const std::string& chunk) {
+                std::istringstream in(chunk);
+                std::string line;
+                while (std::getline(in, line)) parseLine(std::move(line));
+            });
+
+            const auto buildEnd = Clock::now();
+            if (reconfigStart != Clock::time_point{}) {
+                timings.configure += std::chrono::duration<float>(buildEnd - reconfigStart).count();
+                reconfigEnd = buildEnd;
+            }
+            const auto phaseStart = reconfigEnd != Clock::time_point{} ? reconfigEnd : buildStart;
+            const auto objNames = LoadObjectNames(paths);
+
+            bool usedNinjaLog = false;
+            if (isNinja) {
+                std::unordered_map<std::string, NinjaLogEntry> changed;
+                for (const NinjaLogEntry& e : ReadNinjaLog(paths.binaryDir)) {
+                    auto it = ninjaBefore.find(e.output);
+                    if (it == ninjaBefore.end() || it->second != e.mtime) {
+                        changed[e.output] = e;
+                    }
+                }
+                int64_t minObjStart = INT64_MAX;
+                int64_t maxObjEnd = 0;
+                for (const StartedFile& sf : startedFiles) {
+                    std::string name;
+                    if (auto it = objNames.find(sf.obj); it != objNames.end()) {
+                        name = it->second;
+                    } else {
+                        name = FallbackObjectName(sf.obj);
+                    }
+                    float sec = 0.0f;
+                    if (auto it = changed.find(sf.obj); it != changed.end()) {
+                        sec = static_cast<float>(std::max<int64_t>(1, it->second.endMs - it->second.startMs)) / 1000.0f;
+                        minObjStart = std::min(minObjStart, it->second.startMs);
+                        maxObjEnd = std::max(maxObjEnd, it->second.endMs);
+                        usedNinjaLog = true;
+                    } else {
+                        sec = std::max(0.001f, std::chrono::duration<float>(sf.eventSteady - phaseStart).count());
+                    }
+                    timings.files.push_back({std::move(name), sec});
+                }
+                if (usedNinjaLog && maxObjEnd >= minObjStart) {
+                    timings.compile = static_cast<float>( std::max<int64_t>(1, maxObjEnd - minObjStart)) / 1000.0f;
+                } else if (lastObjSteady != Clock::time_point{}) {
+                    timings.compile = std::max(0.001f, std::chrono::duration<float>(lastObjSteady - phaseStart).count());
+                }
+                const std::string dllName = motor::ToGenericUtf8(paths.dll.filename());
+                if (auto it = changed.find(dllName); it != changed.end()) {
+                    timings.link = static_cast<float>(std::max<int64_t>(1, it->second.endMs - it->second.startMs)) / 1000.0f;
+                } else if (linkEnd != Clock::time_point{}) {
+                    const auto lStart = lastObjSteady != Clock::time_point{} ? lastObjSteady : phaseStart;
+                    timings.link = std::max(0.001f, std::chrono::duration<float>(linkEnd - lStart).count());
+                }
+            } else {
+                if (compileStart != Clock::time_point{} && timings.compile == 0.0f) {
+                    const auto end = linkStart != Clock::time_point{} ? linkStart : buildEnd;
+                    timings.compile = std::chrono::duration<float>(end - compileStart).count();
+                }
+                if (linkStart != Clock::time_point{} && timings.link == 0.0f) {
+                    timings.link = std::chrono::duration<float>(buildEnd - linkStart).count();
+                }
+                const auto compileEndSteady = linkStart != Clock::time_point{} ? linkStart : buildEnd;
+                for (size_t i = 0; i < startedFiles.size(); ++i) {
+                    const StartedFile& sf = startedFiles[i];
+                    std::string name;
+                    if (auto it = objNames.find(sf.obj); it != objNames.end()) {
+                        name = it->second;
+                    } else {
+                        name = FallbackObjectName(sf.obj);
+                    }
+                    float sec = 0.0f;
+                    std::error_code ec;
+                    const fs::path objPath = paths.binaryDir / motor::PathFromUtf8(sf.obj);
+                    const auto writeTime = fs::last_write_time(objPath, ec);
+                    if (!ec && writeTime > sf.startFile) {
+                        sec = std::chrono::duration<float>(writeTime - sf.startFile).count();
+                    } else {
+                        const auto nextSteady = (i + 1 < startedFiles.size()) ? startedFiles[i + 1].eventSteady : compileEndSteady;
+                        sec = std::chrono::duration<float>(nextSteady - sf.eventSteady).count();
+                    }
+                    timings.files.push_back({std::move(name), std::max(0.0f, sec)});
+                }
+            }
+        }
 
         {
             std::lock_guard lock(m_mutex);
-            m_end = std::chrono::steady_clock::now();
+            m_end = Clock::now();
+            timings.total = std::chrono::duration<float>(m_end - m_start).count();
+            m_timings = std::move(timings);
         }
         m_state = ok ? State::Succeeded : State::Failed;
         m_finished = true;
@@ -289,6 +542,15 @@ float ScriptBuilder::Seconds() const {
     if (m_start == std::chrono::steady_clock::time_point{}) return 0.0f;
     const auto end = m_end == std::chrono::steady_clock::time_point{} ? std::chrono::steady_clock::now() : m_end;
     return std::chrono::duration<float>(end - m_start).count();
+}
+
+ScriptBuilder::Timings ScriptBuilder::GetTimings() const {
+    std::lock_guard lock(m_mutex);
+    Timings t = m_timings;
+    if (m_start != std::chrono::steady_clock::time_point{} && m_end == std::chrono::steady_clock::time_point{}) {
+        t.total = std::chrono::duration<float>(std::chrono::steady_clock::now() - m_start).count();
+    }
+    return t;
 }
 
 } // namespace editor

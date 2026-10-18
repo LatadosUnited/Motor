@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <random>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -21,6 +22,7 @@ namespace motor {
 
 class AssetLibrary;
 class PrefabLibrary;
+struct ComponentType;
 class Scene;
 struct Entity;
 
@@ -55,6 +57,28 @@ public:
     EntityId Instantiate(const PrefabRef& prefab);
     EntityId Instantiate(const PrefabRef& prefab, const glm::vec3& position);
     void Destroy(EntityId id);  // adiada para o fim do passo atual
+
+    // Temporizadores (Script::After/Every): rodam no Update, antes do OnUpdate dos scripts, no tempo do jogo.
+    TimerId AddTimer(Script& owner, EntityId entity, float seconds, bool repeat, std::function<void()> fn);
+    void CancelTimer(TimerId id);
+    void CancelTimers(const Script& owner);
+    size_t TimerCount() const { return m_timers.size(); }
+
+    // Mensagens (Script::Send/Broadcast): OnMessage nos scripts iniciados da entidade, ou de todas.
+    void Send(EntityId target, const Message& message);
+    void Broadcast(const Message& message);
+
+    // Números aleatórios deste Play (semente nova a cada Start).
+    float Random(float min, float max);
+    int RandomInt(int min, int max);
+    void SetRandomSeed(uint32_t seed) { m_random.seed(seed); }
+
+    // Recarga da DLL de scripts durante o Play: os scripts vão ser destruídos e recriados (os novos começam
+    // não iniciados e recebem OnStart no próximo passo). Antes disso, solta o que aponta para os objetos e o
+    // código antigos: temporizadores e scripts marcados com erro.
+    void ForgetScripts();
+    // Cenas dos prefabs carregados por Instantiate (também têm scripts, para a recarga).
+    void ForEachPrefabScene(const std::function<void(Scene&)>& fn);
 
     // Troca de cena pedida por um script (Script::LoadScene). O runtime só guarda o pedido: quem roda o jogo
     // (o Play do editor, o jogo exportado) confere depois de cada passo, para este runtime e começa a cena
@@ -102,6 +126,9 @@ private:
                            std::string_view what);
     void ReportSystemError(std::string_view systemName, std::string_view callback, std::string_view what);
     void StartPending();
+    void RunTimers();
+    // Tipo do componente de script `script` na entidade `id`, ou nullptr se ela não o tem mais.
+    const ComponentType* ScriptTypeOf(EntityId id, const Script* script);
     void FlushDestroyed();
     void Bind(Script& script, EntityId id);
 
@@ -119,6 +146,19 @@ private:
     bool m_running = false;
     bool m_inputEnabled = true;
     std::string m_sceneRequest;
+
+    struct Timer {
+        TimerId id = 0;
+        Script* owner = nullptr;
+        EntityId entity = 0;
+        double due = 0.0;  // m_time.elapsed em que dispara
+        float interval = 0.0f;
+        bool repeat = false;
+        std::function<void()> fn;
+    };
+    std::vector<Timer> m_timers;
+    TimerId m_nextTimer = 1;
+    std::mt19937 m_random;
 };
 
 // Arquivo de cena de um pedido de LoadScene: caminho relativo ao projeto ("Assets/Cenas/Fase1.mscene", a

@@ -558,8 +558,8 @@ void McpController::AddPlayTools() {
     m_protocol.AddTool({
         .name = "scripts_build",
         .description = "Compila os scripts do projeto (pasta Scripts/) e recarrega sem fechar o editor (durante o "
-                       "Play, a recarga espera parar). A compilação roda em segundo plano: acompanhe com "
-                       "scripts_status.",
+                       "Play também: os scripts recomeçam com OnStart, mantendo os campos registrados). A "
+                       "compilação roda em segundo plano: acompanhe com scripts_status.",
         .inputSchema = Schema(),
         .run = [this](const Json&) {
             if (!m_host.document.GetProject()) throw ToolError("nenhum projeto aberto");
@@ -568,10 +568,44 @@ void McpController::AddPlayTools() {
         },
     });
 
+    {
+        std::string templates;
+        Json templateIds = Json::array();
+        for (const auto& t : ScriptProject::NewScriptTemplates()) {
+            templates += std::format("{}{} ({})", templates.empty() ? "" : ", ", t.id, t.description);
+            templateIds.push_back(t.id);
+        }
+        m_protocol.AddTool({
+            .name = "script_create",
+            .description = "Cria Scripts/<name>.cpp a partir de um modelo, como Scripts > Novo script... no editor. "
+                           "A pasta é vigiada: o editor compila sozinho (acompanhe com scripts_status). Modelos: " +
+                           templates + ".",
+            .inputSchema = Schema({{"name", Prop("string", "nome da struct e do arquivo (letras sem acento, números e _)")},
+                                   {"template", Json{{"type", "string"},
+                                                     {"enum", templateIds},
+                                                     {"description", "modelo (padrão: comportamento)"}}}},
+                                  {"name"}),
+            .run = [this](const Json& args) {
+                if (!m_host.document.GetProject()) throw ToolError("nenhum projeto aberto");
+                const std::string name = args.value("name", std::string());
+                const std::string templateId = args.value("template", std::string(ScriptProject::kDefaultScriptTemplate));
+                const auto& all = ScriptProject::NewScriptTemplates();
+                if (std::none_of(all.begin(), all.end(), [&](const auto& t) { return templateId == t.id; })) {
+                    throw ToolError("modelo desconhecido: " + templateId);
+                }
+                fs::path file;
+                std::string error;
+                if (!m_host.scripts.CreateScript(name, templateId, &file, &error)) throw ToolError(error);
+                return ToolResult::Data({{"file", motor::ToUtf8(file)}, {"template", templateId}});
+            },
+        });
+    }
+
     m_protocol.AddTool({
         .name = "scripts_status",
-        .description = "Situação dos scripts: compilando/ok/falhou, tipos carregados e erros do compilador (arquivo, "
-                       "linha, mensagem). Com log = true, inclui a saída completa da compilação.",
+        .description = "Situação dos scripts: compilando/ok/falhou, tempos por etapa (configurar, compilar cada "
+                       "arquivo, ligar, recarregar), tipos carregados e erros do compilador (arquivo, linha, "
+                       "mensagem). Com log = true, inclui a saída completa da compilação.",
         .inputSchema = Schema({{"log", Prop("boolean", "incluir a saída completa (padrão: false)")}}),
         .readOnly = true,
         .run = [this](const Json& args) {
@@ -581,8 +615,19 @@ void McpController::AddPlayTools() {
                 diagnostics.push_back({{"kind", d.kind == ScriptProject::Diagnostic::Kind::Error ? "erro" : "aviso"},
                                        {"file", d.file}, {"line", d.line}, {"column", d.column}, {"message", d.message}});
             }
-            Json j = {{"state", s.state}, {"seconds", s.seconds}, {"loaded", s.loadedTypes},
-                      {"reload_pending", s.reloadPending}, {"diagnostics", std::move(diagnostics)}};
+            Json files = Json::array();
+            for (const auto& ft : s.timings.files) {
+                files.push_back({{"file", ft.file}, {"seconds", ft.seconds}});
+            }
+            Json timings = {{"configure", s.timings.configure},
+                            {"compile", s.timings.compile},
+                            {"link", s.timings.link},
+                            {"reload", s.reloadSeconds},
+                            {"total", s.seconds},
+                            {"files", std::move(files)}};
+            Json j = {{"state", s.state}, {"seconds", s.seconds}, {"timings", std::move(timings)},
+                      {"loaded", s.loadedTypes}, {"reload_pending", s.reloadPending},
+                      {"diagnostics", std::move(diagnostics)}};
             if (!s.toolchainError.empty()) j["toolchain_error"] = s.toolchainError;
             if (args.value("log", false)) j["log"] = s.log;
             return ToolResult::Data(j);

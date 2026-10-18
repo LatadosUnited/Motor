@@ -3,6 +3,7 @@
 #include "motor/assets/AssetLibrary.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
+#include "motor/scene/EntityRef.h"
 #include "motor/scene/SceneSerializer.h"
 
 #include <algorithm>
@@ -44,6 +45,28 @@ void SetLink(Entity& e, PrefabLink link) {
 // Componentes que o sync e os overrides ignoram: o próprio vínculo e os de tipo desconhecido.
 bool Skipped(const ComponentType& type) {
     return &type == ComponentRegistry::TypeOf<PrefabInstance>() || &type == &ComponentRegistry::MissingType();
+}
+
+// Pares (original, cópia) de entidades copiadas: referências (EntityRef) que apontam para um original passam a
+// apontar para a cópia. `dropOutside`: as que apontam para fora da cópia viram "nenhuma" (num prefab, um id de
+// fora não quer dizer nada).
+using CopyPairs = std::vector<std::pair<EntityId, EntityId>>;
+
+EntityId MapCopied(const CopyPairs& copies, EntityId id, bool dropOutside) {
+    for (const auto& [from, to] : copies) {
+        if (from == id) return to;
+    }
+    return dropOutside ? kNullEntity : id;
+}
+
+void RemapCopied(Scene& scene, const CopyPairs& copies, bool dropOutside) {
+    for (const auto& [from, to] : copies) {
+        if (Entity* e = scene.Find(to)) RemapEntityRefs(*e, [&](EntityId id) { return MapCopied(copies, id, dropOutside); });
+    }
+}
+
+bool IsEntityRef(const FieldInfo& f) {
+    return f.type == FieldType::Custom && f.custom && f.custom->name == kEntityRefTypeName;
 }
 
 // Copia a entidade e os descendentes de `from` para `to`, debaixo de `parent`. `fn` ajusta cada cópia.
@@ -186,11 +209,32 @@ void SyncInstance(Scene& scene, EntityId rootId, const Prefab& prefab, AssetLibr
     };
     visit(prefab.root, kNullEntity);
 
-    for (const auto& [source, id] : Members(scene, rootId, prefab)) LinkOf(*scene.Find(id))->syncedRevision = prefab.revision;
+    // Os valores vieram do prefab: referências entre entidades dele viram as entidades desta instância.
+    CopyPairs copies;
+    for (const auto& [source, id] : Members(scene, rootId, prefab)) {
+        LinkOf(*scene.Find(id))->syncedRevision = prefab.revision;
+        if (const Entity* p = prefab.FindSource(source)) copies.emplace_back(p->id, id);
+    }
+    for (const auto& [source, id] : Members(scene, rootId, prefab)) {
+        if (const Entity* p = prefab.FindSource(source)) {
+            Entity& e = *scene.Find(id);
+            // Só os campos que acabaram de vir do prefab (sem override); os outros já são ids da cena.
+            for (const ComponentPtr& pc : p->components) {
+                void* data = e.Get(pc.Type());
+                if (!data || Skipped(pc.Type())) continue;
+                for (const FieldInfo& f : pc.Type().fields) {
+                    if (!IsEntityRef(f) || LinkOf(e)->HasOverride(pc.Type().name + "." + f.key)) continue;
+                    auto& ref = f.As<EntityRef>(data);
+                    if (!ref.IsEmpty() && ref == f.As<EntityRef>(pc.Data())) ref.id = MapCopied(copies, ref.id, true);
+                }
+            }
+        }
+    }
 }
 
 // Overrides de uma entidade: o que ficou diferente do prefab.
-size_t RecordEntity(Entity& e, const Entity& p, bool isRoot) {
+// `toPrefab`: id de uma entidade da instância -> id da entidade correspondente no prefab (EntityRef).
+size_t RecordEntity(Entity& e, const Entity& p, bool isRoot, const std::function<EntityId(EntityId)>& toPrefab) {
     PrefabLink& link = *LinkOf(e);
     size_t added = 0;
     auto mark = [&](std::string key) {
@@ -213,7 +257,9 @@ size_t RecordEntity(Entity& e, const Entity& p, bool isRoot) {
             continue;
         }
         for (const FieldInfo& f : type.fields) {
-            if (!FieldEqual(f, data, pc.Data())) mark(type.name + "." + f.key);
+            const bool equal = IsEntityRef(f) ? EntityRef(toPrefab(f.As<EntityRef>(data).id)) == f.As<EntityRef>(pc.Data())
+                                              : FieldEqual(f, data, pc.Data());
+            if (!equal) mark(type.name + "." + f.key);
         }
     }
     for (const ComponentPtr& c : e.components) {
@@ -227,12 +273,15 @@ size_t RecordEntity(Entity& e, const Entity& p, bool isRoot) {
 Scene BuildPrefabScene(const Scene& scene, EntityId rootId, const std::function<uint32_t(const Entity&)>& sourceOf,
                        std::vector<std::pair<EntityId, uint32_t>>& order) {
     Scene out;
+    CopyPairs copies;
     CopyTree(scene, rootId, out, kNullEntity, [&](const Entity& from, Entity& to) {
         const uint32_t source = sourceOf(from);
         to.Remove(*ComponentRegistry::TypeOf<PrefabInstance>());
         SetLink(to, {{}, source, {}, 0});
         order.emplace_back(from.id, source);
+        copies.emplace_back(from.id, to.id);
     });
+    RemapCopied(out, copies, true);
     return out;
 }
 } // namespace
@@ -421,8 +470,13 @@ EntityId InstanceRoot(const Scene& scene, EntityId id, PrefabLibrary& library, A
 }
 
 EntityId Instantiate(const Prefab& prefab, Scene& scene, EntityId parent) {
-    return CopyTree(prefab.scene, prefab.root, scene, parent,
-                    [&](const Entity&, Entity& copy) { LinkOf(copy)->syncedRevision = prefab.revision; });
+    CopyPairs copies;
+    const EntityId root = CopyTree(prefab.scene, prefab.root, scene, parent, [&](const Entity& source, Entity& copy) {
+        LinkOf(copy)->syncedRevision = prefab.revision;
+        copies.emplace_back(source.id, copy.id);
+    });
+    RemapCopied(scene, copies, true);
+    return root;
 }
 
 Prefab* CreateFromEntity(Scene& scene, EntityId id, const fs::path& file, PrefabLibrary& library, AssetLibrary& assets,
@@ -469,9 +523,15 @@ size_t RecordOverrides(Scene& scene, PrefabLibrary& library, AssetLibrary& asset
         // Instância que ainda não viu a revisão atual: diferenças agora são do prefab, não overrides.
         if (LinkOf(rootEntity)->syncedRevision != prefab->revision) continue;
         const std::map<uint32_t, EntityId> members = Members(scene, root, *prefab);
+        CopyPairs toPrefab;  // (id na instância, id no prefab)
+        for (const auto& [source, id] : members) {
+            if (const Entity* p = prefab->FindSource(source)) toPrefab.emplace_back(id, p->id);
+        }
+        // Fora da instância: o id fica (difere do "nenhuma" do prefab e vira override, sem se perder).
+        const auto map = [&](EntityId id) { return MapCopied(toPrefab, id, false); };
         for (const auto& [source, id] : members) {
             if (const Entity* p = prefab->FindSource(source)) {
-                count += RecordEntity(*scene.Find(id), *p, source == prefab->rootSource);
+                count += RecordEntity(*scene.Find(id), *p, source == prefab->rootSource, map);
             }
         }
         // Entidades do prefab apagadas na instância.

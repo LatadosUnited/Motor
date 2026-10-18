@@ -16,6 +16,7 @@ add_executable(MotorEditor
     src/ScriptBuilder.cpp
     src/ScriptController.cpp
     src/ScriptHost.cpp
+    src/ScriptIde.cpp
     src/ScriptProject.cpp
     src/UndoHistory.cpp
     src/LightTypeDrawer.cpp
@@ -28,6 +29,7 @@ add_executable(MotorEditor
     src/ModelRefDrawer.cpp
     src/ShadowQualityDrawer.cpp
     src/AudioClipDrawer.cpp
+    src/EntityRefDrawer.cpp
     src/mcp/ImageEncode.cpp
     src/mcp/McpController.cpp
     src/mcp/McpProtocol.cpp

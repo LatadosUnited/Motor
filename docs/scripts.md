@@ -1,6 +1,6 @@
 ---
 tipo: guia
-atualizado: 2026-10-17
+atualizado: 2026-10-18
 ---
 
 # Guia de scripts do Motor
@@ -25,13 +25,14 @@ Sumário:
 7. [Física](#7-física)
 8. [Sistemas do jogo (`GetSystem`)](#8-sistemas-do-jogo-getsystem)
 9. [Animação](#9-animação)
-10. [Receitas](#10-receitas)
-11. [Mini jogo: andar, coletar, pontuar](#11-mini-jogo-andar-coletar-pontuar)
-12. [Interface do jogo (HUD e menus)](#12-interface-do-jogo-hud-e-menus)
-13. [Som](#13-som)
-14. [Recarga: o que é preservado](#14-recarga-o-que-é-preservado)
-15. [Componente "desconhecido" (script não carregado)](#15-componente-desconhecido-script-não-carregado)
-16. [Erros comuns](#16-erros-comuns)
+10. [Temporizadores, mensagens e sorteio](#10-temporizadores-mensagens-e-sorteio)
+11. [Receitas](#11-receitas)
+12. [Mini jogo: andar, coletar, pontuar](#12-mini-jogo-andar-coletar-pontuar)
+13. [Interface do jogo (HUD e menus)](#13-interface-do-jogo-hud-e-menus)
+14. [Som](#14-som)
+15. [Recarga: o que é preservado](#15-recarga-o-que-é-preservado)
+16. [Componente "desconhecido" (script não carregado)](#16-componente-desconhecido-script-não-carregado)
+17. [Erros comuns](#17-erros-comuns)
 
 ---
 
@@ -51,7 +52,8 @@ subpastas) entra no jogo; não há lista de arquivos para manter. O editor compi
 - pelo menu **Scripts > Recompilar scripts** (F7).
 
 O painel **Scripts** (aba ao lado de Projeto; menu Scripts > Painel Scripts) mostra se compilou, os erros
-e avisos (clique num erro para abrir o arquivo) e a saída completa do compilador.
+e avisos (clique num erro para abrir o arquivo **na linha**), o tempo de cada arquivo e a saída completa do
+compilador.
 
 **Onde aparece o `Log`.** As mensagens de `Log(...)` dos scripts saem na **janela de console** do editor
 (a janela de texto que abre junto com ele), com a hora e o nome da entidade:
@@ -61,18 +63,35 @@ e avisos (clique num erro para abrir o arquivo) e a saída completa do compilado
 (⏹), a cena volta **exatamente** como estava antes do Play: o que os scripts mudaram é descartado. O jogo
 só recebe teclado e mouse com o viewport em foco (o Play já dá o foco a ele).
 
-**Editor de código.** Qualquer editor serve. Para o autocompletar funcionar (VS Code, CLion...), aponte os
-includes para `engine/include` e para o GLM (`build/_deps/glm-src`) da pasta do Motor; a compilação de
-verdade é sempre a do editor.
+**Editor de código.** Ao abrir o projeto, o editor gera a pasta `.vscode/` com o **VS Code** já
+configurado para os scripts (instale a extensão **C/C++** da Microsoft, que o VS Code sugere ao abrir):
+
+- autocompletar e erros na hora, com os headers do Motor e as mesmas opções da compilação (o
+  `compile_commands.json` que o editor gera em `.motor/scripts/build/`);
+- **Ctrl+Shift+B** compila (o editor aberto já compila sozinho ao salvar: a tarefa é para quando ele está
+  fechado);
+- **Executar > Motor: anexar ao editor (gdb)** depura os scripts com o editor aberto: pontos de parada no seu
+  `.cpp`, Play no editor. Precisa do gdb do MSYS2 (`pacman -S mingw-w64-ucrt-x86_64-gdb`).
+
+Abra pelo menu **Scripts > Abrir no VS Code**. O duplo clique num arquivo do painel Scripts (ou num `.cpp`
+do painel Projeto) e o clique num erro abrem o arquivo no VS Code, na linha. Os arquivos gerados começam
+com `// Gerado pelo Motor Editor` e são refeitos quando o Motor muda; editou um e quer que fique como está?
+Apague essa primeira linha. Sem o VS Code instalado, os arquivos abrem no programa padrão do Windows (aí,
+para o autocompletar, aponte os includes para `engine/include` e para o GLM, `build/_deps/glm-src`, da
+pasta do Motor).
 
 ## 2. O primeiro script
 
 Vamos fazer uma entidade flutuar: subir e descer devagar, como uma boia.
 
 1. Abra (ou crie, em **Arquivo > Novo projeto...**) um projeto.
-2. Menu **Scripts > Novo script...**, nome `Flutuar`. O editor cria `Scripts/Flutuar.cpp` com um esqueleto.
-   (O nome precisa ser um identificador C++: letras sem acento, dígitos e `_`, sem começar com dígito.)
-3. Abra o arquivo (**Scripts > Abrir pasta de scripts**) e troque o conteúdo por este
+2. Menu **Scripts > Novo script...** (ou **+ Criar > Novo script...** no painel Projeto), nome `Flutuar`,
+   modelo **Vazio**. O editor cria `Scripts/Flutuar.cpp` e o abre no editor de código. (O nome precisa ser
+   um identificador C++: letras sem acento, dígitos e `_`, sem começar com dígito.) Os outros modelos já vêm
+   com um comportamento pronto: **Comportamento** (um campo e um `Log`), **Que segue** (segue uma entidade
+   escolhida no Inspector), **Coletável** (gira e some quando o jogador encosta) e **Gerador** (cria cópias
+   de um prefab de tempos em tempos).
+3. Troque o conteúdo do arquivo por este
    ([examples/Flutuar.cpp](examples/Flutuar.cpp)):
 
 ```cpp
@@ -117,14 +136,14 @@ O que cada parte faz:
 |---|---|
 | `#include <motor/scene/ScriptModule.h>` | traz tudo de que um script precisa (Script, Scene, Transform, componentes, GLM) |
 | `struct Flutuar : motor::Script` | o script. Uma struct comum: campos com valor padrão e métodos |
-| `void OnUpdate(float) override` | métodos `On...` que a engine chama no Play. Sempre com `override` (ver [Erros comuns](#16-erros-comuns)) |
+| `void OnUpdate(float) override` | métodos `On...` que a engine chama no Play. Sempre com `override` (ver [Erros comuns](#17-erros-comuns)) |
 | `GetTransform()`, `Time()`, `Log(...)` | a API do script (seções 5 e 6, e a [referência](scripts-api.md)) |
 | `MOTOR_SCRIPT(Flutuar) { ... }` | o registro: roda quando a DLL é carregada |
 | `Register<Flutuar>("Flutuar", "Flutuar")` | o 1º nome é o **identificador** gravado na cena; o 2º é o que o editor mostra |
 | `.Field("altura", "Altura", &Flutuar::altura)` | campo no Inspector: chave no arquivo, rótulo, membro |
 
 O identificador do `Register` é o que liga a cena ao script. Pode renomear a struct à vontade; se renomear o
-identificador, as entidades que usavam o nome antigo ficam com um componente "desconhecido" (seção 15) até
+identificador, as entidades que usavam o nome antigo ficam com um componente "desconhecido" (seção 16) até
 o nome voltar.
 
 ## 3. Campos no Inspector
@@ -144,6 +163,7 @@ Tipos de campo suportados:
 | `std::shared_ptr<motor::Mesh>` | malha (Cubo, Esfera, Plano ou um `.obj` do projeto) |
 | `std::shared_ptr<motor::Texture2D>` | textura (`.png`/`.jpg` do projeto) |
 | `motor::PrefabRef` | prefab (`.mprefab` do projeto, para `Instantiate`) |
+| `motor::EntityRef` | outra entidade da cena: escolha na lista ou arraste da Hierarquia (seção 6) |
 | `motor::ColliderShape`, `motor::LightType` | lista (os enums da engine que têm editor) |
 
 Outros tipos (`double`, `unsigned`, enums seus...) não compilam: use um dos acima (ex.: `float` em vez de
@@ -151,7 +171,7 @@ Outros tipos (`double`, `unsigned`, enums seus...) não compilam: use um dos aci
 
 O quarto argumento opcional de `Field` são as **opções** (`motor::FieldOptions`), escritas com
 inicializadores designados **na ordem em que estão declaradas**: `color`, `slider`, `logarithmic`, `speed`,
-`min`, `max`, `format`, `tooltip`.
+`min`, `max`, `format`, `tooltip`, `formerKey`.
 
 | Opção | Efeito |
 |---|---|
@@ -162,6 +182,7 @@ inicializadores designados **na ordem em que estão declaradas**: `color`, `slid
 | `.min = 0.0f, .max = 10.0f` | limites; `min == max` (o padrão) = sem limite |
 | `.format = "%.1f m/s"` | formato `printf` do número mostrado |
 | `.tooltip = "..."` | texto ao passar o mouse sobre o campo |
+| `.formerKey = "velocidade"` | nome antigo do campo: renomeou a chave? O valor salvo com o nome antigo continua valendo |
 
 Exemplo com um campo de cada tipo ([examples/ExemploCampos.cpp](examples/ExemploCampos.cpp)):
 
@@ -194,11 +215,29 @@ MOTOR_SCRIPT(ExemploCampos) {
 Regras práticas:
 
 - A **chave** (1º texto) é o nome no arquivo da cena. Trocar a chave de um campo faz a cena perder o valor
-  salvo dele (volta ao padrão); trocar o rótulo (2º texto) é inofensivo.
+  salvo dele (volta ao padrão, com um aviso no painel Scripts), a não ser que o `.Field` novo diga o nome
+  antigo: `{.formerKey = "velocidade"}`. Trocar o rótulo (2º texto) é inofensivo.
 - O valor padrão é o do inicializador do membro (`int vidas = 3;`). Ao adicionar o script pelo Inspector,
   é ele que aparece.
 - Durante o Play o Inspector mostra os valores **ao vivo** (e você pode mexer neles); ao parar, voltam.
 - A ordem dos `.Field` é a ordem no Inspector.
+
+**Registro curto.** Sem o rótulo, `.Field("duracao", &Lampada::duracao)` mostra o nome do campo no
+Inspector ("duracao" vira "Duracao"; "quemAperta", "Quem aperta"). E quando nenhum campo precisa de rótulo
+nem de opções, o bloco inteiro cabe numa linha com `MOTOR_FIELDS(Struct, campo1, campo2, ...)`: registra o
+script com o nome da struct e os campos na ordem. Os dois jeitos no
+[examples/Interruptor.cpp](examples/Interruptor.cpp):
+
+```cpp
+MOTOR_SCRIPT(Lampada) {
+    registry.Register<Lampada>("Lampada", "Lâmpada")
+        .Field("corLigada", "Cor ligada", &Lampada::corLigada, {.color = true})
+        .Field("duracao", &Lampada::duracao, {.speed = 0.1f, .min = 0.1f, .max = 60.0f, .format = "%.1f s"});
+}
+
+// Registro curto: o rótulo vem do nome do campo ("quemAperta" aparece como "Quem aperta").
+MOTOR_FIELDS(Interruptor, lampada, quemAperta)
+```
 
 ## 4. Ciclo de vida
 
@@ -303,8 +342,28 @@ esquerdo, no máximo um tiro a cada `intervalo` segundos:
 hierarquia, local = mundo. Para a posição no mundo de qualquer entidade use
 `glm::vec3(GetScene().WorldMatrix(id)[3])`. A "frente" de entidades e câmeras é o **-Z** local.
 
-**Outras entidades.** `FindEntity("Nome")` devolve a primeira entidade com esse nome, ou `nullptr`.
-`GetScene().Find(id)` acha pelo número. Guarde o **id** (`motor::EntityId`), nunca o ponteiro: entidades
+**Outras entidades: pelo Inspector.** O jeito mais simples é um campo `motor::EntityRef`: no Inspector ele
+vira uma lista com as entidades da cena (ou arraste a entidade da Hierarquia para o campo), e no código
+`GetEntity(campo)` devolve a entidade, ou `nullptr` se ela não existe mais. Ele também serve onde se espera um
+id: `Destroy(alvo)`, `Send(alvo, ...)`, `GetComponent<T>(alvo)`. Duplicar a entidade ou fazer um prefab dela
+ajusta as referências que apontam para dentro da parte copiada (o inimigo duplicado aponta para a própria
+arma, não para a do original). O interruptor do [examples/Interruptor.cpp](examples/Interruptor.cpp) liga a
+lâmpada escolhida no Inspector:
+
+```cpp
+struct Interruptor : motor::Script {
+    motor::EntityRef lampada;            // arraste a lâmpada da Hierarquia para este campo
+    std::string quemAperta = "Jogador";  // nome de quem liga ao entrar na área
+
+    void OnTriggerEnter(motor::EntityId outro) override {
+        const motor::Entity* e = GetEntity(outro);
+        if (e && e->name == quemAperta) Send(lampada, "ligar");
+    }
+};
+```
+
+**Outras entidades: pelo nome ou pelo id.** `FindEntity("Nome")` devolve a primeira entidade com esse nome,
+ou `nullptr`. `GetEntity(id)` (ou `GetScene().Find(id)`) acha pelo número. Guarde o **id** (`motor::EntityId`), nunca o ponteiro: entidades
 podem ser destruídas a qualquer momento, e `GetScene().Find(id)` devolve `nullptr` se a entidade não existe
 mais. O modelo Seguir faz exatamente isso:
 
@@ -322,7 +381,16 @@ mais. O modelo Seguir faz exatamente isso:
 
 **Componentes.** Numa entidade: `Get<T>()` (ponteiro, ou `nullptr` se não tiver), `Has<T>()`, `Add<T>()`
 (adiciona, ou devolve o que já existe) e `Remove<T>()`. Funciona com os componentes da engine e com os seus
-scripts:
+scripts. Atalhos no script: `GetComponent<T>()` (desta entidade) e `GetComponent<T>(id)` (de outra, pelo id
+ou por um `EntityRef`), que devolvem `nullptr` se não houver. A lâmpada guarda a cor original no começo:
+
+```cpp
+    void OnStart() override {
+        if (auto* mr = GetComponent<motor::MeshRenderer>()) m_corDesligada = mr->material.color;
+    }
+```
+
+Os componentes da engine:
 
 | Componente (no editor) | Tipo C++ | Campos principais |
 |---|---|---|
@@ -528,7 +596,57 @@ Jogador troca de animação conforme anda ou pula:
   Fora do Play o modelo fica na pose de repouso.
 - Nomes dos clipes: passe o mouse sobre o campo Modelo do Animator, ou `ClipNames()`.
 
-## 10. Receitas
+## 10. Temporizadores, mensagens e sorteio
+
+**Temporizadores.** `After(segundos, função)` chama a função uma vez, daqui a tantos segundos; `Every(segundos,
+função)` chama a cada tantos segundos. A função costuma ser uma lambda que captura `this` (`[this] { ... }`)
+para usar os membros do script. Os dois devolvem um número para `CancelTimer(numero)`; `CancelTimers()`
+cancela todos os do script. Eles contam o tempo do jogo (param na pausa), rodam antes do `OnUpdate` daquele
+frame e somem sozinhos quando o script ou a entidade somem: não há o que limpar no `OnDestroy`.
+
+**Mensagens.** `Send(entidade, "texto")` chama `OnMessage` em todos os scripts daquela entidade, na hora;
+`Broadcast("texto")` chama em todas as entidades ativas. Um número pode ir junto: `Send(alvo, "dano", 10.0f)`.
+Quem recebe olha `mensagem.text`, `mensagem.value` e `mensagem.from` (quem mandou). Assim um script avisa
+outro sem conhecer a struct dele (sem header compartilhado, ao contrário do `Placar` da seção 11). A lâmpada
+do interruptor acende ao receber "ligar" e apaga sozinha com um `After`:
+
+```cpp
+    void OnMessage(const motor::Message& mensagem) override {
+        if (mensagem.text != "ligar") return;
+        Acender(true);
+        CancelTimers();  // ligou de novo antes de apagar: recomeça a contagem
+        After(duracao, [this] { Acender(false); });
+    }
+```
+
+**Sorteio.** `Random(min, max)` sorteia um `float` entre os dois; `RandomInt(min, max)` um inteiro de `min`
+a `max` (os dois inclusive: `RandomInt(1, 6)` é um dado); `Chance(0.1f)` é verdadeiro 10% das vezes. Cada Play
+sorteia diferente; `SetRandomSeed(42)` repete sempre a mesma sequência (bom para testar). A chuva do
+[examples/Chuva.cpp](examples/Chuva.cpp) junta os três: cria uma gota a cada `intervalo`, num lugar sorteado,
+e cada gota some sozinha depois de `vida` segundos:
+
+```cpp
+    void OnStart() override {
+        Every(intervalo, [this] { CriarGota(); });
+    }
+
+    void CriarGota() {
+        const glm::vec3 centro = GetTransform().position;
+        motor::Entity& gota = CreateEntity("Gota");
+        gota.transform.position = centro + glm::vec3(Random(-raio, raio), 0.0f, Random(-raio, raio));
+        const float tamanho = Chance(chanceGrande) ? 0.6f : 0.1f * static_cast<float>(RandomInt(1, 3));
+        gota.transform.scale = glm::vec3(tamanho);
+        ++criadas;
+
+        // Guarde o id (não o ponteiro): o temporizador roda depois, e a gota pode já ter sido destruída.
+        const motor::EntityId id = gota.id;
+        After(vida, [this, id] { Destroy(id); });
+    }
+```
+
+O modelo **Gerador** (Scripts > Novo script...) faz o mesmo com um prefab escolhido no Inspector.
+
+## 11. Receitas
 
 Cada receita é um arquivo completo, pronto para copiar para `Scripts/`. Os modelos Jogador e Seguir também
 vêm no editor: **Scripts > Adicionar exemplo**.
@@ -663,9 +781,9 @@ A moeda gira e, quando o jogador encosta, soma e some:
 ```
 
 Os pontos aparecem no console e no Inspector (selecione a entidade Placar durante o Play); para mostrá-los
-na tela, veja a [seção 12](#12-interface-do-jogo-hud-e-menus).
+na tela, veja a [seção 13](#13-interface-do-jogo-hud-e-menus).
 
-## 11. Mini jogo: andar, coletar, pontuar
+## 12. Mini jogo: andar, coletar, pontuar
 
 Juntando as receitas. Copie para a pasta `Scripts/` do projeto: `Placar.h`, `Placar.cpp` e `Moeda.cpp` (de
 `docs/examples/`), e adicione os modelos **Jogador** e **Seguir** em **Scripts > Adicionar exemplo**. Espere
@@ -689,7 +807,7 @@ com `total`), um inimigo de [examples/Inimigo.cpp](examples/Inimigo.cpp) com `Re
 flutuam com o [examples/Flutuar.cpp](examples/Flutuar.cpp) (Flutuar e Moeda juntos na mesma entidade), ou um
 tiro com o [examples/Disparador.cpp](examples/Disparador.cpp).
 
-## 12. Interface do jogo (HUD e menus)
+## 13. Interface do jogo (HUD e menus)
 
 Texto, imagens e botões na tela são **componentes de UI** em entidades comuns, desenhados por cima da cena:
 
@@ -741,7 +859,7 @@ vazia `HUD` com **Scripts > HUD (vida e pontos)**. Para o menu: uma cena `Menu` 
 `Jogar` e `Creditos`, um Painel `PainelCreditos` e uma entidade `Menu` com **Scripts > Menu principal**
 (Cena do jogo = o nome da cena do mini jogo). Abra a cena `Menu` e aperte **Play**.
 
-## 13. Som
+## 14. Som
 
 Arquivos `.wav`, `.ogg` e `.mp3` dentro de `Assets/` são **clipes de som** (aparecem no painel Projeto, com
 GUID no `.meta` como os outros assets). Um som toca numa entidade com o componente **Fonte de áudio**:
@@ -786,20 +904,27 @@ Para montar: crie uma entidade `SomClique` com **Fonte de áudio** (Clipe = o so
 iniciar desligados), outra `Musica` (Repetir ligado, Som 3D desligado), um **Botão** chamado `Jogar` e uma
 entidade vazia com **Scripts > Sons do menu**.
 
-## 14. Recarga: o que é preservado
+## 15. Recarga: o que é preservado
 
 Ao salvar um arquivo de script com o editor aberto:
 
 - Os valores de **todos os campos registrados**, em todas as entidades, são guardados; a DLL antiga sai, a
-  nova entra e os valores voltam. **Campo novo** fica com o valor padrão; **campo removido** é ignorado.
-  Campos são casados pela **chave** (o 1º texto do `.Field`), não pelo nome do membro.
-- Membros **não registrados** voltam ao padrão (mas eles só importam no Play, que recomeça do zero).
+  nova entra e os valores voltam. **Campo novo** fica com o valor padrão. Campos são casados pela **chave**
+  (o 1º texto do `.Field`), não pelo nome do membro.
+- **Campo removido, renomeado ou com o tipo trocado** (um `int` que virou `std::string`): o valor salvo não
+  cabe mais e o campo fica com o padrão. O painel Scripts mostra um aviso com o valor perdido, para você
+  copiar se precisar. Renomeou? Ponha `{.formerKey = "nomeAntigo"}` no `.Field` e o valor volta.
+- Membros **não registrados** voltam ao padrão.
 - O desfazer continua funcionando.
-- **Durante o Play** a recarga espera: o jogo continua com a versão antiga, e a nova entra quando você parar.
+- **Durante o Play** a recarga também acontece, e o jogo continua de onde estava: cada script é recriado com
+  os valores **do jogo** nos campos registrados, os membros não registrados voltam ao padrão, os
+  temporizadores são cancelados e o `OnStart` roda de novo (sem `OnDestroy` antes). Escreva o `OnStart` para
+  que rodar de novo não estrague nada: achar entidades e ligar temporizadores, sim; criar dez inimigos, só
+  se ainda não existirem. Ao parar o Play, a cena volta à de antes, já com os scripts novos.
 - Com **erro de compilação** nada muda: os scripts da última compilação boa continuam carregados, e a barra
   de menus mostra "Scripts: N erro(s)".
 
-## 15. Componente "desconhecido" (script não carregado)
+## 16. Componente "desconhecido" (script não carregado)
 
 Se uma cena usa um script que não está carregado (você apagou o arquivo, mudou o identificador do
 `Register`, ou abriu a cena antes de os scripts compilarem), o componente **não some**: o Inspector o mostra
@@ -807,7 +932,7 @@ como "script não carregado", com os dados guardados. Ele é salvo de volta igua
 sozinho quando um script com aquele identificador for carregado de novo. Para se livrar dele de vez, remova o
 componente no Inspector.
 
-## 16. Erros comuns
+## 17. Erros comuns
 
 O painel Scripts lista as mensagens do compilador (GCC, em inglês). As mais comuns:
 

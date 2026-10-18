@@ -36,6 +36,8 @@ public:
         std::function<void(const std::filesystem::path&)> reimportModel;      // gera o prefab do modelo de novo
         // Entidade da Hierarquia solta numa pasta: vira um prefab nela.
         std::function<void(uint32_t entity, const std::filesystem::path& folder)> createPrefabFromEntity;
+        std::function<void()> createScript;                                   // Criar > Novo script (pasta Scripts/)
+        std::function<void(const std::filesystem::path&)> openScript;         // duplo clique em .cpp/.h: editor de código
     };
 
     struct ViewOptions {

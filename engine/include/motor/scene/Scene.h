@@ -1,8 +1,6 @@
 #pragma once
 
-#include "motor/renderer/Material.h"
-#include "motor/renderer/Mesh.h"
-#include "motor/renderer/Renderer.h"
+#include "motor/renderer/Environment.h"
 #include "motor/scene/Component.h"
 #include "motor/scene/Components.h"
 #include "motor/scene/Transform.h"
@@ -13,7 +11,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -23,6 +20,9 @@ namespace motor {
 
 class Camera;
 class Framebuffer;
+class Mesh;
+class Renderer;
+struct Light;
 
 using EntityId = uint32_t;
 inline constexpr EntityId kNullEntity = 0;
@@ -52,7 +52,7 @@ private:
     template <class T>
     static const ComponentType* TypeOf() {
         const ComponentType* type = ComponentRegistry::TypeOf<T>();
-        if (!type) throw std::logic_error("componente não registrado no ComponentRegistry");
+        if (!type) ThrowUnregisteredComponent();
         return type;
     }
 };
@@ -118,7 +118,9 @@ public:
     Environment environment;
 
 private:
-    EntityId CloneRecursive(const Entity& source, EntityId newParent);
+    // `copies`: pares (original, cópia) de cada entidade copiada, para ajustar as EntityRef.
+    EntityId CloneRecursive(const Entity& source, EntityId newParent,
+                            std::vector<std::pair<EntityId, EntityId>>& copies);
 
     std::vector<std::unique_ptr<Entity>> m_entities;
     std::unordered_map<EntityId, Entity*> m_byId;
