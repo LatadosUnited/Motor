@@ -57,7 +57,7 @@ saudável (cerca de 38 mil linhas, sem `TODO`), mas o peso se concentra em pouco
 ### 4. Documentação
 
 - [x] `CLAUDE.md` (estrutura e áreas com os caminhos novos), a Fase 20 e a alpha 3 sem as divisões feitas aqui.
-  *(origem: análise do código de 18/10/2026)* (DOCHASH)
+  *(origem: análise do código de 18/10/2026)* (89205b3)
 - [ ] Grafo atualizado (`/graphify . --update`) depois do merge no `main` (`CLAUDE.md`, "Regras de cada
   tarefa", 5). *(origem: análise do código de 18/10/2026)*
 
