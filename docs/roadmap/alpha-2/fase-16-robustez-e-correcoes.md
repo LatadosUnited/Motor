@@ -61,6 +61,10 @@ em jogos de verdade.
   esquema antes de chamar a ferramenta (`McpProtocol::CallTool`); antes, `args["parent"]` sem a chave disparava
   o assert do nlohmann no Debug (ex.: `project_create` com `location`). *(origem: entrada.md, verificação da
   Organização do código)* (2386c9b)
+- [x] **Projeto compilado antes da Fase 17 volta a compilar os scripts:** cache do CMake de outro gerador
+  ("MSYS Makefiles") é apagado e reconfigurado (`ScriptProject::WriteBuildFiles`); antes, sem carimbo, o
+  `cmake --build` falhava sempre em 0,05 s com "0 erro(s)". *(origem: entrada.md, verificação da Organização do
+  código)* (c4f8bb3)
 
 ## Pronto quando
 
