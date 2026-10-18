@@ -64,6 +64,40 @@ void RemoveStaleCopies(const fs::path& loadDir, const fs::path& keep) {
 }
 } // namespace
 
+std::vector<std::string> DescribeLostFields(const std::vector<motor::SceneSerializer::FieldWarning>& lost) {
+    // Um aviso por campo de cada tipo (as fotos do desfazer repetem as mesmas entidades).
+    struct Group {
+        const motor::SceneSerializer::FieldWarning* first;
+        std::unordered_set<std::string> entities;
+    };
+    std::vector<Group> groups;
+    for (const auto& w : lost) {
+        auto it = std::find_if(groups.begin(), groups.end(), [&](const Group& g) {
+            return g.first->type == w.type && g.first->field == w.field && g.first->typeChanged == w.typeChanged;
+        });
+        if (it == groups.end()) {
+            groups.push_back({&w, {}});
+            it = groups.end() - 1;
+        }
+        it->entities.insert(w.entity);
+    }
+    std::vector<std::string> messages;
+    for (const Group& g : groups) {
+        const auto& w = *g.first;
+        const std::string where = g.entities.size() == 1 ? std::format("entidade '{}'", w.entity)
+                                                         : std::format("{} entidades, ex.: '{}'", g.entities.size(), w.entity);
+        if (w.typeChanged) {
+            messages.push_back(std::format("{}.{} mudou de tipo: o valor salvo ({}) não serve mais e ficou o padrão ({}).",
+                                           w.type, w.field, w.value, where));
+        } else {
+            messages.push_back(std::format("{}.{} não existe mais: o valor salvo ({}) foi descartado ({}). Se o campo foi "
+                                           "renomeado, ponha {{.formerKey = \"{}\"}} no .Field novo (bloco MOTOR_SCRIPT).",
+                                           w.type, w.field, w.value, where, w.field));
+        }
+    }
+    return messages;
+}
+
 ScriptHost::Result ScriptHost::Load(const fs::path& dll, const fs::path& loadDir, const ForEachScene& scenes,
                                     motor::AssetLibrary& assets) {
     Result result;
@@ -157,7 +191,10 @@ ScriptHost::Result ScriptHost::Load(const fs::path& dll, const fs::path& loadDir
     RemoveStaleCopies(loadDir, copy);
 
     // 5. Religa os componentes guardados (de antes da recarga, ou lidos da cena antes de a DLL existir).
-    scenes([&](motor::Scene& scene) { result.resolved += motor::SceneSerializer::ResolveMissingComponents(scene, assets); });
+    std::vector<motor::SceneSerializer::FieldWarning> lost;
+    scenes([&](motor::Scene& scene) { result.resolved += motor::SceneSerializer::ResolveMissingComponents(scene, assets, &lost); });
+    result.warnings = DescribeLostFields(lost);
+    for (const std::string& warning : result.warnings) motor::log::Warn("Scripts: {}", warning);
 
     result.ok = true;
     result.types = m_typeNames;

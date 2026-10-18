@@ -5,7 +5,10 @@
 
 #include "ScriptBuilder.h"
 #include "ScriptHost.h"
+#include "ScriptIde.h"
 #include "ScriptProject.h"
+
+#include <nlohmann/json.hpp>
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/core/Paths.h>
@@ -215,6 +218,21 @@ int main(int argc, char** argv) {
     CHECK(!SP::ValidateScriptName("Meu Script").empty());
     CHECK(Contains(SP::NewScriptSource("Pular"), "struct Pular : motor::Script"));
     CHECK(Contains(SP::NewScriptSource("Pular"), "MOTOR_SCRIPT(Pular)"));
+    CHECK(SP::NewScriptSource("Pular", "nao-existe") == SP::NewScriptSource("Pular"));  // modelo desconhecido: o padrão
+    CHECK(SP::NewScriptTemplates().size() >= 5);
+    for (const SP::NewScriptTemplate& t : SP::NewScriptTemplates()) {
+        const std::string source = SP::NewScriptSource("Pular", t.id);
+        CHECK(Contains(source, "struct Pular : motor::Script"));
+        CHECK(Contains(source, "MOTOR_SCRIPT(Pular)") || Contains(source, "MOTOR_FIELDS(Pular"));
+        CHECK(!Contains(source, "$NOME$"));
+        CHECK(std::string(t.label).size() > 0 && std::string(t.description).size() > 0);
+    }
+    {
+        fs::path created;
+        CHECK(SP::CreateScript(paths.scriptsDir, "Seguidor", &created, nullptr, "seguir"));
+        CHECK(Contains(ReadText(created), "motor::EntityRef alvo;"));
+        fs::remove(created);
+    }
     {
         fs::path created;
         CHECK(SP::CreateScript(paths.scriptsDir, "Pular", &created));
@@ -240,6 +258,52 @@ int main(int argc, char** argv) {
         fs::remove(paths.scriptsDir / "notas.txt");
         CHECK(sig2 == SP::Signature(paths.scriptsDir));  // outros arquivos não contam
         fs::remove(paths.scriptsDir / "Pular.cpp");
+    }
+
+    SECTION("VS Code: arquivos gerados (IntelliSense, compilar, depurar) e abrir na linha");
+    {
+        const fs::path editorExe = PathFromUtf8("C:/Motor/MotorEditor.exe");
+        const auto files = ScriptIde::VsCodeFiles(paths, fake, editorExe);
+        CHECK(files.size() == 4);
+        auto parse = [](const std::string& text) {
+            CHECK(text.starts_with(ScriptIde::kGeneratedMarker));
+            return nlohmann::json::parse(text.substr(text.find('\n') + 1), nullptr, false);
+        };
+        for (const auto& file : files) {
+            const auto j = parse(file.text);
+            CHECK(!j.is_discarded());
+            if (file.name == "c_cpp_properties.json") {
+                const auto& config = j["configurations"][0];
+                CHECK(config["compileCommands"] == "${workspaceFolder}/.motor/scripts/build/compile_commands.json");
+                CHECK(config["compilerPath"] == "C:/msys64/ucrt64/bin/c++.exe" && config["cppStandard"] == "c++20");
+            } else if (file.name == "tasks.json") {
+                const auto& task = j["tasks"][0];
+                CHECK(task["command"] == "C:/CMake/bin/cmake.exe" && task["args"][0] == "--build");
+                CHECK(Contains(task["options"]["env"]["PATH"].get<std::string>(), "ucrt64"));
+            } else if (file.name == "launch.json") {
+                const auto& launch = j["configurations"][0];
+                CHECK(launch["request"] == "attach" && launch["program"] == "C:/Motor/MotorEditor.exe");
+                CHECK(launch["miDebuggerPath"] == "C:/msys64/ucrt64/bin/gdb.exe");
+            } else {
+                CHECK(file.name == "extensions.json");
+            }
+        }
+
+        const fs::path vscode = root / ".vscode";
+        CHECK(ScriptIde::WriteVsCodeFiles(paths, fake, editorExe) == 4);
+        CHECK(ScriptIde::WriteVsCodeFiles(paths, fake, editorExe) == 0);  // iguais: não regrava
+        WriteText(vscode / "tasks.json", "{\"version\": \"2.0.0\", \"tasks\": []}\n");  // do usuário: fica
+        SP::Toolchain other = fake;
+        other.cxxCompiler = "D:/msys64/ucrt64/bin/c++.exe";
+        CHECK(ScriptIde::WriteVsCodeFiles(paths, other, editorExe) == 2);  // os gerados acompanham o compilador
+        CHECK(ReadText(vscode / "tasks.json") == "{\"version\": \"2.0.0\", \"tasks\": []}\n");
+        CHECK(Contains(ReadText(vscode / "c_cpp_properties.json"), "D:/msys64"));
+        fs::remove_all(vscode);
+
+        const auto command = ScriptIde::VsCodeCommand("C:/VS Code/Code.exe", root, root / "Scripts" / "Girar.cpp", 12, 5);
+        CHECK(command.size() == 4 && command[2] == L"--goto");
+        CHECK(command[3].ends_with(L"Girar.cpp:12:5"));
+        CHECK(ScriptIde::VsCodeCommand("C:/VS Code/Code.exe", root, {}, 0, 0).size() == 2);  // só a pasta
     }
 
     SECTION("Erros do compilador, do linker e do CMake");
@@ -369,6 +433,97 @@ int main(int argc, char** argv) {
             copies += it->path().extension() == ".dll";
         }
         CHECK(copies == 1);
+    }
+
+    SECTION("Recarga durante o Play: campos do jogo mantidos, OnStart de novo, temporizadores soltos e avisos");
+    {
+        WriteText(paths.scriptsDir / "Relogio.cpp", R"(#include <motor/scene/ScriptModule.h>
+struct Relogio : motor::Script {
+    int ticks = 0;
+    int inicios = 0;
+    motor::EntityRef outro;
+    void OnStart() override {
+        ++inicios;
+        Every(0.1f, [this] { ++ticks; });
+    }
+};
+MOTOR_FIELDS(Relogio, ticks, inicios, outro)
+)");
+        CHECK(BuildAndWait(builder, paths, *toolchain));
+        CHECK(host.Load(paths.dll, paths.loadDir, scenes, assets).ok);
+        const ComponentType* relogio = ComponentRegistry::Instance().Find("Relogio");
+        CHECK(relogio && relogio->fields.size() == 3);
+        if (relogio) CHECK(relogio->fields[0].label == "Ticks");  // rótulo tirado do nome
+        auto field = [&](const char* key) -> int* {
+            const ComponentType* type = ComponentRegistry::Instance().Find("Relogio");
+            void* data = type ? scene.Find(id)->Get(*type) : nullptr;
+            if (!data) return nullptr;
+            for (const FieldInfo& f : type->fields) {
+                if (f.key == key) return &f.As<int>(data);
+            }
+            return nullptr;
+        };
+        if (relogio) {
+            scene.Find(id)->Add(*relogio);
+            for (const FieldInfo& f : relogio->fields) {
+                if (f.key == "outro") f.As<EntityRef>(scene.Find(id)->Get(*relogio)).id = id;
+            }
+        }
+
+        Scene backup = scene;  // como o PlayMode: a cena de antes do Play também tem os scripts
+        auto playScenes = [&](const std::function<void(Scene&)>& fn) {
+            fn(scene);
+            fn(backup);
+        };
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        for (int i = 0; i < 10; ++i) runtime.Update(0.05f);
+        CHECK(field("inicios") && *field("inicios") == 1);
+        CHECK(field("ticks") && *field("ticks") >= 4 && *field("ticks") <= 5);
+        CHECK(runtime.TimerCount() == 1);
+        const int ticksBefore = field("ticks") ? *field("ticks") : 0;
+
+        // Versão 2: "ticks" renomeado (com formerKey) e "outro" apagado.
+        WriteText(paths.scriptsDir / "Relogio.cpp", R"(#include <motor/scene/ScriptModule.h>
+struct Relogio : motor::Script {
+    int batidas = 0;
+    int inicios = 0;
+    void OnStart() override {
+        ++inicios;
+        Every(0.1f, [this] { batidas += 10; });
+    }
+};
+MOTOR_SCRIPT(Relogio) {
+    registry.Register<Relogio>("Relogio", "Relógio")
+        .Field("batidas", &Relogio::batidas, {.formerKey = "ticks"})
+        .Field("inicios", &Relogio::inicios);
+}
+)");
+        CHECK(BuildAndWait(builder, paths, *toolchain));
+        runtime.ForgetScripts();
+        CHECK(runtime.TimerCount() == 0);
+        const ScriptHost::Result r = host.Load(paths.dll, paths.loadDir, playScenes, assets);
+        CHECK(r.ok && r.resolved >= 4);  // Girar e Relogio na cena do jogo e na guardada
+        CHECK(r.warnings.size() == 1);
+        if (!r.warnings.empty()) {
+            CHECK(Contains(r.warnings[0], "Relogio.outro") && Contains(r.warnings[0], "não existe mais"));
+            CHECK(Contains(r.warnings[0], "2 entidades") == false && Contains(r.warnings[0], "'Cubo'"));
+        }
+        CHECK(field("batidas") && *field("batidas") == ticksBefore);  // valor do jogo, pelo nome antigo
+        CHECK(field("inicios") && *field("inicios") == 1);
+        runtime.Update(0.05f);  // o script novo começa: OnStart de novo e o temporizador novo
+        CHECK(field("inicios") && *field("inicios") == 2);
+        CHECK(runtime.TimerCount() == 1);
+        for (int i = 0; i < 4; ++i) runtime.Update(0.05f);
+        CHECK(field("batidas") && *field("batidas") >= ticksBefore + 10);  // código novo rodando
+        runtime.Stop();
+        const ComponentType* v2 = ComponentRegistry::Instance().Find("Relogio");
+        CHECK(v2 && backup.Find(id)->Get(*v2) != nullptr);  // a cena guardada também foi religada
+        if (v2) scene.Find(id)->Remove(*v2);
+        backup = Scene();  // antes de descarregar a DLL: os objetos dela não podem sobreviver ao código
+        fs::remove(paths.scriptsDir / "Relogio.cpp");
+        CHECK(BuildAndWait(builder, paths, *toolchain));
+        CHECK(host.Load(paths.dll, paths.loadDir, scenes, assets).ok);
     }
 
     SECTION("Erro de compilação: aparece nos diagnósticos e os scripts carregados continuam");

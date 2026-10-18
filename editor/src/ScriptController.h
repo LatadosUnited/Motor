@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace editor {
@@ -17,8 +18,8 @@ class PlayController;
 class SceneDocument;
 
 // Scripts do projeto no editor: compilar a pasta Scripts/ (ao abrir o projeto, ao salvar um arquivo e pelo
-// menu), mostrar a saída e os erros (painel e menu "Scripts") e recarregar a DLL sem fechar o editor
-// (adiado até parar o Play).
+// menu), mostrar a saída e os erros (painel e menu "Scripts"), recarregar a DLL sem fechar o editor (também
+// durante o Play), criar scripts a partir de modelos e abrir os arquivos no editor de código (VS Code).
 class ScriptController {
 public:
     ScriptController(EditorContext& ctx, UndoHistory& history, SceneDocument& document, PlayController& play);
@@ -27,7 +28,15 @@ public:
     void CloseProject();         // descarrega (troca de projeto, sair)
     void Update(float dt);       // vigia a pasta Scripts, acompanha a compilação e recarrega
     void RequestBuild();         // compila agora (ou logo que a compilação em andamento terminar)
-    void OnPlayStopped();        // recarrega se recompilou durante o Play
+    bool IsBuilding() const { return m_builder.IsRunning(); }
+    void OnPlayStopped();        // (nada a fazer: a recarga não espera mais o Play parar)
+
+    void OpenNewScriptPopup() { m_openNewScriptPopup = true; }  // "Novo script..." (também pelo painel Projeto)
+    // Abre um arquivo do projeto no editor de código, na linha (0: só o arquivo).
+    void OpenScript(const std::filesystem::path& file, int line = 0, int column = 0);
+    // Cria Scripts/<name>.cpp a partir de um modelo. Para o MCP e o popup.
+    bool CreateScript(const std::string& name, std::string_view templateId, std::filesystem::path* created,
+                      std::string* error);
 
     // Situação dos scripts, para quem mostra fora do painel (servidor MCP).
     struct Status {
@@ -35,7 +44,7 @@ public:
         float seconds = 0.0f;     // duração da última compilação (ou da atual)
         ScriptBuilder::Timings timings;
         float reloadSeconds = 0.0f;
-        bool reloadPending = false;
+        bool reloadPending = false;  // sempre false (a recarga acontece também no Play); mantido para o MCP
         std::string toolchainError;
         std::vector<std::string> loadedTypes;
         std::vector<ScriptProject::Diagnostic> diagnostics;
@@ -49,7 +58,7 @@ public:
     void DrawNewScriptPopup();
 
 private:
-    void Reload();               // carrega a DLL compilada; só fora do Play
+    void Reload();               // carrega a DLL compilada (no Play, os scripts recomeçam com OnStart)
     ScriptHost::ForEachScene AllScenes();  // cena aberta e fotos do desfazer
 
     EditorContext& m_ctx;
@@ -64,14 +73,16 @@ private:
     std::string m_signature;             // estado da pasta Scripts na última verificação
     std::filesystem::file_time_type m_loadedDllTime{};  // data da DLL carregada (recompilou sem mudar = não recarrega)
     float m_watchTimer = 0.0f;
+    ScriptProject::FolderWatch m_watch;  // aviso imediato de arquivo salvo; o timer fica de reserva
     float m_reloadSeconds = 0.0f;
     bool m_buildQueued = false;          // a pasta mudou durante a compilação: compila de novo ao terminar
-    bool m_reloadPending = false;        // compilou durante o Play: recarrega ao parar
+    std::vector<std::string> m_reloadWarnings;  // valores perdidos na última recarga
     std::string m_log;                   // cópia da saída da compilação para o painel
     std::vector<ScriptProject::Diagnostic> m_diagnostics;
     bool m_focusPanel = false;
     bool m_openNewScriptPopup = false;
     std::string m_newScriptName;
+    std::string m_newScriptTemplate;
 };
 
 } // namespace editor

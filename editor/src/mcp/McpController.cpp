@@ -558,8 +558,8 @@ void McpController::AddPlayTools() {
     m_protocol.AddTool({
         .name = "scripts_build",
         .description = "Compila os scripts do projeto (pasta Scripts/) e recarrega sem fechar o editor (durante o "
-                       "Play, a recarga espera parar). A compilação roda em segundo plano: acompanhe com "
-                       "scripts_status.",
+                       "Play também: os scripts recomeçam com OnStart, mantendo os campos registrados). A "
+                       "compilação roda em segundo plano: acompanhe com scripts_status.",
         .inputSchema = Schema(),
         .run = [this](const Json&) {
             if (!m_host.document.GetProject()) throw ToolError("nenhum projeto aberto");
@@ -567,6 +567,39 @@ void McpController::AddPlayTools() {
             return ToolResult::Text("compilação pedida; veja scripts_status");
         },
     });
+
+    {
+        std::string templates;
+        Json templateIds = Json::array();
+        for (const auto& t : ScriptProject::NewScriptTemplates()) {
+            templates += std::format("{}{} ({})", templates.empty() ? "" : ", ", t.id, t.description);
+            templateIds.push_back(t.id);
+        }
+        m_protocol.AddTool({
+            .name = "script_create",
+            .description = "Cria Scripts/<name>.cpp a partir de um modelo, como Scripts > Novo script... no editor. "
+                           "A pasta é vigiada: o editor compila sozinho (acompanhe com scripts_status). Modelos: " +
+                           templates + ".",
+            .inputSchema = Schema({{"name", Prop("string", "nome da struct e do arquivo (letras sem acento, números e _)")},
+                                   {"template", Json{{"type", "string"},
+                                                     {"enum", templateIds},
+                                                     {"description", "modelo (padrão: comportamento)"}}}},
+                                  {"name"}),
+            .run = [this](const Json& args) {
+                if (!m_host.document.GetProject()) throw ToolError("nenhum projeto aberto");
+                const std::string name = args.value("name", std::string());
+                const std::string templateId = args.value("template", std::string(ScriptProject::kDefaultScriptTemplate));
+                const auto& all = ScriptProject::NewScriptTemplates();
+                if (std::none_of(all.begin(), all.end(), [&](const auto& t) { return templateId == t.id; })) {
+                    throw ToolError("modelo desconhecido: " + templateId);
+                }
+                fs::path file;
+                std::string error;
+                if (!m_host.scripts.CreateScript(name, templateId, &file, &error)) throw ToolError(error);
+                return ToolResult::Data({{"file", motor::ToUtf8(file)}, {"template", templateId}});
+            },
+        });
+    }
 
     m_protocol.AddTool({
         .name = "scripts_status",

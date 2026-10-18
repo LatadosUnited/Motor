@@ -484,6 +484,8 @@ void EditorApp::DrawProjectPanel() {
     callbacks.createPrefabFromEntity = [this](uint32_t entity, const fs::path& folder) {
         m_ctx.CreatePrefabFromEntity(entity, folder);
     };
+    callbacks.createScript = [this] { m_scripts.OpenNewScriptPopup(); };
+    callbacks.openScript = [this](const fs::path& p) { m_scripts.OpenScript(p); };
 
     // Arquivos arrastados do Explorer para a janela são importados pelo painel.
     if (auto dropped = GetWindow().TakeDroppedFiles(); !dropped.empty()) m_projectPanel.QueueImport(std::move(dropped));

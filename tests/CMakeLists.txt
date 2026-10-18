@@ -42,6 +42,7 @@ target_include_directories(test_hotreload PRIVATE ${PROJECT_SOURCE_DIR}/editor/s
 motor_add_test(test_script_project
     ${PROJECT_SOURCE_DIR}/editor/src/ScriptBuilder.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/ScriptHost.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/ScriptIde.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/ScriptProject.cpp)
 target_include_directories(test_script_project PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_script_project PRIVATE nlohmann_json::nlohmann_json)

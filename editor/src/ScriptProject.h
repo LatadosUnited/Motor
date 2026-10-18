@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace editor::ScriptProject {
@@ -68,13 +69,41 @@ std::vector<std::filesystem::path> ListScriptFiles(const std::filesystem::path& 
 // "Assinatura" da pasta (arquivos, tamanhos e datas). Mudou = algum arquivo foi criado, salvo ou apagado.
 std::string Signature(const std::filesystem::path& scriptsDir);
 
+// Aviso do sistema quando algo muda na pasta (e subpastas): reage na hora ao salvar, sem esperar a próxima
+// verificação periódica. No Windows, FindFirstChangeNotification; nas outras plataformas fica inativo.
+class FolderWatch {
+public:
+    FolderWatch() = default;
+    ~FolderWatch() { Stop(); }
+    FolderWatch(const FolderWatch&) = delete;
+    FolderWatch& operator=(const FolderWatch&) = delete;
+
+    bool Start(const std::filesystem::path& dir);  // false: pasta não existe (tente de novo depois)
+    void Stop();
+    bool IsActive() const { return m_handle != nullptr; }
+    bool Changed();  // algo mudou desde a última chamada (não bloqueia)
+
+private:
+    void* m_handle = nullptr;
+};
+
 // Nome de script novo: identificador C++ (letras ASCII, dígitos e _, sem começar com dígito). Vazio = válido.
 std::string ValidateScriptName(const std::string& name);
-// Esqueleto de um script novo (struct + bloco MOTOR_SCRIPT).
-std::string NewScriptSource(const std::string& name);
-// Cria Scripts/<name>.cpp com o esqueleto. Falha se já existir.
+
+// Modelos de "Novo script" (o nome escolhido vira o nome da struct).
+struct NewScriptTemplate {
+    const char* id;           // "comportamento"
+    const char* label;        // "Comportamento"
+    const char* description;  // uma linha, para a lista do editor
+};
+inline constexpr const char* kDefaultScriptTemplate = "comportamento";
+const std::vector<NewScriptTemplate>& NewScriptTemplates();
+// Código de um script novo a partir do modelo (id desconhecido: o padrão).
+std::string NewScriptSource(const std::string& name, std::string_view templateId = kDefaultScriptTemplate);
+// Cria Scripts/<name>.cpp com o modelo. Falha se já existir.
 bool CreateScript(const std::filesystem::path& scriptsDir, const std::string& name,
-                  std::filesystem::path* created = nullptr, std::string* error = nullptr);
+                  std::filesystem::path* created = nullptr, std::string* error = nullptr,
+                  std::string_view templateId = kDefaultScriptTemplate);
 // Modelos disponíveis (nomes dos .cpp em templatesDir, sem extensão).
 std::vector<std::string> ListTemplates(const std::filesystem::path& templatesDir);
 // Copia templatesDir/<name>.cpp para a pasta de scripts. Falha se já existir.

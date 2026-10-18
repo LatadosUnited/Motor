@@ -342,6 +342,38 @@ std::string Signature(const fs::path& scriptsDir) {
     return sig;
 }
 
+bool FolderWatch::Start(const fs::path& dir) {
+    Stop();
+#ifdef _WIN32
+    HANDLE handle = FindFirstChangeNotificationW(
+        dir.c_str(), TRUE, FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE |
+                               FILE_NOTIFY_CHANGE_SIZE);
+    if (handle == INVALID_HANDLE_VALUE) return false;
+    m_handle = handle;
+    return true;
+#else
+    (void)dir;
+    return false;
+#endif
+}
+
+void FolderWatch::Stop() {
+#ifdef _WIN32
+    if (m_handle) FindCloseChangeNotification(static_cast<HANDLE>(m_handle));
+#endif
+    m_handle = nullptr;
+}
+
+bool FolderWatch::Changed() {
+#ifdef _WIN32
+    if (!m_handle || WaitForSingleObject(static_cast<HANDLE>(m_handle), 0) != WAIT_OBJECT_0) return false;
+    if (!FindNextChangeNotification(static_cast<HANDLE>(m_handle))) Stop();  // pasta apagada: volta ao timer
+    return true;
+#else
+    return false;
+#endif
+}
+
 std::string ValidateScriptName(const std::string& name) {
     if (name.empty()) return "O nome não pode ficar vazio.";
     if (name.size() > 64) return "O nome deve ter no máximo 64 caracteres.";
@@ -354,34 +386,169 @@ std::string ValidateScriptName(const std::string& name) {
     return {};
 }
 
-std::string NewScriptSource(const std::string& name) {
-    return std::format(R"(// Script {0}. Os campos registrados no bloco MOTOR_SCRIPT aparecem no Inspector e são salvos na cena;
+namespace {
+// Modelos de script novo; $NOME$ vira o nome escolhido.
+constexpr const char* kTemplateEmpty = R"(// Script $NOME$. Salve o arquivo e o editor recompila e recarrega os scripts (também durante o Play).
+// Guia: docs/scripts.md na pasta do Motor (menu Ajuda > Guia de scripts).
+
+#include <motor/scene/ScriptModule.h>
+
+struct $NOME$ : motor::Script {
+    // Uma vez, no começo do Play (ou quando a entidade fica ativa).
+    void OnStart() override {}
+
+    // Todo frame do Play; dt = segundos desde o frame anterior.
+    void OnUpdate(float /*dt*/) override {}
+};
+
+// Campos que aparecem no Inspector: MOTOR_FIELDS($NOME$, velocidade, vidas).
+MOTOR_FIELDS($NOME$)
+)";
+
+constexpr const char* kTemplateBehaviour = R"(// Script $NOME$. Os campos registrados no bloco MOTOR_SCRIPT aparecem no Inspector e são salvos na cena;
 // os métodos On* só rodam no modo Play. Salve o arquivo e o editor recompila e recarrega os scripts.
 
 #include <motor/scene/ScriptModule.h>
 
-struct {0} : motor::Script {{
+struct $NOME$ : motor::Script {
     float velocidade = 1.0f;
 
-    void OnStart() override {{
-        Log("{0} começou");
-    }}
+    void OnStart() override {
+        Log("$NOME$ começou");
+    }
 
-    void OnUpdate(float dt) override {{
+    void OnUpdate(float dt) override {
         // Ex.: GetTransform().position.y += velocidade * dt;
         (void)dt;
-    }}
-}};
+    }
+};
 
-MOTOR_SCRIPT({0}) {{
-    registry.Register<{0}>("{0}", "{0}")
-        .Field("velocidade", "Velocidade", &{0}::velocidade);
-}}
-)",
-                       name);
+MOTOR_SCRIPT($NOME$) {
+    registry.Register<$NOME$>("$NOME$", "$NOME$")
+        .Field("velocidade", "Velocidade", &$NOME$::velocidade);
+}
+)";
+
+constexpr const char* kTemplateFollow = R"(// Script $NOME$: segue outra entidade, escolhida no Inspector, mantendo uma distância. Bom para a câmera.
+
+#include <motor/scene/ScriptModule.h>
+
+#include <cmath>
+
+struct $NOME$ : motor::Script {
+    motor::EntityRef alvo;                  // escolha na lista ou arraste da Hierarquia
+    glm::vec3 distancia{0.0f, 4.0f, 7.0f};  // em relação ao alvo
+    float suavidade = 6.0f;                 // 0 = gruda no alvo
+
+    void OnUpdate(float dt) override {
+        const motor::Entity* e = GetEntity(alvo);
+        if (!e) return;  // sem alvo, ou ele foi destruído
+        const glm::vec3 posicaoAlvo{GetScene().WorldMatrix(e->id)[3]};
+        motor::Transform& t = GetTransform();
+        // Aproximação exponencial: o mesmo movimento com qualquer FPS.
+        const float k = suavidade > 0.0f ? 1.0f - std::exp(-suavidade * dt) : 1.0f;
+        t.position += (posicaoAlvo + distancia - t.position) * k;
+    }
+};
+
+MOTOR_FIELDS($NOME$, alvo, distancia, suavidade)
+)";
+
+constexpr const char* kTemplateCollectible = R"(// Script $NOME$: item que gira e some quando o jogador encosta. A entidade precisa de um Collider com
+// "Trigger" marcado; o jogador, de um Collider e de um Rigidbody (ou controlador de personagem).
+// Quem pegou recebe a mensagem "coletou" (com os pontos) no OnMessage.
+
+#include <motor/scene/ScriptModule.h>
+
+#include <glm/gtc/quaternion.hpp>
+
+#include <string>
+
+struct $NOME$ : motor::Script {
+    std::string quemColeta = "Jogador";  // nome da entidade que pega o item
+    int pontos = 1;
+    float giro = 90.0f;  // graus por segundo
+
+    void OnUpdate(float dt) override {
+        motor::Transform& t = GetTransform();
+        t.rotation = glm::angleAxis(glm::radians(giro * dt), glm::vec3(0.0f, 1.0f, 0.0f)) * t.rotation;
+    }
+
+    void OnTriggerEnter(motor::EntityId outro) override {
+        const motor::Entity* e = GetEntity(outro);
+        if (!e || e->name != quemColeta) return;
+        Send(outro, "coletou", static_cast<float>(pontos));
+        DestroySelf();
+    }
+};
+
+MOTOR_FIELDS($NOME$, quemColeta, pontos, giro)
+)";
+
+constexpr const char* kTemplateSpawner = R"(// Script $NOME$: cria uma cópia de um prefab a cada intervalo, num lugar aleatório perto da entidade.
+
+#include <motor/scene/ScriptModule.h>
+
+struct $NOME$ : motor::Script {
+    motor::PrefabRef prefab;  // arraste um .mprefab do painel Projeto
+    float intervalo = 2.0f;   // segundos entre uma cópia e outra
+    float raio = 3.0f;        // espalha as cópias neste raio, no chão
+    int maximo = 10;          // para depois de tantas (0 = sem limite)
+
+    void OnStart() override {
+        Every(intervalo, [this] { Criar(); });
+    }
+
+    void Criar() {
+        if (maximo > 0 && m_criados >= maximo) {
+            CancelTimers();
+            return;
+        }
+        const glm::vec3 lugar = GetTransform().position + glm::vec3(Random(-raio, raio), 0.0f, Random(-raio, raio));
+        if (Instantiate(prefab, lugar)) ++m_criados;
+    }
+
+    int m_criados = 0;  // não registrado: estado do jogo, não vai para a cena
+};
+
+MOTOR_FIELDS($NOME$, prefab, intervalo, raio, maximo)
+)";
+
+struct TemplateText {
+    const char* id;
+    const char* text;
+};
+constexpr TemplateText kTemplateTexts[] = {{"vazio", kTemplateEmpty},
+                                           {"comportamento", kTemplateBehaviour},
+                                           {"seguir", kTemplateFollow},
+                                           {"coletavel", kTemplateCollectible},
+                                           {"gerador", kTemplateSpawner}};
+} // namespace
+
+const std::vector<NewScriptTemplate>& NewScriptTemplates() {
+    static const std::vector<NewScriptTemplate> templates = {
+        {"vazio", "Vazio", "Só a estrutura: OnStart e OnUpdate"},
+        {"comportamento", "Comportamento", "Um campo no Inspector e uma mensagem no começo do Play"},
+        {"seguir", "Que segue", "Segue outra entidade escolhida no Inspector (câmera)"},
+        {"coletavel", "Coletável", "Gira e some quando o jogador encosta (trigger e mensagem)"},
+        {"gerador", "Gerador", "Cria cópias de um prefab de tempos em tempos (temporizador e aleatório)"},
+    };
+    return templates;
 }
 
-bool CreateScript(const fs::path& scriptsDir, const std::string& name, fs::path* created, std::string* error) {
+std::string NewScriptSource(const std::string& name, std::string_view templateId) {
+    std::string text = kTemplateBehaviour;
+    for (const TemplateText& t : kTemplateTexts) {
+        if (templateId == t.id) text = t.text;
+    }
+    for (size_t at = text.find("$NOME$"); at != std::string::npos; at = text.find("$NOME$", at + name.size())) {
+        text.replace(at, 6, name);
+    }
+    return text;
+}
+
+bool CreateScript(const fs::path& scriptsDir, const std::string& name, fs::path* created, std::string* error,
+                  std::string_view templateId) {
     if (std::string problem = ValidateScriptName(name); !problem.empty()) {
         SetError(error, std::move(problem));
         return false;
@@ -393,7 +560,7 @@ bool CreateScript(const fs::path& scriptsDir, const std::string& name, fs::path*
         SetError(error, std::format("Já existe '{}'.", ToUtf8(file.filename())));
         return false;
     }
-    if (!WriteIfChanged(file, NewScriptSource(name), error)) return false;
+    if (!WriteIfChanged(file, NewScriptSource(name, templateId), error)) return false;
     if (created) *created = file;
     return true;
 }
