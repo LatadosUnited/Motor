@@ -10,9 +10,9 @@
 // Sem janela nem OpenGL. Demora alguns segundos (compila a DLL).
 #include "TestUtil.h"
 
-#include "ScriptBuilder.h"
-#include "ScriptHost.h"
-#include "ScriptProject.h"
+#include "scripts/ScriptBuilder.h"
+#include "scripts/ScriptHost.h"
+#include "scripts/ScriptProject.h"
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/audio/AudioSystem.h>

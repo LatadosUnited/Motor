@@ -33,7 +33,7 @@ using namespace motor;
 
 namespace {
 
-// Pasta do projeto dentro do jogo exportado e nome da DLL de scripts (editor/src/GameExport.h).
+// Pasta do projeto dentro do jogo exportado e nome da DLL de scripts (editor/src/export/GameExport.h).
 constexpr const char* kDataFolder = "Dados";
 constexpr const char* kScriptsDll = "GameScripts.dll";
 

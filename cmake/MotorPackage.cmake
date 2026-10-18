@@ -3,7 +3,7 @@
 #
 #   Motor-<versão>/
 #     MotorEditor.exe, Player.exe     o editor e o executável do jogo exportado (Arquivo > Exportar jogo)
-#     libMotor.dll + runtime do GCC   as mesmas DLLs que a exportação copia (kRuntimeDlls, editor/src/GameExport.h)
+#     libMotor.dll + runtime do GCC   as mesmas DLLs que a exportação copia (kRuntimeDlls, editor/src/export/GameExport.h)
 #     engine/shaders, engine/fonts    assets da engine; achados ao lado do .exe (motor/core/EngineAssets.h)
 #     templates/Scripts/              modelos de script (projetos novos, menu Scripts)
 #     docs/                           documentação da versão (scripts.md, scripts-api.md, ...)
@@ -25,13 +25,13 @@ foreach(var OUT BIN SRC VERSION IMPLIB IMGUI_DIR GLM_DIR GEN_DIR CMAKE_EXE GENER
     endif()
 endforeach()
 
-# Mesma lista de GameExport::kRuntimeDlls (editor/src/GameExport.h): lida de lá para não ficarem diferentes.
-file(READ "${SRC}/editor/src/GameExport.h" export_header)
+# Mesma lista de GameExport::kRuntimeDlls (editor/src/export/GameExport.h): lida de lá para não ficarem diferentes.
+file(READ "${SRC}/editor/src/export/GameExport.h" export_header)
 string(REGEX MATCH "kRuntimeDlls\\[\\] = {([^}]*)}" _ "${export_header}")
 string(REGEX MATCHALL "\"[^\"]+\"" runtime_dlls "${CMAKE_MATCH_1}")
 string(REPLACE "\"" "" runtime_dlls "${runtime_dlls}")
 if(NOT runtime_dlls)
-    message(FATAL_ERROR "kRuntimeDlls não encontrada em editor/src/GameExport.h")
+    message(FATAL_ERROR "kRuntimeDlls não encontrada em editor/src/export/GameExport.h")
 endif()
 
 # Versão da interface com a DLL de scripts (kScriptApiVersion em motor/scene/ScriptModule.h).

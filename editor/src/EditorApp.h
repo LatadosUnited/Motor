@@ -2,12 +2,12 @@
 
 #include "EditorContext.h"
 #include "EditorSettings.h"
-#include "ExportController.h"
-#include "PlayController.h"
-#include "ProjectPanel.h"
-#include "SceneDocument.h"
-#include "SceneViewport.h"
-#include "ScriptController.h"
+#include "export/ExportController.h"
+#include "play/PlayController.h"
+#include "panels/ProjectPanel.h"
+#include "document/SceneDocument.h"
+#include "viewport/SceneViewport.h"
+#include "scripts/ScriptController.h"
 #include "UndoHistory.h"
 #include "mcp/McpController.h"
 

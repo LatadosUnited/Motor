@@ -3,10 +3,10 @@
 // preservando os campos e descarregar. Sem janela nem OpenGL.
 #include "TestUtil.h"
 
-#include "ScriptBuilder.h"
-#include "ScriptHost.h"
-#include "ScriptIde.h"
-#include "ScriptProject.h"
+#include "scripts/ScriptBuilder.h"
+#include "scripts/ScriptHost.h"
+#include "scripts/ScriptIde.h"
+#include "scripts/ScriptProject.h"
 
 #include <nlohmann/json.hpp>
 

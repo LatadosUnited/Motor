@@ -1,10 +1,10 @@
 #include "McpController.h"
 
-#include "../ExportController.h"
-#include "../PlayController.h"
-#include "../SceneDocument.h"
-#include "../SceneViewport.h"
-#include "../ScriptController.h"
+#include "export/ExportController.h"
+#include "play/PlayController.h"
+#include "document/SceneDocument.h"
+#include "viewport/SceneViewport.h"
+#include "scripts/ScriptController.h"
 #include "ImageEncode.h"
 #include "McpSceneTools.h"
 
