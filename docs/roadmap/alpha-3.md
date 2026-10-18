@@ -119,7 +119,7 @@ Conclusões:
 
 ## Fase 24 — Renderer em lote
 
-*(Análise, item 3.)*
+*(Análise, item 3; ver [Modularizar a engine](../decisoes/2026-10-18-modularizar-a-engine.md), passo 4.)*
 
 - Ordenar os desenhos por shader, material e malha; instancing para a mesma malha com o mesmo material.
 - Uniforms sem procurar por texto: hoje `Shader::Location` cria uma `std::string` e busca num
@@ -137,7 +137,7 @@ Conclusões:
 
 ## Fase 25 — Cena, dados e threads
 
-*(Análise, item 4; pendência da Fase 5.)*
+*(Análise, item 4; pendência da Fase 5; ver [Modularizar a engine](../decisoes/2026-10-18-modularizar-a-engine.md) e [Módulos em DLLs](../decisoes/2026-10-18-modulos-em-dlls.md).)*
 
 - `WorldMatrix` com cache (marca de "sujo" ao mexer no transform ou no pai), em vez de subir a hierarquia a
   cada chamada.
