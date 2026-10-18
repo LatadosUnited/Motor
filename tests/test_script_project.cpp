@@ -206,6 +206,28 @@ int main(int argc, char** argv) {
         changed.sdkCMake = PathFromUtf8("C:/Motor2/sdk/MotorSDK.cmake");
         CHECK(SP::WriteBuildFiles(paths, changed));
         CHECK(SP::NeedsConfigure(paths));
+        // Projeto compilado antes da Fase 17: cache do "MSYS Makefiles" e o toolchain agora é Ninja. Reconfigura
+        // limpo, com ou sem carimbo (antes o cache velho ficava e o "cmake --build" falhava sempre).
+        SP::Toolchain ninja = fake;
+        ninja.generator = "Ninja";
+        ninja.makeProgram = "C:/msys64/ucrt64/bin/ninja.exe";
+        auto oldBuild = [&] {
+            fs::create_directories(paths.binaryDir / "CMakeFiles");
+            { std::ofstream(paths.binaryDir / "CMakeCache.txt") << "CMAKE_GENERATOR:INTERNAL=MSYS Makefiles\r\n"; }
+            CHECK(!SP::NeedsConfigure(paths));
+        };
+        fs::remove(paths.cmakeDir / "toolchain.stamp");
+        oldBuild();
+        CHECK(SP::WriteBuildFiles(paths, ninja));
+        CHECK(SP::NeedsConfigure(paths) && !fs::exists(paths.binaryDir / "CMakeFiles"));
+        CHECK(fs::exists(paths.cmakeDir / "toolchain.stamp"));
+        oldBuild();  // carimbo já gravado (por um editor que não conferia o gerador) e o cache velho
+        CHECK(SP::WriteBuildFiles(paths, ninja));
+        CHECK(SP::NeedsConfigure(paths));
+        // Cache do mesmo gerador e carimbo igual: nada é apagado.
+        { std::ofstream(paths.binaryDir / "CMakeCache.txt") << "CMAKE_GENERATOR:INTERNAL=Ninja\n"; }
+        CHECK(SP::WriteBuildFiles(paths, ninja));
+        CHECK(!SP::NeedsConfigure(paths));
         fs::remove_all(root / ".motor");
     }
 

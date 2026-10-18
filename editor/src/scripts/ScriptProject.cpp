@@ -35,6 +35,17 @@ std::string ReadFile(const fs::path& path) {
     return ss.str();
 }
 
+// Gerador gravado no cache do CMake ("Ninja", "MSYS Makefiles"...), ou vazio sem cache.
+std::string CachedGenerator(const fs::path& binaryDir) {
+    std::ifstream in(binaryDir / "CMakeCache.txt", std::ios::binary);
+    constexpr std::string_view kKey = "CMAKE_GENERATOR:INTERNAL=";
+    for (std::string line; std::getline(in, line);) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.starts_with(kKey)) return line.substr(kKey.size());
+    }
+    return {};
+}
+
 // Grava só se o conteúdo mudou (preserva a data do arquivo, que o make e o CMake usam).
 bool WriteIfChanged(const fs::path& path, const std::string& text, std::string* error) {
     std::error_code ec;
@@ -238,7 +249,12 @@ bool WriteBuildFiles(const Paths& paths, const Toolchain& toolchain, std::string
                                           ToGenericUtf8(toolchain.makeProgram), ToGenericUtf8(toolchain.cxxCompiler),
                                           toolchain.buildType, ToGenericUtf8(toolchain.sdkCMake));
     const fs::path stampFile = paths.cmakeDir / "toolchain.stamp";
-    if (fs::is_regular_file(stampFile, ec) && ReadFile(stampFile) != stamp) {
+    // Carimbo diferente: outro toolchain ou versão. Cache de outro gerador: build de antes do carimbo (Fase 17), com
+    // "MSYS Makefiles"; o cache velho faria o "cmake --build" falhar para sempre (mesmo depois de o carimbo ser
+    // gravado por um editor que ainda não conferia o gerador).
+    const bool stampChanged = fs::is_regular_file(stampFile, ec) && ReadFile(stampFile) != stamp;
+    const std::string cachedGenerator = CachedGenerator(paths.binaryDir);
+    if (stampChanged || (!cachedGenerator.empty() && cachedGenerator != toolchain.generator)) {
         ResetConfigure(paths);
     }
     return WriteIfChanged(stampFile, stamp, error) &&
