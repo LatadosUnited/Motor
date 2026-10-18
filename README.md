@@ -419,11 +419,21 @@ MOTOR_SCRIPT(Girar) {
 }
 ```
 
-- Menu **Scripts**: Novo script, Adicionar exemplo (Girar, Jogador, Mover com WASD, Seguir, de
-  `editor/templates/Scripts/`), Recompilar (F7), Abrir pasta. O painel **Scripts** mostra erros e avisos.
-- Com erro de compilação, continuam carregados os scripts da última compilação boa. Durante o Play a recarga
-  espera o Play parar. Script removido ou renomeado vira componente "script não carregado", com os dados
-  guardados, até voltar.
+- Menu **Scripts**: Novo script (modelos Vazio, Comportamento, Que segue, Coletável e Gerador; também em
+  **+ Criar** no painel Projeto e pela ferramenta MCP `script_create`), Adicionar exemplo (Girar, Jogador,
+  Mover com WASD, Seguir, de `editor/templates/Scripts/`), Recompilar (F7), Abrir no VS Code, Abrir pasta. O
+  painel **Scripts** mostra erros e avisos; clicar num erro abre o arquivo na linha.
+- **VS Code configurado**: ao abrir o projeto o editor gera `.vscode/` (IntelliSense pelo `compile_commands.json`
+  da compilação dos scripts, tarefa de compilar e "anexar ao editor" com o gdb). Só reescreve os arquivos que
+  ainda começam com `// Gerado pelo Motor Editor`.
+- **Recarga também no Play**: os campos registrados ficam com os valores do jogo, o resto volta ao padrão e o
+  `OnStart` roda de novo. Campo removido ou com o tipo trocado vira aviso no painel com o valor perdido;
+  `FieldOptions::formerKey` lê o valor de um campo renomeado. Com erro de compilação, continuam carregados os
+  scripts da última compilação boa. Script removido ou renomeado vira componente "script não carregado", com
+  os dados guardados, até voltar.
+- API (Fase 17): campos `motor::EntityRef` (outra entidade, escolhida no Inspector), `GetComponent<T>()`,
+  temporizadores (`After`, `Every`), mensagens (`Send`, `Broadcast`, `OnMessage`), sorteio (`Random`,
+  `RandomInt`, `Chance`) e o registro curto `MOTOR_FIELDS(Jogador, velocidade, pulo)`.
 - Sistemas do jogo (física, áudio, HUD) são `motor::RuntimeSystem` registrados pela engine com
   `MOTOR_RUNTIME_SYSTEM` (ordem e regras em `engine/include/motor/scene/RuntimeSystem.h`, exemplo em
   `tests/test_runtime_systems.cpp`); os scripts os acham com `GetSystem<T>()`.
@@ -447,17 +457,25 @@ usam o mesmo registro de componentes, o mesmo heap, as mesmas exceções/RTTI, o
 - **Ninja e lld**: se `ninja.exe` e `ld.lld.exe` estiverem ao lado do compilador (MSYS2 UCRT64:
   `pacman -S mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-lld`), são usados; senão, make e `ld`.
 - O painel **Scripts** e a ferramenta MCP `scripts_status` mostram o tempo de cada etapa e de cada arquivo.
+- **Vigia imediata**: o editor recebe do Windows o aviso de arquivo salvo na pasta `Scripts/` (antes conferia a
+  cada 0,75 s).
+- **Editor mais leve enquanto compila**: fora do Play, o editor desenha a 10 FPS em segundo plano e a 20 FPS
+  durante a compilação. A 60 FPS ele ocupava ~75% de um núcleo e, com o vídeo integrado dividindo a energia,
+  a compilação de um script levava o triplo (1,6 s em vez de 0,54 s).
 
-Medido com `test_script_project --bench` (Debug, GCC 15, scripts do modelo "Novo script"):
+Medido com `test_script_project --bench` (Debug, GCC 15, i5-6400, scripts do modelo "Novo script"; o
+"antes" é o início da Fase 17):
 
 | Caso | Antes | Depois |
 |---|---|---|
-| 1 script, do zero | 8,42 s | 2,14 s |
-| 10 scripts, do zero | 22,10 s | 3,59 s |
-| 10 scripts, 1 arquivo editado (salvar → recarregado) | 9,19 s | 1,32 s |
-| 50 scripts, do zero | 90,72 s | 10,96 s |
+| 1 script, do zero | 8,42 s | 2,63 s |
+| 10 scripts, do zero | 22,10 s | 4,30 s |
+| 10 scripts, 1 arquivo editado (compilar → recarregado) | 9,19 s | 1,00 s |
+| 50 scripts, do zero | 90,72 s | 11,47 s |
 
-Etapas do caso "1 arquivo editado" depois: compilar ~0,7–0,9 s, ligar 0,2 s, recarregar 0,01 s.
+Etapas do caso "1 arquivo editado": compilar 0,59 s, ligar 0,23 s, recarregar 0,02 s. Dentro do editor aberto
+(do salvar o arquivo até a recarga, medido pelo MCP com 10 scripts): 1,1 a 1,5 s; antes destes ajustes, ~2,7 s
+mais a espera da vigia.
 
 Limites atuais: os scripts precisam do Motor compilado na mesma máquina (o SDK aponta para a pasta de
 build); um erro grave dentro de um script (ponteiro inválido) derruba o editor; sem projeto aberto não há
@@ -554,7 +572,7 @@ desfazer:
   jogo, os elementos têm contorno; um clique seleciona e arrastar move (um arraste = um passo de desfazer).
   Na visão do jogo (Play), o mouse vai para os botões do jogo.
 - **Scripts:** `GetSystem<motor::UiSystem>()` com `SetText`, `SetVisible`, `IsVisible`, `WasClicked` (pelo
-  nome da entidade ou pelo id) e `Script::LoadScene("Fase1")` para trocar de cena. Ver a seção 12 do
+  nome da entidade ou pelo id) e `Script::LoadScene("Fase1")` para trocar de cena. Ver a seção 13 do
   [guia de scripts](docs/scripts.md) e os exemplos `docs/examples/Hud.cpp` e `MenuPrincipal.cpp`.
 - **Fontes:** `.ttf` e `.otf` do projeto são assets (com GUID); o campo Fonte vazio usa a padrão, **Roboto
   Medium** (`engine/assets/fonts/`, Apache License 2.0, ver `LICENSE-Roboto.txt` na mesma pasta). Cada fonte
@@ -620,7 +638,7 @@ componentes comuns (Inspector, cena, desfazer):
 - **Arquivos:** até 2 MB são decodificados inteiros na primeira vez que tocam; maiores (música) são lidos aos
   poucos durante o jogo. Arquivo que não abre vira aviso no console.
 - **Scripts:** `GetSystem<motor::AudioSystem>()` com `Play`, `Stop`, `SetVolume` e `IsPlaying` (pelo nome da
-  entidade ou pelo id). Ver a seção 13 do [guia de scripts](docs/scripts.md) e o exemplo
+  entidade ou pelo id). Ver a seção 14 do [guia de scripts](docs/scripts.md) e o exemplo
   `docs/examples/SonsDoMenu.cpp` (som de clique de botão e música).
 - **Clipes de uma cena** (para exportar o jogo): `motor::CollectAudioClips(scene)` (`motor/scene/AudioSource.h`)
   lista os clipes das Fontes de áudio; no `.mscene`, cada um é o campo `"clip"` do componente `"AudioSource"`,
