@@ -14,6 +14,9 @@
 
 namespace editor {
 
+// Pasta sugerida para novos projetos: Documentos do usuário.
+std::filesystem::path DefaultProjectsDir();
+
 // Projeto e cena abertos no editor: abrir/salvar/criar, detecção de alterações não salvas, menu Arquivo,
 // popups de confirmação, de novo projeto e de erro, e o título da janela.
 class SceneDocument {

@@ -14,8 +14,11 @@ add_executable(MotorEditor
     src/panels/ProjectPanelFiles.cpp
     src/panels/ProjectPanelUtil.cpp
     src/document/SceneDocument.cpp
+    src/document/SceneDocumentProject.cpp
+    src/document/SceneDocumentUi.cpp
     src/panels/ScenePanel.cpp
     src/viewport/SceneViewport.cpp
+    src/viewport/SceneViewportOverlay.cpp
     src/scripts/ScriptBuilder.cpp
     src/scripts/ScriptController.cpp
     src/scripts/ScriptHost.cpp
