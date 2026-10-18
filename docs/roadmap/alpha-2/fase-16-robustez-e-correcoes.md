@@ -3,11 +3,11 @@ tipo: fase
 alpha: 2
 fase: 16
 titulo: Robustez e correções
-status: planejada
+status: em andamento
 prioridade: 1
 areas: [scene, editor, physics, scripts, distribuicao]
-branch: 
-inicio: 
+branch: fase-16-robustez-e-correcoes
+inicio: 2026-10-18
 fim: 
 ---
 
@@ -42,9 +42,9 @@ em jogos de verdade.
   queda. Contorno usado por um agente: mudar a massa do controlador de 70 para 70,001 (o Motor recria o corpo
   parado). Zerar a velocidade (a do `CharacterVirtual` e a guardada no registro) no teleporte; teste em
   `tests/test_physics.cpp`. *(origem: agente fazendo um jogo, 17/10/2026)*
-- [ ] **Caminho longo na compilação dos scripts:** revisar e mesclar o branch `fix/caminho-longo-objetos`
+- [x] **Caminho longo na compilação dos scripts:** revisar e mesclar o branch `fix/caminho-longo-objetos`
   (objetos com nome curto, sem acentos, abaixo de 260 caracteres). *(origem: correção de 16/10/2026, nunca
-  mesclada)*
+  mesclada)* (2232bf1)
 - [ ] **Pasta vazia vira projeto:** abrir o editor numa pasta vazia oferece criar o projeto ali (hoje mostra a
   cena de exemplo). O `project_create` do MCP e o `--create` já existem. *(origem: anotado para a alpha 2)*
 - [ ] **Scripts instanciam prefabs:** `Instantiate(prefab, posição)` com campo `PrefabRef` no Inspector, e

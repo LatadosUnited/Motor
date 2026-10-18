@@ -22,18 +22,18 @@ faz no editor um jogo 3D pequeno que salva o progresso, aceita controle e usa ob
 num script não fecha o editor nem perde trabalho; o jogo é exportado em Release e roda em outro computador da
 rede.
 
-## Onde estamos (17/10/2026)
+## Onde estamos (18/10/2026)
 
 Pronto na alpha 1: núcleo, renderização PBR com sombras, céu HDR e pós-processamento, cena e componentes,
 Play, scripts C++ com recarga, luzes, física (Jolt), materiais e prefabs, glTF com animação, HUD, áudio,
 exportar o jogo (Player), documentação de scripts, servidor MCP do editor, Hub de versões, instalador e
-servidor de versões. Main sem pendências de merge, exceto o branch `fix/caminho-longo-objetos` (Fase 16).
+servidor de versões. Main sem pendências de merge.
 
 ## Prioridades
 
 | # | Fase | Status | Por quê | Pode rodar junto com |
 |---|---|---|---|---|
-| 1 | [Fase 16 — Robustez e correções](alpha-2/fase-16-robustez-e-correcoes.md) | planejada | hoje um erro de script fecha o editor e o trabalho não salvo se perde; contornos conhecidos | 17 (áreas diferentes) |
+| 1 | [Fase 16 — Robustez e correções](alpha-2/fase-16-robustez-e-correcoes.md) | em andamento | hoje um erro de script fecha o editor e o trabalho não salvo se perde; contornos conhecidos | 17 (áreas diferentes) |
 | 2 | [Fase 17 — Scripts mais rápidos e fáceis](alpha-2/fase-17-scripts.md) | planejada | compilações de 10 a 124 s medidas num projeto real; menos código repetido | 16, 18 |
 | 3 | [Fase 18 — Funcionalidades de jogo](alpha-2/fase-18-funcionalidades-de-jogo.md) | planejada | física, áudio, cursor, formas e transparência que jogos comuns pedem | 17 |
 | 4 | [Fase 19 — Validação de uso real](alpha-2/fase-19-validacao.md) | planejada | o editor quase só foi testado por agentes; a lista de defeitos decide o resto | — |
