@@ -12,8 +12,6 @@ Formato: `- AAAA-MM-DD — quem achou — o quê — onde (arquivo:linha, se sou
 
 ## Para triar
 
-- 2026-10-18 — Claude (verificação da Organização do código) — projeto compilado antes da Fase 17 (build com
-  "MSYS Makefiles" e sem `toolchain.stamp`) nunca mais compila os scripts: o carimbo só força a reconfiguração
-  quando já existia, o cache antigo fica e o `cmake --build` falha em 0,05 s com "0 erro(s)", sempre. Deve
-  pegar o projeto de jogo real do usuário. Corrigir: reconfigurar também sem carimbo, ou quando o
-  `CMAKE_GENERATOR` do cache não for o do toolchain — `editor/src/scripts/ScriptProject.cpp:241`
+- 2026-10-18 — Claude (correção do projeto antigo) — `test_export` falhou uma vez com o `ctest -j4` e passou
+  sozinho e em três rodadas inteiras seguidas: intermitente com os testes em paralelo (pasta ou arquivo
+  disputado com outro teste?). A mensagem da falha não foi guardada — `tests/test_export.cpp`
