@@ -6,10 +6,13 @@
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/core/Paths.h>
+#include <motor/physics/PhysicsSystem.h>
 #include <motor/scene/Components.h>
 #include <motor/scene/Prefab.h>
 #include <motor/scene/Scene.h>
+#include <motor/scene/SceneRuntime.h>
 #include <motor/scene/SceneSerializer.h>
+#include <motor/scene/Script.h>
 
 #include <chrono>
 
@@ -249,6 +252,65 @@ int main(int argc, char** argv) {
     Scene notPrefab;
     CHECK(!SceneSerializer::FromJson(R"({"format": "motor-scene", "version": 5, "entities": []})", notPrefab, assets,
                                      &error, SceneSerializer::kPrefabFormat));
+
+    SECTION("PrefabRef e Script::Instantiate durante o Play");
+    {
+        struct SpawnerScript : Script {
+            PrefabRef prefab;
+            glm::vec3 spawnPos{4.0f, 2.0f, -3.0f};
+            EntityId spawned = kNullEntity;
+
+            void OnStart() override {
+                if (Entity* e = Instantiate(prefab, spawnPos)) {
+                    spawned = e->id;
+                    if (auto* phys = GetSystem<PhysicsSystem>()) {
+                        phys->AddImpulse(spawned, {0.0f, 10.0f, 0.0f});
+                    }
+                }
+            }
+        };
+        ComponentRegistry::Instance()
+            .Register<SpawnerScript>("TestPrefabSpawner", "Spawner")
+            .Field("prefab", "Prefab", &SpawnerScript::prefab)
+            .Field("spawnPos", "Posição", &SpawnerScript::spawnPos);
+
+        // Cria um prefab de projétil físico.
+        Scene bulletPrefabScene;
+        Entity& bullet = bulletPrefabScene.CreateEntity("Bala");
+        bullet.Add<ColliderComponent>().shape = ColliderShape::Sphere;
+        bullet.Add<RigidbodyComponent>().useGravity = false;
+        const fs::path bulletFile = root / "Assets" / "Prefabs" / "Bala.mprefab";
+        CHECK(Prefabs::CreateFromEntity(bulletPrefabScene, bullet.id, bulletFile, library, assets, &error) != nullptr);
+        const std::string bulletGuid = assets.Database().GuidFor(bulletFile);
+        CHECK(!bulletGuid.empty());
+
+        Scene playScene;
+        Entity& spawner = playScene.CreateEntity("Criador");
+        SpawnerScript& script = spawner.Add<SpawnerScript>();
+        script.prefab.guid = bulletGuid;
+        script.prefab.path = "Assets/Prefabs/Bala.mprefab";
+        script.prefab.file = bulletFile;
+
+        // Ida e volta no JSON da cena preserva o PrefabRef.
+        const std::string json = SceneSerializer::ToJson(playScene, assets);
+        Scene reloaded;
+        CHECK(SceneSerializer::FromJson(json, reloaded, assets, &error));
+        const Entity* reloadedSpawner = reloaded.FindByName("Criador");
+        CHECK(reloadedSpawner && reloadedSpawner->Has<SpawnerScript>());
+        CHECK(reloadedSpawner->Get<SpawnerScript>()->prefab.guid == bulletGuid);
+        CHECK(reloadedSpawner->Get<SpawnerScript>()->prefab.file == bulletFile.lexically_normal());
+
+        SceneRuntime runtime(reloaded);
+        runtime.SetAssets(&assets);
+        runtime.Start();
+        const Entity* spawned = reloaded.FindByName("Bala");
+        CHECK(spawned != nullptr);
+        CHECK(spawned && spawned->transform.position == glm::vec3(4.0f, 2.0f, -3.0f));
+        runtime.FixedUpdate(1.0f / 60.0f);
+        // O impulso aplicado logo após o Instantiate já moveu o corpo no primeiro FixedUpdate.
+        CHECK(spawned && spawned->transform.position.y > 2.05f);
+        runtime.Stop();
+    }
 
     return TestResult();
 }

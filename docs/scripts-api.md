@@ -15,7 +15,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 `GameTime`, `Collision`, `UiPointer`, `AudioSettings` e `AudioVoiceInfo`. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 10 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 11 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -56,8 +56,9 @@ Um `Register` sem `.Field` é válido: script sem campos.
 ### Tipos de campo
 
 `bool`, `int`, `float`, `glm::vec2`, `glm::vec3`, `glm::vec4`, `std::string`, `std::shared_ptr<motor::Mesh>`,
-`std::shared_ptr<motor::Texture2D>`, e os tipos da engine com editor: `motor::ColliderShape`,
-`motor::LightType`, `motor::UiAnchor`, `motor::UiTextAlign` e `motor::UiFont`. Outro tipo não compila (`static assertion failed: tipo de campo não suportado`).
+`std::shared_ptr<motor::Texture2D>`, `motor::PrefabRef`, `motor::AudioClip` e os tipos da engine com editor:
+`motor::ColliderShape`, `motor::LightType`, `motor::UiAnchor`, `motor::UiTextAlign` e `motor::UiFont`. Outro
+tipo não compila (`static assertion failed: tipo de campo não suportado`).
 
 ### Opções de campo: `motor::FieldOptions`
 
@@ -109,6 +110,8 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 |---|---|
 | `Entity* FindEntity(std::string_view name)` | a primeira entidade com esse nome, ou `nullptr` |
 | `Entity& CreateEntity(std::string name, EntityId parent = 0)` | cria uma entidade vazia (na raiz, ou filha de `parent`); os scripts dela começam no próximo passo |
+| `Entity* Instantiate(const PrefabRef& prefab)` | instancia um prefab (`.mprefab`) na cena na posição original do prefab; devolve a entidade raiz (ou `nullptr` se o campo estiver vazio ou o arquivo não existir). Os scripts começam no próximo passo |
+| `Entity* Instantiate(const PrefabRef& prefab, const glm::vec3& position)` | o mesmo, colocando a raiz em `position` |
 | `void Destroy(EntityId id)` | destrói a entidade e os descendentes no fim do passo (`OnDestroy` antes) |
 | `void DestroySelf()` | `Destroy(GetId())` |
 | `void LoadScene(std::string_view scene)` | troca de cena no fim do passo: a atual para (`OnDestroy` de todos) e a nova começa do zero. `scene` é o nome (`"Fase1"`) ou o caminho relativo ao projeto (`"Assets/Cenas/Fase1.mscene"`, a extensão é opcional). Cena não encontrada: erro no console e o jogo continua. No editor, Parar volta à cena de antes do Play |

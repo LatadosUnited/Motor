@@ -34,9 +34,11 @@ public:
     // Parar volta para ela, não para a última carregada.
     using SceneLoader = std::function<bool(const std::string& request, motor::Scene& out, std::string& error)>;
     void SetSceneLoader(SceneLoader loader) { m_loader = std::move(loader); }
+    void SetAssets(motor::AssetLibrary* assets) { m_assets = assets; }
     int ScenesLoaded() const { return m_scenesLoaded; }  // trocas feitas neste Play
 
     motor::SceneRuntime* Runtime() { return m_runtime.get(); }
+    const motor::Scene& BackupScene() const { return m_backup; }
 
 private:
     void ApplySceneRequest();
@@ -46,6 +48,7 @@ private:
     motor::EntityId m_backupSelected = motor::kNullEntity;
     std::unique_ptr<motor::SceneRuntime> m_runtime;
     motor::Scene* m_scene = nullptr;  // a cena do editor, onde o jogo roda
+    motor::AssetLibrary* m_assets = nullptr;
     SceneLoader m_loader;
     int m_scenesLoaded = 0;
     bool m_paused = false;

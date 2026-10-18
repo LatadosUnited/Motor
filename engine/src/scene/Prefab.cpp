@@ -395,6 +395,12 @@ void PrefabLibrary::Clear() {
     m_failed.clear();
 }
 
+void PrefabLibrary::ForEachScene(const std::function<void(Scene&)>& fn) {
+    for (auto& [guid, cached] : m_cache) {
+        if (cached.prefab) fn(cached.prefab->scene);
+    }
+}
+
 // --- Operações ------------------------------------------------------------------------
 
 namespace Prefabs {

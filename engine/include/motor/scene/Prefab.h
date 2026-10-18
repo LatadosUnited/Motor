@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -55,6 +56,8 @@ public:
     // Relê os prefabs em cache cujo arquivo mudou no disco e tenta de novo os que não abriram. true se algum mudou.
     bool ReloadChanged(AssetLibrary& assets);
     void Clear();  // troca de projeto
+    // Visita a cena de cada prefab em cache (usado na recarga da DLL de scripts).
+    void ForEachScene(const std::function<void(Scene&)>& fn);
 
     // Grava as entidades num .mprefab (sem guardar o vínculo com o arquivo).
     static bool WriteFile(const std::filesystem::path& file, const Scene& scene, AssetLibrary& assets,

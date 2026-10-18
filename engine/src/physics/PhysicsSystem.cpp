@@ -803,6 +803,7 @@ PhysicsSystem::~PhysicsSystem() = default;
 void PhysicsSystem::OnStart(SceneRuntime& runtime) {
     m_settings = PhysicsSettings::Global();
     Scene& scene = runtime.GetScene();
+    m_scene = &scene;
     if (!SceneHasPhysics(scene)) return;  // sem física na cena: nem threads nem mundo
     m_world = std::make_unique<World>(m_settings);
     // Corpos prontos antes do OnStart dos scripts (raios e GetVelocity já funcionam lá).
@@ -812,6 +813,7 @@ void PhysicsSystem::OnStart(SceneRuntime& runtime) {
 
 void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
     Scene& scene = runtime.GetScene();
+    m_scene = &scene;
     if (!m_world) {
         if (!SceneHasPhysics(scene)) return;
         m_world = std::make_unique<World>(m_settings);
@@ -849,6 +851,17 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
 
 void PhysicsSystem::OnStop(SceneRuntime&) {
     m_world.reset();
+    m_scene = nullptr;
+}
+
+void PhysicsSystem::EnsureWorldAndBodies() {
+    if (!m_scene) return;
+    if (!m_world) {
+        if (!SceneHasPhysics(*m_scene)) return;
+        m_world = std::make_unique<World>(m_settings);
+    }
+    m_world->SyncBodies(*m_scene, 0.0f);
+    m_world->SyncCharacters(*m_scene, 0.0f);
 }
 
 std::optional<PhysicsRaycastHit> PhysicsSystem::Raycast(const glm::vec3& origin, const glm::vec3& direction,
@@ -874,6 +887,7 @@ std::optional<PhysicsRaycastHit> PhysicsSystem::Raycast(const glm::vec3& origin,
 }
 
 bool PhysicsSystem::AddForce(EntityId id, const glm::vec3& force) {
+    if (!m_world || !m_world->bodies.contains(id)) EnsureWorldAndBodies();
     const JPH::BodyID* body = m_world ? m_world->DynamicBody(id) : nullptr;
     if (!body) return false;
     m_world->Bodies().AddForce(*body, ToJolt(force));
@@ -881,6 +895,7 @@ bool PhysicsSystem::AddForce(EntityId id, const glm::vec3& force) {
 }
 
 bool PhysicsSystem::AddImpulse(EntityId id, const glm::vec3& impulse) {
+    if (!m_world || !m_world->bodies.contains(id)) EnsureWorldAndBodies();
     const JPH::BodyID* body = m_world ? m_world->DynamicBody(id) : nullptr;
     if (!body) return false;
     m_world->Bodies().AddImpulse(*body, ToJolt(impulse));
@@ -888,6 +903,7 @@ bool PhysicsSystem::AddImpulse(EntityId id, const glm::vec3& impulse) {
 }
 
 bool PhysicsSystem::SetVelocity(EntityId id, const glm::vec3& velocity) {
+    if (!m_world || !m_world->bodies.contains(id)) EnsureWorldAndBodies();
     const JPH::BodyID* body = m_world ? m_world->DynamicBody(id) : nullptr;
     if (!body) return false;
     m_world->Bodies().SetLinearVelocity(*body, ToJolt(velocity));
@@ -901,12 +917,14 @@ glm::vec3 PhysicsSystem::GetVelocity(EntityId id) const {
 }
 
 void PhysicsSystem::MoveCharacter(EntityId id, const glm::vec3& velocity) {
+    if (!m_world || !m_world->characters.contains(id)) EnsureWorldAndBodies();
     if (!m_world) return;
     auto it = m_world->characters.find(id);
     if (it != m_world->characters.end()) it->second.walk = glm::vec3(velocity.x, 0.0f, velocity.z);
 }
 
 bool PhysicsSystem::Jump(EntityId id, float speed) {
+    if (!m_world || !m_world->characters.contains(id)) EnsureWorldAndBodies();
     if (!m_world || speed <= 0.0f || !IsGrounded(id)) return false;
     m_world->characters.at(id).jump = speed;
     return true;

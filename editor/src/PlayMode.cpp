@@ -15,6 +15,7 @@ void PlayMode::Play(motor::Scene& scene, motor::EntityId selected) {
     m_scene = &scene;
     m_scenesLoaded = 0;
     m_runtime = std::make_unique<motor::SceneRuntime>(scene);
+    m_runtime->SetAssets(m_assets);
     motor::log::Info("Play");
     m_runtime->Start();
     PauseOnError();
@@ -91,6 +92,7 @@ void PlayMode::ApplySceneRequest() {
     m_runtime.reset();
     *m_scene = std::move(next);
     m_runtime = std::make_unique<motor::SceneRuntime>(*m_scene);
+    m_runtime->SetAssets(m_assets);
     m_runtime->SetInputEnabled(inputEnabled);
     ++m_scenesLoaded;
     motor::log::Info("Cena trocada pelo jogo: {}", request);

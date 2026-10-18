@@ -104,7 +104,9 @@ public:
 
 private:
     struct World;
+    void EnsureWorldAndBodies();
     std::unique_ptr<World> m_world;  // criado no primeiro passo com algo de física na cena
+    Scene* m_scene = nullptr;
     PhysicsSettings m_settings;
     PhysicsStats m_stats;
 };

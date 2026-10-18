@@ -20,6 +20,7 @@
 namespace motor {
 
 class AssetLibrary;
+class PrefabLibrary;
 class Scene;
 struct Entity;
 
@@ -44,9 +45,15 @@ public:
     void SetInputEnabled(bool enabled) { m_inputEnabled = enabled; }
     bool InputEnabled() const { return m_inputEnabled; }
 
+    // Biblioteca de assets do projeto (opcional): usada por Instantiate para carregar os prefabs com as malhas,
+    // texturas e materiais do projeto. Sem ela, Instantiate usa uma biblioteca local se `prefab.file` existir.
+    void SetAssets(AssetLibrary* assets) { m_assets = assets; }
+
     // --- API usada pelos scripts ---
     Entity* FindEntity(std::string_view name);
     Entity& CreateEntity(std::string name, EntityId parent);
+    EntityId Instantiate(const PrefabRef& prefab);
+    EntityId Instantiate(const PrefabRef& prefab, const glm::vec3& position);
     void Destroy(EntityId id);  // adiada para o fim do passo atual
 
     // Troca de cena pedida por um script (Script::LoadScene). O runtime só guarda o pedido: quem roda o jogo
@@ -99,6 +106,9 @@ private:
     void Bind(Script& script, EntityId id);
 
     Scene& m_scene;
+    AssetLibrary* m_assets = nullptr;
+    std::unique_ptr<PrefabLibrary> m_prefabs;
+    std::unique_ptr<AssetLibrary> m_fallbackAssets;
     GameTime m_time;
     std::vector<EntityId> m_toDestroy;
     std::vector<SystemSlot> m_systems;  // na ordem de RegisteredRuntimeSystems(); vazio fora do Play

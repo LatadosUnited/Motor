@@ -20,6 +20,7 @@
 #include <motor/core/Paths.h>
 #include <motor/physics/PhysicsSystem.h>
 #include <motor/scene/Components.h>
+#include <motor/scene/Prefab.h>
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneRuntime.h>
 #include <motor/scene/ScriptModule.h>
@@ -450,15 +451,17 @@ int main(int argc, char** argv) {
         runtime.Stop();
     }
 
-    SECTION("Disparador e Projetil: F cria um projétil, que some sozinho");
+    SECTION("Disparador e Projetil: F cria um projétil (do zero ou de um prefab), que some sozinho");
     {
         Scene scene;
         loadedScenes = {&scene};
         Entity& gun = scene.CreateEntity("Arma");
         gun.Add<MeshRenderer>().material.color = {1.0f, 0.0f, 0.0f, 1.0f};
         AddScript(gun, "Disparador");
+        const EntityId gunId = gun.id;
 
         SceneRuntime runtime(scene);
+        runtime.SetAssets(&assets);
         runtime.Start();
         Hold(Key::F, true);
         Run(runtime, 0.1f);  // segurar F atira uma vez só (WasKeyPressed)
@@ -469,6 +472,27 @@ int main(int argc, char** argv) {
         CHECK(shot && shot->transform.position.z < -1.0f);  // andou para a frente (-Z)
         Run(runtime, 2.5f);
         CHECK(CountNamed(scene, "Projétil") == 0);
+
+        // Com prefab configurado no campo PrefabRef, Instantiate cria a partir do .mprefab.
+        assets.SetRoot(root);
+        const fs::path prefabFile = root / "Assets" / "Prefabs" / "Tiro.mprefab";
+        fs::create_directories(prefabFile.parent_path());
+        Scene prefabScene;
+        Entity& tmpl = prefabScene.CreateEntity("TiroPrefab");
+        tmpl.Add<MeshRenderer>().material.color = {0.0f, 1.0f, 0.0f, 1.0f};
+        PrefabLibrary prefabLib;
+        CHECK(Prefabs::CreateFromEntity(prefabScene, tmpl.id, prefabFile, prefabLib, assets) != nullptr);
+        if (PrefabRef* ref = ScriptField<PrefabRef>(scene, gunId, "Disparador", "prefab")) {
+            ref->guid = assets.Database().GuidFor(prefabFile);
+            ref->path = "Assets/Prefabs/Tiro.mprefab";
+            ref->file = prefabFile;
+        }
+        Hold(Key::F, true);
+        Run(runtime, 0.1f);
+        Hold(Key::F, false);
+        const Entity* fromPrefab = scene.FindByName("TiroPrefab");
+        CHECK(fromPrefab && fromPrefab->Has<MeshRenderer>() && fromPrefab->Get<MeshRenderer>()->material.color.g == 1.0f);
+        CHECK(fromPrefab && fromPrefab->transform.position.z < -1.0f);
         runtime.Stop();
     }
 

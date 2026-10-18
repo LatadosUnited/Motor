@@ -1,7 +1,9 @@
 #include "motor/scene/SceneRuntime.h"
 
 #include "motor/assets/AssetLibrary.h"
+#include "motor/assets/AssetLoaders.h"
 #include "motor/core/Paths.h"
+#include "motor/scene/Prefab.h"
 #include "motor/scene/Scene.h"
 
 #include <algorithm>
@@ -241,6 +243,8 @@ void SceneRuntime::Stop() {
     }
     m_systems.clear();
     m_faultedScripts.clear();
+    m_prefabs.reset();
+    m_fallbackAssets.reset();
     m_running = false;
     m_toDestroy.clear();
 }
@@ -251,6 +255,49 @@ Entity* SceneRuntime::FindEntity(std::string_view name) {
 
 Entity& SceneRuntime::CreateEntity(std::string name, EntityId parent) {
     return m_scene.CreateEntity(std::move(name), parent);
+}
+
+EntityId SceneRuntime::Instantiate(const PrefabRef& ref) {
+    if (ref.IsEmpty() && ref.file.empty()) {
+        log::Warn("Instantiate: prefab vazio");
+        return kNullEntity;
+    }
+    if (!m_prefabs) m_prefabs = std::make_unique<PrefabLibrary>();
+    AssetLibrary* assets = m_assets;
+    if (!assets) {
+        if (!m_fallbackAssets) m_fallbackAssets = std::make_unique<AssetLibrary>();
+        assets = m_fallbackAssets.get();
+        if (assets->Root().empty() && !ref.file.empty()) {
+            for (std::filesystem::path p = ref.file.parent_path(); !p.empty() && p != p.parent_path();
+                 p = p.parent_path()) {
+                if (p.filename() == "Assets") {
+                    assets->SetRoot(p.parent_path());
+                    break;
+                }
+            }
+            if (assets->Root().empty()) assets->SetRoot(ref.file.parent_path());
+        }
+    }
+    std::string error;
+    Prefab* prefab = nullptr;
+    if (!ref.guid.empty()) prefab = m_prefabs->Get(ref.guid, *assets, &error);
+    if (!prefab && !ref.file.empty()) prefab = m_prefabs->GetFile(ref.file, *assets, &error);
+    if (!prefab && !ref.path.empty()) {
+        const std::filesystem::path file = assets->FileForKey(ref.path);
+        if (!file.empty()) prefab = m_prefabs->GetFile(file, *assets, &error);
+    }
+    if (!prefab) {
+        log::Warn("Instantiate(\"{}\"): {}", ref.path.empty() ? ref.guid : ref.path,
+                  error.empty() ? "prefab não encontrado" : error);
+        return kNullEntity;
+    }
+    return Prefabs::Instantiate(*prefab, m_scene);
+}
+
+EntityId SceneRuntime::Instantiate(const PrefabRef& ref, const glm::vec3& position) {
+    const EntityId id = Instantiate(ref);
+    if (Entity* e = m_scene.Find(id)) e->transform.position = position;
+    return id;
 }
 
 void SceneRuntime::Destroy(EntityId id) {
@@ -330,6 +377,16 @@ Entity* Script::FindEntity(std::string_view name) {
 Entity& Script::CreateEntity(std::string name, EntityId parent) {
     MOTOR_ASSERT(m_runtime, "Script usado fora do Play");
     return m_runtime->CreateEntity(std::move(name), parent);
+}
+
+Entity* Script::Instantiate(const PrefabRef& prefab) {
+    MOTOR_ASSERT(m_runtime, "Script usado fora do Play");
+    return m_runtime->GetScene().Find(m_runtime->Instantiate(prefab));
+}
+
+Entity* Script::Instantiate(const PrefabRef& prefab, const glm::vec3& position) {
+    MOTOR_ASSERT(m_runtime, "Script usado fora do Play");
+    return m_runtime->GetScene().Find(m_runtime->Instantiate(prefab, position));
 }
 
 void Script::Destroy(EntityId id) {

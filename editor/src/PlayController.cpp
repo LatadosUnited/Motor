@@ -38,6 +38,7 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
                 ctx.selected = kNullEntity;  // a seleção era da cena que sai
                 return SceneSerializer::Load(file, out, ctx.assets, &error);
             });
+            m_mode.SetAssets(&ctx.assets);
             m_mode.Play(ctx.scene, ctx.selected);
             return Event::Started;
         case Request::Pause: m_mode.SetPaused(!m_mode.IsPaused()); break;
