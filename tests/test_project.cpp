@@ -1,6 +1,7 @@
 // motor::Project e utilitários de caminho (Paths.h).
 #include "TestUtil.h"
 
+#include <motor/core/EngineAssets.h>
 #include <motor/core/Paths.h>
 #include <motor/project/Project.h>
 
@@ -66,6 +67,10 @@ int main(int argc, char** argv) {
     CHECK(RebasePath("C:/a/b/c.txt", "C:/a/b", "C:/a/x") == fs::path("C:/a/x/c.txt").lexically_normal());
     CHECK(RebasePath("C:/a/b", "C:/a/b", "C:/z") == fs::path("C:/z"));
     CHECK(RebasePath("C:/q/c.txt", "C:/a/b", "C:/z") == fs::path("C:/q/c.txt"));
+
+    SECTION("EngineDocsDir");
+    CHECK(fs::is_regular_file(EngineDocsDir() / "scripts.md"));
+    CHECK(fs::is_regular_file(EngineDocsDir() / "scripts-api.md"));
 
     return TestResult();
 }

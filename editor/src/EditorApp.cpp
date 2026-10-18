@@ -1,5 +1,7 @@
 #include "EditorApp.h"
 
+#include "FileDialog.h"
+
 #include <imgui.h>
 #include <motor/core/Version.h>
 #include <motor/scene/ModelImport.h>
@@ -331,6 +333,18 @@ void EditorApp::DrawMenuBar() {
     m_play.DrawMenu();
     m_scripts.DrawMenu();
     if (ImGui::BeginMenu("Ajuda")) {
+        const auto openDoc = [this](const char* file, const char* label) {
+            std::error_code ec;
+            const fs::path path = EngineDocsDir() / file;
+            if (fs::is_regular_file(path, ec)) {
+                Shell::OpenWithDefaultApp(path);
+            } else {
+                m_document.ShowError(std::format("{} não encontrado em '{}'.", label, ToUtf8(path)));
+            }
+        };
+        if (ImGui::MenuItem("Guia de scripts")) openDoc("scripts.md", "Guia de scripts");
+        if (ImGui::MenuItem("Referência da API de scripts")) openDoc("scripts-api.md", "Referência da API de scripts");
+        ImGui::Separator();
         if (ImGui::MenuItem("Sobre o Motor")) m_openAbout = true;
         ImGui::EndMenu();
     }

@@ -46,4 +46,11 @@ fs::path EngineAssetsDir() {
     return dir;
 }
 
+fs::path EngineDocsDir() {
+    std::error_code ec;
+    const fs::path installed = ExecutableDir() / "docs";
+    if (fs::is_directory(installed, ec)) return installed;
+    return SourceEngineAssetsDir().parent_path().parent_path() / "docs";
+}
+
 } // namespace motor
