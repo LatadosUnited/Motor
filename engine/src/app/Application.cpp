@@ -48,6 +48,7 @@ void Application::Run() {
     int fpsFrames = 0;
 
     while (m_running) {
+        const auto frameStart = Clock::now();
         if (m_window->ShouldClose()) {
             if (OnCloseRequested()) break;
             m_window->CancelClose();
@@ -82,6 +83,10 @@ void Application::Run() {
         } else {
             // Minimizada não há SwapBuffers para esperar o vsync: sem esta pausa o loop gira a milhares de FPS.
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if (m_frameLimit > 0.0) {
+            std::this_thread::sleep_until(frameStart + std::chrono::duration_cast<Clock::duration>(
+                                                          std::chrono::duration<double>(1.0 / m_frameLimit)));
         }
 
         ++fpsFrames;

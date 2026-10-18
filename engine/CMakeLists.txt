@@ -103,6 +103,11 @@ file(GLOB_RECURSE MOTOR_PUBLIC_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/motor/*.inl")
 string(TOUPPER "${CMAKE_BUILD_TYPE}" MOTOR_BUILD_TYPE_UPPER)
 separate_arguments(MOTOR_PCH_CXX_FLAGS NATIVE_COMMAND "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${MOTOR_BUILD_TYPE_UPPER}}")
+# Mesma opção dos scripts (CMakeLists gerado pelo editor): .gch menor e ~10% mais rápido de carregar.
+set(MOTOR_PCH_EXTRA_FLAGS)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    list(APPEND MOTOR_PCH_EXTRA_FLAGS -femit-struct-debug-baseonly)
+endif()
 set(MOTOR_PCH_INCLUDES)
 foreach(dir IN LISTS MOTOR_SDK_INCLUDE_DIRS)
     list(APPEND MOTOR_PCH_INCLUDES "-I${dir}")
@@ -115,6 +120,7 @@ add_custom_command(
         ${MOTOR_PCH_INCLUDES}
         ${MOTOR_PCH_CXX_FLAGS}
         -std=c++20 -Wall -Wextra
+        ${MOTOR_PCH_EXTRA_FLAGS}
         -x c++-header "${MOTOR_SDK_PCH_HEADER}"
         -o "${MOTOR_SDK_PCH_HEADER}.gch"
     DEPENDS "${MOTOR_SDK_PCH_HEADER}" ${MOTOR_PUBLIC_HEADERS}

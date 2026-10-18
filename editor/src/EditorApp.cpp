@@ -150,6 +150,16 @@ void EditorApp::OnFixedUpdate(float dt) {
 }
 
 void EditorApp::OnUpdate(float dt) {
+    // Em segundo plano (ex.: você no VS Code) e durante a compilação dos scripts, fora do Play, o editor desenha
+    // menos: o processador fica para o compilador, que levava o triplo do tempo com o editor a 60 FPS (a placa
+    // de vídeo integrada divide a energia com o processador). O jogo no Play continua na velocidade normal.
+    if (m_play.IsActive()) {
+        SetFrameLimit(0.0);
+    } else if (!GetWindow().IsFocused()) {
+        SetFrameLimit(10.0);
+    } else {
+        SetFrameLimit(m_scripts.IsBuilding() ? 20.0 : 0.0);  // um segundo de "Compilando..." não precisa de 60 FPS
+    }
     m_mcp.ApplyGameInput();
     m_play.Update(dt, m_viewport.IsFocused());
     m_scripts.Update(dt);

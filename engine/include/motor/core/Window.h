@@ -41,6 +41,7 @@ public:
     int Height() const { return m_height; }
     float AspectRatio() const;
     bool IsMinimized() const { return m_width == 0 || m_height == 0; }
+    bool IsFocused() const;  // a janela tem o foco do teclado (outra janela em cima: false)
 
     GLFWwindow* Native() const { return m_window; }
 
