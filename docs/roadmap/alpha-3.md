@@ -57,6 +57,18 @@ cena de 5000 entidades sem travar; e uma ilha com terreno, água, vegetação e 
 - **Resultado** numa tabela com a razão Motor/Unity por cena, refeita ao fim de cada fase da alpha 3 para
   mostrar o caminho até os 70%.
 
+Feito antes da alpha 3 (18/10/2026): projeto gêmeo, geradores e scripts de medição em `bench/` (como rodar e a
+tabela completa em `bench/README.md`). Unity 6000.3 (URP 17.3, Direct3D 11, Mono) com o SSAO do template
+desligado. Motor em % da Unity:
+
+| vazia | cubos1000 | cubos1000sombra | cubos10000 | fisica1000 | scripts1000 | spawn200 |
+|---|---|---|---|---|---|---|
+| 110–113% | 121–125% | 124–126% | **68–69%** | **76–81%** | 121% | 114–122% |
+
+Só `cubos10000` está abaixo da meta (custo por desenho na CPU: Fase 24), e `fisica1000` está perto do limite
+(sincronização cena–física: Fase 25). Nas cenas dominadas pela GPU o Motor ganha, mas na HD 530 elas medem mais
+o desenho que os scripts; repetir numa máquina com GPU dedicada para separar CPU e GPU.
+
 ### Linha de base (18/10/2026)
 
 Máquina de referência (i5 de 4 núcleos, Intel HD 530), vsync desligado, FPS lido do título da janela (mediana
