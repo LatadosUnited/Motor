@@ -17,6 +17,7 @@ void PlayMode::Play(motor::Scene& scene, motor::EntityId selected) {
     m_runtime = std::make_unique<motor::SceneRuntime>(scene);
     motor::log::Info("Play");
     m_runtime->Start();
+    PauseOnError();
 }
 
 void PlayMode::Stop(motor::Scene& scene, motor::EntityId& selected) {
@@ -42,20 +43,32 @@ void PlayMode::Update(float dt) {
     if (!IsActive() || m_paused) return;
     m_runtime->Update(dt);
     ApplySceneRequest();
+    PauseOnError();
 }
 
 void PlayMode::FixedUpdate(float dt) {
     if (!IsActive() || m_paused) return;
     m_runtime->FixedUpdate(dt);
     ApplySceneRequest();
+    PauseOnError();
 }
 
 void PlayMode::Step(float dt) {
     if (!IsActive() || !m_paused) return;
     m_runtime->FixedUpdate(dt);
     ApplySceneRequest();
-    m_runtime->Update(dt);
-    ApplySceneRequest();
+    if (m_runtime && !m_runtime->TakeError()) {
+        m_runtime->Update(dt);
+        ApplySceneRequest();
+    }
+    if (m_runtime) m_runtime->TakeError();
+}
+
+void PlayMode::PauseOnError() {
+    if (m_runtime && m_runtime->TakeError() && !m_paused) {
+        SetPaused(true);
+        motor::log::Warn("Play pausado por erro de execução (veja o erro acima no Console).");
+    }
 }
 
 void PlayMode::ApplySceneRequest() {
@@ -74,6 +87,7 @@ void PlayMode::ApplySceneRequest() {
     }
     const bool inputEnabled = m_runtime->InputEnabled();
     m_runtime->Stop();  // OnDestroy ainda vê a cena que sai
+    const bool stopFailed = m_runtime->TakeError();
     m_runtime.reset();
     *m_scene = std::move(next);
     m_runtime = std::make_unique<motor::SceneRuntime>(*m_scene);
@@ -81,6 +95,10 @@ void PlayMode::ApplySceneRequest() {
     ++m_scenesLoaded;
     motor::log::Info("Cena trocada pelo jogo: {}", request);
     m_runtime->Start();
+    if (stopFailed && !m_paused) {
+        SetPaused(true);
+        motor::log::Warn("Play pausado por erro de execução (veja o erro acima no Console).");
+    }
     if (m_paused) {  // trocou de cena num "Avançar um quadro": os sons da cena nova esperam o Continuar
         if (auto* audio = m_runtime->GetSystem<motor::AudioSystem>()) audio->SetPaused(true);
     }

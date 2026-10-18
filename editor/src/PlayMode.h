@@ -40,6 +40,7 @@ public:
 
 private:
     void ApplySceneRequest();
+    void PauseOnError();
 
     motor::Scene m_backup;
     motor::EntityId m_backupSelected = motor::kNullEntity;

@@ -203,19 +203,6 @@ private:
     EntityId m_ignore;
 };
 
-// Scripts já iniciados de uma entidade ativa (lista copiada: o script pode mexer nos componentes).
-std::vector<Script*> StartedScripts(Scene& scene, EntityId id) {
-    std::vector<Script*> scripts;
-    Entity* entity = scene.Find(id);
-    if (!entity || !scene.IsActiveInHierarchy(id)) return scripts;
-    for (ComponentPtr& component : entity->components) {
-        if (!component.Type().IsScript()) continue;
-        Script* script = component.Type().asScript(component.Data());
-        if (script && script->HasStarted()) scripts.push_back(script);
-    }
-    return scripts;
-}
-
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -700,7 +687,7 @@ struct PhysicsSystem::World {
     // Contatos do passo -> OnCollision*/OnTrigger* dos scripts. Um par de entidades entra uma vez e sai quando
     // não sobra contato entre elas (WereBodiesInContact cobre as várias sub-formas, ex.: triângulos de malha).
     // O Jolt também tira os contatos de quem dorme e os devolve ao acordar: isso não vira Exit/Enter.
-    void DispatchEvents(Scene& scene) {
+    void DispatchEvents(SceneRuntime& runtime) {
         JPH::BodyInterface& bi = Bodies();
         std::vector<ContactAdded> enters;
         for (const ContactAdded& e : contacts.m_added) {
@@ -743,20 +730,25 @@ struct PhysicsSystem::World {
 
         for (const ContactAdded& e : enters) {
             if (e.trigger) {
-                for (Script* s : StartedScripts(scene, e.entityA)) s->OnTriggerEnter(e.entityB);
-                for (Script* s : StartedScripts(scene, e.entityB)) s->OnTriggerEnter(e.entityA);
+                runtime.CallEntityScripts(e.entityA, "OnTriggerEnter",
+                                          [&](Script& s) { s.OnTriggerEnter(e.entityB); });
+                runtime.CallEntityScripts(e.entityB, "OnTriggerEnter",
+                                          [&](Script& s) { s.OnTriggerEnter(e.entityA); });
             } else {
-                for (Script* s : StartedScripts(scene, e.entityA)) {
-                    s->OnCollisionEnter({e.entityB, e.point, -e.normal, e.speed});
-                }
-                for (Script* s : StartedScripts(scene, e.entityB)) {
-                    s->OnCollisionEnter({e.entityA, e.point, e.normal, e.speed});
-                }
+                runtime.CallEntityScripts(e.entityA, "OnCollisionEnter", [&](Script& s) {
+                    s.OnCollisionEnter({e.entityB, e.point, -e.normal, e.speed});
+                });
+                runtime.CallEntityScripts(e.entityB, "OnCollisionEnter", [&](Script& s) {
+                    s.OnCollisionEnter({e.entityA, e.point, e.normal, e.speed});
+                });
             }
         }
         for (const Exit& e : exits) {
-            for (Script* s : StartedScripts(scene, e.a)) e.trigger ? s->OnTriggerExit(e.b) : s->OnCollisionExit(e.b);
-            for (Script* s : StartedScripts(scene, e.b)) e.trigger ? s->OnTriggerExit(e.a) : s->OnCollisionExit(e.a);
+            const std::string_view cb = e.trigger ? "OnTriggerExit" : "OnCollisionExit";
+            runtime.CallEntityScripts(
+                e.a, cb, [&](Script& s) { e.trigger ? s.OnTriggerExit(e.b) : s.OnCollisionExit(e.b); });
+            runtime.CallEntityScripts(
+                e.b, cb, [&](Script& s) { e.trigger ? s.OnTriggerExit(e.a) : s.OnCollisionExit(e.a); });
         }
     }
 
@@ -846,7 +838,7 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
 
     start = std::chrono::steady_clock::now();
     w.WriteBack(scene);
-    w.DispatchEvents(scene);
+    w.DispatchEvents(runtime);
     m_stats.writeMs = MillisecondsSince(start);
 
     m_stats.bodies = static_cast<int>(w.physics.GetNumBodies());

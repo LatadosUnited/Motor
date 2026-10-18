@@ -66,9 +66,14 @@ struct Jogador : Script {
     }
 };
 
+struct SensorQuebrado : Script {
+    void OnTriggerEnter(EntityId) override { throw std::runtime_error("erro no trigger"); }
+};
+
 void Register() {
     auto& registry = ComponentRegistry::Instance();
     registry.Register<Sensor>("SensorDeTeste", "Sensor de teste");
+    registry.Register<SensorQuebrado>("SensorQuebradoDeTeste", "Sensor quebrado de teste");
     registry.Register<Jogador>("JogadorDeTeste", "Jogador de teste").Field("velocidade", "Velocidade", &Jogador::velocidade);
 }
 
@@ -474,6 +479,25 @@ int main() {
         const glm::vec3 mn(-1.0f, 0.0f, -1.0f), mx(1.0f, 0.0f, 1.0f);
         AppendColliderLines(mesh, glm::mat4(1.0f), lines, &mn, &mx);
         CHECK(lines.size() == 12);
+    }
+
+    SECTION("Exceção em evento de física não derruba a física nem os outros scripts");
+    {
+        Scene scene;
+        Entity& zona = scene.CreateEntity("ZonaPerigosa");
+        zona.Add<ColliderComponent>().isTrigger = true;
+        zona.Add<SensorQuebrado>();
+        Sensor& sensorBom = zona.Add<Sensor>();
+
+        Entity& bola = AddBox(scene, {0.0f, 0.0f, 0.0f}, "Bola");
+        (void)bola;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        runtime.FixedUpdate(kDt);
+        CHECK(runtime.HasError());
+        CHECK(runtime.LastError().find("SensorQuebradoDeTeste::OnTriggerEnter") != std::string::npos);
+        CHECK(sensorBom.triggerEnters == 1);
     }
 
     return TestResult();
