@@ -315,7 +315,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    SECTION("Recarga com o script alterado e um script novo");
+    SECTION("Recarga com o script alterado, um script novo e medição de script vazio");
     {
         std::string source = ReadText(paths.scriptsDir / "Girar.cpp");
         const std::string from = "bool local = true;";
@@ -327,8 +327,17 @@ int main(int argc, char** argv) {
         if (regAt != std::string::npos) source.insert(regAt + reg.size(), "\n        .Field(\"voltas\", \"Voltas\", &Girar::voltas)");
         WriteText(paths.scriptsDir / "Girar.cpp", source);
         CHECK(SP::CreateScript(paths.scriptsDir, "Pular"));
+        WriteText(paths.scriptsDir / "Vazio.cpp", "#include <motor/scene/ScriptModule.h>\n");
     }
     CHECK(BuildAndWait(builder, paths, *toolchain));  // a DLL carregada é uma cópia: o linker reescreve a original
+    {
+        float vazioSeconds = -1.0f;
+        for (const auto& f : builder.GetTimings().files) {
+            if (f.file == "Vazio.cpp") vazioSeconds = f.seconds;
+        }
+        std::printf("  (script vazio Vazio.cpp: %.2f s)\n", vazioSeconds);
+        CHECK(vazioSeconds > 0.0f && vazioSeconds < 1.5f);
+    }
     ScriptHost::Result r2 = host.Load(paths.dll, paths.loadDir, scenes, assets);
     CHECK(r2.ok && r2.detached == 1 && r2.resolved == 1);
     CHECK((r2.types == std::vector<std::string>{"Girar", "Pular"}));

@@ -89,10 +89,16 @@ struct FieldInfo {
     FieldType type = FieldType::Float;
     const CustomFieldType* custom = nullptr;  // só com type == Custom
     FieldOptions options;
-    std::function<void*(void*)> access;  // componente -> endereço do valor
+    size_t offset = 0;                   // usado quando `access` é vazio (campos diretos)
+    std::function<void*(void*)> access;  // componente -> endereço do valor (FieldRef)
 
-    void* Get(void* component) const { return access(component); }
-    const void* Get(const void* component) const { return access(const_cast<void*>(component)); }
+    void* Get(void* component) const {
+        return access ? access(component) : static_cast<void*>(static_cast<char*>(component) + offset);
+    }
+    const void* Get(const void* component) const {
+        return access ? access(const_cast<void*>(component))
+                      : static_cast<const void*>(static_cast<const char*>(component) + offset);
+    }
     template <class F> F& As(void* component) const { return *static_cast<F*>(Get(component)); }
     template <class F> const F& As(const void* component) const { return *static_cast<const F*>(Get(component)); }
 };
@@ -122,6 +128,15 @@ struct MissingComponent {
 
 // Mesmos valores em todos os campos registrados (estado não registrado não entra na comparação).
 bool ComponentsEqual(const ComponentType& type, const void* a, const void* b);
+[[noreturn]] void ThrowUnregisteredComponent();
+
+namespace detail {
+void AddComponentField(ComponentType& type, const char* key, const char* label, FieldType fieldType,
+                       const CustomFieldType* custom, const FieldOptions& options,
+                       std::function<void*(void*)> access);
+void AddComponentFieldOffset(ComponentType& type, const char* key, const char* label, FieldType fieldType,
+                             const CustomFieldType* custom, const FieldOptions& options, size_t offset);
+} // namespace detail
 
 // Dono de um componente de tipo conhecido só em tempo de execução. Copiar duplica o conteúdo.
 class ComponentPtr {
@@ -159,7 +174,19 @@ public:
     // Campo direto: .Field("velocidade", "Velocidade", &Girar::velocidade)
     template <class F>
     ComponentBuilder& Field(const char* key, const char* label, F T::*member, FieldOptions options = {}) {
-        return Add<F>(key, label, options, [member](void* c) -> void* { return &(static_cast<T*>(c)->*member); });
+        alignas(T) unsigned char storage[sizeof(T)];
+        const T* sample = reinterpret_cast<const T*>(storage);
+        const size_t offset = static_cast<size_t>(
+            reinterpret_cast<const unsigned char*>(&(sample->*member)) - storage);
+        if constexpr (requires { FieldTypeOf<F>::value; }) {
+            detail::AddComponentFieldOffset(m_type, key, label, FieldTypeOf<F>::value, nullptr, options, offset);
+        } else {
+            static_assert(requires { FieldTraits<F>::Describe(); },
+                          "tipo de campo não suportado: use um tipo embutido ou especialize motor::FieldTraits<T>");
+            static const CustomFieldType custom = FieldTraits<F>::Describe();
+            detail::AddComponentFieldOffset(m_type, key, label, FieldType::Custom, &custom, options, offset);
+        }
+        return *this;
     }
 
     // Campo dentro de outra struct: .FieldRef("cor", "Cor", [](MeshRenderer& m) -> auto& { return m.material.color; })
@@ -178,13 +205,13 @@ private:
     template <class F>
     ComponentBuilder& Add(const char* key, const char* label, FieldOptions options, std::function<void*(void*)> access) {
         if constexpr (requires { FieldTypeOf<F>::value; }) {
-            m_type.fields.push_back({key, label, FieldTypeOf<F>::value, nullptr, options, std::move(access)});
+            detail::AddComponentField(m_type, key, label, FieldTypeOf<F>::value, nullptr, options, std::move(access));
         } else {
             static_assert(requires { FieldTraits<F>::Describe(); },
                           "tipo de campo não suportado: use um tipo embutido ou especialize motor::FieldTraits<T>");
             // Uma descrição por tipo (e por módulo: cada DLL tem a sua cópia, válida enquanto ela estiver carregada).
             static const CustomFieldType custom = FieldTraits<F>::Describe();
-            m_type.fields.push_back({key, label, FieldType::Custom, &custom, options, std::move(access)});
+            detail::AddComponentField(m_type, key, label, FieldType::Custom, &custom, options, std::move(access));
         }
         return *this;
     }
@@ -198,12 +225,19 @@ public:
     static ComponentRegistry& Instance();
 
     template <class T>
-    ComponentBuilder<T> Register(std::string name, std::string label) {
-        auto type = std::make_unique<ComponentType>();
-        Describe<T>(*type, std::move(name), std::move(label));
-        ComponentType& ref = *type;
-        m_types.push_back(std::move(type));
-        ++m_generation;
+    ComponentBuilder<T> Register(std::string_view name, std::string_view label) {
+        static_assert(std::is_default_constructible_v<T> && std::is_copy_constructible_v<T>,
+                      "componentes precisam de construtor padrão e de cópia");
+        Script* (*asScriptFn)(void*) = nullptr;
+        if constexpr (std::is_base_of_v<Script, T>) {
+            asScriptFn = [](void* p) -> Script* { return static_cast<T*>(p); };
+        }
+        ComponentType& ref = AddType(
+            name, label, &typeid(T),
+            []() -> void* { return static_cast<void*>(new T()); },
+            [](const void* p) -> void* { return static_cast<void*>(new T(*static_cast<const T*>(p))); },
+            [](void* p) { delete static_cast<T*>(p); },
+            asScriptFn);
         return ComponentBuilder<T>(ref);
     }
 
@@ -235,21 +269,9 @@ public:
 private:
     ComponentRegistry() = default;
 
-    template <class T>
-    static void Describe(ComponentType& type, std::string name, std::string label) {
-        static_assert(std::is_default_constructible_v<T> && std::is_copy_constructible_v<T>,
-                      "componentes precisam de construtor padrão e de cópia");
-        type.name = std::move(name);
-        type.label = std::move(label);
-        type.cppType = &typeid(T);
-        type.create = [] { return static_cast<void*>(new T()); };
-        type.clone = [](const void* p) { return static_cast<void*>(new T(*static_cast<const T*>(p))); };
-        type.destroy = [](void* p) { delete static_cast<T*>(p); };
-        // Script só precisa estar completo aqui se T herdar dele (e aí, por herança, já está).
-        if constexpr (std::is_base_of_v<Script, T>) {
-            type.asScript = [](void* p) -> Script* { return static_cast<T*>(p); };
-        }
-    }
+    ComponentType& AddType(std::string_view name, std::string_view label, const std::type_info* cppType,
+                           void* (*create)(), void* (*clone)(const void*), void (*destroy)(void*),
+                           Script* (*asScript)(void*));
 
     const ComponentType* FindCppType(const std::type_info& info) const;
 

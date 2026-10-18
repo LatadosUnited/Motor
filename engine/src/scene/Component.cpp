@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 namespace motor {
 
@@ -26,6 +27,23 @@ bool& ModulesRegistered() {
 }
 } // namespace
 
+namespace detail {
+void AddComponentField(ComponentType& type, const char* key, const char* label, FieldType fieldType,
+                       const CustomFieldType* custom, const FieldOptions& options,
+                       std::function<void*(void*)> access) {
+    type.fields.push_back({key, label, fieldType, custom, options, 0, std::move(access)});
+}
+
+void AddComponentFieldOffset(ComponentType& type, const char* key, const char* label, FieldType fieldType,
+                             const CustomFieldType* custom, const FieldOptions& options, size_t offset) {
+    type.fields.push_back({key, label, fieldType, custom, options, offset, {}});
+}
+} // namespace detail
+
+void ThrowUnregisteredComponent() {
+    throw std::logic_error("componente não registrado no ComponentRegistry");
+}
+
 ComponentModuleRegistrar::ComponentModuleRegistrar(const char* name, ComponentModuleFn fn) {
     if (ModulesRegistered()) {
         fn(ComponentRegistry::Instance());  // módulo de uma DLL carregada depois: entra na hora
@@ -39,6 +57,23 @@ ComponentRegistry& ComponentRegistry::Instance() {
     static const bool builtInsRegistered = (RegisterBuiltInComponents(registry), true);
     (void)builtInsRegistered;
     return registry;
+}
+
+ComponentType& ComponentRegistry::AddType(std::string_view name, std::string_view label, const std::type_info* cppType,
+                                          void* (*create)(), void* (*clone)(const void*), void (*destroy)(void*),
+                                          Script* (*asScript)(void*)) {
+    auto type = std::make_unique<ComponentType>();
+    type->name = std::string(name);
+    type->label = std::string(label);
+    type->cppType = cppType;
+    type->create = create;
+    type->clone = clone;
+    type->destroy = destroy;
+    if (asScript) type->asScript = asScript;
+    ComponentType& ref = *type;
+    m_types.push_back(std::move(type));
+    ++m_generation;
+    return ref;
 }
 
 const ComponentType* ComponentRegistry::Find(std::string_view name) const {
@@ -65,11 +100,19 @@ void ComponentRegistry::Unregister(const ComponentType* type) {
 const ComponentType& ComponentRegistry::MissingType() {
     static const ComponentType type = [] {
         ComponentType t;
-        Describe<MissingComponent>(t, "MissingComponent", "Componente desconhecido");
+        t.name = "MissingComponent";
+        t.label = "Componente desconhecido";
+        t.cppType = &typeid(MissingComponent);
+        t.create = []() -> void* { return static_cast<void*>(new MissingComponent()); };
+        t.clone = [](const void* p) -> void* {
+            return static_cast<void*>(new MissingComponent(*static_cast<const MissingComponent*>(p)));
+        };
+        t.destroy = [](void* p) { delete static_cast<MissingComponent*>(p); };
         // Campos só para cópia e comparação (desfazer); o serializador grava o JSON guardado, não estes.
-        ComponentBuilder<MissingComponent>(t)
-            .Field("type", "Tipo", &MissingComponent::type)
-            .Field("json", "Dados", &MissingComponent::json);
+        detail::AddComponentField(t, "type", "Tipo", FieldType::String, nullptr, {},
+                                  [](void* c) -> void* { return &static_cast<MissingComponent*>(c)->type; });
+        detail::AddComponentField(t, "json", "Dados", FieldType::String, nullptr, {},
+                                  [](void* c) -> void* { return &static_cast<MissingComponent*>(c)->json; });
         return t;
     }();
     return type;

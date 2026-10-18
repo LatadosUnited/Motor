@@ -2,6 +2,7 @@
 
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/AssetLoaders.h"
+#include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/scene/Prefab.h"
 #include "motor/scene/Scene.h"
@@ -419,9 +420,53 @@ bool Script::WasKeyPressed(Key key) const { return InputEnabled() && Input::WasK
 bool Script::IsMouseDown(MouseButton button) const { return InputEnabled() && Input::IsMouseDown(button); }
 glm::vec2 Script::MouseDelta() const { return InputEnabled() ? Input::MouseDelta() : glm::vec2(0.0f); }
 
-void Script::WriteLog(const std::string& message) {
+} // namespace motor
+
+template <>
+struct std::formatter<motor::detail::LogArg> {
+    std::string_view spec;
+
+    constexpr auto parse(std::format_parse_context& ctx) {
+        auto it = ctx.begin();
+        while (it != ctx.end() && *it != '}') ++it;
+        spec = std::string_view(ctx.begin(), static_cast<size_t>(it - ctx.begin()));
+        return it;
+    }
+
+    auto format(const motor::detail::LogArg& arg, std::format_context& ctx) const {
+        std::string subFmt = "{:";
+        subFmt.append(spec);
+        subFmt.push_back('}');
+        std::string s;
+        switch (arg.kind) {
+            case motor::detail::LogArg::Kind::Int: s = std::vformat(subFmt, std::make_format_args(arg.i)); break;
+            case motor::detail::LogArg::Kind::UInt: s = std::vformat(subFmt, std::make_format_args(arg.u)); break;
+            case motor::detail::LogArg::Kind::Double: s = std::vformat(subFmt, std::make_format_args(arg.d)); break;
+            case motor::detail::LogArg::Kind::Bool: s = std::vformat(subFmt, std::make_format_args(arg.b)); break;
+            case motor::detail::LogArg::Kind::String: s = std::vformat(subFmt, std::make_format_args(arg.s)); break;
+        }
+        return std::copy(s.begin(), s.end(), ctx.out());
+    }
+};
+
+namespace motor {
+
+void Script::WriteLog(std::string_view fmt, const detail::LogArg* args, size_t count) {
     const Entity* e = m_runtime ? m_runtime->GetScene().Find(m_entity) : nullptr;
-    log::Info("[{}] {}", e ? e->name : std::string("?"), message);
+    const std::string_view entityName = e ? std::string_view(e->name) : std::string_view("?");
+    if (count == 0 || !args) {
+        log::Info("[{}] {}", entityName, fmt);
+        return;
+    }
+    try {
+        const detail::LogArg empty(std::string_view{});
+        auto at = [&](size_t i) -> const detail::LogArg& { return i < count ? args[i] : empty; };
+        const std::string message = std::vformat(
+            fmt, std::make_format_args(at(0), at(1), at(2), at(3), at(4), at(5), at(6), at(7)));
+        log::Info("[{}] {}", entityName, message);
+    } catch (const std::format_error&) {
+        log::Info("[{}] {}", entityName, fmt);
+    }
 }
 
 } // namespace motor

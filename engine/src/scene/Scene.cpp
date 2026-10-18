@@ -1,6 +1,8 @@
 #include "motor/scene/Scene.h"
 
 #include "motor/renderer/Camera.h"
+#include "motor/renderer/Mesh.h"
+#include "motor/renderer/Renderer.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>

@@ -11,29 +11,59 @@
 //   registry.Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
 
 #include "motor/core/Input.h"
-#include "motor/core/Log.h"
-#include "motor/scene/PrefabInstance.h"
 #include "motor/scene/RuntimeSystem.h"
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <cstddef>
 #include <cstdint>
-#include <format>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <typeinfo>
-#include <utility>
 
 namespace motor {
 
 struct Animator;
 struct Entity;
+struct PrefabRef;
 struct Transform;
 class Scene;
 class SceneRuntime;
 using EntityId = uint32_t;
+
+namespace detail {
+// Argumento de Script::Log empacotado sem puxar <format> em cada script.
+struct LogArg {
+    enum class Kind : uint8_t { Int, UInt, Double, Bool, String } kind;
+    union {
+        long long i;
+        unsigned long long u;
+        double d;
+        bool b;
+    };
+    std::string_view s{};
+
+    LogArg(bool v) : kind(Kind::Bool), b(v) {}
+    LogArg(char v) : kind(Kind::Int), i(v) {}
+    LogArg(signed char v) : kind(Kind::Int), i(v) {}
+    LogArg(short v) : kind(Kind::Int), i(v) {}
+    LogArg(int v) : kind(Kind::Int), i(v) {}
+    LogArg(long v) : kind(Kind::Int), i(v) {}
+    LogArg(long long v) : kind(Kind::Int), i(v) {}
+    LogArg(unsigned char v) : kind(Kind::UInt), u(v) {}
+    LogArg(unsigned short v) : kind(Kind::UInt), u(v) {}
+    LogArg(unsigned int v) : kind(Kind::UInt), u(v) {}
+    LogArg(unsigned long v) : kind(Kind::UInt), u(v) {}
+    LogArg(unsigned long long v) : kind(Kind::UInt), u(v) {}
+    LogArg(float v) : kind(Kind::Double), d(v) {}
+    LogArg(double v) : kind(Kind::Double), d(v) {}
+    LogArg(const char* v) : kind(Kind::String), i(0), s(v ? v : "") {}
+    LogArg(std::string_view v) : kind(Kind::String), i(0), s(v) {}
+    LogArg(const std::string& v) : kind(Kind::String), i(0), s(v) {}
+};
+} // namespace detail
 
 // Tempo do jogo (não conta o tempo em pausa).
 struct GameTime {
@@ -119,14 +149,18 @@ protected:
     Animator* GetAnimator();
 
     // --- Log com o nome da entidade: Log("vidas = {}", vidas) ---
+    void Log(std::string_view message) {
+        WriteLog(message, nullptr, 0);
+    }
     template <class... Args>
-    void Log(std::format_string<Args...> fmt, Args&&... args) {
-        WriteLog(std::format(fmt, std::forward<Args>(args)...));
+    void Log(std::string_view fmt, const Args&... args) {
+        const detail::LogArg list[] = {args...};
+        WriteLog(fmt, list, sizeof...(Args));
     }
 
 private:
     friend class SceneRuntime;
-    void WriteLog(const std::string& message);
+    void WriteLog(std::string_view fmt, const detail::LogArg* args, size_t count);
     bool InputEnabled() const;
     RuntimeSystem* FindSystem(const std::type_info& type);
 

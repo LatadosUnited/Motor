@@ -25,8 +25,6 @@
 #include "motor/scene/Script.h"
 #include "motor/scene/Transform.h"
 
-#include <vector>
-
 namespace motor {
 
 // Sobe quando a interface entre o editor e a DLL de scripts muda de forma incompatível.
@@ -47,26 +45,30 @@ using ScriptApiVersionFn = int (*)();
 using RegisterScriptsFn = void (*)(ComponentRegistry&);
 
 namespace detail {
-// Lista dos blocos MOTOR_SCRIPT do módulo. Função inline com estática local: cada DLL tem a sua cópia.
-inline std::vector<RegisterScriptsFn>& ModuleScripts() {
-    static std::vector<RegisterScriptsFn> list;
-    return list;
-}
-
+// Lista encadeada dos blocos MOTOR_SCRIPT do módulo (inline: cada DLL tem a sua própria lista, sem alocar heap).
 struct ScriptRegistrar {
-    explicit ScriptRegistrar(RegisterScriptsFn fn) { ModuleScripts().push_back(fn); }
+    RegisterScriptsFn fn;
+    ScriptRegistrar* next = nullptr;
+    static inline ScriptRegistrar* head = nullptr;
+    static inline ScriptRegistrar* tail = nullptr;
+
+    explicit ScriptRegistrar(RegisterScriptsFn f) noexcept : fn(f) {
+        if (tail) tail->next = this;
+        else head = this;
+        tail = this;
+    }
 };
 
 inline void RegisterModuleScripts(ComponentRegistry& registry) {
-    for (RegisterScriptsFn fn : ModuleScripts()) fn(registry);
+    for (const ScriptRegistrar* r = ScriptRegistrar::head; r; r = r->next) r->fn(registry);
 }
 } // namespace detail
 
 } // namespace motor
 
-#define MOTOR_SCRIPT(Name)                                                                                  \
-    static void MotorRegisterScript_##Name(::motor::ComponentRegistry& registry);                          \
-    static const ::motor::detail::ScriptRegistrar g_motorScriptRegistrar_##Name{&MotorRegisterScript_##Name}; \
+#define MOTOR_SCRIPT(Name)                                                                           \
+    static void MotorRegisterScript_##Name(::motor::ComponentRegistry& registry);                   \
+    static ::motor::detail::ScriptRegistrar g_motorScriptRegistrar_##Name{&MotorRegisterScript_##Name}; \
     static void MotorRegisterScript_##Name([[maybe_unused]] ::motor::ComponentRegistry& registry)
 
 #endif // MOTOR_SCENE_SCRIPT_MODULE_H
