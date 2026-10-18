@@ -169,7 +169,7 @@ void ScriptController::Reload() {
     if (!m_reloadWarnings.empty()) m_focusPanel = true;
     if (m_play.IsActive()) log::Info("Scripts recarregados durante o Play: os scripts recomeçam (OnStart)");
     m_loadedDllTime = FileTime(paths.dll);
-    m_ctx.eulerEntity = kNullEntity;
+    m_ctx.ForgetAngles();
 }
 
 void ScriptController::Update(float dt) {

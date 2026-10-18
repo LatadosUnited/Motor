@@ -105,9 +105,17 @@ int main() {
         const Json tree = Call(protocol, "scene_tree", Json::object());
         CHECK(tree["data"]["entity_count"] == 2 && tree["data"]["entities"][0]["children"][0]["name"] == "Base");
 
+        CHECK(!ctx.TakeForgottenAngles(baseId));
         const Json moved = Call(protocol, "entity_update", {{"entity", baseId}, {"rotation", {0, 30, 0}}, {"name", "Pé"}});
         CHECK(moved["data"]["name"] == "Pé");
         CHECK(std::abs(moved["data"]["transform"]["rotation"][1].get<float>() - 30.0f) < 0.01f);
+        // Rotação mudada fora do Inspector: ele recalcula os ângulos dessa entidade (uma vez), não os das outras.
+        CHECK(ctx.TakeForgottenAngles(baseId));
+        CHECK(!ctx.TakeForgottenAngles(baseId));
+        Call(protocol, "entity_update", {{"entity", baseId}, {"rotation", {0, 45, 0}}});
+        CHECK(!ctx.TakeForgottenAngles(torreId));
+        ctx.ForgetAngles();  // cena trocada: todos
+        CHECK(ctx.TakeForgottenAngles(torreId));
         CHECK(Call(protocol, "entity_update", {{"entity", torreId}, {"parent", baseId}})["isError"] == true);  // ciclo
 
         const Json added = Call(protocol, "component_add",
