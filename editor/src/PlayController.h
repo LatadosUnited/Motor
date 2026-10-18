@@ -32,6 +32,7 @@ public:
     void Update(float dt, bool viewportFocused);
     void FixedUpdate(float dt) { m_mode.FixedUpdate(dt); }
     motor::SceneRuntime* Runtime() { return m_mode.Runtime(); }  // nullptr fora do Play
+    const motor::Scene& BackupScene() const { return m_mode.BackupScene(); }
 
     void DrawMenu();       // menu "Jogo"
     void DrawStatus();     // "JOGANDO" / "EM PAUSA" na barra de menus

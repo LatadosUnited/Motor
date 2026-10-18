@@ -72,7 +72,11 @@ void EditorApp::OnInit() {
         opened = m_document.CreateProjectAt(m_createParent, m_createName, error);
         if (!opened) m_document.ShowError(error);
     } else {
-        const fs::path project = m_startupProject.empty() ? m_settings.lastProject : m_startupProject;
+        fs::path project = m_startupProject.empty() ? m_settings.lastProject : m_startupProject;
+        if (project.empty()) {
+            const fs::path cwd = fs::current_path(ec);
+            if (!ec && fs::is_directory(cwd, ec) && fs::is_empty(cwd, ec)) project = cwd;
+        }
         opened = !project.empty() && fs::exists(project, ec) && m_document.OpenProjectAt(project, true);
     }
     if (!opened) {
@@ -242,7 +246,10 @@ void EditorApp::OnImGui() {
 
 bool EditorApp::OnCloseRequested() {
     StopPlay();  // o que importa é a cena de antes do Play
-    if (!m_document.HasUnsavedChanges()) return true;
+    if (!m_document.HasUnsavedChanges()) {
+        m_document.ClearRecovery();
+        return true;
+    }
     m_document.RequestFileAction(SceneDocument::FileAction::Quit);
     return false;
 }
@@ -260,6 +267,7 @@ void EditorApp::ApplyPlayRequest() {
     switch (m_play.ApplyRequest(m_ctx, m_history)) {
         case PlayController::Event::None: break;
         case PlayController::Event::Started:
+            m_document.SaveRecovery("play", &m_play.BackupScene());
             m_viewport.StopLooking();
             m_viewport.RequestFocus();  // as teclas vão para o jogo sem precisar clicar no viewport
             break;
@@ -275,6 +283,7 @@ void EditorApp::OnPlayStopped() {
     m_viewport.StopLooking();
     m_mcp.OnPlayStopped();
     m_scripts.OnPlayStopped();  // scripts recompilados durante o Play recarregam agora
+    if (!m_document.HasUnsavedChanges()) m_document.ClearRecovery();
 }
 
 void EditorApp::BuildDockLayout(unsigned int dockspaceId) {
