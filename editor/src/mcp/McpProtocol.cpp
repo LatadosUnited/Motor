@@ -164,6 +164,16 @@ Json Protocol::CallTool(const Json& params) {
     if (it == m_tools.end()) throw RpcError{kInvalidParams, "ferramenta desconhecida: " + name};
     const Json args = params.contains("arguments") && params["arguments"].is_object() ? params["arguments"]
                                                                                       : Json::object();
+    // Obrigatórios do esquema conferidos aqui: as ferramentas leem args["x"] direto, e ler uma chave que não
+    // existe num JSON const derruba o editor (assert do nlohmann no build Debug).
+    if (const auto required = it->inputSchema.find("required"); required != it->inputSchema.end()) {
+        for (const Json& key : *required) {
+            if (key.is_string() && !args.contains(key.get<std::string>())) {
+                const ToolResult missing = ToolResult::Error("falta o argumento obrigatório '" + key.get<std::string>() + "'");
+                return Json{{"content", missing.content}, {"isError", true}};
+            }
+        }
+    }
     ToolResult result;
     try {
         result = it->run(args);
