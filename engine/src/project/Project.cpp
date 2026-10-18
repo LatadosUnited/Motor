@@ -167,6 +167,11 @@ void Project::SetStartupScene(const std::filesystem::path& absolutePath) {
     m_startupScene = ToRelative(absolutePath);
 }
 
+bool Project::IsNewerThanCurrentEngine() const {
+    return !m_engineVersion.empty() && ParseVersion(m_engineVersion).valid &&
+           CompareVersions(m_engineVersion, kVersion) > 0;
+}
+
 std::filesystem::path Project::ToAbsolute(std::string_view relative) const {
     return (m_root / PathFromUtf8(relative)).lexically_normal();
 }

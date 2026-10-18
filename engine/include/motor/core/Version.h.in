@@ -3,6 +3,9 @@
 // Gerado pelo CMake a partir de engine/include/motor/core/Version.h.in (project(Motor VERSION ...) no
 // CMakeLists.txt da raiz). Não edite o Version.h gerado: mude a versão no CMakeLists.txt.
 
+#include <charconv>
+#include <string_view>
+
 namespace motor {
 
 inline constexpr int kVersionMajor = @PROJECT_VERSION_MAJOR@;
@@ -11,5 +14,44 @@ inline constexpr int kVersionPatch = @PROJECT_VERSION_PATCH@;
 
 // "maior.menor.correção": gravada no .mproject (engineVersion) e no motor-version.json da pasta instalada.
 inline constexpr const char* kVersion = "@PROJECT_VERSION@";
+
+struct SemVer {
+    int major = 0, minor = 0, patch = 0;
+    bool valid = false;
+};
+
+// "0.2.0"; "1.2" = 1.2.0; sufixo depois de '-' ou '+' é ignorado.
+inline SemVer ParseVersion(std::string_view text) {
+    const size_t suffix = text.find_first_of("-+");
+    if (suffix != std::string_view::npos) text = text.substr(0, suffix);
+    int parts[3] = {0, 0, 0};
+    int count = 0;
+    const char* p = text.data();
+    const char* end = text.data() + text.size();
+    while (p < end && count < 3) {
+        const auto [next, ec] = std::from_chars(p, end, parts[count]);
+        if (ec != std::errc() || parts[count] < 0) return {};
+        ++count;
+        p = next;
+        if (p == end) break;
+        if (*p != '.') return {};
+        ++p;
+        if (p == end) return {};
+    }
+    if (p != end || count < 2) return {};
+    return {parts[0], parts[1], parts[2], true};
+}
+
+// < 0, 0 ou > 0. Versões inválidas são menores que qualquer válida (e ordenadas pelo texto entre si).
+inline int CompareVersions(std::string_view a, std::string_view b) {
+    const SemVer va = ParseVersion(a);
+    const SemVer vb = ParseVersion(b);
+    if (va.valid != vb.valid) return va.valid ? 1 : -1;
+    if (!va.valid) return a.compare(b) < 0 ? -1 : (a == b ? 0 : 1);
+    if (va.major != vb.major) return va.major < vb.major ? -1 : 1;
+    if (va.minor != vb.minor) return va.minor < vb.minor ? -1 : 1;
+    if (va.patch != vb.patch) return va.patch < vb.patch ? -1 : 1;
+    return 0;
+}
 
 } // namespace motor

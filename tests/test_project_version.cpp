@@ -71,13 +71,25 @@ int main(int argc, char** argv) {
         CHECK(upgraded.value("startupScene", std::string()) == "Assets/a.mscene");
     }
 
-    SECTION("Projeto de outra versão: lê a versão gravada");
+    SECTION("Projeto de outra versão: lê a versão gravada e detecta versão mais nova");
     const fs::path other = base / "Outro";
     fs::create_directories(other);
     WriteText(other / "Outro.mproject",
-              R"({"format": "motor-project", "version": 2, "name": "Outro", "engineVersion": "0.9.1"})");
+              R"({"format": "motor-project", "version": 2, "name": "Outro", "engineVersion": "99.1.0"})");
     auto v2 = Project::Open(other, &error);
-    CHECK(v2.has_value() && v2->EngineVersion() == "0.9.1");
+    CHECK(v2.has_value() && v2->EngineVersion() == "99.1.0");
+    CHECK(v2 && v2->IsNewerThanCurrentEngine());
+
+    WriteText(other / "Outro.mproject",
+              R"({"format": "motor-project", "version": 2, "name": "Outro", "engineVersion": "0.1.0"})");
+    auto older = Project::Open(other, &error);
+    CHECK(older.has_value() && !older->IsNewerThanCurrentEngine());
+
+    CHECK(ParseVersion("0.2.3").valid);
+    CHECK(!ParseVersion("invalida").valid);
+    CHECK(CompareVersions("0.3.0", "0.2.9") > 0);
+    CHECK(CompareVersions("0.2.0", "0.2.0") == 0);
+    CHECK(CompareVersions("0.1.9", "0.2.0") < 0);
 
     SECTION("Formato futuro é recusado");
     WriteText(other / "Outro.mproject", R"({"format": "motor-project", "version": 3, "name": "Outro"})");
