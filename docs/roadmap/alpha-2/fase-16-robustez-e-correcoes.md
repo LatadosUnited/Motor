@@ -57,6 +57,10 @@ em jogos de verdade.
 - [x] **Valores inválidos pelo MCP:** `component_set` com valor de tipo errado responde com erro e o formato
   esperado do campo, em vez de ignorar (aconteceu com o clipe de som antes da correção 2e4733a). *(origem:
   verificação das Fases 8 e 10)* (014cecb)
+- [x] **Argumento obrigatório faltando pelo MCP não derruba o editor:** o protocolo confere o `required` do
+  esquema antes de chamar a ferramenta (`McpProtocol::CallTool`); antes, `args["parent"]` sem a chave disparava
+  o assert do nlohmann no Debug (ex.: `project_create` com `location`). *(origem: entrada.md, verificação da
+  Organização do código)* (2386c9b)
 
 ## Pronto quando
 
