@@ -31,7 +31,7 @@ salvo e controle.
   `%APPDATA%\<Jogo>\`), com exemplo no guia. — `c6d8a39`
 - [x] **Controle (gamepad)** pela GLFW, com mapeamento de ações ("Pular" = Espaço ou botão A) configurável no
   projeto. *(origem: análise do código, item 9: "WASD ou analógico")* — `d5e6b3f`
-- [ ] **Tela de carregamento** simples ao trocar de cena.
+- [x] **Tela de carregamento** simples ao trocar de cena. — `24bc1c6`
 
 ## Pronto quando
 
@@ -90,6 +90,17 @@ de continuar (save), e é jogável com controle.
   simulado). Os modelos Jogador e MoverWASD agora usam as ações. Testes: `test_input_actions`; conferido no
   Play pelo MCP com o controle simulado (analógico, teclado junto, botões A e Start).
 
+- **Tela de carregamento** (`24bc1c6`): o Player desenha uma cena parada (sem scripts nem física) ao abrir e
+  antes de cada `LoadScene`: a do projeto (`GameIdentity::loadingScene`, Configurações do jogo > Tela de
+  carregamento, MCP `game_settings` com `loading_scene`) ou `DefaultLoadingScene` (`ui/LoadingScreen.h`, fundo
+  escuro e "Carregando..." embaixo à direita). Com câmera, a cena 3D também é desenhada; sem, só a UI. A janela
+  do jogo nasce escondida (`WindowDesc::visible`) e aparece já com a tela, sem o quadro branco de ~1 s enquanto o
+  renderer inicia. Teste: `test_loading_screen`; conferido no jogo exportado (capturas da tela padrão e da
+  janela só aparecendo pronta).
+
+Todas as tarefas estão feitas. Falta o "Pronto quando": o jogo da Fase 19 exportado com tudo isso (tela cheia,
+ícone, menu de opções e de continuar, controle), e o teste à mão do roteiro (seção 12).
+
 ## Limitações
 
 - A troca para tela cheia e de resolução não foi testada automaticamente (mudaria a tela do usuário): fica no
@@ -107,3 +118,6 @@ de continuar (save), e é jogável com controle.
 - Controle de verdade não testado (sem um aqui): a leitura é a da GLFW (`glfwGetGamepadState`), conferida só
   com o controle simulado. Um controle só (o primeiro); sem vibração e sem trocar teclas dentro do jogo
   exportado (o mapa é o do projeto). A janela Controles não foi vista na tela (o MCP não abre menus).
+- A tela de carregamento é um quadro parado: sem animação nem barra de progresso (o carregamento trava o jogo).
+  No Play do editor a troca de cena não a mostra. Só conferida ao abrir o jogo; a troca por `LoadScene` usa o
+  mesmo código, mas não foi capturada.
