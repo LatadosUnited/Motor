@@ -25,8 +25,8 @@ salvo e controle.
   `Renderer::SetSamples` existe, mas o projeto não o expõe. Título da janela sem o FPS. *(origem: Fase 10,
   limitações; análise do código, item 3)* — `a31aaae`
 - [x] **Identidade:** ícone e nome do `.exe` nas configurações do projeto; versão do jogo. — `ca7c989`
-- [ ] **Exportação sempre Release:** Player e `libMotor.dll` de Release da versão instalada, e a DLL de scripts
-  recompilada em Release ao exportar. *(origem: Fase 10, limitação)*
+- [x] **Exportação sempre Release:** Player e `libMotor.dll` de Release da versão instalada, e a DLL de scripts
+  recompilada em Release ao exportar. *(origem: Fase 10, limitação)* — `7e2e64e`
 - [ ] **Salvar progresso:** API de dados persistentes para scripts (chave/valor e arquivos em
   `%APPDATA%\<Jogo>\`), com exemplo no guia.
 - [ ] **Controle (gamepad)** pela GLFW, com mapeamento de ações ("Pular" = Espaço ou botão A) configurável no
@@ -60,6 +60,16 @@ de continuar (save), e é jogável com controle.
   `test_exe_identity` (grava numa cópia do próprio teste e lê com `GetFileVersionInfo`/`FindResource`);
   conferido exportando pelo MCP: propriedades do `.exe`, ícone no Explorer e na barra de título.
 
+- **Exportação sempre Release** (`7e2e64e`): `export/ReleaseRuntime` acha um Motor em Release (Player, DLLs de
+  runtime e `sdk/MotorSDK.json` com `buildType` Release) na pasta do editor, em `release/` ao lado dela ou em
+  `MOTOR_RELEASE_BIN_DIR` (cache do CMake, padrão `build-release/bin`). O `ExportController` exporta em duas
+  etapas (`Begin`/`Poll`): recompila a DLL de scripts em Release contra esse SDK (`.motor/scripts/cmake-release`
+  e `build-release`, um `ScriptBuilder` próprio, em segundo plano na janela; o MCP `game_export` espera) e só
+  então copia. Sem Motor em Release, exporta com o do editor e avisa como ter um. O `motor_package` de uma
+  versão que não é de Release copia um build de Release para `release/`, com SDK de caminhos relativos (headers
+  de `sdk/include`). Conferido: pelo editor de Debug do código e pelo editor do pacote, a pasta exportada caiu
+  de ~117 MB para ~12 MB, a DLL de scripts de Release carrega e o jogo roda. Teste: `test_release_runtime`.
+
 ## Limitações
 
 - A troca para tela cheia e de resolução não foi testada automaticamente (mudaria a tela do usuário): fica no
@@ -68,3 +78,6 @@ de continuar (save), e é jogável com controle.
   janela), e as opções não são gravadas: cada Play volta às do projeto.
 - O `.png` vira uma imagem só no ícone: o Windows reduz para os tamanhos pequenos. Para ícones nítidos em 16 e
   32 pixels, use um `.ico` com vários tamanhos. Sem nome de empresa nem direitos autorais nas propriedades.
+- Quem compila o Motor em Debug precisa compilar também o `build-release` (pelo menos o alvo `Player`) para
+  exportar em Release; sem ele a exportação sai em Debug com um aviso. O build de Release não é refeito sozinho
+  quando o código muda: um Player de Release velho com uma API de scripts diferente é recusado ao abrir o jogo.
