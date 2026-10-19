@@ -30,11 +30,15 @@ que sair daqui decide o resto da alpha.
 - [ ] ~~**Instalação limpa num segundo computador** pela rede (`MotorServidor` + `MotorSetup`), sem compilar
   nada.~~ Pulada nesta fase por decisão do usuário (19/10/2026): a instalação já foi testada à mão antes; a
   seção 1 do roteiro fica para quando o instalador mudar ou houver um segundo computador Windows.
-- [ ] **Teste à mão pelo roteiro** no editor instalado pelo Hub, seções 2 a 13.
+- [x] **Teste à mão pelo roteiro**, seções 3 a 13, pelo usuário em 19/10/2026: tudo passou menos um item. Feito
+  no build Debug do `main` (API de scripts 13), aberto direto e não pelo Hub: a versão publicada no servidor é a
+  0.2.0 de 17/10 (API 10), e só se publica outra no fim da alpha 2 (decisão do usuário). Por isso a seção 2
+  (Hub) ficou para essa publicação.
 - [ ] **Jogo pequeno do começo ao fim**, exportado. (A exportação em Release é da
   [Fase 21](fase-21-jogo-entregue.md); aqui vale a exportação de hoje.)
-- [ ] **Cada problema achado** vai para a [entrada](../entrada.md) com gravidade; a triagem leva cada um para uma
-  fase (na 16, se for pequeno).
+- [x] **Cada problema achado** vai para a [entrada](../entrada.md) com gravidade; a triagem leva cada um para uma
+  fase (na 16, se for pequeno). Um achado, **atrapalha**: o contorno verde de todos os colliders sempre visível
+  no viewport; foi direto para a [Fase 20](fase-20-editor-produtivo.md) (só o selecionado). (0bb597b)
 
 ## Pronto quando
 
