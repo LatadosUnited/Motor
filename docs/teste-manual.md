@@ -73,6 +73,8 @@ versão nova, marca o que passou e anota o que não passou. Criado na
 - [ ] Ctrl+Z / Ctrl+Y depois de: mover com o gizmo, renomear, excluir, reparentar, trocar cor → cada ação volta
   em **um** passo, com a seleção junto. Segurar Ctrl+Z repete.
 - [ ] Ctrl+Z dentro de um campo de texto desfaz só o texto.
+- [ ] Mudar a cor de um material `.mmat` (painel Projeto > Inspector) e a escala de um prefab aberto no Inspector
+  → Ctrl+Z desfaz cada um (os objetos voltam) e Ctrl+Y refaz. No Play, mudar os dois e parar → voltam como antes.
 - [ ] **Seleção múltipla:** Ctrl+clique na hierarquia e no viewport alterna; Shift+clique na hierarquia pega o
   intervalo; arrastar no vazio do viewport desenha o retângulo e seleciona o que está dentro (Ctrl soma); Ctrl+A
   pega tudo. Com vários: o gizmo move/gira todos; o Inspector diz "N objetos selecionados" e mudar a Posição Y

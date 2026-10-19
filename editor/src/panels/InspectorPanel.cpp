@@ -243,6 +243,22 @@ void TrackMaterial(EditorContext& ctx, const motor::Material& m) {
     }
 }
 
+// Materiais editados durante o Play: o valor de antes da primeira edição, para voltar ao parar.
+std::map<const motor::Material*, EditedMaterial> s_playMaterials;
+
+// Põe `value` no material (desfazer, refazer, fim do Play) sem que isso conte como uma edição nova.
+void SetMaterial(EditorContext& ctx, const std::weak_ptr<motor::Material>& weak, const motor::Material& value,
+                 bool save) {
+    const auto material = weak.lock();
+    if (!material) return;
+    *material = value;
+    s_editedMaterials[material.get()] = {weak, value};
+    std::string error;
+    if (save && !ctx.assets.SaveMaterial(material.get(), &error)) ctx.pendingError = std::move(error);
+}
+
+// Edição terminada (soltou o controle): grava o .mmat e vira um passo de desfazer. No Play, nem grava nem vira
+// passo: guarda o valor de antes para o fim do Play.
 void SaveEditedMaterials(EditorContext& ctx, bool interacting) {
     for (auto it = s_editedMaterials.begin(); it != s_editedMaterials.end();) {
         const auto material = it->second.material.lock();
@@ -251,9 +267,20 @@ void SaveEditedMaterials(EditorContext& ctx, bool interacting) {
             continue;
         }
         if (!interacting && !motor::ComponentsEqual(MaterialFields(), material.get(), &it->second.saved)) {
-            std::string error;
-            if (!ctx.assets.SaveMaterial(material.get(), &error)) ctx.pendingError = std::move(error);
-            it->second.saved = *material;
+            const std::weak_ptr<motor::Material> weak = it->second.material;
+            const motor::Material before = it->second.saved;
+            const motor::Material after = *material;
+            if (ctx.playing) {
+                s_playMaterials.try_emplace(material.get(), EditedMaterial{weak, before});
+            } else {
+                std::string error;
+                if (!ctx.assets.SaveMaterial(material.get(), &error)) ctx.pendingError = std::move(error);
+                if (ctx.pushAssetUndo) {
+                    ctx.pushAssetUndo([&ctx, weak, before] { SetMaterial(ctx, weak, before, true); },
+                                      [&ctx, weak, after] { SetMaterial(ctx, weak, after, true); });
+                }
+            }
+            it->second.saved = after;
         }
         ++it;
     }
@@ -451,10 +478,34 @@ struct PrefabEdit {
     std::string guid;
     EntityId entity = kNullEntity;  // entidade do prefab mostrada
     motor::Scene saved;             // conteúdo da última revisão vista
+    motor::Scene committed;         // conteúdo da última edição terminada (o "antes" do próximo desfazer)
     uint64_t revision = 0;
     bool dirty = false;             // mudou e ainda não foi gravado
 };
 PrefabEdit s_prefabEdit;
+// Prefabs editados durante o Play (GUID -> conteúdo de antes), para voltar ao parar.
+std::map<std::string, motor::Scene> s_playPrefabs;
+
+// Troca o conteúdo do prefab (desfazer, refazer, fim do Play): as instâncias seguem no próximo sync.
+void SetPrefabContent(EditorContext& ctx, const std::string& guid, const motor::Scene& content, bool save) {
+    std::string error;
+    motor::Prefab* prefab = ctx.prefabs.Get(guid, ctx.assets, &error);
+    if (!prefab) {
+        ctx.pendingError = std::move(error);
+        return;
+    }
+    prefab->scene = content;
+    ctx.prefabs.MarkChanged(*prefab);
+    if (save && !ctx.prefabs.Save(*prefab, ctx.assets, &error)) ctx.pendingError = std::move(error);
+    PrefabEdit& edit = s_prefabEdit;
+    if (edit.guid == guid) {
+        edit.saved = content;
+        edit.committed = content;
+        edit.revision = prefab->revision;
+        edit.dirty = false;
+        if (!prefab->scene.Find(edit.entity)) edit.entity = prefab->root;
+    }
+}
 
 void DrawPrefabTree(EditorContext& ctx, const motor::Prefab& prefab, EntityId id, int depth) {
     const motor::Entity* e = prefab.scene.Find(id);
@@ -480,6 +531,7 @@ void DrawPrefabAsset(EditorContext& ctx, const std::filesystem::path& file) {
     if (edit.guid != prefab->guid || edit.revision != prefab->revision) {
         // Outro prefab, ou este mudou por fora (arquivo relido, instância aplicada).
         if (edit.guid != prefab->guid || !prefab->scene.Find(edit.entity)) edit.entity = prefab->root;
+        if (edit.guid != prefab->guid || !edit.dirty) edit.committed = prefab->scene;
         edit.guid = prefab->guid;
         edit.saved = prefab->scene;
         edit.revision = prefab->revision;
@@ -526,9 +578,32 @@ void SavePrefabEdit(EditorContext& ctx, bool interacting) {
     edit.dirty = false;
     std::string error;
     motor::Prefab* prefab = ctx.prefabs.Get(edit.guid, ctx.assets, &error);
-    if (!prefab || !ctx.prefabs.Save(*prefab, ctx.assets, &error)) ctx.pendingError = std::move(error);
+    if (!prefab) {
+        ctx.pendingError = std::move(error);
+        return;
+    }
+    const std::string guid = edit.guid;
+    const motor::Scene before = std::move(edit.committed);
+    edit.committed = prefab->scene;
+    if (ctx.playing) {
+        s_playPrefabs.try_emplace(guid, before);  // no Play não grava: volta ao parar
+        return;
+    }
+    if (!ctx.prefabs.Save(*prefab, ctx.assets, &error)) ctx.pendingError = std::move(error);
+    if (ctx.pushAssetUndo) {
+        const motor::Scene after = prefab->scene;
+        ctx.pushAssetUndo([&ctx, guid, before] { SetPrefabContent(ctx, guid, before, true); },
+                          [&ctx, guid, after] { SetPrefabContent(ctx, guid, after, true); });
+    }
 }
 } // namespace
+
+void RevertPlayAssetEdits(EditorContext& ctx) {
+    for (const auto& [ptr, original] : s_playMaterials) SetMaterial(ctx, original.material, original.saved, false);
+    s_playMaterials.clear();
+    for (const auto& [guid, content] : s_playPrefabs) SetPrefabContent(ctx, guid, content, false);
+    s_playPrefabs.clear();
+}
 
 void DrawInspectorPanel(EditorContext& ctx) {
     const bool interacting = ImGui::IsAnyItemActive() || ImGui::IsMouseDown(ImGuiMouseButton_Left);

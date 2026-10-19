@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <vector>
 
 namespace editor {
@@ -34,6 +35,11 @@ public:
     bool Undo(motor::Scene& scene, motor::EntityId& selected, std::vector<motor::EntityId>* selection = nullptr);
     bool Redo(motor::Scene& scene, motor::EntityId& selected, std::vector<motor::EntityId>* selection = nullptr);
 
+    // Passo que não é da cena (material ou prefab editado no Inspector): entra na mesma fila do desfazer, com as
+    // funções que voltam e refazem a mudança. Registra antes uma mudança da cena que ainda não virou passo.
+    void PushAction(const motor::Scene& scene, motor::EntityId selected, const std::vector<motor::EntityId>* selection,
+                    std::function<void()> undo, std::function<void()> redo);
+
     // Todas as fotos guardadas (a recarga dos scripts precisa trocar os componentes delas também).
     void ForEachScene(const std::function<void(motor::Scene&)>& fn);
 
@@ -42,6 +48,11 @@ private:
         motor::Scene scene;
         motor::EntityId selected = motor::kNullEntity;  // seleção de quando a foto foi tirada
         std::vector<motor::EntityId> selection;
+        // Passo de fora da cena (PushAction): a cena acima não é usada.
+        struct Action {
+            std::function<void()> undo, redo;
+        };
+        std::shared_ptr<Action> action;
     };
 
     static State Snapshot(const motor::Scene& scene, motor::EntityId selected,

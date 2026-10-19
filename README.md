@@ -88,7 +88,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia; as formas (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone) já vêm com o Collider que bate com elas |
 | Focar / Excluir / Duplicar | F / Del / Ctrl+D |
 | Copiar / Recortar / Colar | Ctrl+C / Ctrl+X / Ctrl+V (também no menu Editar e no clique direito da hierarquia, com "Colar como filho"): os selecionados com os filhos, colados no mesmo lugar do mundo; vale colar em outra cena do projeto |
-| Desfazer / Refazer | Ctrl+Z / Ctrl+Y (ou Ctrl+Shift+Z), também no menu Editar; segurar repete |
+| Desfazer / Refazer | Ctrl+Z / Ctrl+Y (ou Ctrl+Shift+Z), também no menu Editar; segurar repete. Cobre também materiais (`.mmat`) e prefabs editados no Inspector (o arquivo volta junto). No Play, o que se muda em materiais e prefabs volta ao parar |
 | Restaurar layout | Ver > Restaurar layout (o layout fica salvo em `imgui.ini`) |
 | Novo / Abrir projeto | Arquivo > Novo projeto... / Abrir projeto... / Projetos recentes |
 | Nova / Abrir cena | Arquivo > Nova cena (Ctrl+N) / Abrir cena... (Ctrl+O) |
@@ -294,8 +294,8 @@ mudar a cor de uma peça no prefab muda todas as instâncias.
   Casa) deixa a Janela aninhada na Casa. Mudar o prefab Janela muda as janelas de todas as casas, menos o que a
   Casa mudou nelas; o Inspector mostra "Do prefab aninhado: Janela". Desvincular a casa na cena faz as janelas
   voltarem a ser instâncias da Janela. Um prefab dentro dele mesmo é recusado ao aplicar.
-- Mudanças nos materiais e prefabs não entram no desfazer (são arquivos, gravados na hora); a cena registra
-  as alterações das instâncias normalmente.
+- Editar um material ou um prefab no Inspector entra no desfazer (o arquivo volta junto); "Aplicar ao prefab" e
+  criar prefab ou material, não. A cena registra as alterações das instâncias normalmente.
 
 ### Modelos 3D (glTF) e animação
 

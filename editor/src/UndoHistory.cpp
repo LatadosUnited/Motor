@@ -7,11 +7,11 @@ namespace editor {
 
 UndoHistory::State UndoHistory::Snapshot(const motor::Scene& scene, motor::EntityId selected,
                                          const std::vector<motor::EntityId>* selection) {
-    return {scene, selected, selection ? *selection : std::vector<motor::EntityId>{}};
+    return {scene, selected, selection ? *selection : std::vector<motor::EntityId>{}, nullptr};
 }
 
 void UndoHistory::Reset(const motor::Scene& scene, motor::EntityId selected) {
-    m_current = {scene, selected, {}};
+    m_current = {scene, selected, {}, nullptr};
     m_undo.clear();
     m_redo.clear();
 }
@@ -31,12 +31,28 @@ void UndoHistory::Track(const motor::Scene& scene, motor::EntityId selected, boo
     m_current = Snapshot(scene, selected, selection);
 }
 
+void UndoHistory::PushAction(const motor::Scene& scene, motor::EntityId selected,
+                             const std::vector<motor::EntityId>* selection, std::function<void()> undo,
+                             std::function<void()> redo) {
+    Track(scene, selected, true, selection);
+    State step;
+    step.action = std::make_shared<State::Action>(State::Action{std::move(undo), std::move(redo)});
+    m_undo.push_back(std::move(step));
+    if (m_undo.size() > kMaxSteps) m_undo.pop_front();
+    m_redo.clear();
+}
+
 bool UndoHistory::Undo(motor::Scene& scene, motor::EntityId& selected, std::vector<motor::EntityId>* selection) {
     Track(scene, selected, true, selection);  // registra antes uma mudança que ainda não virou passo
     if (m_undo.empty()) return false;
 
     State previous = std::move(m_undo.back());
     m_undo.pop_back();
+    if (previous.action) {  // a cena não muda: só o asset
+        previous.action->undo();
+        m_redo.push_back(std::move(previous));
+        return true;
+    }
     m_redo.push_back(Snapshot(scene, selected, selection));
     Restore(std::move(previous), scene, selected, selection);
     return true;
@@ -48,6 +64,11 @@ bool UndoHistory::Redo(motor::Scene& scene, motor::EntityId& selected, std::vect
 
     State next = std::move(m_redo.back());
     m_redo.pop_back();
+    if (next.action) {
+        next.action->redo();
+        m_undo.push_back(std::move(next));
+        return true;
+    }
     m_undo.push_back(Snapshot(scene, selected, selection));
     Restore(std::move(next), scene, selected, selection);
     return true;
@@ -72,8 +93,12 @@ void UndoHistory::Restore(State&& state, motor::Scene& scene, motor::EntityId& s
 
 void UndoHistory::ForEachScene(const std::function<void(motor::Scene&)>& fn) {
     fn(m_current.scene);
-    for (State& s : m_undo) fn(s.scene);
-    for (State& s : m_redo) fn(s.scene);
+    for (State& s : m_undo) {
+        if (!s.action) fn(s.scene);
+    }
+    for (State& s : m_redo) {
+        if (!s.action) fn(s.scene);
+    }
 }
 
 } // namespace editor

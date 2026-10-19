@@ -55,6 +55,11 @@ struct EditorContext {
 
     std::string pendingError;  // mostrado pelo EditorApp num popup
 
+    // Material ou prefab editado no Inspector vira um passo de desfazer (UndoHistory::PushAction, ligado pelo
+    // EditorApp). `playing`: no Play essas edições não são gravadas e voltam ao parar (RevertPlayAssetEdits).
+    std::function<void(std::function<void()> undo, std::function<void()> redo)> pushAssetUndo;
+    bool playing = false;
+
     // Prefabs do projeto (.mprefab) e o asset mostrado no Inspector quando nenhuma entidade está
     // selecionada (material ou prefab clicado no painel Projeto).
     motor::PrefabLibrary prefabs;
@@ -127,6 +132,8 @@ void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent);
 void DrawHierarchyPanel(EditorContext& ctx);
 void FocusHierarchySearch();  // Ctrl+F: foco na busca da Hierarquia
 void DrawInspectorPanel(EditorContext& ctx);
+// Fim do Play: materiais e prefabs editados no Inspector durante o jogo voltam a ser como antes dele.
+void RevertPlayAssetEdits(EditorContext& ctx);
 void DrawScenePanel(EditorContext& ctx);
 
 } // namespace editor

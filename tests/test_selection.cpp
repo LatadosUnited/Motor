@@ -141,6 +141,46 @@ int main() {
         CHECK(!ctx.scene.Find(a) && ctx.selection.empty());
     }
 
+    SECTION("Passos de asset (material, prefab) na mesma fila do desfazer");
+    {
+        EditorContext ctx;
+        const EntityId a = ctx.scene.CreateEntity("A").id;
+        UndoHistory h;
+        h.Reset(ctx.scene, ctx.selected);
+        float asset = 1.0f;  // faz o papel do material editado no Inspector
+
+        ctx.scene.Find(a)->name = "A2";  // mudança da cena ainda não registrada
+        asset = 2.0f;
+        h.PushAction(ctx.scene, ctx.selected, &ctx.selection, [&] { asset = 1.0f; }, [&] { asset = 2.0f; });
+        CHECK(h.UndoCount() == 2);  // a mudança da cena virou passo antes da do asset
+        ctx.scene.Find(a)->name = "A3";
+        h.Track(ctx.scene, ctx.selected, true, &ctx.selection);
+        CHECK(h.UndoCount() == 3);
+
+        CHECK(h.Undo(ctx.scene, ctx.selected, &ctx.selection));  // A3 -> A2
+        CHECK(ctx.scene.Find(a)->name == "A2" && asset == 2.0f);
+        CHECK(h.Undo(ctx.scene, ctx.selected, &ctx.selection));  // asset 2 -> 1
+        CHECK(ctx.scene.Find(a)->name == "A2" && asset == 1.0f);
+        CHECK(h.Undo(ctx.scene, ctx.selected, &ctx.selection));  // A2 -> A
+        CHECK(ctx.scene.Find(a)->name == "A" && asset == 1.0f);
+        CHECK(!h.CanUndo());
+
+        CHECK(h.Redo(ctx.scene, ctx.selected, &ctx.selection));
+        CHECK(h.Redo(ctx.scene, ctx.selected, &ctx.selection));
+        CHECK(ctx.scene.Find(a)->name == "A2" && asset == 2.0f);
+        CHECK(h.Redo(ctx.scene, ctx.selected, &ctx.selection));
+        CHECK(ctx.scene.Find(a)->name == "A3" && !h.CanRedo());
+
+        // Asset novo depois de desfazer descarta o refazer, como uma mudança da cena.
+        h.Undo(ctx.scene, ctx.selected, &ctx.selection);
+        h.PushAction(ctx.scene, ctx.selected, &ctx.selection, [] {}, [] {});
+        CHECK(!h.CanRedo());
+        // As fotos da cena continuam visitáveis (recarga dos scripts) sem passar pelos passos de asset.
+        size_t scenes = 0;
+        h.ForEachScene([&](Scene&) { ++scenes; });
+        CHECK(scenes == h.UndoCount() + h.RedoCount() + 1 - 2);  // 2 passos de asset na fila
+    }
+
     SECTION("Inspector com vários: só o que mudou vai para os outros");
     {
         AssetLibrary assets;

@@ -35,8 +35,8 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
   Fase 19, 19/10/2026, gravidade atrapalha)* (a826ec4)
 - [x] **Janelas Cena e Jogo lado a lado** no Play. (0dbd735) *(origem: Fase 2, limitação)*
 - [x] **Prefab dentro de prefab.** (08a1958) *(origem: Fase 6, limitação)*
-- [ ] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
-  limitação)*
+- [x] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
+  limitação)* (COMMIT)
 - [ ] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
   limitação)*
 - [ ] **MCP acompanha:** seleção múltipla, copiar/colar, mover a câmera do editor para um ponto, eventos para o
@@ -94,6 +94,12 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   `editor.json` (`playSideBySide`). MCP: `view_side_by_side` e `viewport_capture` com `view = game`. Conferido
   numa captura no Play (Viewport com a grade e a câmera do editor, Jogo pela câmera do jogo).
   Teclado, mouse e cursor preso na janela Jogo não foram testados (item na seção 8 do roteiro à mão).
+- **Materiais e prefabs no desfazer:** `UndoHistory::PushAction` põe passos de fora da cena (funções de desfazer e
+  refazer) na mesma fila das fotos. O Inspector registra um passo quando termina a edição de um material de asset
+  ou de um prefab aberto nele (e grava o arquivo), e o desfazer põe o valor de antes de volta e grava de novo. No
+  Play essas edições não são gravadas nem viram passo: o valor de antes fica guardado e volta ao parar
+  (`RevertPlayAssetEdits`). Teste da fila no `test_selection`. A edição pelo Inspector não foi testada com o
+  mouse (item novo na seção 4 do roteiro).
 - **Prefab dentro de prefab:** componente novo `PrefabNested` (engine, `scene/PrefabNested`): no conteúdo do
   prefab de fora, as entidades vindas de outro prefab guardam o vínculo com ele e os overrides relativos a ele; o
   `PrefabInstance` continua sendo a identidade dentro do de fora. `Prefabs::UpdateNested` (chamado por `NeedsSync`
@@ -119,6 +125,8 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 - Lado a lado, a cena é desenhada duas vezes por quadro no Play (as sombras também); fora do Play, a janela Jogo
   só desenha quando está visível. Os botões de Play ficam no Viewport e, com ele estreito, cobrem as
   estatísticas. A janela Jogo usa a proporção dela (não há resoluções fixas como 16:9 ou 1920x1080).
+- Ficam fora do desfazer: "Aplicar ao prefab" e criar prefab ou material (mexem em arquivos), materiais mudados por
+  scripts no Play e mudanças em materiais e prefabs feitas pelo MCP.
 - Prefab aninhado: a Hierarquia não destaca as entidades aninhadas (só o Inspector diz de onde vieram), e para
   mudar o prefab de dentro é preciso abri-lo pelo painel Projeto. Variante de prefab (um prefab que é só outro
   com mudanças) funciona como aninhado na raiz, sem nada específico. Mudanças no conteúdo de um prefab feitas

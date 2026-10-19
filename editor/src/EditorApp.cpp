@@ -56,6 +56,11 @@ EditorApp::EditorApp(Options options)
       m_startupMcpPort(options.mcpPort) {}
 
 void EditorApp::OnInit() {
+    m_ctx.pushAssetUndo = [this](std::function<void()> undo, std::function<void()> redo) {
+        if (!m_play.IsActive()) {
+            m_history.PushAction(m_ctx.scene, m_ctx.selected, &m_ctx.selection, std::move(undo), std::move(redo));
+        }
+    };
     log::Info("Motor Editor {} (API de scripts {})", kVersion, kScriptApiVersion);
     if (EditorSettings::IsDisabled()) log::Info("Configuração do editor desligada (--no-settings)");
     m_viewport.Init();
@@ -223,6 +228,7 @@ void EditorApp::UpdateMinimized() {
 void EditorApp::OnImGui() {
     // Desfazer/refazer e Play/Parar pedidos no frame anterior: aplicados antes de os painéis desenharem a cena.
     ApplyRequests();
+    m_ctx.playing = m_play.IsActive();
     m_ctx.SyncSelection();  // seleção trocada por fora (criar, MCP, desfazer) antes dos painéis
 
     ImGuizmo::BeginFrame();
@@ -306,6 +312,8 @@ void EditorApp::StopPlay() {
 }
 
 void EditorApp::OnPlayStopped() {
+    m_ctx.playing = false;
+    RevertPlayAssetEdits(m_ctx);
     m_viewport.StopLooking();
     m_mcp.OnPlayStopped();
     m_scripts.OnPlayStopped();  // scripts recompilados durante o Play recarregam agora
