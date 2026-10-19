@@ -24,7 +24,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
   `ProjectPanel.cpp` (~1200 linhas), `SceneViewport.cpp` e `SceneDocument.cpp` (~600).~~ Feito na
   [Organização do código](organizacao-do-codigo.md). *(origem: revisão do código de 17/10/2026)*
 - [x] **Seleção múltipla** na hierarquia e no viewport (Ctrl/Shift, retângulo), com gizmo e Inspector para vários. (59e5fb3)
-- [ ] **Copiar, recortar, colar e duplicar** várias entidades (com filhos), também entre cenas.
+- [x] **Copiar, recortar, colar e duplicar** várias entidades (com filhos), também entre cenas. (COMMIT)
 - [ ] **Snapping** na grade, em ângulos e em passos de escala; grade visível configurável.
 - [ ] **Busca na hierarquia** (nome e tipo de componente).
 - [x] **Contorno verde do collider só no objeto selecionado**, como na Unity. Hoje o viewport desenha o de todos
@@ -65,6 +65,13 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   e no estado do editor. Testes `test_selection` e casos no `test_mcp`; conferido numa captura com dois objetos
   selecionados pelo MCP. Ctrl/Shift+clique, retângulo e o gizmo com vários **não foram testados** (precisam de
   mouse; itens novos na seção 4 do roteiro à mão).
+- **Copiar, recortar e colar:** Ctrl+C/X/V, menu Editar e clique direito da Hierarquia ("Colar como filho");
+  `EntityClipboard` guarda cópias das sub-árvores numa cena própria com as raízes na posição do mundo, então colar
+  sob outro pai ou em outra cena mantém o lugar. Referências entre entidades da cópia seguem as coladas; para
+  fora da cópia, valem só na mesma cena (`EditorContext::sceneTag`), senão ficam vazias. Duplicar (Ctrl+D) já
+  agia em vários desde a seleção múltipla. MCP: `entity_copy`, `entity_cut`, `entity_paste`. Testes em
+  `test_selection` e `test_mcp`; conferido numa captura depois de copiar e colar pelo MCP. Os atalhos de teclado
+  não foram testados (precisam de teclado; item novo na seção 4 do roteiro).
 
 ## Limitações
 
@@ -75,3 +82,6 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 - O Inspector com vários mostra os valores da principal, sem marcar os campos que diferem entre os selecionados;
   o nome não é repetido. "Salvar como asset" do material com vários faz todos usarem o asset novo.
 - O retângulo usa o centro de cada objeto, não a forma: um objeto grande só entra com o centro dentro.
+- A área de transferência de entidades fica na memória do editor: não passa para outro editor aberto nem
+  sobrevive a fechá-lo, e não usa a do Windows. Colar entre projetos diferentes não foi pensado (materiais e
+  prefabs são do projeto de origem).

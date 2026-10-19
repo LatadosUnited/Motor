@@ -121,6 +121,17 @@ int main() {
         CHECK(ctx.SelectionCount() == 2 && ctx.IsSelected(static_cast<motor::EntityId>(torreId)));
         CHECK(Call(protocol, "select", {{"entities", {"NaoExiste"}}})["isError"] == true);
         CHECK(Call(protocol, "scene_tree", Json::object())["data"]["selection"].size() == 2);
+
+        // Copiar, recortar e colar (Fase 20).
+        CHECK(Call(protocol, "entity_paste", Json::object())["isError"] == true);  // nada copiado
+        CHECK(Call(protocol, "entity_copy", {{"entities", {"Torre"}}})["isError"] == false);
+        const size_t count = ctx.scene.Entities().size();
+        const Json pasted = Call(protocol, "entity_paste", Json::object());
+        CHECK(pasted["isError"] == false && pasted["data"]["pasted"].size() == 1);
+        CHECK(ctx.scene.Entities().size() == count + 2);  // Torre com a Base
+        const int copyId = pasted["data"]["pasted"][0]["id"].get<int>();
+        CHECK(Call(protocol, "entity_cut", {{"entities", {copyId}}})["isError"] == false);
+        CHECK(ctx.scene.Entities().size() == count && !ctx.scene.Find(static_cast<motor::EntityId>(copyId)));
         Call(protocol, "select", {{"entity", baseId}});
         CHECK(base["data"]["parent"] == torreId);
 

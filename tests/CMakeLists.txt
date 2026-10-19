@@ -102,6 +102,7 @@ target_compile_definitions(test_gltf PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_
 # Servidor MCP do editor (Fase 13): protocolo, ferramentas de cena, PNG/base64 e o transporte HTTP (cpp-httplib).
 motor_add_test(test_mcp
     ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/ImageEncode.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
@@ -168,6 +169,7 @@ target_link_libraries(test_viewport PRIVATE nlohmann_json::nlohmann_json)
 # Inspector repetindo nos outros selecionados o que mudou na principal.
 motor_add_test(test_selection
     ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/panels/MultiEdit.cpp)

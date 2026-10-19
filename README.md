@@ -85,6 +85,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Reparentar | arrastar na hierarquia (soltar no vazio = raiz) |
 | Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia; as formas (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone) já vêm com o Collider que bate com elas |
 | Focar / Excluir / Duplicar | F / Del / Ctrl+D |
+| Copiar / Recortar / Colar | Ctrl+C / Ctrl+X / Ctrl+V (também no menu Editar e no clique direito da hierarquia, com "Colar como filho"): os selecionados com os filhos, colados no mesmo lugar do mundo; vale colar em outra cena do projeto |
 | Desfazer / Refazer | Ctrl+Z / Ctrl+Y (ou Ctrl+Shift+Z), também no menu Editar; segurar repete |
 | Restaurar layout | Ver > Restaurar layout (o layout fica salvo em `imgui.ini`) |
 | Novo / Abrir projeto | Arquivo > Novo projeto... / Abrir projeto... / Projetos recentes |
@@ -678,7 +679,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Grupo | Ferramentas |
   |---|---|
   | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read` |
-  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `select`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
+  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
   | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |

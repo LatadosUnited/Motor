@@ -73,6 +73,10 @@ versão nova, marca o que passou e anota o que não passou. Criado na
   pega tudo. Com vários: o gizmo move/gira todos; o Inspector diz "N objetos selecionados" e mudar a Posição Y
   muda só o Y de todos; Del exclui todos e Ctrl+Z traz de volta com a seleção; arrastar o grupo na hierarquia
   reparenta todos; clique simples num deles (sem arrastar) volta a ser só ele.
+- [ ] **Copiar e colar:** Ctrl+C em dois objetos e Ctrl+V → cópias no mesmo lugar, selecionadas (mover com o
+  gizmo mostra o original embaixo). Ctrl+X some com eles e Ctrl+V traz de volta; Ctrl+Z desfaz cada passo.
+  Clique direito > Colar como filho põe sob o objeto clicado sem mudar o lugar. Abrir outra cena e Ctrl+V cola
+  lá também. Num campo de texto, Ctrl+C/V copiam o texto, não as entidades.
 - [ ] O título mostra `*` com alterações; Nova cena, Abrir cena e fechar a janela perguntam Salvar / Não salvar /
   Cancelar.
 

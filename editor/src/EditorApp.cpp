@@ -331,6 +331,9 @@ void EditorApp::DrawMenuBar() {
         if (ImGui::MenuItem("Refazer", "Ctrl+Y", false, editing && m_history.CanRedo())) m_historyRequest = +1;
         ImGui::Separator();
         const bool hasSelection = m_ctx.scene.Find(m_ctx.selected) != nullptr;
+        if (ImGui::MenuItem("Recortar", "Ctrl+X", false, hasSelection)) m_ctx.CutSelected();
+        if (ImGui::MenuItem("Copiar", "Ctrl+C", false, hasSelection)) m_ctx.CopySelected();
+        if (ImGui::MenuItem("Colar", "Ctrl+V", false, !m_ctx.clipboard.Empty())) m_ctx.Paste();
         if (ImGui::MenuItem("Duplicar", "Ctrl+D", false, hasSelection)) m_ctx.DuplicateSelected();
         if (ImGui::MenuItem("Excluir", "Del", false, hasSelection)) m_ctx.pendingDelete = m_ctx.selected;
         ImGui::Separator();
@@ -419,6 +422,9 @@ void EditorApp::HandleShortcuts() {
     }
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) m_ctx.DuplicateSelected();
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false)) SelectAll();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) m_ctx.CopySelected();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X, false)) m_ctx.CutSelected();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false)) m_ctx.Paste();
     if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) m_viewport.FocusSelected(m_ctx);
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) m_ctx.SelectOnly(kNullEntity);
 }

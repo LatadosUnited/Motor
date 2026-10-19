@@ -20,6 +20,11 @@ using namespace motor;
 
 namespace {
 bool Near(float a, float b) { return std::abs(a - b) < 1e-3f; }
+
+// Componente com referência a outra entidade (as cópias precisam ajustá-la).
+struct Mirar {
+    EntityRef alvo;
+};
 } // namespace
 
 int main() {
@@ -182,6 +187,70 @@ int main() {
         PropagateEdits(principal, principal, outro, assets);
         CHECK(outro.transform.position == quieto.position && outro.transform.rotation == quieto.rotation);
         CHECK(outro.components.size() == componentes);
+    }
+
+    SECTION("Copiar e colar: mesma cena, sob outro pai, no mesmo lugar do mundo");
+    {
+        ComponentRegistry::Instance().Register<Mirar>("TesteMirar", "Mirar").Field("alvo", &Mirar::alvo);
+        EditorContext ctx;
+        Entity& pai = ctx.scene.CreateEntity("Pai");
+        pai.transform.position = {10, 0, 0};
+        const EntityId paiId = pai.id;
+        Entity& torre = ctx.scene.CreateEntity("Torre", paiId);
+        torre.transform.position = {1, 2, 3};  // no mundo: (11, 2, 3)
+        const EntityId torreId = torre.id;
+        const EntityId arma = ctx.scene.CreateEntity("Arma", torreId).id;
+        const EntityId fora = ctx.scene.CreateEntity("Fora").id;
+        ctx.scene.Find(torreId)->Add<Mirar>().alvo = arma;  // aponta para dentro da cópia
+        ctx.scene.Find(arma)->Add<Mirar>().alvo = fora;     // aponta para fora
+
+        ctx.SelectOnly(torreId);
+        ctx.CopySelected();
+        CHECK(ctx.clipboard.Count() == 1);
+        ctx.Paste();
+        CHECK(ctx.SelectionCount() == 1 && ctx.selected != torreId);
+        const Entity* copia = ctx.scene.Find(ctx.selected);
+        CHECK(copia && copia->name == "Torre" && copia->parent == kNullEntity);
+        CHECK(glm::vec3(ctx.scene.WorldMatrix(copia->id)[3]) == glm::vec3(11, 2, 3));
+        const auto filhos = ctx.scene.Children(copia->id);
+        CHECK(filhos.size() == 1);
+        CHECK(copia->Get<Mirar>()->alvo.id == filhos[0]);              // segue a cópia da arma
+        CHECK(ctx.scene.Find(filhos[0])->Get<Mirar>()->alvo.id == fora);  // mesma cena: a mesma entidade
+
+        // Colar de novo, como filho de "Fora": continua no mesmo lugar do mundo.
+        ctx.Paste(fora);
+        CHECK(ctx.scene.Find(ctx.selected)->parent == fora);
+        CHECK(glm::length(glm::vec3(ctx.scene.WorldMatrix(ctx.selected)[3]) - glm::vec3(11, 2, 3)) < 1e-4f);
+
+        SECTION("Recortar e colar em outra cena");
+        ctx.SetSelection({torreId, fora});
+        ctx.CutSelected();
+        CHECK(!ctx.scene.Find(torreId) && !ctx.scene.Find(arma) && !ctx.scene.Find(fora));
+        CHECK(ctx.selection.empty() && ctx.clipboard.Count() == 2);
+        CHECK(ctx.scene.Find(paiId));
+
+        ctx.scene = Scene();  // abriu outra cena
+        ctx.ResetSceneState();
+        ctx.scene.CreateEntity("Outra");
+        ctx.Paste();
+        CHECK(ctx.SelectionCount() == 2);
+        const Entity* t = ctx.scene.FindByName("Torre");
+        const Entity* a = ctx.scene.FindByName("Arma");
+        const Entity* f = ctx.scene.FindByName("Fora");
+        CHECK(t && a && f && a->parent == t->id);
+        CHECK(t->Get<Mirar>()->alvo.id == a->id);
+        // "Fora" foi junto na cópia: a referência segue a colada, mesmo em outra cena.
+        CHECK(a->Get<Mirar>()->alvo.id == f->id);
+        CHECK(glm::vec3(ctx.scene.WorldMatrix(t->id)[3]) == glm::vec3(11, 2, 3));
+
+        SECTION("Referência para fora da cópia, colada em outra cena, fica vazia");
+        ctx.SelectOnly(a->id);
+        ctx.CopySelected();  // Arma sem o Fora
+        ctx.scene = Scene();
+        ctx.ResetSceneState();
+        for (int i = 0; i < 5; ++i) ctx.scene.CreateEntity("Enche");  // ids que coincidiriam
+        ctx.Paste();
+        CHECK(ctx.scene.Find(ctx.selected)->Get<Mirar>()->alvo.IsEmpty());
     }
 
     return TestResult();

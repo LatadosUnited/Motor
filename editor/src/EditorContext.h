@@ -1,5 +1,7 @@
 #pragma once
 
+#include "EntityClipboard.h"
+
 #include <motor/Motor.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -79,6 +81,14 @@ struct EditorContext {
     // Aplica uma textura do projeto ao Mesh Renderer da entidade.
     bool ApplyTextureFile(EntityId id, const std::filesystem::path& file);
     void DuplicateSelected();  // todos os selecionados; as cópias ficam selecionadas
+
+    // Copiar / Recortar / Colar (Ctrl+C / Ctrl+X / Ctrl+V): os selecionados com os filhos. Colar vale em outra
+    // cena; as coladas ficam selecionadas, na raiz ou sob `parent`, no mesmo lugar do mundo de onde saíram.
+    EntityClipboard clipboard;
+    uint64_t sceneTag = 1;  // muda quando a cena é trocada inteira (ResetSceneState)
+    void CopySelected();
+    void CutSelected();
+    void Paste(EntityId parent = kNullEntity);
     // Exclui `pendingDelete`; se ele estiver selecionado, exclui toda a seleção.
     void ApplyPendingDelete();
 

@@ -131,7 +131,11 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
             DrawCreateEntityMenuItems(ctx, id);
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Duplicar", "Ctrl+D")) ctx.DuplicateSelected();  // todos os selecionados
+        if (ImGui::MenuItem("Recortar", "Ctrl+X")) ctx.CutSelected();  // todos os selecionados
+        if (ImGui::MenuItem("Copiar", "Ctrl+C")) ctx.CopySelected();
+        if (ImGui::MenuItem("Colar", "Ctrl+V", false, !ctx.clipboard.Empty())) ctx.Paste();
+        if (ImGui::MenuItem("Colar como filho", nullptr, false, !ctx.clipboard.Empty())) ctx.Paste(id);
+        if (ImGui::MenuItem("Duplicar", "Ctrl+D")) ctx.DuplicateSelected();
         if (ImGui::MenuItem("Excluir", "Del")) ctx.pendingDelete = id;
         ImGui::Separator();
         if (ImGui::MenuItem("Criar prefab")) ctx.CreatePrefabFromEntity(id);
@@ -181,6 +185,8 @@ void DrawHierarchyPanel(EditorContext& ctx) {
 
     if (ImGui::BeginPopupContextItem("##hierarchy_background_ctx")) {
         DrawCreateEntityMenuItems(ctx, kNullEntity);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Colar", "Ctrl+V", false, !ctx.clipboard.Empty())) ctx.Paste();
         ImGui::EndPopup();
     }
 

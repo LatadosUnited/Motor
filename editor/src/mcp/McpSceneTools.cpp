@@ -303,6 +303,55 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
 
 // Apagar, duplicar e selecionar entidades.
 void AddEntityEditTools(Protocol& protocol, EditorContext& ctx) {
+    // Copiar e recortar: as entidades pedidas (viram a seleção) ou, sem `entities`, a seleção atual.
+    auto selectArg = [&ctx](const Json& args) {
+        ctx.SyncSelection();
+        if (!args.contains("entities")) return;
+        if (!args["entities"].is_array()) throw ToolError("'entities' deve ser uma lista de ids ou nomes");
+        std::vector<EntityId> ids;
+        for (const Json& item : args["entities"]) ids.push_back(ResolveEntity(ctx, Json{{"entity", item}}).id);
+        ctx.SetSelection(ids);
+    };
+    const Json entitiesProp = {{"type", "array"}, {"items", kEntityProp},
+                               {"description", "entidades (padrão: as selecionadas); os filhos vão junto"}};
+    protocol.AddTool({
+        .name = "entity_copy",
+        .description = "Copia entidades (com os filhos) para a área de transferência do editor, como Ctrl+C. Vale "
+                       "colar em outra cena do projeto com entity_paste.",
+        .inputSchema = Schema({{"entities", entitiesProp}}),
+        .run = [&ctx, selectArg](const Json& args) {
+            selectArg(args);
+            if (ctx.selection.empty()) throw ToolError("nada selecionado para copiar");
+            ctx.CopySelected();
+            return ToolResult::Text(std::format("copiadas: {} entidade(s)", ctx.clipboard.Count()));
+        },
+    });
+    protocol.AddTool({
+        .name = "entity_cut",
+        .description = "Recorta entidades (com os filhos), como Ctrl+X: copia e apaga (dá para desfazer com undo).",
+        .inputSchema = Schema({{"entities", entitiesProp}}),
+        .run = [&ctx, selectArg](const Json& args) {
+            selectArg(args);
+            if (ctx.selection.empty()) throw ToolError("nada selecionado para recortar");
+            ctx.CutSelected();
+            if (!ctx.scene.Find(ctx.pendingDelete)) ctx.pendingDelete = kNullEntity;
+            return ToolResult::Text(std::format("recortadas: {} entidade(s)", ctx.clipboard.Count()));
+        },
+    });
+    protocol.AddTool({
+        .name = "entity_paste",
+        .description = "Cola o que foi copiado ou recortado, como Ctrl+V, no mesmo lugar do mundo de onde saiu. "
+                       "Com parent, as coladas viram filhas dela. Ficam selecionadas. Devolve as coladas.",
+        .inputSchema = Schema({{"parent", kEntityProp}}),
+        .run = [&ctx](const Json& args) {
+            if (ctx.clipboard.Empty()) throw ToolError("a área de transferência está vazia (use entity_copy)");
+            ctx.Paste(ParentArg(ctx, args));
+            Json pasted = Json::array();
+            for (EntityId id : ctx.selection) pasted.push_back(EntityToJson(ctx, *ctx.scene.Find(id)));
+            return ToolResult::Data({{"pasted", std::move(pasted)}});
+        },
+    });
+
     protocol.AddTool({
         .name = "entity_delete",
         .description = "Apaga uma entidade e todos os filhos (dá para desfazer com undo).",

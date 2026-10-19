@@ -364,7 +364,28 @@ void EditorContext::DuplicateSelected() {
     if (!copies.empty()) SetSelection(copies);
 }
 
+void EditorContext::CopySelected() {
+    SyncSelection();
+    const std::vector<EntityId> roots = SelectionRoots();
+    if (!roots.empty()) clipboard.Copy(scene, roots, sceneTag);
+}
+
+void EditorContext::CutSelected() {
+    SyncSelection();
+    const std::vector<EntityId> roots = SelectionRoots();
+    if (roots.empty()) return;
+    clipboard.Copy(scene, roots, sceneTag);
+    for (EntityId id : roots) scene.DestroyEntity(id);
+    SyncSelection();
+}
+
+void EditorContext::Paste(EntityId parent) {
+    if (clipboard.Empty()) return;
+    SetSelection(clipboard.Paste(scene, parent, sceneTag));
+}
+
 void EditorContext::ResetSceneState() {
+    ++sceneTag;  // referências copiadas da cena anterior não valem nesta
     selected = kNullEntity;
     selection.clear();
     pendingDelete = kNullEntity;
