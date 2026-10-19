@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdio>
 #include <functional>
 #include <map>
 #include <optional>
@@ -379,6 +380,85 @@ bool DrawComponent(EditorContext& ctx, motor::ComponentPtr& component, const std
     return keep;
 }
 
+// --- Pré-visualização de animação fora do Play ---------------------------------------------
+// O Animator só anda no Play; aqui o Inspector toca um clipe na entidade selecionada para ver no viewport. A pose
+// é estado interno do Animator (não é campo): não muda a cena nem entra no desfazer.
+struct AnimationPreview {
+    EntityId entity = kNullEntity;
+    std::string clip;
+    bool playing = false;
+};
+AnimationPreview s_preview;
+
+void StopAnimationPreview(EditorContext& ctx) {
+    if (motor::Entity* e = ctx.scene.Find(s_preview.entity)) {
+        if (motor::Animator* animator = e->Get<motor::Animator>()) animator->Stop();  // volta à pose de repouso
+    }
+    s_preview = {};
+}
+
+// A cada quadro: avança o clipe, ou para se a entidade deixou de estar selecionada, sumiu ou o Play começou.
+void UpdateAnimationPreview(EditorContext& ctx) {
+    if (!s_preview.playing) return;
+    motor::Entity* e = ctx.scene.Find(s_preview.entity);
+    motor::Animator* animator = e ? e->Get<motor::Animator>() : nullptr;
+    if (!animator || ctx.playing || ctx.selected != s_preview.entity) {
+        if (!ctx.playing) StopAnimationPreview(ctx);  // no Play a cena é outra: a pose some com ela
+        s_preview = {};
+        return;
+    }
+    if (animator->CurrentClip() != s_preview.clip && !animator->Play(s_preview.clip, true)) {
+        StopAnimationPreview(ctx);
+        return;
+    }
+    animator->Update(ImGui::GetIO().DeltaTime);
+}
+
+void DrawAnimationPreview(EditorContext& ctx, motor::Entity& e, motor::Animator& animator) {
+    if (ctx.playing) return;
+    ImGui::PushID("animation_preview");
+    const std::vector<std::string> clips = animator.ClipNames();
+    if (clips.empty()) {
+        ImGui::TextDisabled("Pré-visualizar: o modelo não tem clipes.");
+        ImGui::PopID();
+        return;
+    }
+    const bool mine = s_preview.entity == e.id;
+    std::string clip = mine && !s_preview.clip.empty() ? s_preview.clip : (animator.clip.empty() ? clips[0] : animator.clip);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Pré-visualizar");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x - 90.0f));
+    if (ImGui::BeginCombo("##clip", clip.c_str())) {
+        for (const std::string& name : clips) {
+            if (ImGui::Selectable(name.c_str(), name == clip)) {
+                clip = name;
+                s_preview.entity = e.id;
+                s_preview.clip = name;  // tocando, troca na hora
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    const bool playing = mine && s_preview.playing;
+    if (ImGui::Button(playing ? "Parar" : "Tocar", ImVec2(-FLT_MIN, 0.0f))) {
+        if (playing) {
+            StopAnimationPreview(ctx);
+        } else {
+            StopAnimationPreview(ctx);  // outra entidade que estivesse tocando volta ao repouso
+            s_preview = {e.id, clip, true};
+        }
+    }
+    ImGui::SetItemTooltip("Toca o clipe no viewport sem dar Play (em loop, na velocidade do Animator).\n"
+                          "Não muda a cena: ao parar ou trocar a seleção, volta à pose de repouso.");
+    if (playing && animator.ClipLength() > 0.0f) {
+        char label[48];
+        std::snprintf(label, sizeof(label), "%.2f / %.2f s", animator.ClipTime(), animator.ClipLength());
+        ImGui::ProgressBar(animator.ClipTime() / animator.ClipLength(), ImVec2(-FLT_MIN, 0.0f), label);
+    }
+    ImGui::PopID();
+}
+
 // Nome, transform, componentes e "Adicionar componente". `prefabAsset`: entidade de um prefab sendo editado
 // direto (sem o vínculo, que é do arquivo).
 void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
@@ -418,6 +498,9 @@ void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
         if (&e.components[i].Type() == nestedType) continue;
         ImGui::PushID(static_cast<int>(i));
         if (!DrawComponent(ctx, e.components[i], e.name, overridden)) toRemove = i;
+        if (!prefabAsset && toRemove != i && &e.components[i].Type() == motor::ComponentRegistry::TypeOf<motor::Animator>()) {
+            DrawAnimationPreview(ctx, e, *static_cast<motor::Animator*>(e.components[i].Data()));
+        }
         ImGui::PopID();
     }
     if (toRemove) e.components.erase(e.components.begin() + static_cast<std::ptrdiff_t>(*toRemove));
@@ -606,6 +689,7 @@ void RevertPlayAssetEdits(EditorContext& ctx) {
 }
 
 void DrawInspectorPanel(EditorContext& ctx) {
+    UpdateAnimationPreview(ctx);
     const bool interacting = ImGui::IsAnyItemActive() || ImGui::IsMouseDown(ImGuiMouseButton_Left);
     SaveEditedMaterials(ctx, interacting);
     SavePrefabEdit(ctx, interacting);

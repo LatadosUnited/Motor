@@ -116,6 +116,9 @@ versão nova, marca o que passou e anota o que não passou. Criado na
   a cor → as janelas das duas casas mudam. Mudar a escala da janela dentro do prefab Casa e depois a escala no
   prefab Janela → a da Casa fica. **Desvincular** uma casa → a janela dela volta a ser uma Janela.
 - [ ] Importar um `.glb` animado (ex.: `Robo.glb`) e pôr na cena → aparece com materiais; a animação toca no Play.
+  Fora do Play, no Inspector do robô: **Pré-visualizar** > Andando > Tocar → anda no viewport; Parar (ou selecionar
+  outra coisa) volta à pose de repouso, sem `*` no título. Num cubo, combo **Malha** > Modelos > Robo.glb → as malhas
+  do robô.
 
 ## 7. Scripts
 

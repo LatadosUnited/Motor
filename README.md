@@ -317,13 +317,14 @@ Assets/Personagens/Robo_materiais/       um .mmat por material do glTF e as text
 - **Animação esquelética:** o prefab de um modelo com esqueleto ou clipes vem com o componente **Animator**
   (Modelo, Clipe inicial, Tocar ao iniciar, Repetir, Velocidade). No Play, o clipe inicial toca sozinho;
   scripts trocam com `GetAnimator()->CrossFade("Andando", 0.2f)` (guia: [docs/scripts.md](docs/scripts.md),
-  seção "Animação"). Fora do Play o modelo fica na pose de repouso. O skinning é feito no shader
+  seção "Animação"). Fora do Play o modelo fica na pose de repouso; para ver um clipe sem dar Play, use
+  **Pré-visualizar** (escolha o clipe e Tocar) logo abaixo do Animator no Inspector. O skinning é feito no shader
   (`skinned.vert`, até 128 juntas, 4 por vértice).
 - Exemplo: `engine/assets/models/Robo.glb` (1,93 m, olha para -Z, clipes Parado, Andando e Pulando). Com o
   modelo Jogador: entidade com Controlador de personagem + Jogador, o robô como filho na posição `0 -0.9 0`.
 
 Limitações: sem morph targets, câmeras e luzes do glTF; animação só de juntas (nós sem pele não se movem);
-malhas do modelo não aparecem no combo "Malha" do Inspector (use o prefab); o modelo alterado no disco é
+as malhas do modelo também aparecem no combo "Malha" do Inspector, em "Modelos" (abra o modelo na lista); o modelo alterado no disco é
 relido, mas cenas abertas só pegam as malhas novas ao reabrir.
 
 ## Componentes

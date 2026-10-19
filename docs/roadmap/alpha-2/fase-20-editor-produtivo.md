@@ -37,8 +37,8 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [x] **Prefab dentro de prefab.** (08a1958) *(origem: Fase 6, limitação)*
 - [x] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
   limitação)* (69fcdd7)
-- [ ] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
-  limitação)*
+- [x] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
+  limitação)* (COMMIT)
 - [ ] **MCP acompanha:** seleção múltipla, copiar/colar, mover a câmera do editor para um ponto, eventos para o
   agente. *(origem: Fase 13, pendências)*
 
@@ -100,6 +100,12 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   Play essas edições não são gravadas nem viram passo: o valor de antes fica guardado e volta ao parar
   (`RevertPlayAssetEdits`). Teste da fila no `test_selection`. A edição pelo Inspector não foi testada com o
   mouse (item novo na seção 4 do roteiro).
+- **Modelos:** o combo "Malha" ganhou a seção "Modelos", com os `.glb`/`.gltf` do projeto; abrir um lista as malhas
+  dele (o modelo só é lido nessa hora) e a escolhida fica como `Robo.glb#Corpo`, mostrada "Corpo (Robo.glb)". Abaixo
+  do Animator, **Pré-visualizar** toca um clipe no viewport fora do Play: o Inspector avança o Animator a cada
+  quadro; a pose é estado interno (não é campo), então a cena não muda nem entra no desfazer, e volta ao repouso
+  ao parar, trocar a seleção ou dar Play. Conferido em captura (linha de pré-visualização no Inspector do Robo);
+  tocar e o combo de malhas não foram testados com o mouse (item na seção 6 do roteiro).
 - **Prefab dentro de prefab:** componente novo `PrefabNested` (engine, `scene/PrefabNested`): no conteúdo do
   prefab de fora, as entidades vindas de outro prefab guardam o vínculo com ele e os overrides relativos a ele; o
   `PrefabInstance` continua sendo a identidade dentro do de fora. `Prefabs::UpdateNested` (chamado por `NeedsSync`
