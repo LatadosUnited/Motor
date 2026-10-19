@@ -3,12 +3,12 @@ tipo: fase
 alpha: 2
 fase: 17
 titulo: Scripts mais rápidos e fáceis
-status: em andamento
+status: pronta
 prioridade: 2
 areas: [scripts, editor, docs]
 branch: fase-17-scripts
 inicio: 2026-10-18
-fim: 
+fim: 2026-10-18
 ---
 
 # Fase 17 — Scripts mais rápidos e fáceis
@@ -58,7 +58,7 @@ README.
 
 ### Para fechar a fase
 
-- [ ] **Menos de 1 s do salvar à recarga** com 10 scripts: hoje 1,1 a 1,5 s no editor aberto (0,59 s de
+- [ ] ~~**Menos de 1 s do salvar à recarga** com 10 scripts: hoje 1,1 a 1,5 s no editor aberto (0,59 s de
   compilar, 0,23 s de ligar e o resto do editor e do processo). O que sobra: o `.gch` tem ~107 MB e só
   carregá-lo leva ~0,4 s por arquivo (um script vazio compila em 0,45 s). Caminhos: PCH menor (menos headers no
   `ScriptModule.h`), ou compilar o arquivo salvo num compilador que fica aberto. *(origem: medição de 18/10/2026)*
@@ -68,7 +68,9 @@ README.
   por arquivo, usar `std::format` mais ~1 s, e gerar o objeto em Debug quase dobra (JogadorIlha: 3,4 s só a
   sintaxe, 6,9 s com o objeto). Os headers da engine fora do PCH (`PhysicsSystem.h`, `UiSystem.h`,
   `Animator.h`) custam 0,1 a 0,25 s cada. Próximo passo: medir com o `<format>` no PCH (e o tamanho/carga do
-  `.gch` que isso traz), ou oferecer aos scripts um formatador da engine compilado na `libMotor.dll`.
+  `.gch` que isso traz), ou oferecer aos scripts um formatador da engine compilado na `libMotor.dll`.~~ Vai para a [Fase 29 — Compilador integrado](../alpha-4.md): a recarga fica como está na alpha 2
+  (decisão do usuário, 18/10/2026).
+
 - [x] **Medir o projeto de jogo real** (88 a 124 s do zero no começo da fase; a meta é menos de 30 s). O de
   referência com 50 scripts compila do zero em 11,5 s. *(origem: Pronto quando)* Medido em 18/10/2026 no
   Island (9 arquivos, 6 scripts; cópia na pasta temporária, editor de teste pelo MCP): **9,9 s do zero**
@@ -121,6 +123,8 @@ script, editar com IntelliSense e clicar num erro para ir à linha funciona sem 
 
 ## Limitações
 
+- **Recarga acima de 1 s:** 1,5 a 1,9 s num script simples e 5 a 6,5 s num que usa `<format>` (projeto Island).
+  Fica para a [Fase 29 — Compilador integrado](../alpha-4.md); detalhes na tarefa riscada acima.
 - Na recarga durante o Play, os membros não registrados voltam ao padrão e o `OnStart` roda de novo (sem
   `OnDestroy`): um `OnStart` que cria entidades cria outra vez.
 - Um campo `EntityRef` num prefab que aponta para fora dele fica vazio no arquivo do prefab (na instância
