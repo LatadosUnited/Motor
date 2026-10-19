@@ -19,6 +19,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <format>
@@ -26,6 +27,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 using namespace motor;
 using namespace editor;
@@ -47,6 +49,55 @@ std::string ReadText(const fs::path& path) {
 void WriteText(const fs::path& path, const std::string& text) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out << text;
+}
+
+// Separa uma linha de comando do compile_commands.json em argumentos (aspas duplas agrupam; sem escapes).
+std::vector<std::string> SplitCommand(const std::string& command) {
+    std::vector<std::string> args;
+    std::string current;
+    bool quoted = false, any = false;
+    for (char c : command) {
+        if (c == '"') {
+            quoted = !quoted;
+            any = true;
+        } else if (c == ' ' && !quoted) {
+            if (any) args.push_back(std::move(current));
+            current.clear();
+            any = false;
+        } else {
+            current += c;
+            any = true;
+        }
+    }
+    if (any) args.push_back(std::move(current));
+    return args;
+}
+
+// Segundos para o compilador só analisar `file` (do compile_commands.json) sem o cabeçalho pré-compilado: a
+// referência, medida na mesma hora, para saber se o PCH está fazendo efeito. -1 se não deu para medir.
+float SecondsWithoutPch(const SP::Paths& paths, const SP::Toolchain& toolchain, const std::string& file) {
+    const auto json = nlohmann::json::parse(ReadText(paths.binaryDir / "compile_commands.json"), nullptr, false);
+    if (!json.is_array()) return -1.0f;
+    for (const auto& entry : json) {
+        if (!entry.is_object() || !entry.value("file", std::string()).ends_with(file)) continue;
+        std::vector<std::string> args;
+        const std::vector<std::string> original = SplitCommand(entry.value("command", std::string()));
+        for (size_t i = 0; i < original.size(); ++i) {
+            if (original[i] == "-include" || original[i] == "-o") {
+                ++i;  // tira o PCH e o objeto de saída
+            } else if (original[i] == "-c") {
+                args.push_back("-fsyntax-only");
+            } else {
+                args.push_back(original[i]);
+            }
+        }
+        const std::atomic<bool> cancel{false};
+        const auto start = std::chrono::steady_clock::now();
+        const int code = RunProcess(args, SP::ToolchainPathDirs(toolchain), [](const std::string&) {}, cancel);
+        if (code != 0) return -1.0f;
+        return std::chrono::duration<float>(std::chrono::steady_clock::now() - start).count();
+    }
+    return -1.0f;
 }
 
 // Compila e espera. Mostra a saída se falhar (ajuda a entender o problema no log do ctest).
@@ -431,8 +482,12 @@ int main(int argc, char** argv) {
         for (const auto& f : builder.GetTimings().files) {
             if (f.file == "Vazio.cpp") vazioSeconds = f.seconds;
         }
-        std::printf("  (script vazio Vazio.cpp: %.2f s)\n", vazioSeconds);
-        CHECK(vazioSeconds > 0.0f && vazioSeconds < 1.5f);
+        // O PCH faz efeito: o vazio compila bem mais rápido que o mesmo arquivo analisado sem o PCH, medido agora
+        // (um limite fixo em segundos falhava com a máquina ocupada). PCH inválido também aparece na saída.
+        const float withoutPch = SecondsWithoutPch(paths, *toolchain, "Vazio.cpp");
+        std::printf("  (script vazio Vazio.cpp: %.2f s; sem o PCH: %.2f s)\n", vazioSeconds, withoutPch);
+        CHECK(vazioSeconds > 0.0f && withoutPch > 0.0f && vazioSeconds < 0.6f * withoutPch);
+        CHECK(!Contains(builder.Log(), "Winvalid-pch"));
     }
     ScriptHost::Result r2 = host.Load(paths.dll, paths.loadDir, scenes, assets);
     CHECK(r2.ok && r2.detached == 1 && r2.resolved == 1);
