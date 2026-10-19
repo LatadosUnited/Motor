@@ -631,8 +631,20 @@ Exportado/
   um `{guid, path}`); a pasta **`Assets/Recursos/`** inteira (para arquivos que o jogo abre por conta própria);
   e caminhos `"Assets/..."` escritos entre aspas nos fontes de `Scripts/`. O resto fica de fora. Referências
   quebradas (GUID sem arquivo) aparecem como aviso e o jogo é exportado mesmo assim.
-- **Scripts:** precisam estar compilados (a exportação recusa durante a compilação ou com erros). Os fontes
-  não vão, só a `GameScripts.dll`.
+- **Sempre em Release** (Fase 21): o jogo leva o `Player.exe` e a `libMotor.dll` de Release e a DLL de
+  scripts é **recompilada em Release** ao exportar (em `.motor/scripts/build-release`, separada da do editor; a
+  janela mostra "Compilando os scripts em Release..."). O Motor em Release vem da pasta do editor (versão
+  instalada de Release), de `release/` ao lado dela (o `motor_package` de uma versão de Debug copia um para lá)
+  ou de `build-release/bin` no código-fonte (`MOTOR_RELEASE_BIN_DIR` no CMake). Sem nenhum, o jogo sai com o
+  Motor do editor e um aviso explica como ter o de Release:
+
+  ```bash
+  cmake -S . -B build-release -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release -DMOTOR_BUILD_TESTS=OFF
+  cmake --build build-release -j8 --target Player
+  ```
+- **Scripts:** um erro de compilação em Release aparece na janela (e no log) e cancela a exportação. Sem Motor
+  em Release, a DLL do editor precisa estar compilada (a exportação recusa durante a compilação ou com erros).
+  Os fontes não vão, só a `GameScripts.dll`.
 - **Exportar de novo** na mesma pasta substitui a exportação anterior (só o que ela tinha criado, listado na
   marca); uma pasta que não esteja vazia nem seja uma exportação é recusada.
 - **Player** (`build/bin/Player.exe`, pasta `player/`): o executável do jogo, compilado junto com o editor.
@@ -751,7 +763,9 @@ cmake --build build --target motor_package     # build/package/Motor-0.2.0/
 A pasta é autossuficiente: `MotorEditor.exe`, `Player.exe`, `libMotor.dll` e o runtime do GCC, `engine/`
 (shaders e fontes), `templates/`, `sdk/` (headers e biblioteca de importação para compilar os scripts dos
 projetos, com caminhos relativos) e `motor-version.json` (`{"version": "0.2.0", "scriptApiVersion": 10, ...}`),
-que o hub lê. Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure.
+que o hub lê. Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure. Montada de um build que não é de
+Release, ela leva também `release/` (Player, DLLs e SDK de um build de Release, de `MOTOR_RELEASE_BIN_DIR`) para
+os jogos exportados saírem em Release; sem esse build, o `motor_package` avisa.
 **O editor instalado continua precisando do MSYS2 (UCRT64) e do CMake** nos mesmos caminhos do build que montou
 a pasta (estão em `sdk/MotorSDK.json`) para compilar os scripts dos projetos; o jogo exportado não precisa.
 

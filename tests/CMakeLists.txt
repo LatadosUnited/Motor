@@ -203,3 +203,11 @@ target_link_libraries(test_exe_identity PRIVATE nlohmann_json::nlohmann_json)
 if(WIN32)
     target_link_libraries(test_exe_identity PRIVATE version)
 endif()
+
+# Motor em Release para a exportação (Fase 21): qual pasta serve (Player, DLLs e SDK de Release) e as pastas da DLL
+# de scripts de Release. Sem compilar nada.
+motor_add_test(test_release_runtime
+    ${PROJECT_SOURCE_DIR}/editor/src/export/ReleaseRuntime.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptProject.cpp)
+target_include_directories(test_release_runtime PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_release_runtime PRIVATE nlohmann_json::nlohmann_json)

@@ -192,6 +192,7 @@ add_custom_target(motor_package
         -DSRC=${PROJECT_SOURCE_DIR}
         -DVERSION=${PROJECT_VERSION}
         -DBUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DRELEASE_BIN=${MOTOR_RELEASE_BIN_DIR}  # Fase 21: Player e libMotor.dll de Release para exportar
         -DIMPLIB=$<TARGET_LINKER_FILE:Motor>
         -DIMGUI_DIR=${imgui_SOURCE_DIR}
         -DGLM_DIR=${glm_SOURCE_DIR}
