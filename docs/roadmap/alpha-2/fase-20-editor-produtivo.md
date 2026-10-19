@@ -3,11 +3,11 @@ tipo: fase
 alpha: 2
 fase: 20
 titulo: Editor produtivo
-status: planejada
+status: em andamento
 prioridade: 5
 areas: [editor, mcp, assets]
-branch: 
-inicio: 
+branch: fase-20-editor-produtivo
+inicio: 2026-10-19
 fim: 
 ---
 
@@ -27,12 +27,12 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [ ] **Copiar, recortar, colar e duplicar** várias entidades (com filhos), também entre cenas.
 - [ ] **Snapping** na grade, em ângulos e em passos de escala; grade visível configurável.
 - [ ] **Busca na hierarquia** (nome e tipo de componente).
-- [ ] **Contorno verde do collider só no objeto selecionado**, como na Unity. Hoje o viewport desenha o de todos
+- [x] **Contorno verde do collider só no objeto selecionado**, como na Unity. Hoje o viewport desenha o de todos
   os objetos com collider o tempo todo (`SceneViewport::DrawColliders`, `editor/src/viewport/SceneViewportOverlay.cpp`),
   e desde a Fase 18 toda forma criada já vem com Collider: a cena enche de linhas e o custo na CPU cresce com o
   número de objetos (12 a ~100 linhas cada, refeitas a cada quadro). O botão **Colliders** da barra vira
   **Selecionado / Todos / Nenhum** (padrão Selecionado), lembrado entre aberturas. *(origem: teste à mão da
-  Fase 19, 19/10/2026, gravidade atrapalha)*
+  Fase 19, 19/10/2026, gravidade atrapalha)* (a826ec4)
 - [ ] **Janelas Cena e Jogo lado a lado** no Play. *(origem: Fase 2, limitação)*
 - [ ] **Prefab dentro de prefab.** *(origem: Fase 6, limitação)*
 - [ ] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
@@ -49,4 +49,13 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 
 ## Feito
 
+- **Contorno dos colliders por modo:** o botão da barra do viewport alterna **Selecionado** (padrão), **Todos** e
+  **Nenhum** (`editor/src/viewport/ColliderOverlay`); em Selecionado o desenho não percorre a cena. A escolha fica
+  no `editor.json` (`viewportColliders`; arquivo antigo sem o campo abre em Selecionado). Teste `test_viewport`
+  e item novo na seção 3 do [roteiro à mão](../../teste-manual.md). Conferido numa captura da janela: só o objeto
+  selecionado tem contorno. O clique no botão e a troca de modo não foram testados (o MCP não clica na barra).
+
 ## Limitações
+
+- Em Selecionado, os colliders dos filhos do objeto selecionado não aparecem (como na Unity): selecione o filho
+  ou use Todos.
