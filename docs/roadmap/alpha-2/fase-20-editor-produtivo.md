@@ -40,7 +40,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [x] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
   limitação)* (37b1574)
 - [x] **MCP acompanha:** seleção múltipla, copiar/colar, mover a câmera do editor para um ponto, eventos para o
-  agente. *(origem: Fase 13, pendências)* (COMMIT)
+  agente. *(origem: Fase 13, pendências)* (3cf71a1)
 
 ## Pronto quando
 
