@@ -9,6 +9,7 @@
 
 #include "motor/assets/Animation.h"
 #include "motor/assets/AssetLoaders.h"
+#include "motor/renderer/Material.h"
 #include "motor/renderer/Skeleton.h"
 
 #include <glm/vec4.hpp>
@@ -47,6 +48,9 @@ struct ModelMaterial {
     float occlusionStrength = 1.0f;
     glm::vec3 emissive{0.0f};  // sRGB
     float emissiveIntensity = 1.0f;  // KHR_materials_emissive_strength
+    BlendMode blend = BlendMode::Opaque;  // alphaMode do glTF: OPAQUE, MASK (recorte) ou BLEND
+    float alphaCutoff = 0.5f;
+    bool doubleSided = false;
     int emissiveImage = -1;
 };
 

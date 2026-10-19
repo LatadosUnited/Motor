@@ -192,6 +192,11 @@ const motor::ComponentType& MaterialFields() {
         motor::ComponentBuilder<motor::Material>(t)
             .Field("texture", "Textura", &motor::Material::albedo)
             .Field("color", "Cor", &motor::Material::color, {.color = true})
+            .Field("blend", "Alfa", &motor::Material::blend,
+                   {.tooltip = "Opaco; Recorte (folhas, grades); Transparente (vidro, água)"})
+            .Field("alphaCutoff", "Limite do recorte", &motor::Material::alphaCutoff,
+                   {.slider = true, .min = 0.0f, .max = 1.0f})
+            .Field("doubleSided", "Duas faces", &motor::Material::doubleSided)
             .Field("metallic", "Metal", &motor::Material::metallic, {.slider = true, .min = 0.0f, .max = 1.0f})
             .Field("roughness", "Rugosidade", &motor::Material::roughness, {.slider = true, .min = 0.0f, .max = 1.0f})
             .Field("specular", "Reflexo", &motor::Material::specular,

@@ -5,6 +5,8 @@
 #include "FileDialog.h"
 #include "scripts/ScriptProject.h"
 
+#include <motor/physics/PhysicsSystem.h>
+
 #include <imgui.h>
 #include <motor/core/Version.h>
 #include <imgui_stdlib.h>
@@ -115,6 +117,7 @@ bool SceneDocument::OpenProjectAt(const fs::path& fileOrDir, bool restoreLastSce
         m_host.projectClosing();
     }
     m_project = std::move(*project);
+    motor::PhysicsSettings::Global().layers = m_project->Layers();  // camadas de colisão do projeto
     m_settings.lastProject = m_project->ProjectFile();
     m_settings.AddRecentProject(m_project->ProjectFile());
 

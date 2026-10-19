@@ -65,6 +65,27 @@ CustomFieldType FieldTraits<std::shared_ptr<Material>>::Describe() {
             }};
 }
 
+CustomFieldType FieldTraits<BlendMode>::Describe() {
+    return {"BlendMode",
+            [](const void* a, const void* b) { return *static_cast<const BlendMode*>(a) == *static_cast<const BlendMode*>(b); },
+            [](const void* v, const AssetLibrary&) {
+                return nlohmann::json(BlendModeName(*static_cast<const BlendMode*>(v))).dump();
+            },
+            [](std::string_view text, void* v, AssetLibrary&, std::string* error) {
+                const auto json = nlohmann::json::parse(text, nullptr, false);
+                constexpr BlendMode kModes[] = {BlendMode::Opaque, BlendMode::Cutout, BlendMode::Transparent};
+                for (int i = 0; i < 3; ++i) {
+                    if ((json.is_string() && json.get<std::string>() == BlendModeName(kModes[i])) ||
+                        (json.is_number_integer() && json.get<int>() == i)) {
+                        *static_cast<BlendMode*>(v) = kModes[i];
+                        return true;
+                    }
+                }
+                if (error) *error = "esperado \"Opaque\", \"Cutout\" ou \"Transparent\"";
+                return false;
+            }};
+}
+
 MOTOR_COMPONENT_MODULE(MeshRenderer) {
     // A ordem dos campos é a do Inspector e a do arquivo. Os campos depois de "material" são o material
     // próprio do componente (usado quando não há asset de material). Cenas até a versão 5 tinham "shininess"
@@ -75,6 +96,13 @@ MOTOR_COMPONENT_MODULE(MeshRenderer) {
                {.tooltip = "Asset de material (.mmat), compartilhado entre objetos. Vazio = material próprio."})
         .FieldRef("texture", "Textura", [](MeshRenderer& m) -> auto& { return m.material.albedo; })
         .FieldRef("color", "Cor", [](MeshRenderer& m) -> auto& { return m.material.color; }, {.color = true})
+        .FieldRef("blend", "Alfa", [](MeshRenderer& m) -> auto& { return m.material.blend; },
+                  {.tooltip = "Opaco; Recorte (some onde o alfa fica abaixo do limite: folhas, grades); "
+                              "Transparente (vidro, água)"})
+        .FieldRef("alphaCutoff", "Limite do recorte", [](MeshRenderer& m) -> auto& { return m.material.alphaCutoff; },
+                  {.slider = true, .min = 0.0f, .max = 1.0f, .tooltip = "Recorte: alfa abaixo disso some"})
+        .FieldRef("doubleSided", "Duas faces", [](MeshRenderer& m) -> auto& { return m.material.doubleSided; },
+                  {.tooltip = "As duas faces aparecem (planos de folha, grade, vidro fino)"})
         .FieldRef("metallic", "Metal", [](MeshRenderer& m) -> auto& { return m.material.metallic; },
                   {.slider = true, .min = 0.0f, .max = 1.0f, .tooltip = "0 = não metal (plástico, madeira), 1 = metal"})
         .FieldRef("roughness", "Rugosidade", [](MeshRenderer& m) -> auto& { return m.material.roughness; },

@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <functional>
 #include <vector>
 
 namespace motor {
@@ -139,6 +140,95 @@ std::shared_ptr<Mesh> Mesh::CreateSphere(int segments, int rings) {
             indices.insert(indices.end(), {a, a + 1, b, a + 1, b + 1, b});
         }
     }
+    return std::make_shared<Mesh>(vertices, indices);
+}
+
+
+namespace {
+// Anel de `segments` + 1 vértices em volta do eixo Y, na altura `y` (o último repete o primeiro, para a costura
+// da textura). Mesma ordem de ângulos da esfera: x = cos, z = sin.
+void Ring(std::vector<Vertex>& vertices, int segments, float radius, float y, float v,
+          const std::function<glm::vec3(float cosT, float sinT)>& normal) {
+    for (int s = 0; s <= segments; ++s) {
+        const float theta = glm::two_pi<float>() * static_cast<float>(s) / static_cast<float>(segments);
+        const float c = std::cos(theta), sn = std::sin(theta);
+        vertices.push_back({{c * radius, y, sn * radius}, normal(c, sn), {static_cast<float>(s) / segments, v}});
+    }
+}
+
+// Faixa entre dois anéis seguidos (o de cima começa em `top`), com o mesmo sentido dos triângulos da esfera.
+void Band(std::vector<uint32_t>& indices, uint32_t top, int segments) {
+    const auto stride = static_cast<uint32_t>(segments + 1);
+    for (uint32_t s = 0; s < static_cast<uint32_t>(segments); ++s) {
+        const uint32_t a = top + s, b = a + stride;
+        indices.insert(indices.end(), {a, a + 1, b, a + 1, b + 1, b});
+    }
+}
+
+// Tampa plana no eixo Y: centro + anel. `up`: normal +Y (tampa de cima) ou -Y (de baixo).
+void Cap(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, int segments, float radius, float y, bool up) {
+    const auto center = static_cast<uint32_t>(vertices.size());
+    const glm::vec3 n{0.0f, up ? 1.0f : -1.0f, 0.0f};
+    vertices.push_back({{0.0f, y, 0.0f}, n, {0.5f, 0.5f}});
+    for (int s = 0; s <= segments; ++s) {
+        const float theta = glm::two_pi<float>() * static_cast<float>(s) / static_cast<float>(segments);
+        const float c = std::cos(theta), sn = std::sin(theta);
+        vertices.push_back({{c * radius, y, sn * radius}, n, {0.5f + 0.5f * c, 0.5f + 0.5f * sn}});
+    }
+    for (uint32_t s = 0; s < static_cast<uint32_t>(segments); ++s) {
+        const uint32_t v0 = center + 1 + s, v1 = v0 + 1;
+        if (up) indices.insert(indices.end(), {center, v1, v0});
+        else indices.insert(indices.end(), {center, v0, v1});
+    }
+}
+} // namespace
+
+std::shared_ptr<Mesh> Mesh::CreateCylinder(int segments) {
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    auto side = [](float c, float s) { return glm::vec3(c, 0.0f, s); };
+    Ring(vertices, segments, 0.5f, 1.0f, 1.0f, side);
+    Ring(vertices, segments, 0.5f, -1.0f, 0.0f, side);
+    Band(indices, 0, segments);
+    Cap(vertices, indices, segments, 0.5f, 1.0f, true);
+    Cap(vertices, indices, segments, 0.5f, -1.0f, false);
+    return std::make_shared<Mesh>(vertices, indices);
+}
+
+std::shared_ptr<Mesh> Mesh::CreateCapsule(int segments, int rings) {
+    // Duas meias esferas de raio 0,5 separadas por 1 (altura total 2), como a cápsula do Collider padrão.
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    const float radius = 0.5f, half = 0.5f;
+    for (int r = 0; r <= 2 * rings + 1; ++r) {  // 2 * rings + 2 anéis: o equador repetido
+        const bool topHalf = r <= rings;
+        const int k = topHalf ? r : r - 1;  // o equador aparece duas vezes: em cima e embaixo do cilindro
+        const float phi = glm::pi<float>() * 0.5f * static_cast<float>(k) / static_cast<float>(rings);
+        const float y = std::cos(phi) * radius + (topHalf ? half : -half);
+        const float ringRadius = std::sin(phi) * radius;
+        const float cosPhi = std::cos(phi), sinPhi = std::sin(phi);
+        Ring(vertices, segments, ringRadius, y, (y + 1.0f) * 0.5f,
+             [cosPhi, sinPhi](float c, float s) { return glm::vec3(sinPhi * c, cosPhi, sinPhi * s); });
+        if (r > 0) Band(indices, static_cast<uint32_t>((r - 1) * (segments + 1)), segments);
+    }
+    return std::make_shared<Mesh>(vertices, indices);
+}
+
+std::shared_ptr<Mesh> Mesh::CreateCone(int segments) {
+    // Base de raio 0,5 em y = -0,5 e ponta em y = 0,5. Cada fatia tem a sua ponta, com a normal do meio dela.
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    const float radius = 0.5f, height = 1.0f;
+    auto slope = [&](float c, float s) { return glm::normalize(glm::vec3(c * height, radius, s * height)); };
+    Ring(vertices, segments, radius, -0.5f, 0.0f, slope);
+    for (int s = 0; s < segments; ++s) {
+        const float theta = glm::two_pi<float>() * (static_cast<float>(s) + 0.5f) / static_cast<float>(segments);
+        const auto apex = static_cast<uint32_t>(vertices.size());
+        vertices.push_back({{0.0f, 0.5f, 0.0f}, slope(std::cos(theta), std::sin(theta)),
+                            {(static_cast<float>(s) + 0.5f) / segments, 1.0f}});
+        indices.insert(indices.end(), {apex, static_cast<uint32_t>(s + 1), static_cast<uint32_t>(s)});
+    }
+    Cap(vertices, indices, segments, radius, -0.5f, false);
     return std::make_shared<Mesh>(vertices, indices);
 }
 

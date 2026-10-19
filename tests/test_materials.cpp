@@ -85,6 +85,42 @@ int main(int argc, char** argv) {
     CHECK(!assets.MaterialFromJson(R"({"format": "motor-scene", "version": 1})", tolerant, &error));
     CHECK(!assets.MaterialFromJson(R"({"format": "motor-material", "version": 99})", tolerant, &error));
 
+    SECTION("Material: modo de alfa, limite do recorte e duas faces (ida e volta; versão 2 fica opaca)");
+    {
+        Material glass;
+        glass.blend = BlendMode::Transparent;
+        glass.color.a = 0.3f;
+        Material leaf;
+        leaf.blend = BlendMode::Cutout;
+        leaf.alphaCutoff = 0.35f;
+        leaf.doubleSided = true;
+        for (const Material* m : {&glass, &leaf}) {
+            Material back;
+            CHECK(assets.MaterialFromJson(assets.MaterialToJson(*m), back, &error));
+            CHECK(back.blend == m->blend && back.alphaCutoff == m->alphaCutoff && back.doubleSided == m->doubleSided);
+            CHECK(back.color.a == m->color.a);
+        }
+        Material old;
+        CHECK(assets.MaterialFromJson(R"({"format": "motor-material", "version": 2, "color": [1, 1, 1, 0.5]})", old, &error));
+        CHECK(old.blend == BlendMode::Opaque && old.alphaCutoff == 0.5f && !old.doubleSided);
+        Material weird;
+        CHECK(assets.MaterialFromJson(R"({"format": "motor-material", "version": 3, "blend": "Vidro", "doubleSided": 1})",
+                                      weird, &error));
+        CHECK(weird.blend == BlendMode::Opaque && !weird.doubleSided);  // valores estranhos: o padrão
+
+        // Material próprio do Mesh Renderer na cena.
+        Scene scene;
+        Entity& e = scene.CreateEntity("Vidro");
+        MeshRenderer& mr = e.Add<MeshRenderer>();
+        mr.material.blend = BlendMode::Transparent;
+        mr.material.doubleSided = true;
+        Scene loaded;
+        CHECK(SceneSerializer::FromJson(SceneSerializer::ToJson(scene, assets), loaded, assets, &error));
+        const MeshRenderer* back = loaded.FindByName("Vidro") ? loaded.FindByName("Vidro")->Get<MeshRenderer>() : nullptr;
+        CHECK(back && back->material.blend == BlendMode::Transparent && back->material.doubleSided);
+        CHECK(SceneSerializer::ToJson(scene, assets).find("\"blend\": \"Transparent\"") != std::string::npos);
+    }
+
     SECTION("Material compartilhado: editar muda todos os objetos");
     Scene scene;
     for (const char* name : {"A", "B", "C"}) {

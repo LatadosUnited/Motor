@@ -19,6 +19,10 @@ enum class Key : int {
 
 enum class MouseButton : int { Left = 0, Right = 1, Middle = 2 };
 
+// Cursor do mouse: Normal; Hidden (escondido sobre a janela, mas anda e sai dela); Locked (escondido e preso no
+// centro: o mouse só gera MouseDelta, para olhar em volta).
+enum class CursorMode { Normal, Hidden, Locked };
+
 class Input {
 public:
     static bool IsKeyDown(Key key);

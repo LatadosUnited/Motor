@@ -52,6 +52,7 @@ layout(binding = 8) uniform sampler2D uBrdfLut;
 uniform vec4 uColor;     // sRGB
 uniform vec4 uPbr;       // x = metal, y = rugosidade, z = specular, w = força do mapa de normal (0 = sem mapa)
 uniform vec4 uEmissive;  // rgb = emissão (linear, já com a intensidade), a = força da oclusão
+uniform vec4 uAlphaMode; // x = 0 opaco, 1 recorte, 2 transparente; y = limite do recorte
 
 out vec4 oColor;
 
@@ -127,12 +128,14 @@ float PointShadow(int layer, vec3 worldPos, vec3 N, vec3 lightPos, float range) 
 void main() {
     vec4 tint = vec4(pow(uColor.rgb, vec3(2.2)), uColor.a);
     vec4 albedo = texture(uAlbedo, fs.uv) * tint;
+    if (uAlphaMode.x == 1.0 && albedo.a < uAlphaMode.y) discard;  // recorte (folhas, grades)
     vec4 mr = texture(uMetalRoughMap, fs.uv);
     float metallic = clamp(uPbr.x * mr.b, 0.0, 1.0);
     float roughness = clamp(uPbr.y * mr.g, 0.045, 1.0);
     float occlusion = mix(1.0, texture(uOcclusionMap, fs.uv).r, uEmissive.a);
 
     vec3 geometricN = normalize(fs.normal);
+    if (!gl_FrontFacing) geometricN = -geometricN;  // material de duas faces visto por trás
     vec3 N = geometricN;
     if (uPbr.w > 0.0) {
         vec3 t = texture(uNormalMap, fs.uv).xyz * 2.0 - 1.0;
@@ -203,5 +206,5 @@ void main() {
     float fog = 1.0 - exp(-pow(dist * uFog.a, 2.0));
     color = mix(color, uFog.rgb, fog);
 
-    oColor = vec4(color, albedo.a);
+    oColor = vec4(color, uAlphaMode.x == 2.0 ? albedo.a : 1.0);  // só o transparente mistura
 }

@@ -46,6 +46,10 @@ public:
     // Desligado quando o jogo não tem o foco: os scripts leem teclado/mouse como soltos.
     void SetInputEnabled(bool enabled) { m_inputEnabled = enabled; }
     bool InputEnabled() const { return m_inputEnabled; }
+    // Cursor pedido pelos scripts (Script::SetCursorMode). Quem roda o jogo aplica na janela: o Player sempre, o
+    // editor só com o jogo em foco (Esc solta).
+    void SetCursorMode(CursorMode mode) { m_cursorMode = mode; }
+    CursorMode GetCursorMode() const { return m_cursorMode; }
 
     // Biblioteca de assets do projeto (opcional): usada por Instantiate para carregar os prefabs com as malhas,
     // texturas e materiais do projeto. Sem ela, Instantiate usa uma biblioteca local se `prefab.file` existir.
@@ -145,6 +149,7 @@ private:
     int m_errorCount = 0;
     bool m_running = false;
     bool m_inputEnabled = true;
+    CursorMode m_cursorMode = CursorMode::Normal;
     std::string m_sceneRequest;
 
     struct Timer {

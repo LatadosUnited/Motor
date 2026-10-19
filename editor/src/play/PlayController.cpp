@@ -56,7 +56,7 @@ bool PlayController::Stop(EditorContext& ctx) {
     return true;
 }
 
-void PlayController::Update(float dt, bool viewportFocused) {
+void PlayController::Update(float dt, bool viewportFocused, motor::Window& window) {
     // O jogo só lê teclado/mouse vendo pela câmera do jogo, com o viewport em foco e sem campo de texto ativo.
     // Entrada externa (teclas mandadas pelo servidor MCP) vale sem foco: ela não vem do teclado de verdade.
     if (SceneRuntime* runtime = m_mode.Runtime()) {
@@ -64,6 +64,31 @@ void PlayController::Update(float dt, bool viewportFocused) {
                                  (InGameView() && viewportFocused && !ImGui::GetIO().WantTextInput));
     }
     m_mode.Update(dt);
+    UpdateCursor(viewportFocused, window);
+}
+
+void PlayController::UpdateCursor(bool viewportFocused, motor::Window& window) {
+    using motor::CursorMode;
+    motor::SceneRuntime* runtime = m_mode.Runtime();
+    const CursorMode requested = runtime ? runtime->GetCursorMode() : CursorMode::Normal;
+    const bool gameHasMouse = runtime && InGameView() && viewportFocused && !m_mode.IsPaused() &&
+                              !ImGui::GetIO().WantTextInput;
+    if (!runtime || requested == CursorMode::Normal) {
+        m_cursorReleased = false;
+    } else if (gameHasMouse && !m_cursorReleased && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+        m_cursorReleased = true;  // como na Unity: Esc devolve o mouse ao editor
+    } else if (m_cursorReleased && gameHasMouse && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        m_cursorReleased = false;  // clique no jogo prende de novo
+    }
+    const CursorMode want = gameHasMouse && !m_cursorReleased ? requested : CursorMode::Normal;
+    if (want == m_appliedCursor) return;
+    window.SetCursorMode(want);
+    // Cursor preso: o ImGui não deve reagir ao mouse (a posição dele fica sem sentido).
+    ImGuiIO& io = ImGui::GetIO();
+    const ImGuiConfigFlags mouseFlags = ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange;
+    if (want == CursorMode::Locked) io.ConfigFlags |= mouseFlags;
+    else io.ConfigFlags &= ~mouseFlags;
+    m_appliedCursor = want;
 }
 
 void PlayController::DrawMenu() {

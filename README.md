@@ -81,7 +81,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Gizmo | Q nenhum / W mover / E rotacionar / R escalar; X alterna eixos Local/Global |
 | Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (0.5 m / 15° / 0.1) |
 | Reparentar | arrastar na hierarquia (soltar no vazio = raiz) |
-| Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia |
+| Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia; as formas (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone) já vêm com o Collider que bate com elas |
 | Focar / Excluir / Duplicar | F / Del / Ctrl+D |
 | Desfazer / Refazer | Ctrl+Z / Ctrl+Y (ou Ctrl+Shift+Z), também no menu Editar; segurar repete |
 | Restaurar layout | Ver > Restaurar layout (o layout fica salvo em `imgui.ini`) |
@@ -239,6 +239,12 @@ reflexo, mapas de normal, metal/rugosidade e oclusão, e emissão** num arquivo 
 vários objetos: editar o material muda todos os que o usam. Materiais da versão 1 (Blinn-Phong, até a Fase 6)
 continuam abrindo: o "brilho" vira rugosidade. Os mapas de dados (normal, metal/rugosidade, oclusão) são
 lidos sem a conversão sRGB; o de normal é em espaço tangente com +Y para cima (OpenGL/glTF).
+
+**Alfa** (Fase 18, `.mmat` versão 3): **Opaco** ignora o alfa da cor e da textura; **Recorte** some onde o
+alfa fica abaixo do **Limite do recorte** (folhas, grades; a sombra também é recortada); **Transparente**
+mistura com o que está atrás (vidro, água simples): desenhado depois dos opacos e do céu, de trás para frente
+pelo centro, sem gravar profundidade e sem sombra. **Duas faces** mostra as faces de trás (planos de folha,
+grade, vidro fino). O importador glTF lê `alphaMode`, `alphaCutoff` e `doubleSided`.
 
 - **Criar:** painel Projeto > "+ Criar" > "Novo material", ou no Inspector de um Mesh Renderer o botão
   "Salvar como asset" (grava o material daquele objeto em `Assets/Materiais` e passa a usá-lo).
@@ -528,10 +534,15 @@ struct Jogador : motor::Script {
 - Colisão: `OnCollisionEnter(const Collision&)` (outra entidade, ponto, normal apontando do outro para este,
   velocidade de aproximação) e `OnCollisionExit(EntityId)`. Trigger: `OnTriggerEnter/Exit(EntityId)`. Os dois
   lados recebem. Um par de entidades entra uma vez e sai quando não sobra nenhum contato entre elas.
-- `Raycast(origem, direção, distância, ignorar)`: primeiro corpo atingido (entidade, ponto, normal,
-  distância); triggers não contam. Rigidbody: `AddForce`, `AddImpulse`, `SetVelocity`, `GetVelocity`.
-  Personagem: `MoveCharacter`, `Jump`, `IsGrounded`, `GetCharacterVelocity`. Entidade criada neste passo só
+- `Raycast(origem, direção, distância, ignorar, máscara)`: primeiro corpo atingido (entidade, ponto, normal,
+  distância); triggers não contam; `máscara` = camadas que o raio vê (`LayerMask({"Parede"})`). Rigidbody: `AddForce`, `AddImpulse`, `SetVelocity`, `GetVelocity`.
+  Personagem: `MoveCharacter`, `Jump`, `IsGrounded`, `GetCharacterVelocity`, `SetCharacterVelocity` e o campo
+  `useGravity`. Área: `OverlapSphere`, `OverlapBox`, `SphereCast` (com máscara de camadas). Entidade criada neste passo só
   ganha corpo no próximo `FixedUpdate`.
+- **Camadas de colisão** (Fase 18): até 16 camadas com nome e a tabela de quem se choca com quem, no projeto
+  (`.mproject`, formato 3; **Arquivo > Camadas de colisão** ou a ferramenta MCP `physics_layers`). Collider e
+  Controlador de personagem escolhem a camada no campo **Camada**. O editor e o Player copiam a tabela para
+  `PhysicsSettings::Global().layers` ao abrir o projeto; corpos parados nunca se chocam entre si.
 - O personagem gera eventos com corpos dinâmicos e triggers (não com o chão estático: para saber se está no
   chão, `IsGrounded`). O modelo **Scripts > Adicionar exemplo > Jogador** anda com WASD e pula com Espaço.
 - Configuração global (`motor::PhysicsSettings::Global()`, lida a cada Play): `workerThreads` (threads do job
@@ -635,10 +646,11 @@ componentes comuns (Inspector, cena, desfazer):
   para música e sons da UI, a posição não importa.
 - **Play:** o som só toca no Play. **Parar** silencia tudo; **Pausa** pausa os sons e **Continuar** retoma.
   O dispositivo de som só abre quando o primeiro som toca; sem placa de som, o jogo roda igual, sem som.
-- **Arquivos:** até 2 MB são decodificados inteiros na primeira vez que tocam; maiores (música) são lidos aos
-  poucos durante o jogo. Arquivo que não abre vira aviso no console.
+- **Arquivos:** até 2 MB são decodificados inteiros numa thread ao iniciar o Play ou a cena (o primeiro toque
+  não trava; um toque antes do fim espera só o seu clipe); maiores (música) são lidos aos poucos durante o jogo. Arquivo que não abre vira aviso no console.
 - **Scripts:** `GetSystem<motor::AudioSystem>()` com `Play`, `Stop`, `SetVolume` e `IsPlaying` (pelo nome da
-  entidade ou pelo id). Ver a seção 14 do [guia de scripts](docs/scripts.md) e o exemplo
+  entidade ou pelo id), `PlayOneShot` (outra voz da mesma fonte, até 8) e `SetGroupVolume` (grupos Efeitos,
+  Música e Interface, campo **Grupo** da fonte). Ver a seção 14 do [guia de scripts](docs/scripts.md) e o exemplo
   `docs/examples/SonsDoMenu.cpp` (som de clique de botão e música).
 - **Clipes de uma cena** (para exportar o jogo): `motor::CollectAudioClips(scene)` (`motor/scene/AudioSource.h`)
   lista os clipes das Fontes de áudio; no `.mscene`, cada um é o campo `"clip"` do componente `"AudioSource"`,

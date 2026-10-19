@@ -19,6 +19,7 @@
 //       if (WasKeyPressed(motor::Key::Space)) fisica->Jump(GetId(), 5.0f);
 //   }
 
+#include "motor/project/CollisionLayers.h"
 #include "motor/scene/RuntimeSystem.h"
 #include "motor/scene/Scene.h"
 
@@ -28,7 +29,10 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <initializer_list>
 #include <optional>
+#include <string_view>
+#include <vector>
 
 namespace motor {
 
@@ -47,6 +51,8 @@ struct PhysicsSettings {
     glm::vec3 gravity{0.0f, -9.81f, 0.0f};
     // Subpassos de colisão por FixedUpdate: um a cada `maxSubstep` segundos (passos grandes atravessam paredes).
     float maxSubstep = 1.0f / 60.0f;
+    // Camadas de colisão do projeto (o editor e o Player copiam do .mproject ao abrir o projeto).
+    CollisionLayers layers;
     // Troca os triângulos do Collider de malha (testes); normalmente vazio (usa a cópia na CPU da Mesh).
     MeshDataSource meshData;
 
@@ -81,9 +87,31 @@ public:
     void OnStop(SceneRuntime& runtime) override;
 
     // Primeiro corpo no raio (direction não precisa ser normalizada), até maxDistance. `ignore`: entidade
-    // que o raio atravessa (ex.: o próprio jogador). Triggers não contam.
+    // que o raio atravessa (ex.: o próprio jogador). `layerMask`: só as camadas marcadas (LayerMask). Triggers
+    // não contam.
     std::optional<PhysicsRaycastHit> Raycast(const glm::vec3& origin, const glm::vec3& direction,
-                                             float maxDistance = 1000.0f, EntityId ignore = kNullEntity) const;
+                                             float maxDistance = 1000.0f, EntityId ignore = kNullEntity,
+                                             uint32_t layerMask = CollisionLayers::kAll) const;
+
+    // --- Consultas de área (corpos, triggers e personagens; cada entidade uma vez, sem ordem) ---
+    // Quem está dentro da esfera / caixa (halfExtents = metade do tamanho; rotation da caixa no mundo).
+    // `layerMask`: só as camadas marcadas. `includeTriggers`: triggers contam (coletas costumam ser triggers).
+    std::vector<EntityId> OverlapSphere(const glm::vec3& center, float radius,
+                                        uint32_t layerMask = CollisionLayers::kAll, bool includeTriggers = true) const;
+    std::vector<EntityId> OverlapBox(const glm::vec3& center, const glm::vec3& halfExtents,
+                                     const glm::quat& rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                                     uint32_t layerMask = CollisionLayers::kAll, bool includeTriggers = true) const;
+    // Raycast com espessura: a esfera de `radius` andando de `origin` na direção, até maxDistance. O primeiro
+    // corpo que ela toca (`distance` = quanto a esfera andou; `point` = ponto de contato). Triggers não contam.
+    std::optional<PhysicsRaycastHit> SphereCast(const glm::vec3& origin, float radius, const glm::vec3& direction,
+                                                float maxDistance = 1000.0f, EntityId ignore = kNullEntity,
+                                                uint32_t layerMask = CollisionLayers::kAll) const;
+
+    // Máscara de camadas pelos nomes do projeto: Raycast(o, d, 50.0f, GetId(), fisica->LayerMask({"Parede"})).
+    uint32_t LayerMask(std::initializer_list<std::string_view> layerNames) const {
+        return m_settings.layers.Mask(layerNames);
+    }
+    const CollisionLayers& Layers() const { return m_settings.layers; }
 
     // --- Rigidbody (dinâmico). false/zero se a entidade ainda não tem corpo (criado no próximo passo). ---
     bool AddForce(EntityId id, const glm::vec3& force);      // newtons, durante o próximo passo
@@ -98,6 +126,10 @@ public:
     bool Jump(EntityId id, float speed);
     bool IsGrounded(EntityId id) const;
     glm::vec3 GetCharacterVelocity(EntityId id) const;
+    // Velocidade inteira do próximo passo, inclusive a vertical (trampolim, empurrão, parar a queda): substitui
+    // andar e pular naquele passo. A vertical continua depois (com a gravidade); a horizontal volta a ser a de
+    // MoveCharacter. Gravidade do personagem: campo useGravity do CharacterControllerComponent.
+    void SetCharacterVelocity(EntityId id, const glm::vec3& velocity);
 
     bool HasBody(EntityId id) const;  // corpo ou personagem já criado para a entidade
     const PhysicsStats& Stats() const { return m_stats; }

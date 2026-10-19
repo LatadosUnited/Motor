@@ -84,6 +84,7 @@ void ShadowRenderer::DrawItems(std::span<const DrawItem> items, const glm::mat4&
     }
     const Shader* bound = nullptr;
     for (const DrawItem& item : items) {
+        if (item.material.blend == BlendMode::Transparent) continue;  // vidro e água não fazem sombra
         if (!frustum.Intersects(item.bounds)) continue;
         Shader& shader = item.skinned ? skinned : base;
         if (bound != &shader) {
@@ -92,6 +93,12 @@ void ShadowRenderer::DrawItems(std::span<const DrawItem> items, const glm::mat4&
         }
         if (item.skinned) uploadJoints(item);
         shader.SetMat4("uModel", item.model);
+        const Material& m = item.material;
+        const bool cutout = m.blend == BlendMode::Cutout;
+        shader.SetFloat("uAlphaCutoff", cutout ? m.alphaCutoff : -1.0f);
+        shader.SetFloat("uColorAlpha", m.color.a);
+        if (cutout && m.albedo) m.albedo->Bind(0);
+        else if (cutout) shader.SetFloat("uAlphaCutoff", m.color.a < m.alphaCutoff ? 2.0f : -1.0f);  // sem textura
         item.mesh->Draw();
         ++stats.drawCalls;
         ++stats.shadowDrawCalls;

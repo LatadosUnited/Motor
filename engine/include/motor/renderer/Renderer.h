@@ -27,6 +27,7 @@ struct DrawItem;
 struct RenderStats {
     uint32_t drawCalls = 0;        // malhas desenhadas em todas as passadas (cena, sombras, contornos)
     uint32_t triangles = 0;        // da passada da cena
+    uint32_t transparent = 0;      // itens transparentes desenhados (depois do céu, de trás para frente)
     uint32_t shadowPasses = 0;     // mapas de sombra desenhados (cada cascata e cada face de cubo)
     uint32_t shadowDrawCalls = 0;  // parte dos drawCalls que foi para as sombras
     uint32_t culled = 0;           // objetos fora da câmera (não desenhados na cena)

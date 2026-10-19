@@ -16,7 +16,11 @@ MOTOR_COMPONENT_MODULE(CharacterController) {
                 .tooltip = "Degrau mais alto que o personagem sobe sozinho"})
         .Field("mass", "Massa", &CharacterControllerComponent::mass,
                {.speed = 0.5f, .min = 0.1f, .max = 100000.0f, .format = "%.1f kg",
-                .tooltip = "Quanto o personagem empurra os corpos que encontra"});
+                .tooltip = "Quanto o personagem empurra os corpos que encontra"})
+        .Field("useGravity", "Usa gravidade", &CharacterControllerComponent::useGravity,
+               {.tooltip = "Desligada, o personagem não cai: para escadas, nado ou voo"})
+        .Field("layer", "Camada", &CharacterControllerComponent::layer,
+               {.tooltip = "Camada de colisão: quem se choca com quem fica em Projeto > Camadas de colisão"});
 }
 
 } // namespace motor

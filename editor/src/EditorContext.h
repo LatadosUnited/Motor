@@ -15,7 +15,8 @@ namespace editor {
 using motor::EntityId;
 using motor::kNullEntity;
 
-enum class Primitive { Empty, Cube, Sphere, Plane, Camera, DirectionalLight, PointLight, SpotLight };
+// Formas (Cubo a Cone) vêm com o Collider que bate com elas: corpo parado; com Rigidbody, cai.
+enum class Primitive { Empty, Cube, Sphere, Plane, Camera, DirectionalLight, PointLight, SpotLight, Cylinder, Capsule, Cone };
 
 // Arquivos arrastados do painel Projeto (payload do ImGui): caminhos UTF-8 um por linha.
 inline constexpr const char* kPathPayload = "MOTOR_PATH";

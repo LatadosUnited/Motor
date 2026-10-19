@@ -362,7 +362,7 @@ int main(int argc, char** argv) {
         m.occlusionStrength = 0.6f;
         m.normalStrength = 1.5f;
         const std::string text = assets.MaterialToJson(m);
-        CHECK(text.find("\"version\": 2") != std::string::npos && text.find("\"roughness\": 0.35") != std::string::npos);
+        CHECK(text.find("\"version\": 3") != std::string::npos && text.find("\"roughness\": 0.35") != std::string::npos);
         CHECK(text.find("\"normalMap\": null") != std::string::npos && text.find("\"shininess\"") == std::string::npos);
         Material back;
         CHECK(assets.MaterialFromJson(text, back, &error));

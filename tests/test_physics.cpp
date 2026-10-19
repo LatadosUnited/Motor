@@ -7,6 +7,7 @@
 #include <motor/assets/AssetLoaders.h>
 #include <motor/physics/ColliderGizmo.h>
 #include <motor/physics/PhysicsSystem.h>
+#include <motor/renderer/Mesh.h>
 #include <motor/scene/Components.h>
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneRuntime.h>
@@ -333,6 +334,115 @@ int main() {
         runtime.Stop();
     }
 
+    SECTION("Camadas de colisão: quem não se choca atravessa; raio só vê as camadas da máscara");
+    {
+        PhysicsSettings& settings = PhysicsSettings::Global();
+        const CollisionLayers before = settings.layers;
+        settings.layers.names[1] = "Fantasma";
+        settings.layers.names[2] = "Parede";
+        settings.layers.SetCollide(1, 0, false);  // Fantasma atravessa o Padrão (o chão)
+        CHECK(!settings.layers.Collide(0, 1) && settings.layers.Collide(1, 1) && settings.layers.Collide(0, 2));
+
+        Scene scene;
+        const EntityId floor = AddFloor(scene).id;
+        Entity& ghost = AddBox(scene, {0.0f, 3.0f, 0.0f}, "Fantasma");
+        ghost.Get<ColliderComponent>()->layer.index = 1;
+        const EntityId ghostId = ghost.id;
+        const EntityId solid = AddBox(scene, {3.0f, 3.0f, 0.0f}, "Solida").id;
+        Entity& player = scene.CreateEntity("Jogador");
+        player.transform.position = {-3.0f, 3.0f, 0.0f};
+        player.Add<CharacterControllerComponent>().layer.index = 1;
+        player.Add<Jogador>().velocidade = 0.0f;
+        const EntityId playerId = player.id;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        auto* fisica = runtime.GetSystem<PhysicsSystem>();
+        CHECK(fisica->LayerMask({"Parede", "Fantasma", "NaoExiste"}) == ((1u << 2) | (1u << 1)));
+        // Raio só com a camada Parede: o chão (Padrão) não conta; com o Padrão, conta.
+        CHECK(!fisica->Raycast({-6.0f, 5.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 100.0f, kNullEntity, fisica->LayerMask({"Parede"})));
+        const auto hit = fisica->Raycast({-6.0f, 5.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 100.0f, kNullEntity, 1u);
+        CHECK(hit && hit->entity == floor);
+        Run(runtime, 2.0f);
+        CHECK(scene.Find(ghostId)->transform.position.y < -2.0f);                   // caiu através do chão
+        CHECK(Near(scene.Find(solid)->transform.position.y, 0.5f, 0.05f));          // a do Padrão para no chão
+        CHECK(scene.Find(playerId)->transform.position.y < -2.0f);                  // personagem Fantasma também
+        runtime.Stop();
+        settings.layers = before;
+    }
+
+    SECTION("Consultas de área: OverlapSphere, OverlapBox e SphereCast");
+    {
+        Scene scene;
+        AddFloor(scene);
+        Entity& boxEntity = scene.CreateEntity("Caixa");  // estática de 1 x 1 x 1 em cima do chão
+        boxEntity.transform.position = {2.0f, 0.5f, 0.0f};
+        boxEntity.Add<ColliderComponent>().layer.index = 2;
+        const EntityId box = boxEntity.id;
+        Entity& coin = scene.CreateEntity("Moeda");
+        coin.transform.position = {-2.0f, 0.5f, 0.0f};
+        coin.Add<ColliderComponent>().isTrigger = true;
+        const EntityId coinId = coin.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        auto* fisica = runtime.GetSystem<PhysicsSystem>();
+
+        CHECK(fisica->OverlapSphere({2.0f, 1.0f, 0.0f}, 0.6f) == std::vector<EntityId>{box});  // não chega no chão
+        CHECK(fisica->OverlapSphere({2.0f, 1.0f, 0.0f}, 0.6f, ~(1u << 2)).empty());          // camada fora da máscara
+        CHECK(fisica->OverlapSphere({-2.0f, 1.0f, 0.0f}, 0.6f) == std::vector<EntityId>{coinId});
+        CHECK(fisica->OverlapSphere({-2.0f, 1.0f, 0.0f}, 0.6f, CollisionLayers::kAll, false).empty());  // sem triggers
+        CHECK(fisica->OverlapSphere({0.0f, 5.0f, 0.0f}, 1.0f).empty());
+        auto both = fisica->OverlapBox({0.0f, 1.0f, 0.0f}, {3.0f, 0.2f, 1.0f});
+        std::sort(both.begin(), both.end());
+        CHECK((both == std::vector<EntityId>{std::min(box, coinId), std::max(box, coinId)}));
+        // Caixa longa em X: sem girar alcança a moeda e a caixa; girada 90° em Y fica longa em Z e não alcança nada.
+        const glm::quat turned = glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        CHECK(fisica->OverlapBox({0.0f, 1.0f, 0.0f}, {1.8f, 0.2f, 0.2f}).size() == 2);
+        CHECK(fisica->OverlapBox({0.0f, 1.0f, 0.0f}, {1.8f, 0.2f, 0.2f}, turned).empty());
+
+        // O raio passa ao lado da caixa; a esfera de 0,3 m, no mesmo caminho, encosta nela. Triggers não contam.
+        CHECK(!fisica->Raycast({-6.0f, 0.5f, 0.6f}, {1.0f, 0.0f, 0.0f}, 20.0f, kNullEntity, 1u << 2));
+        auto hit = fisica->SphereCast({-6.0f, 0.5f, 0.6f}, 0.3f, {1.0f, 0.0f, 0.0f}, 20.0f);
+        CHECK(hit && hit->entity == box && Near(hit->point.z, 0.5f, 0.02f));
+        hit = fisica->SphereCast({-6.0f, 0.5f, 0.0f}, 0.3f, {1.0f, 0.0f, 0.0f}, 20.0f);
+        CHECK(hit && hit->entity == box && Near(hit->distance, 7.2f, 0.02f) && Near(hit->normal.x, -1.0f, 0.02f));
+        CHECK(!fisica->SphereCast({-6.0f, 0.5f, 0.0f}, 0.3f, {1.0f, 0.0f, 0.0f}, 20.0f, box));  // ignorada
+        CHECK(!fisica->SphereCast({-6.0f, 0.5f, 0.0f}, 0.3f, {1.0f, 0.0f, 0.0f}, 5.0f));       // curto demais
+        runtime.Stop();
+    }
+
+    SECTION("Personagem: SetCharacterVelocity e gravidade ligável sem refazer o corpo");
+    {
+        Scene scene;
+        AddFloor(scene);
+        Entity& player = scene.CreateEntity("Jogador");
+        player.transform.position = {0.0f, 0.9f, 0.0f};
+        player.Add<CharacterControllerComponent>();
+        player.Add<Jogador>().velocidade = 0.0f;
+        const EntityId id = player.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        auto* fisica = runtime.GetSystem<PhysicsSystem>();
+        Run(runtime, 0.5f);
+        CHECK(fisica->IsGrounded(id));
+        // Trampolim: 6 m/s para cima, a vertical continua nos passos seguintes.
+        fisica->SetCharacterVelocity(id, {0.0f, 6.0f, 0.0f});
+        Run(runtime, 0.3f);
+        CHECK(scene.Find(id)->transform.position.y > 2.0f && !fisica->IsGrounded(id));
+        // Sem gravidade: para no ar onde está (velocidade zerada) e fica.
+        scene.Find(id)->Get<CharacterControllerComponent>()->useGravity = false;
+        fisica->SetCharacterVelocity(id, glm::vec3(0.0f));
+        Run(runtime, 0.1f);
+        const float hover = scene.Find(id)->transform.position.y;
+        Run(runtime, 1.0f);
+        CHECK(Near(scene.Find(id)->transform.position.y, hover, 0.01f) && hover > 2.0f);
+        // Gravidade de novo: cai e volta ao chão.
+        scene.Find(id)->Get<CharacterControllerComponent>()->useGravity = true;
+        Run(runtime, 2.0f);
+        CHECK(fisica->IsGrounded(id) && Near(scene.Find(id)->transform.position.y, 0.9f, 0.05f));
+        runtime.Stop();
+    }
+
     SECTION("Personagem anda, pula, não atravessa o chão e empurra caixas");
     {
         Scene scene;
@@ -479,6 +589,64 @@ int main() {
         const glm::vec3 mn(-1.0f, 0.0f, -1.0f), mx(1.0f, 0.0f, 1.0f);
         AppendColliderLines(mesh, glm::mat4(1.0f), lines, &mn, &mx);
         CHECK(lines.size() == 12);
+    }
+
+    SECTION("Formas prontas: malhas de cilindro, cápsula e cone para fora, e o collider de cilindro");
+    {
+        struct Shape {
+            const char* name;
+            std::shared_ptr<Mesh> mesh;
+            glm::vec3 lo, hi;
+        };
+        const Shape shapes[] = {{"cilindro", Mesh::CreateCylinder(), {-0.5f, -1.0f, -0.5f}, {0.5f, 1.0f, 0.5f}},
+                                {"cápsula", Mesh::CreateCapsule(), {-0.5f, -1.0f, -0.5f}, {0.5f, 1.0f, 0.5f}},
+                                {"cone", Mesh::CreateCone(), {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}}};
+        for (const Shape& s : shapes) {
+            const auto& p = s.mesh->Positions();
+            const auto& idx = s.mesh->Indices();
+            CHECK(idx.size() % 3 == 0 && !idx.empty());
+            CHECK(glm::all(glm::lessThan(glm::abs(s.mesh->BoundsMin() - s.lo), glm::vec3(1e-3f))));
+            CHECK(glm::all(glm::lessThan(glm::abs(s.mesh->BoundsMax() - s.hi), glm::vec3(1e-3f))));
+            // Formas convexas em volta da origem: todo triângulo de verdade aponta para fora (CCW visto de fora).
+            int inward = 0;
+            for (size_t i = 0; i + 2 < idx.size(); i += 3) {
+                const glm::vec3 a = p[idx[i]], b = p[idx[i + 1]], c = p[idx[i + 2]];
+                const glm::vec3 n = glm::cross(b - a, c - a);
+                if (glm::length(n) < 1e-7f) continue;  // polos da cápsula
+                if (glm::dot(n, (a + b + c) / 3.0f) <= 0.0f) ++inward;
+            }
+            if (inward) std::printf("  %s: %d triângulos para dentro\n", s.name, inward);
+            CHECK(inward == 0);
+        }
+
+        // Cilindro de 2 m com Rigidbody cai e fica de pé no chão (centro em y = 1).
+        Scene scene;
+        AddFloor(scene);
+        Entity& cylinder = scene.CreateEntity("Cilindro");
+        cylinder.transform.position = {0.0f, 3.0f, 0.0f};
+        cylinder.Add<ColliderComponent>().shape = ColliderShape::Cylinder;
+        cylinder.Add<RigidbodyComponent>();
+        const EntityId id = cylinder.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 2.0f);
+        CHECK(Near(scene.Find(id)->transform.position.y, 1.0f, 0.05f));
+        auto* fisica = runtime.GetSystem<PhysicsSystem>();
+        CHECK(fisica->OverlapSphere({0.45f, 1.0f, 0.0f}, 0.1f).size() == 1);  // dentro do raio 0,5
+        CHECK(fisica->OverlapSphere({0.45f, 1.0f, 0.45f}, 0.05f).empty());   // no canto da caixa, fora do cilindro
+        runtime.Stop();
+
+        std::vector<GizmoLine> lines;
+        ColliderComponent c;
+        c.shape = ColliderShape::Cylinder;
+        AppendColliderLines(c, glm::mat4(1.0f), lines);
+        glm::vec3 lo(1e9f), hi(-1e9f);
+        for (const GizmoLine& l : lines) {
+            lo = glm::min(lo, glm::min(l.a, l.b));
+            hi = glm::max(hi, glm::max(l.a, l.b));
+        }
+        CHECK(!lines.empty() && Near(lo.y, -1.0f, 1e-3f) && Near(hi.y, 1.0f, 1e-3f) && Near(hi.x, 0.5f, 1e-3f));
+        CHECK(std::string(ColliderShapeName(ColliderShape::Cylinder)) == "Cylinder");
     }
 
     SECTION("Exceção em evento de física não derruba a física nem os outros scripts");

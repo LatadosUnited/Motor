@@ -12,7 +12,10 @@ Formato: `- AAAA-MM-DD — quem achou — o quê — onde (arquivo:linha, se sou
 
 ## Para triar
 
-- 2026-10-18 — Claude (correção do projeto antigo) — testes intermitentes com o `ctest -j4`: `test_export` e, noutra
-  rodada, `test_distribuicao` falharam uma vez cada; o `test_export` falhou uma vez com o `ctest -j4` e passou
-  sozinho e nas duas rodadas inteiras seguintes: intermitente com os testes em paralelo (pasta ou arquivo
-  disputado com outro teste?). As mensagens não foram guardadas — `tests/test_export.cpp`, `tests/test_distribuicao.cpp`
+- 2026-10-18 — Claude (correção do projeto antigo; Fase 18) — testes intermitentes com o `ctest -j4`:
+  `test_export`, `test_distribuicao` e `test_project_version` falharam uma vez cada e passaram sozinhos e nas
+  rodadas seguintes. No `test_project_version` foi o `Project::Save` (grava `.tmp` e renomeia): provável
+  antivírus ou indexador do Windows segurando o arquivo novo por um instante. Se for isso, o mesmo pode
+  acontecer com o usuário ao salvar cena, projeto ou material. Investigar e, se confirmar, repetir a troca de
+  nome algumas vezes antes de desistir — `engine/src/project/Project.cpp` (Save), `SceneSerializer::Save`,
+  `AssetLibrary` (WriteTextAtomic)

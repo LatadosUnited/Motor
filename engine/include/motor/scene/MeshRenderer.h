@@ -27,4 +27,9 @@ template <> struct FieldTraits<std::shared_ptr<Material>> {
     static CustomFieldType Describe();
 };
 
+// Modo de alfa do material: na cena e no .mmat, o nome ("Opaque", "Cutout", "Transparent").
+template <> struct FieldTraits<BlendMode> {
+    static CustomFieldType Describe();
+};
+
 } // namespace motor

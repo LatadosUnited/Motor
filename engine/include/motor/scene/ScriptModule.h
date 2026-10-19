@@ -41,7 +41,9 @@ namespace motor {
 // 11: Fase 16: PrefabRef e Script::Instantiate; roll na câmera.
 // 12: Fase 17: EntityRef, Script::OnMessage/Send/Broadcast, temporizadores, aleatórios, GetComponent,
 //     FieldOptions::formerKey.
-inline constexpr int kScriptApiVersion = 12;
+// 13: Fase 18: camadas de colisão (campo layer no Collider e no CharacterController, máscara no Raycast),
+//     consultas de área, SetCharacterVelocity, useGravity; PlayOneShot e grupo de volume no AudioSource.
+inline constexpr int kScriptApiVersion = 13;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

@@ -160,7 +160,7 @@ Tipos de campo suportados:
 | `int`, `float` | número (arrastar ou digitar; slider com `.slider = true`) |
 | `glm::vec2`, `glm::vec3`, `glm::vec4` | 2, 3 ou 4 números; `vec3`/`vec4` viram seletor de cor com `.color = true` |
 | `std::string` | texto |
-| `std::shared_ptr<motor::Mesh>` | malha (Cubo, Esfera, Plano ou um `.obj` do projeto) |
+| `std::shared_ptr<motor::Mesh>` | malha (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone ou um `.obj` do projeto) |
 | `std::shared_ptr<motor::Texture2D>` | textura (`.png`/`.jpg` do projeto) |
 | `motor::PrefabRef` | prefab (`.mprefab` do projeto, para `Instantiate`) |
 | `motor::EntityRef` | outra entidade da cena: escolha na lista ou arraste da Hierarquia (seção 6) |
@@ -301,6 +301,7 @@ Dentro do script:
 | `WasKeyPressed(motor::Key::Space)` | `true` só no frame em que a tecla desceu |
 | `IsMouseDown(motor::MouseButton::Left)` | `true` enquanto o botão está apertado (`Left`, `Right`, `Middle`) |
 | `MouseDelta()` | quanto o mouse andou neste frame, em pixels (`glm::vec2`) |
+| `SetCursorMode(motor::CursorMode::Locked)` | prende e esconde o cursor (câmera em primeira pessoa); `Hidden` só esconde, `Normal` devolve (menus). No editor, Esc solta e um clique no jogo prende de novo |
 | `Time().delta` | segundos desde o último `OnUpdate` (o mesmo `dt`) |
 | `Time().fixedDelta` | o passo do `OnFixedUpdate` (1/60 s) |
 | `Time().elapsed` | segundos de jogo desde o Play (sem as pausas), em `double` |
@@ -394,12 +395,12 @@ Os componentes da engine:
 
 | Componente (no editor) | Tipo C++ | Campos principais |
 |---|---|---|
-| Mesh Renderer | `motor::MeshRenderer` | `mesh`, `sharedMaterial` (asset `.mmat`) e `material` (o próprio): `color` (vec4), `albedo` (textura), `metallic`, `roughness`, `specular`, `emissive`... (PBR, ver a referência) |
+| Mesh Renderer | `motor::MeshRenderer` | `mesh`, `sharedMaterial` (asset `.mmat`) e `material` (o próprio): `color` (vec4), `albedo` (textura), `metallic`, `roughness`, `specular`, `emissive`, `blend` (`motor::BlendMode::Opaque`/`Cutout`/`Transparent`), `alphaCutoff`, `doubleSided`... (PBR, ver a referência) |
 | Câmera | `motor::CameraComponent` | `fov` (graus), `nearPlane`, `farPlane`, `main` |
 | Luz | `motor::LightComponent` | `type` (`motor::LightType::Directional`/`Point`/`Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `castShadows` |
-| Collider | `motor::ColliderComponent` | `shape` (`motor::ColliderShape::Box`/`Sphere`/`Capsule`/`Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution` |
+| Collider | `motor::ColliderComponent` | `shape` (`motor::ColliderShape::Box`/`Sphere`/`Capsule`/`Cylinder`/`Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `layer` |
 | Rigidbody | `motor::RigidbodyComponent` | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
-| Controlador de personagem | `motor::CharacterControllerComponent` | `height`, `radius`, `maxSlope`, `stepHeight`, `mass` |
+| Controlador de personagem | `motor::CharacterControllerComponent` | `height`, `radius`, `maxSlope`, `stepHeight`, `mass`, `useGravity`, `layer` |
 
 Exemplo: trocar a cor do próprio objeto (do [examples/ExemploCampos.cpp](examples/ExemploCampos.cpp)):
 
@@ -518,7 +519,10 @@ inclua `<motor/physics/PhysicsSystem.h>`) e chame, de preferência no `OnFixedUp
 | Personagem: andar | `MoveCharacter(id, velocidade)` (m/s; vale até a próxima chamada; zero para parar) |
 | Personagem: pular | `Jump(id, velocidadeParaCima)` (só se estiver no chão) |
 | Personagem: estado | `IsGrounded(id)`, `GetCharacterVelocity(id)` |
-| Raio | `Raycast(origem, direção, distânciaMáxima, idIgnorado)`: o primeiro corpo atingido (triggers não contam) |
+| Personagem: lançar | `SetCharacterVelocity(id, v)`: a velocidade inteira do próximo passo (trampolim, empurrão); sem gravidade: campo **Usa gravidade** do Controlador |
+| Área | `OverlapSphere(centro, raio)`, `OverlapBox(centro, metadeDoTamanho)`: quem está ali (triggers também; útil para coletas e explosões) |
+| Raio grosso | `SphereCast(origem, raio, direção, distânciaMáxima)`: como o `Raycast`, com uma esfera (não passa por frestas menores que ela) |
+| Raio | `Raycast(origem, direção, distânciaMáxima, idIgnorado, máscara)`: o primeiro corpo atingido (triggers não contam; `máscara` = camadas que o raio vê, `LayerMask({"Parede"})`) |
 
 A bola do [examples/BolaFisica.cpp](examples/BolaFisica.cpp) usa força, raio e impulso:
 
@@ -537,6 +541,12 @@ A bola do [examples/BolaFisica.cpp](examples/BolaFisica.cpp) usa força, raio e 
 
 O `Raycast` devolve um `std::optional<motor::PhysicsRaycastHit>`: teste com `if (hit)` e leia
 `hit->entity`, `hit->point`, `hit->normal` e `hit->distance`.
+
+**Camadas de colisão.** Em **Arquivo > Camadas de colisão** o projeto dá nome a até 16 camadas e marca quem
+se choca com quem (vale para todas as cenas, a partir do próximo Play). Cada Collider e Controlador de
+personagem escolhe a sua no campo **Camada** do Inspector. Num raio, a máscara diz o que ele vê: a câmera
+orbital que não deve bater no próprio jogador olha só as paredes, com
+`fisica->Raycast(alvo, paraTras, distancia, GetId(), fisica->LayerMask({"Parede"}))`.
 
 - Mudar o Transform de um corpo pelo script **teleporta** o corpo (inclusive o personagem). Para mover um
   objeto que deve empurrar os outros (porta, plataforma), use Rigidbody **Cinemático**.
@@ -897,6 +907,10 @@ tecla M ([examples/SonsDoMenu.cpp](examples/SonsDoMenu.cpp)):
 - `Play(nome)`, `Stop(nome)`, `SetVolume(nome, volume)` e `IsPlaying(nome)` também aceitam o id da entidade e
   devolvem `false` se ela não existe ou não tem Fonte de áudio. `Play` também devolve `false` sem clipe ou se
   o arquivo não abriu (com aviso no console).
+- `PlayOneShot(nome)` toca **outra voz** da mesma fonte, sem cortar a que já toca: passos e coletas seguidas
+  não se cortam (com outro clipe: `PlayOneShot(id, clipe)`, de um campo `motor::AudioClip` do script).
+- Cada fonte tem um **Grupo** (Efeitos, Música, Interface): `SetGroupVolume(motor::AudioGroup::Music, 0.5f)`
+  muda todos os sons do grupo de uma vez e vale nas próximas cenas (o menu de opções do jogo).
 - Mudar os campos da Fonte de áudio (volume, tom, a posição da entidade) vale na hora, mesmo tocando.
 - Sem placa de som (ou sem saída), o jogo roda igual, só sem som.
 

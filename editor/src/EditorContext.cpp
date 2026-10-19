@@ -70,7 +70,8 @@ std::vector<fs::path> AcceptAnyPathDrop() {
 }
 
 motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
-    const char* names[] = {"Entidade", "Cubo", "Esfera", "Plano", "Câmera", "Sol", "Lâmpada", "Holofote"};
+    const char* names[] = {"Entidade", "Cubo", "Esfera", "Plano", "Câmera", "Sol", "Lâmpada", "Holofote",
+                           "Cilindro", "Cápsula", "Cone"};
     motor::Entity& e = scene.CreateEntity(names[static_cast<int>(type)], parent);
 
     if (type == Primitive::Camera) {
@@ -91,7 +92,23 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
         if (parent == kNullEntity) e.transform.position = {0.0f, 3.0f, 0.0f};
     } else if (type != Primitive::Empty) {
         e.Add<motor::MeshRenderer>().mesh = assets.FindMesh(names[static_cast<int>(type)]);
-        if (type != Primitive::Plane && parent == kNullEntity) e.transform.position.y = 0.5f;
+        // Em cima do chão: as formas de altura 2 (cilindro e cápsula) sobem 1, as outras 0,5.
+        const float lift = type == Primitive::Plane                                      ? 0.0f
+                           : type == Primitive::Cylinder || type == Primitive::Capsule ? 1.0f
+                                                                                       : 0.5f;
+        if (parent == kNullEntity) e.transform.position.y = lift;
+        motor::ColliderComponent& collider = e.Add<motor::ColliderComponent>();  // medidas da forma
+        switch (type) {
+            case Primitive::Sphere: collider.shape = motor::ColliderShape::Sphere; break;
+            case Primitive::Plane:  // sem espessura: uma caixa fina logo abaixo da superfície
+                collider.size = {1.0f, 0.02f, 1.0f};
+                collider.center = {0.0f, -0.01f, 0.0f};
+                break;
+            case Primitive::Cylinder: collider.shape = motor::ColliderShape::Cylinder; break;
+            case Primitive::Capsule: collider.shape = motor::ColliderShape::Capsule; break;
+            case Primitive::Cone: collider.shape = motor::ColliderShape::Mesh; break;  // com Rigidbody, casco convexo
+            default: break;                                                         // cubo: a caixa 1 x 1 x 1
+        }
     }
     selected = e.id;
     return e;
@@ -316,6 +333,9 @@ void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent) {
     if (ImGui::MenuItem("Cubo")) ctx.CreatePrimitive(Primitive::Cube, parent);
     if (ImGui::MenuItem("Esfera")) ctx.CreatePrimitive(Primitive::Sphere, parent);
     if (ImGui::MenuItem("Plano")) ctx.CreatePrimitive(Primitive::Plane, parent);
+    if (ImGui::MenuItem("Cilindro")) ctx.CreatePrimitive(Primitive::Cylinder, parent);
+    if (ImGui::MenuItem("Cápsula")) ctx.CreatePrimitive(Primitive::Capsule, parent);
+    if (ImGui::MenuItem("Cone")) ctx.CreatePrimitive(Primitive::Cone, parent);
     ImGui::Separator();
     if (ImGui::MenuItem("Câmera")) ctx.CreatePrimitive(Primitive::Camera, parent);
     ImGui::Separator();

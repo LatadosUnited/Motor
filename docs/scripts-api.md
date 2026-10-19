@@ -16,7 +16,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 12 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 13 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -141,6 +141,7 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 | `bool WasKeyPressed(Key key) const` | tecla desceu neste frame (use no `OnUpdate`) |
 | `bool IsMouseDown(MouseButton button) const` | botão do mouse apertado: `MouseButton::Left`, `Right`, `Middle` |
 | `glm::vec2 MouseDelta() const` | movimento do mouse neste frame, em pixels |
+| `void SetCursorMode(CursorMode mode)`, `CursorMode GetCursorMode() const` | cursor do jogo: `motor::CursorMode::Locked` (preso e escondido, para olhar com `MouseDelta`), `Hidden` ou `Normal`; no editor vale com o jogo em foco (Esc solta, clique prende de novo) e volta ao normal ao parar; continua ao trocar de cena |
 
 As quatro de entrada devolvem falso/zero quando o jogo não tem o foco. `motor::Input` (`motor/core/Input.h`)
 tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas sem esse filtro de foco.
@@ -294,14 +295,14 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 
 | Tipo | No editor | Campos |
 |---|---|---|
-| `motor::MeshRenderer` | Mesh Renderer | `std::shared_ptr<Mesh> mesh`; `std::shared_ptr<Material> sharedMaterial` (asset `.mmat`, compartilhado; nulo = sem asset); `Material material` (o próprio, usado só sem asset) com `glm::vec4 color`, `std::shared_ptr<Texture2D> albedo`, `float metallic`, `float roughness`, `float specular` (reflexo dos não metais, 0.5 = 4%), mapas `normalMap`, `metallicRoughnessMap`, `occlusionMap`, `emissiveMap` e `glm::vec3 emissive` com `emissiveIntensity`; `Resolved()` devolve o material que está valendo |
+| `motor::MeshRenderer` | Mesh Renderer | `std::shared_ptr<Mesh> mesh`; `std::shared_ptr<Material> sharedMaterial` (asset `.mmat`, compartilhado; nulo = sem asset); `Material material` (o próprio, usado só sem asset) com `glm::vec4 color`, `std::shared_ptr<Texture2D> albedo`, `float metallic`, `float roughness`, `float specular` (reflexo dos não metais, 0.5 = 4%), mapas `normalMap`, `metallicRoughnessMap`, `occlusionMap`, `emissiveMap`, `glm::vec3 emissive` com `emissiveIntensity`, `BlendMode blend` (`Opaque`, `Cutout`, `Transparent`), `float alphaCutoff` e `bool doubleSided`; `Resolved()` devolve o material que está valendo |
 | `motor::PrefabInstance` | Prefab | `PrefabLink link` (`guid` do `.mprefab`, `source`, `overrides`); posto pelo editor em cada entidade de uma instância de prefab, não precisa mexer |
 | `motor::CameraComponent` | Câmera | `fov` (graus, vertical), `nearPlane`, `farPlane`, `bool main` |
 | `motor::LightComponent` | Luz | `LightType type` (`Directional`, `Point`, `Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `bool castShadows`, `ShadowQuality shadowQuality` (`Low`, `Medium`, `High`) |
-| `motor::ColliderComponent` | Collider | `ColliderShape shape` (`Box`, `Sphere`, `Capsule`, `Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution` |
+| `motor::ColliderComponent` | Collider | `ColliderShape shape` (`Box`, `Sphere`, `Capsule`, `Cylinder`, `Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `CollisionLayer layer` |
 | `motor::RigidbodyComponent` | Rigidbody | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
-| `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass` |
-| `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`; tocar e parar na seção [Som](#som-motoraudiosystem) |
+| `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass`, `bool useGravity`, `CollisionLayer layer` |
+| `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`, `AudioGroup group` (`Effects`, `Music`, `Interface`); tocar e parar na seção [Som](#som-motoraudiosystem) |
 | `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
@@ -350,7 +351,9 @@ passo fixo) devolvem `false`/zero.
 
 | Método | Efeito |
 |---|---|
-| `std::optional<PhysicsRaycastHit> Raycast(origin, direction, maxDistance = 1000, ignore = kNullEntity) const` | primeiro corpo no raio (`direction` não precisa ser normalizada); `ignore` é atravessada; triggers não contam |
+| `std::optional<PhysicsRaycastHit> Raycast(origin, direction, maxDistance = 1000, ignore = kNullEntity, layerMask = CollisionLayers::kAll) const` | primeiro corpo no raio (`direction` não precisa ser normalizada); `ignore` é atravessada; só as camadas de `layerMask`; triggers não contam |
+| `uint32_t LayerMask({"Nome", ...}) const` | máscara com as camadas de colisão do projeto citadas pelo nome (nomes desconhecidos são ignorados) |
+| `const CollisionLayers& Layers() const` | camadas do projeto: `Label(i)`, `Find(nome)`, `Collide(a, b)` |
 | `bool AddForce(EntityId id, const glm::vec3& force)` | Rigidbody: força em newtons, durante o próximo passo |
 | `bool AddImpulse(EntityId id, const glm::vec3& impulse)` | Rigidbody: muda a velocidade na hora (kg·m/s) |
 | `bool SetVelocity(EntityId id, const glm::vec3& velocity)` | Rigidbody: define a velocidade |
@@ -359,6 +362,10 @@ passo fixo) devolvem `false`/zero.
 | `bool Jump(EntityId id, float speed)` | personagem: pula com essa velocidade se estiver no chão; `true` se vai pular |
 | `bool IsGrounded(EntityId id) const` | personagem no chão |
 | `glm::vec3 GetCharacterVelocity(EntityId id) const` | velocidade do personagem |
+| `void SetCharacterVelocity(EntityId id, const glm::vec3& velocity)` | velocidade inteira do próximo passo, inclusive a vertical (trampolim, empurrão); a vertical continua depois, a horizontal volta a ser a de `MoveCharacter` |
+| `std::vector<EntityId> OverlapSphere(center, radius, layerMask = kAll, includeTriggers = true) const` | entidades dentro da esfera (corpos, triggers e personagens; cada uma uma vez) |
+| `std::vector<EntityId> OverlapBox(center, halfExtents, rotation = identidade, layerMask = kAll, includeTriggers = true) const` | entidades dentro da caixa (`halfExtents` = metade do tamanho) |
+| `std::optional<PhysicsRaycastHit> SphereCast(origin, radius, direction, maxDistance = 1000, ignore = kNullEntity, layerMask = kAll) const` | raio com espessura: primeiro corpo que a esfera toca (`distance` = quanto andou); triggers não contam |
 | `bool HasBody(EntityId id) const` | a entidade já tem corpo ou personagem |
 | `const PhysicsStats& Stats() const` | números do último passo (corpos, tempos em ms) |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
@@ -415,19 +422,22 @@ silêncio.
 | `bool Play(entity)` | toca o clipe do AudioSource desde o começo (recomeça se já tocava); `false` sem a entidade, sem AudioSource, sem clipe ou se o arquivo não abriu (aviso no log) |
 | `bool Stop(entity)` | para o som (o próximo `Play` começa do início); `false` sem a entidade ou sem AudioSource |
 | `bool SetVolume(entity, float volume)` | muda `AudioSource::volume` (0 = mudo, 1 = normal); vale na hora |
-| `bool IsPlaying(entity) const` | o som está tocando (em pausa conta como tocando) |
+| `bool IsPlaying(entity) const` | o som está tocando, a voz principal ou alguma extra (em pausa conta como tocando) |
+| `bool PlayOneShot(entity, float volumeScale = 1)`, `bool PlayOneShot(EntityId, const AudioClip& clip, float volumeScale = 1)` | outra voz da mesma fonte, sem cortar o que já toca (passos, tiros, coletas seguidas): posição, grupo e volume da fonte (vezes `volumeScale`), nunca repete; `clip` = outro clipe (campo `motor::AudioClip` do script); até 8 por fonte |
+| `void SetGroupVolume(AudioGroup group, float volume)`, `float GroupVolume(AudioGroup group) const` | volume do grupo (Efeitos, Música, Interface), já e nas próximas cenas: o menu de opções |
 | `void StopAll()` | para todos os sons |
 | `void SetPaused(bool paused)`, `bool IsPaused() const` | pausa todos os sons e continua de onde parou; quem chama é o editor (Pausa do Play) |
 | `bool HasDevice() const` | tocando numa saída de som de verdade (`false`: sem dispositivo, ou ainda nenhum som tocou) |
 | `std::vector<float> ReadMix(int frames)`, `int SampleRate() const` | sem dispositivo, mistura `frames` quadros estéreo e devolve as amostras (para testes) |
 | `std::vector<AudioVoiceInfo> Voices() const` | as fontes que já tocaram neste Play (diagnóstico) |
+| `size_t PreloadedClips() const` | clipes da cena pedidos ao carregador no início (decodificados numa thread, fora do jogo) |
 | `glm::vec3 ListenerPosition() const` | onde está o ouvinte |
 | `float OutputLevel(int channel) const` | nível (RMS) do som que saiu no último bloco, canal 0 (esquerdo) ou 1 (direito) |
 | `OnStart`, `OnUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 `motor::AudioVoiceInfo`: `entity`, `clip` (caminho no projeto), `playing`, `spatial`, `distance` (até o
-ouvinte) e `gain` (volume da fonte vezes a queda com a distância). Configuração global
-(`motor::AudioSettings::Global()`: `useDevice`, `masterVolume`) é lida a cada Play; é para a aplicação e os
+ouvinte), `gain` (volume da fonte vezes a queda com a distância) e `oneShots` (vozes extras tocando). Configuração global
+(`motor::AudioSettings::Global()`: `useDevice`, `masterVolume`, `groupVolumes`) é lida a cada Play; é para a aplicação e os
 testes, não para scripts.
 
 Som 3D: o volume cai com a distância pelo modelo inverso (`minDistance / distância`, cheio até

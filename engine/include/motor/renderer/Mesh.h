@@ -53,6 +53,11 @@ public:
     static std::shared_ptr<Mesh> CreateCube();
     static std::shared_ptr<Mesh> CreatePlane(float uvRepeat = 1.0f);  // plano XZ, normal +Y
     static std::shared_ptr<Mesh> CreateSphere(int segments = 48, int rings = 24);
+    // Fase 18: cilindro e cápsula de pé no eixo Y com altura 2 e raio 0,5 (as medidas padrão do Collider);
+    // cone com altura 1 e raio 0,5 na base (ponta para cima).
+    static std::shared_ptr<Mesh> CreateCylinder(int segments = 48);
+    static std::shared_ptr<Mesh> CreateCapsule(int segments = 48, int rings = 12);  // anéis por meia esfera
+    static std::shared_ptr<Mesh> CreateCone(int segments = 48);
 
 private:
     void Upload() const;

@@ -95,11 +95,14 @@ void Window::SetVSync(bool enabled) {
     glfwSwapInterval(enabled ? 1 : 0);
 }
 
-void Window::SetCursorCaptured(bool captured) {
-    if (captured == m_cursorCaptured) return;
-    m_cursorCaptured = captured;
-    glfwSetInputMode(m_window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-    if (captured && glfwRawMouseMotionSupported()) {
+void Window::SetCursorMode(CursorMode mode) {
+    if (mode == m_cursorMode) return;
+    m_cursorMode = mode;
+    const int glfwMode = mode == CursorMode::Locked   ? GLFW_CURSOR_DISABLED
+                         : mode == CursorMode::Hidden ? GLFW_CURSOR_HIDDEN
+                                                      : GLFW_CURSOR_NORMAL;
+    glfwSetInputMode(m_window, GLFW_CURSOR, glfwMode);
+    if (mode == CursorMode::Locked && glfwRawMouseMotionSupported()) {
         glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
     Input::IgnoreNextMouseDelta();

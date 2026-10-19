@@ -1,5 +1,7 @@
 #pragma once
 
+#include "motor/project/CollisionLayers.h"
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -47,6 +49,10 @@ public:
     // true se o projeto tem engineVersion válida e maior que motor::kVersion (não deve ser rebaixado sem avisar).
     bool IsNewerThanCurrentEngine() const;
 
+    // Camadas de colisão (nomes e quem se choca com quem), usadas pela física de todas as cenas.
+    const CollisionLayers& Layers() const { return m_layers; }
+    void SetLayers(const CollisionLayers& layers) { m_layers = layers; }
+
     std::filesystem::path ToAbsolute(std::string_view relative) const;
     std::string ToRelative(const std::filesystem::path& absolute) const;  // vazio se estiver fora do projeto
 
@@ -55,6 +61,7 @@ private:
     std::filesystem::path m_root;
     std::string m_startupScene;  // relativo à raiz
     mutable std::string m_engineVersion;  // Save (const) grava a versão atual
+    CollisionLayers m_layers;
 };
 
 } // namespace motor

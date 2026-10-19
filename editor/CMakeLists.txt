@@ -16,6 +16,7 @@ add_executable(MotorEditor
     src/document/SceneDocument.cpp
     src/document/SceneDocumentProject.cpp
     src/document/SceneDocumentUi.cpp
+    src/document/SceneDocumentLayers.cpp
     src/panels/ScenePanel.cpp
     src/viewport/SceneViewport.cpp
     src/viewport/SceneViewportOverlay.cpp
@@ -35,7 +36,10 @@ add_executable(MotorEditor
     src/drawers/ModelRefDrawer.cpp
     src/drawers/ShadowQualityDrawer.cpp
     src/drawers/AudioClipDrawer.cpp
+    src/drawers/AudioGroupDrawer.cpp
+    src/drawers/BlendModeDrawer.cpp
     src/drawers/EntityRefDrawer.cpp
+    src/drawers/CollisionLayerDrawer.cpp
     src/mcp/ImageEncode.cpp
     src/mcp/McpController.cpp
     src/mcp/McpFileTools.cpp

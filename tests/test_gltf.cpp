@@ -239,6 +239,8 @@ GltfBuilder MakeBoneco(const std::string& imageUri = {}) {
          {"normalTexture", {{"index", 0}, {"scale", 0.5}}}, {"occlusionTexture", {{"index", 0}, {"strength", 0.25}}},
          {"emissiveFactor", {1.0, 0.25, 0.0}}, {"emissiveTexture", {{"index", 0}}},
          {"extensions", {{"KHR_materials_emissive_strength", {{"emissiveStrength", 3.0}}}}}},
+        {{"name", "Folha"}, {"alphaMode", "MASK"}, {"alphaCutoff", 0.3}, {"doubleSided", true}},
+        {{"name", "Vidro"}, {"alphaMode", "BLEND"}},
     });
 
     // Clipes.
@@ -278,9 +280,12 @@ void CheckBonecoData(const ModelData& m, bool embeddedImage) {
         CHECK(Near(m.primitives[1].mesh.vertices[0].normal, glm::vec3(0, 1, 0)));
         CHECK(Near(m.primitives[0].weights[2].weights.x, 0.5f) && Near(m.primitives[0].weights[2].joints.y, 1.0f));
     }
-    CHECK(m.materials.size() == 2);
-    if (m.materials.size() == 2) {
+    CHECK(m.materials.size() == 4);
+    if (m.materials.size() == 4) {
         CHECK(m.materials[0].name == "Pele" && m.materials[0].image == 0);
+        CHECK(m.materials.size() == 4 && m.materials[0].blend == BlendMode::Opaque && !m.materials[0].doubleSided);
+        CHECK(m.materials[2].blend == BlendMode::Cutout && Near(m.materials[2].alphaCutoff, 0.3f) && m.materials[2].doubleSided);
+        CHECK(m.materials[3].blend == BlendMode::Transparent);
         CHECK(Near(m.materials[0].color.r, std::pow(0.5f, 1.0f / 2.2f), 1e-3f));  // linear -> sRGB
         CHECK(m.materials[1].image == -1 && m.materials[1].roughness < m.materials[0].roughness);
         // PBR (Fase 7): metal, rugosidade e os mapas de normal, metal/rugosidade, oclusão e emissão.
@@ -615,7 +620,7 @@ int main(int argc, char** argv) {
         if (!error.empty()) std::printf("  erro: %s\n", error.c_str());
         CHECK(!ModelNeedsImport(file));
         CHECK(fs::exists(imported.prefab) && fs::exists(AssetDatabase::MetaPathFor(imported.prefab)));
-        CHECK(imported.folder == models / "Boneco_materiais" && imported.materials == 2 && imported.textures == 1);
+        CHECK(imported.folder == models / "Boneco_materiais" && imported.materials == 4 && imported.textures == 1);
         CHECK(fs::exists(imported.folder / "Pele.mmat") && fs::exists(imported.folder / "Metal_Vermelho.mmat"));
         CHECK(fs::exists(imported.folder / "Rosto.png") && fs::exists(imported.folder / "Rosto.png.meta"));
         const std::string pele = ReadText(imported.folder / "Pele.mmat");

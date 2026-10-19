@@ -17,6 +17,7 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -44,6 +45,7 @@ struct PhysicsSystem::World {
         glm::vec3 written{0.0f};  // posição no mundo escrita por último
         glm::vec3 walk{0.0f};     // velocidade pedida pelo script (só x e z)
         float jump = 0.0f;        // pulo pendente
+        std::optional<glm::vec3> velocity;  // SetCharacterVelocity pendente (substitui andar e pular no passo)
         uint32_t seen = 0;
     };
 
@@ -118,7 +120,7 @@ struct PhysicsSystem::World {
     std::unique_ptr<JPH::JobSystemThreadPool> jobs;
     physics_jolt::BroadPhaseLayers broadPhaseLayers;
     physics_jolt::ObjectVsBroadPhase objectVsBroadPhase;
-    physics_jolt::ObjectPairs objectPairs;
+    physics_jolt::ObjectPairs objectPairs{settings.layers};  // tabela de camadas do projeto
     physics_jolt::ContactCollector contacts;
     JPH::PhysicsSystem physics;  // depois do coletor de contatos e das camadas, que ele usa
 
