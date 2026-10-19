@@ -16,3 +16,6 @@ Formato: `- AAAA-MM-DD — quem achou — o quê — onde (arquivo:linha, se sou
   8 rodadas para capturar a mensagem; a correção (troca que tenta de novo, cf18356) cobre o caso do arquivo
   preso, que reproduz "Acesso negado". Se `test_export` ou `test_distribuicao` voltarem a falhar em paralelo,
   guardar a mensagem.
+- 2026-10-19 — usuário (fecho da Fase 18) — o jogo de exemplo do guia que junta as funcionalidades da Fase 18
+  (câmera orbital que não atravessa paredes, coleta por área, passos, música com volume separado, cursor preso,
+  vidro e cerca recortada), rodado pelo `test_script_docs`, ficou de fora da fase — `docs/scripts.md`

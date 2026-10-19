@@ -3,12 +3,12 @@ tipo: fase
 alpha: 2
 fase: 18
 titulo: Funcionalidades de jogo
-status: em andamento
+status: pronta
 prioridade: 3
 areas: [physics, audio, renderer, assets, scripts]
 branch: fase-18-funcionalidades
 inicio: 2026-10-18
-fim: 
+fim: 2026-10-19
 ---
 
 # Fase 18 — Funcionalidades de jogo
@@ -52,9 +52,11 @@ Física, áudio, entrada, formas e transparência que jogos comuns pedem e que h
 
 ### Para fechar a fase
 
-- [ ] **Jogo de exemplo no guia** que use tudo isso (câmera orbital que não atravessa paredes, coleta por
+- [ ] ~~**Jogo de exemplo no guia** que use tudo isso (câmera orbital que não atravessa paredes, coleta por
   área, passos que não se cortam, música com volume separado, cursor preso, vidro e cerca recortada),
-  rodado pelo `test_script_docs` como os outros exemplos. *(origem: Pronto quando)*
+  rodado pelo `test_script_docs` como os outros exemplos.~~ Fora da fase por decisão do usuário (19/10/2026):
+  voltou para a [entrada](../entrada.md); o jogo feito à mão da [Fase 19](fase-19-validacao.md) usa essas
+  funcionalidades na prática. *(origem: Pronto quando)*
 
 ## Pronto quando
 
@@ -83,10 +85,13 @@ com testes sem GPU e exemplo no guia.
 
 ## Limitações
 
+- Sem o jogo de exemplo no guia (ver acima): cada parte tem teste e exemplo curto na referência, mas não há um
+  jogo do guia que junte todas.
 - Transparentes ordenados pelo centro de cada objeto: dois objetos que se cruzam, ou um objeto transparente
   côncavo, podem aparecer na ordem errada (o normal nas engines sem ordem por pixel).
 - Transparente não faz sombra nem é recortado na sombra pelo alfa.
 - Não visto na tela: a janela **Camadas de colisão**, o combo da camada e do grupo de som no Inspector, e o
-  cursor preso com Esc no editor (o MCP não clica em menus nem prende o mouse).
+  cursor preso com Esc no editor (o MCP não clica em menus nem prende o mouse). Entraram no
+  [roteiro de teste à mão](../../teste-manual.md) (seções 8 e 9).
 - Mudança de comportamento: Cubo, Esfera e Plano criados pelo menu e pelo MCP agora já vêm com Collider.
 - `test_export` e `test_distribuicao` falharam uma vez cada com os testes em paralelo (na caixa de entrada).

@@ -36,8 +36,8 @@ servidor de versões. Main sem pendências de merge.
 | 1 | [Fase 16 — Robustez e correções](alpha-2/fase-16-robustez-e-correcoes.md) | pronta | hoje um erro de script fecha o editor e o trabalho não salvo se perde; contornos conhecidos | 17 (áreas diferentes) |
 | 2 | [Fase 17 — Scripts mais rápidos e fáceis](alpha-2/fase-17-scripts.md) | pronta | compilações de 10 a 124 s medidas num projeto real; menos código repetido | 16, 18 |
 | — | [Organização do código](alpha-2/organizacao-do-codigo.md) | pronta | arquivos de 600 a 1200 linhas e o editor numa pasta só; dividir antes da 18 e da 20, sem mudar comportamento | — (mexe em quase tudo) |
-| 3 | [Fase 18 — Funcionalidades de jogo](alpha-2/fase-18-funcionalidades-de-jogo.md) | em andamento | física, áudio, cursor, formas e transparência que jogos comuns pedem | 17 |
-| 4 | [Fase 19 — Validação de uso real](alpha-2/fase-19-validacao.md) | planejada | o editor quase só foi testado por agentes; a lista de defeitos decide o resto | — |
+| 3 | [Fase 18 — Funcionalidades de jogo](alpha-2/fase-18-funcionalidades-de-jogo.md) | pronta | física, áudio, cursor, formas e transparência que jogos comuns pedem | 17 |
+| 4 | [Fase 19 — Validação de uso real](alpha-2/fase-19-validacao.md) | em andamento | o editor quase só foi testado por agentes; a lista de defeitos decide o resto | — |
 | 5 | [Fase 20 — Editor produtivo](alpha-2/fase-20-editor-produtivo.md) | planejada | multi-seleção, copiar/colar, snapping, Cena e Jogo lado a lado, prefab dentro de prefab | 21 |
 | 6 | [Fase 21 — Jogo entregue](alpha-2/fase-21-jogo-entregue.md) | planejada | opções do jogador, ícone, salvar progresso, controle, exportação Release | 20 |
 

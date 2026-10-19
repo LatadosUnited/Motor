@@ -3,11 +3,11 @@ tipo: fase
 alpha: 2
 fase: 19
 titulo: Validação de uso real
-status: planejada
+status: em andamento
 prioridade: 4
 areas: [docs]
-branch: 
-inicio: 
+branch: fase-19-validacao
+inicio: 2026-10-19
 fim: 
 ---
 
@@ -21,18 +21,25 @@ que sair daqui decide o resto da alpha.
 
 ## Tarefas
 
-- [ ] **Roteiro de teste à mão** em `docs/teste-manual.md`, reaproveitável a cada versão: câmera livre e seleção
-  por clique no viewport, foco do jogo, menus, atalhos, gizmo, arrastar arquivos do painel Projeto e do
-  Explorer, popups do Hub e do instalador, Ajuda > Sobre, recarga de scripts com o jogo aberto, recuperação
-  depois de uma queda. *(origem: anotado para a alpha 2, "falta testar à mão"; não testados nas Fases 13 a 15)*
-- [ ] **Instalação limpa num segundo computador** pela rede (`MotorServidor` + `MotorSetup`), sem compilar nada.
-- [ ] **Jogo pequeno do começo ao fim**, exportado em Release.
+- [x] **Roteiro de teste à mão** em [teste-manual.md](../../teste-manual.md), reaproveitável a cada versão: câmera
+  livre e seleção por clique no viewport, foco do jogo, menus, atalhos, gizmo, arrastar arquivos do painel
+  Projeto e do Explorer, popups do Hub e do instalador, Ajuda > Sobre, recarga de scripts com o jogo aberto,
+  recuperação depois de uma queda; também o que a Fase 18 não viu na tela (camadas de colisão, grupo de som,
+  cursor preso). 13 seções, gravidade bloqueia / atrapalha / detalhe. *(origem: anotado para a alpha 2, "falta
+  testar à mão"; não testados nas Fases 13 a 15)* (d53cbbe)
+- [ ] ~~**Instalação limpa num segundo computador** pela rede (`MotorServidor` + `MotorSetup`), sem compilar
+  nada.~~ Pulada nesta fase por decisão do usuário (19/10/2026): a instalação já foi testada à mão antes; a
+  seção 1 do roteiro fica para quando o instalador mudar ou houver um segundo computador Windows.
+- [ ] **Teste à mão pelo roteiro** no editor instalado pelo Hub, seções 2 a 13.
+- [ ] **Jogo pequeno do começo ao fim**, exportado. (A exportação em Release é da
+  [Fase 21](fase-21-jogo-entregue.md); aqui vale a exportação de hoje.)
 - [ ] **Cada problema achado** vai para a [entrada](../entrada.md) com gravidade; a triagem leva cada um para uma
   fase (na 16, se for pequeno).
 
 ## Pronto quando
 
-O jogo exportado roda no segundo computador e a lista de problemas está anotada e priorizada.
+O roteiro foi seguido inteiro (menos a instalação), o jogo exportado roda com o editor fechado e a lista de
+problemas está anotada e priorizada.
 
 ## Feito
 

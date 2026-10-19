@@ -18,6 +18,10 @@ relativos: funcionam no Obsidian, no GitHub e para os agentes. Como organizar: [
 - [Alpha 1 — histórico das Fases 0 a 15](roadmap/alpha-1.md)
 - Decisões de rumo: pasta `decisoes/`
 
+## Testar
+
+- [Roteiro de teste à mão](teste-manual.md): o que uma pessoa confere no editor a cada versão.
+
 ## Scripts
 
 - [Guia de scripts](scripts.md): do primeiro script a um mini jogo.
