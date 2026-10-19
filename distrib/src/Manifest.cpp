@@ -3,6 +3,7 @@
 #include "Sha256.h"
 
 #include <HubCore.h>
+#include <motor/common/FileWrite.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -27,27 +28,6 @@ std::optional<std::string> ReadFile(const fs::path& path) {
     std::stringstream ss;
     ss << in.rdbuf();
     return ss.str();
-}
-
-bool WriteFileAtomic(const fs::path& file, const std::string& text, std::string* error) {
-    std::error_code ec;
-    fs::create_directories(file.parent_path(), ec);
-    fs::path tmp = file;
-    tmp += ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out || !(out << text) || !out.flush()) {
-            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
-            return false;
-        }
-    }
-    fs::rename(tmp, file, ec);
-    if (ec) {
-        fs::remove(tmp, ec);
-        SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
-        return false;
-    }
-    return true;
 }
 
 json FilesToJson(const std::vector<ReleaseFile>& files) {
@@ -435,7 +415,9 @@ std::optional<Manifest> LoadManifest(const fs::path& root, std::string* error) {
 }
 
 bool SaveManifest(const fs::path& root, const Manifest& manifest, std::string* error) {
-    return WriteFileAtomic(ManifestPath(root), manifest.Dump(), error);
+    std::error_code ec;
+    fs::create_directories(root, ec);
+    return motor::WriteFileAtomic(ManifestPath(root), manifest.Dump(), error);
 }
 
 std::optional<Manifest> RegenerateManifest(const fs::path& root, std::string* error) {
@@ -491,7 +473,7 @@ std::optional<Release> PublishRelease(const fs::path& source, const fs::path& ro
     fs::remove_all(tmp, ec);
     fs::create_directories(tmp, ec);
     if (!ec) fs::copy(source, tmp, fs::copy_options::recursive, ec);
-    if (!ec) fs::rename(tmp, dest, ec);
+    if (!ec) motor::ReplaceFileAtomic(tmp, dest, ec);
     if (ec) {
         std::error_code ignored;
         fs::remove_all(tmp, ignored);
@@ -529,7 +511,7 @@ std::optional<HubRelease> PublishHub(const fs::path& hubExe, const fs::path& set
         fs::path tmp = dest;
         tmp += ".tmp";
         fs::copy_file(source, tmp, fs::copy_options::overwrite_existing, ec);
-        if (!ec) fs::rename(tmp, dest, ec);
+        if (!ec) motor::ReplaceFileAtomic(tmp, dest, ec);
         if (ec) {
             SetError(error, std::format("Não foi possível copiar '{}': {}", ToUtf8(source), ec.message()));
             return std::nullopt;

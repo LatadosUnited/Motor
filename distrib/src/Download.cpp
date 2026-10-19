@@ -6,6 +6,7 @@
 #include "Sha256.h"
 
 #include <HubCore.h>
+#include <motor/common/FileWrite.h>
 
 #include <format>
 #include <fstream>
@@ -254,7 +255,7 @@ ReleaseOutcome DownloadRelease(std::string_view serverUrl, const Release& releas
 
     // Tudo conferido: vira versão instalada de uma vez.
     if (!hub::ReadInstalledVersion(staging, &outcome.error)) return outcome;
-    fs::rename(staging, dest, ec);
+    motor::ReplaceFileAtomic(staging, dest, ec);  // espera se o antivírus estiver lendo o que acabou de chegar
     if (ec) {
         outcome.error = std::format("Não foi possível mover '{}' para '{}': {}", ToUtf8(staging), ToUtf8(dest),
                                     ec.message());

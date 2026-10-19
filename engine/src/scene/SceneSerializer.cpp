@@ -1,6 +1,6 @@
 #include "motor/scene/SceneSerializer.h"
 
-#include "motor/core/FileWrite.h"
+#include "motor/common/FileWrite.h"
 #include "SceneJson.h"
 
 #include "motor/assets/AssetLibrary.h"

@@ -5,8 +5,11 @@
 
 #include <HubCore.h>
 
+#include <atomic>
+#include <chrono>
 #include <fstream>
 #include <string>
+#include <thread>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -186,6 +189,22 @@ int main(int argc, char** argv) {
     config.newProjectDir = base;
     CHECK(config.Save(configFile, &error));
     CHECK(!fs::exists(fs::path(configFile) += ".tmp"));
+#ifdef _WIN32
+    {
+        // hub.json preso por um instante (antivírus lendo): a gravação espera e grava (motor::WriteFileAtomic).
+        std::atomic<bool> opened{false};
+        std::thread holder([&] {
+            std::ifstream in(configFile, std::ios::binary);
+            opened = in.is_open();
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        });
+        for (int i = 0; i < 200 && !opened; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        const bool saved = config.Save(configFile, &error);
+        holder.join();
+        if (!saved) std::printf("  erro: %s\n", error.c_str());
+        CHECK(opened.load() && saved);
+    }
+#endif
 
     HubConfig loaded = HubConfig::Load(configFile, &error);
     CHECK(loaded.projects.size() == 3);

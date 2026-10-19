@@ -7,7 +7,8 @@
 
 namespace motor {
 
-// Gravação segura de arquivos importantes (projeto, cena, material, recuperação): escreve `<arquivo>.tmp` e só
+// Gravação segura de arquivos importantes (projeto, cena, material, recuperação; no hub, distribuição e instalador:
+// hub.json, manifesto, MotorHub.exe): escreve `<arquivo>.tmp` e só
 // então troca pelo original. O original nunca é apagado antes de o novo estar no lugar: uma falha no meio deixa
 // o arquivo antigo inteiro.
 //
@@ -17,7 +18,8 @@ namespace motor {
 bool WriteFileAtomic(const std::filesystem::path& file, std::string_view data, std::string* error = nullptr);
 
 // Só a troca, para quem já gravou o arquivo novo: `from` passa a ser `to` (substituindo), com as mesmas novas
-// tentativas. `from` continua lá se falhar.
+// tentativas. `from` continua lá se falhar. Também serve para pôr no lugar uma pasta inteira copiada antes para
+// `<pasta>.tmp` (versão instalada ou publicada), desde que `to` ainda não exista.
 bool ReplaceFileAtomic(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& ec);
 
 } // namespace motor
