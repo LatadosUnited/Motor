@@ -79,12 +79,16 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 |---|---|
 | Voar pela cena | segurar botão direito no viewport + WASD/QE (Shift acelera) |
 | Selecionar | clique no objeto no viewport ou na hierarquia (Esc limpa) |
+| Selecionar vários | Ctrl+clique alterna (viewport e hierarquia); Shift+clique na hierarquia pega o intervalo; arrastar no vazio do viewport faz um retângulo (com Ctrl/Shift, soma); Ctrl+A seleciona tudo. Gizmo, Del, Ctrl+D e arrastar na hierarquia agem em todos; o Inspector mostra o último escolhido e repete nos outros o que mudar nele |
 | Gizmo | Q nenhum / W mover / E rotacionar / R escalar; X alterna eixos Local/Global |
-| Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (0.5 m / 15° / 0.1) |
+| Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (padrão 0.5 m / 15° / 0.1). Mover com encaixe põe a posição na grade. A seta ao lado do Snap abre os passos (mover, girar, escalar) e a grade (visível, altura) |
+| Grade | botão "Grade" (começa desligada): linhas no chão a cada 10 passos do mover (as finas, de cada passo, ligam em "Linhas finas" na seta do Snap), eixos X (vermelho) e Z (azul); objetos na frente tapam a grade. Encaixe e grade ficam salvos no editor |
 | Reparentar | arrastar na hierarquia (soltar no vazio = raiz) |
+| Buscar na hierarquia | Ctrl+F ou a caixa ao lado do "+ Criar": palavras do nome e `t:componente` (`t:luz`, `t:collider`, `t:Girar`), sem diferença de maiúsculas e acentos; os resultados aparecem numa lista com o caminho do pai, e "Selecionar todas" pega todos. Esc ou "x" limpa |
 | Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia; as formas (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone) já vêm com o Collider que bate com elas |
 | Focar / Excluir / Duplicar | F / Del / Ctrl+D |
-| Desfazer / Refazer | Ctrl+Z / Ctrl+Y (ou Ctrl+Shift+Z), também no menu Editar; segurar repete |
+| Copiar / Recortar / Colar | Ctrl+C / Ctrl+X / Ctrl+V (também no menu Editar e no clique direito da hierarquia, com "Colar como filho"): os selecionados com os filhos, colados no mesmo lugar do mundo; vale colar em outra cena do projeto |
+| Desfazer / Refazer | Ctrl+Z / Ctrl+Y (ou Ctrl+Shift+Z), também no menu Editar; segurar repete. Cobre também materiais (`.mmat`) e prefabs editados no Inspector (o arquivo volta junto). No Play, o que se muda em materiais e prefabs volta ao parar |
 | Restaurar layout | Ver > Restaurar layout (o layout fica salvo em `imgui.ini`) |
 | Novo / Abrir projeto | Arquivo > Novo projeto... / Abrir projeto... / Projetos recentes |
 | Nova / Abrir cena | Arquivo > Nova cena (Ctrl+N) / Abrir cena... (Ctrl+O) |
@@ -92,6 +96,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Play / Parar | botão ▶ / ⏹ no topo do viewport, Ctrl+P ou menu Jogo |
 | Pausa / Avançar um quadro | botões ⏸ / ⏭ (ou Ctrl+Shift+P) |
 | Câmera do jogo ↔ do editor no Play | botão "Câmera: jogo/editor" ou F8 |
+| Cena e Jogo lado a lado | Jogo > "Cena e Jogo lado a lado": a janela **Jogo** aparece à direita do Viewport e mostra a câmera do jogo (também fora do Play); no Play o jogo recebe teclado e mouse com ela em foco (clique nela) e o Viewport fica na câmera do editor, para mexer na cena jogando. Fechar a janela desliga; a escolha fica salva |
 
 **Desfazer** vale para tudo que muda a cena: transform (gizmo ou Inspector), criar, excluir, duplicar,
 reparentar, renomear, trocar malha/textura/cor, luz e ambiente. Cada interação vira **um** passo: um
@@ -285,9 +290,12 @@ mudar a cor de uma peça no prefab muda todas as instâncias.
   e a lista fica no componente Prefab. Posição e rotação da raiz são sempre de cada instância.
 - **Aplicar / Reverter / Desvincular** (componente Prefab ou clique direito na Hierarquia): grava a instância
   no prefab (entidades novas chegam às outras instâncias), descarta as alterações dela, ou a solta do prefab.
-- Prefab dentro de prefab não é suportado: ao criar um prefab, vínculos com outros prefabs viram cópias.
-- Mudanças nos materiais e prefabs não entram no desfazer (são arquivos, gravados na hora); a cena registra
-  as alterações das instâncias normalmente.
+- **Prefab dentro de prefab:** criar ou aplicar um prefab que tem instâncias de outro (ex.: uma Janela dentro da
+  Casa) deixa a Janela aninhada na Casa. Mudar o prefab Janela muda as janelas de todas as casas, menos o que a
+  Casa mudou nelas; o Inspector mostra "Do prefab aninhado: Janela". Desvincular a casa na cena faz as janelas
+  voltarem a ser instâncias da Janela. Um prefab dentro dele mesmo é recusado ao aplicar.
+- Editar um material ou um prefab no Inspector entra no desfazer (o arquivo volta junto); "Aplicar ao prefab" e
+  criar prefab ou material, não. A cena registra as alterações das instâncias normalmente.
 
 ### Modelos 3D (glTF) e animação
 
@@ -309,13 +317,14 @@ Assets/Personagens/Robo_materiais/       um .mmat por material do glTF e as text
 - **Animação esquelética:** o prefab de um modelo com esqueleto ou clipes vem com o componente **Animator**
   (Modelo, Clipe inicial, Tocar ao iniciar, Repetir, Velocidade). No Play, o clipe inicial toca sozinho;
   scripts trocam com `GetAnimator()->CrossFade("Andando", 0.2f)` (guia: [docs/scripts.md](docs/scripts.md),
-  seção "Animação"). Fora do Play o modelo fica na pose de repouso. O skinning é feito no shader
+  seção "Animação"). Fora do Play o modelo fica na pose de repouso; para ver um clipe sem dar Play, use
+  **Pré-visualizar** (escolha o clipe e Tocar) logo abaixo do Animator no Inspector. O skinning é feito no shader
   (`skinned.vert`, até 128 juntas, 4 por vértice).
 - Exemplo: `engine/assets/models/Robo.glb` (1,93 m, olha para -Z, clipes Parado, Andando e Pulando). Com o
   modelo Jogador: entidade com Controlador de personagem + Jogador, o robô como filho na posição `0 -0.9 0`.
 
 Limitações: sem morph targets, câmeras e luzes do glTF; animação só de juntas (nós sem pele não se movem);
-malhas do modelo não aparecem no combo "Malha" do Inspector (use o prefab); o modelo alterado no disco é
+as malhas do modelo também aparecem no combo "Malha" do Inspector, em "Modelos" (abra o modelo na lista); o modelo alterado no disco é
 relido, mas cenas abertas só pegam as malhas novas ao reabrir.
 
 ## Componentes
@@ -509,7 +518,8 @@ no `FixedUpdate`, **antes** dos scripts, só no Play. Tudo é montado por compon
   convexo, se tiver Rigidbody dinâmico). Malhas com pele usam a pose de repouso.
 - Mexer no Transform de um corpo (script ou editor) durante o Play o teleporta; mudar um componente refaz o
   corpo; desativar ou excluir a entidade tira o corpo. Corpos parados "dormem" e quase não custam.
-- No viewport, o botão **Colliders** mostra as formas (verde), os triggers (azul) e os personagens.
+- No viewport, o botão **Colliders** mostra as formas (verde), os triggers (azul) e os personagens. Um clique
+  alterna **Selecionado** (padrão: só o objeto selecionado), **Todos** e **Nenhum**; a escolha fica salva no editor.
 
 Scripts recebem os contatos (depois do passo da física, antes do próprio `OnFixedUpdate`) e usam o sistema:
 
@@ -675,13 +685,13 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
 
   | Grupo | Ferramentas |
   |---|---|
-  | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read` |
-  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `select`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
+  | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read`, `events_read` (o que mudou no editor: seleção, cena, Play, scripts) |
+  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
   | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
-  | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus` |
+  | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |
 
   As mudanças viram passos de **desfazer**, como as feitas na interface. Durante o Play, a cena é a do jogo:
   o que mudar é descartado ao parar. O servidor atende também com a janela do editor **minimizada**. Nesse

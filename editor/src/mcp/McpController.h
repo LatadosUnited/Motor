@@ -21,6 +21,7 @@ class ExportController;
 class PlayController;
 class SceneDocument;
 class SceneViewport;
+class GameView;
 class ScriptController;
 
 // Servidor MCP do editor (Fase 13): deixa um agente (Claude Code...) ver e mexer no editor pelas mesmas
@@ -38,6 +39,7 @@ public:
         PlayController& play;
         ScriptController& scripts;
         SceneViewport& viewport;
+        GameView& gameView;  // janela Jogo (Cena e Jogo lado a lado)
         std::function<void(int)> requestHistory;  // -1 desfazer, +1 refazer (no início do próximo quadro)
         ExportController& exporter;               // game_export (Fase 10)
     };
@@ -65,6 +67,23 @@ private:
         motor::log::Level level;
         std::string text;
     };
+    // Mudança no editor para events_read (o agente acompanha sem pedir o estado inteiro).
+    struct Event {
+        uint64_t n;
+        std::string type;
+        mcp::Json data;
+    };
+    // Estado comparado a cada 0,2 s para gerar os eventos.
+    struct Watched {
+        bool valid = false;
+        std::vector<motor::EntityId> selection;
+        std::string scenePath;
+        bool unsaved = false;
+        size_t entityCount = 0;
+        std::string play;
+        std::string scripts;
+        size_t scriptErrors = 0;
+    };
     struct HeldKey {
         motor::Key key;
         std::chrono::steady_clock::time_point releaseAt;  // max() = até pedirem para soltar
@@ -81,6 +100,8 @@ private:
     static std::string PlayState(const PlayController& play);  // "editando", "jogando" ou "pausado"
     std::filesystem::path ProjectPath(const mcp::Json& value) const;  // relativo ao projeto; erro se não houver projeto
     void UpdateUiClick();
+    void DetectEvents();  // em Pump: compara com m_watched e acrescenta eventos
+    void AddEvent(std::string type, mcp::Json data);
 
     Host m_host;
     mcp::Protocol m_protocol;
@@ -91,6 +112,11 @@ private:
     std::mutex m_logMutex;
     std::deque<LogLine> m_log;
     uint64_t m_logCount = 0;
+
+    std::deque<Event> m_events;  // os mais recentes (até 200)
+    uint64_t m_eventCount = 0;
+    Watched m_watched;
+    std::chrono::steady_clock::time_point m_nextEventCheck{};
 
     // Entrada simulada no jogo: teclas a apertar/soltar no próximo quadro e as que estão presas.
     std::vector<std::pair<motor::Key, bool>> m_pendingKeys;

@@ -1,5 +1,6 @@
 #include "EditorContext.h"
 #include "drawers/FieldDrawers.h"
+#include "panels/MultiEdit.h"
 
 #include <motor/core/Paths.h>
 
@@ -11,6 +12,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdio>
 #include <functional>
 #include <map>
 #include <optional>
@@ -242,6 +244,22 @@ void TrackMaterial(EditorContext& ctx, const motor::Material& m) {
     }
 }
 
+// Materiais editados durante o Play: o valor de antes da primeira edição, para voltar ao parar.
+std::map<const motor::Material*, EditedMaterial> s_playMaterials;
+
+// Põe `value` no material (desfazer, refazer, fim do Play) sem que isso conte como uma edição nova.
+void SetMaterial(EditorContext& ctx, const std::weak_ptr<motor::Material>& weak, const motor::Material& value,
+                 bool save) {
+    const auto material = weak.lock();
+    if (!material) return;
+    *material = value;
+    s_editedMaterials[material.get()] = {weak, value};
+    std::string error;
+    if (save && !ctx.assets.SaveMaterial(material.get(), &error)) ctx.pendingError = std::move(error);
+}
+
+// Edição terminada (soltou o controle): grava o .mmat e vira um passo de desfazer. No Play, nem grava nem vira
+// passo: guarda o valor de antes para o fim do Play.
 void SaveEditedMaterials(EditorContext& ctx, bool interacting) {
     for (auto it = s_editedMaterials.begin(); it != s_editedMaterials.end();) {
         const auto material = it->second.material.lock();
@@ -250,9 +268,20 @@ void SaveEditedMaterials(EditorContext& ctx, bool interacting) {
             continue;
         }
         if (!interacting && !motor::ComponentsEqual(MaterialFields(), material.get(), &it->second.saved)) {
-            std::string error;
-            if (!ctx.assets.SaveMaterial(material.get(), &error)) ctx.pendingError = std::move(error);
-            it->second.saved = *material;
+            const std::weak_ptr<motor::Material> weak = it->second.material;
+            const motor::Material before = it->second.saved;
+            const motor::Material after = *material;
+            if (ctx.playing) {
+                s_playMaterials.try_emplace(material.get(), EditedMaterial{weak, before});
+            } else {
+                std::string error;
+                if (!ctx.assets.SaveMaterial(material.get(), &error)) ctx.pendingError = std::move(error);
+                if (ctx.pushAssetUndo) {
+                    ctx.pushAssetUndo([&ctx, weak, before] { SetMaterial(ctx, weak, before, true); },
+                                      [&ctx, weak, after] { SetMaterial(ctx, weak, after, true); });
+                }
+            }
+            it->second.saved = after;
         }
         ++it;
     }
@@ -351,6 +380,85 @@ bool DrawComponent(EditorContext& ctx, motor::ComponentPtr& component, const std
     return keep;
 }
 
+// --- Pré-visualização de animação fora do Play ---------------------------------------------
+// O Animator só anda no Play; aqui o Inspector toca um clipe na entidade selecionada para ver no viewport. A pose
+// é estado interno do Animator (não é campo): não muda a cena nem entra no desfazer.
+struct AnimationPreview {
+    EntityId entity = kNullEntity;
+    std::string clip;
+    bool playing = false;
+};
+AnimationPreview s_preview;
+
+void StopAnimationPreview(EditorContext& ctx) {
+    if (motor::Entity* e = ctx.scene.Find(s_preview.entity)) {
+        if (motor::Animator* animator = e->Get<motor::Animator>()) animator->Stop();  // volta à pose de repouso
+    }
+    s_preview = {};
+}
+
+// A cada quadro: avança o clipe, ou para se a entidade deixou de estar selecionada, sumiu ou o Play começou.
+void UpdateAnimationPreview(EditorContext& ctx) {
+    if (!s_preview.playing) return;
+    motor::Entity* e = ctx.scene.Find(s_preview.entity);
+    motor::Animator* animator = e ? e->Get<motor::Animator>() : nullptr;
+    if (!animator || ctx.playing || ctx.selected != s_preview.entity) {
+        if (!ctx.playing) StopAnimationPreview(ctx);  // no Play a cena é outra: a pose some com ela
+        s_preview = {};
+        return;
+    }
+    if (animator->CurrentClip() != s_preview.clip && !animator->Play(s_preview.clip, true)) {
+        StopAnimationPreview(ctx);
+        return;
+    }
+    animator->Update(ImGui::GetIO().DeltaTime);
+}
+
+void DrawAnimationPreview(EditorContext& ctx, motor::Entity& e, motor::Animator& animator) {
+    if (ctx.playing) return;
+    ImGui::PushID("animation_preview");
+    const std::vector<std::string> clips = animator.ClipNames();
+    if (clips.empty()) {
+        ImGui::TextDisabled("Pré-visualizar: o modelo não tem clipes.");
+        ImGui::PopID();
+        return;
+    }
+    const bool mine = s_preview.entity == e.id;
+    std::string clip = mine && !s_preview.clip.empty() ? s_preview.clip : (animator.clip.empty() ? clips[0] : animator.clip);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Pré-visualizar");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(std::max(80.0f, ImGui::GetContentRegionAvail().x - 90.0f));
+    if (ImGui::BeginCombo("##clip", clip.c_str())) {
+        for (const std::string& name : clips) {
+            if (ImGui::Selectable(name.c_str(), name == clip)) {
+                clip = name;
+                s_preview.entity = e.id;
+                s_preview.clip = name;  // tocando, troca na hora
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    const bool playing = mine && s_preview.playing;
+    if (ImGui::Button(playing ? "Parar" : "Tocar", ImVec2(-FLT_MIN, 0.0f))) {
+        if (playing) {
+            StopAnimationPreview(ctx);
+        } else {
+            StopAnimationPreview(ctx);  // outra entidade que estivesse tocando volta ao repouso
+            s_preview = {e.id, clip, true};
+        }
+    }
+    ImGui::SetItemTooltip("Toca o clipe no viewport sem dar Play (em loop, na velocidade do Animator).\n"
+                          "Não muda a cena: ao parar ou trocar a seleção, volta à pose de repouso.");
+    if (playing && animator.ClipLength() > 0.0f) {
+        char label[48];
+        std::snprintf(label, sizeof(label), "%.2f / %.2f s", animator.ClipTime(), animator.ClipLength());
+        ImGui::ProgressBar(animator.ClipTime() / animator.ClipLength(), ImVec2(-FLT_MIN, 0.0f), label);
+    }
+    ImGui::PopID();
+}
+
 // Nome, transform, componentes e "Adicionar componente". `prefabAsset`: entidade de um prefab sendo editado
 // direto (sem o vínculo, que é do arquivo).
 void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
@@ -358,6 +466,7 @@ void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
     OverrideCheck overridden;
     if (instance) overridden = [instance](std::string_view key) { return instance->link.HasOverride(key); };
     const motor::ComponentType* prefabType = motor::ComponentRegistry::TypeOf<motor::PrefabInstance>();
+    const motor::ComponentType* nestedType = motor::ComponentRegistry::TypeOf<motor::PrefabNested>();
 
     ImGui::Checkbox("##active", &e.active);
     ImGui::SetItemTooltip(Has(overridden, "active") ? "Ativa (alterado nesta instância)" : "Ativa");
@@ -375,10 +484,23 @@ void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
 
     // Removido depois do laço, para não invalidar a lista. Pelo índice: pode haver vários desconhecidos.
     std::optional<size_t> toRemove;
+    // Prefab aninhado: só uma linha dizendo de onde a entidade veio (o vínculo é mantido pelo editor).
+    if (const motor::PrefabNested* nested = e.Get<motor::PrefabNested>()) {
+        const std::filesystem::path file = ctx.assets.Database().PathFor(nested->link.guid);
+        ImGui::TextColored(ImVec4(0.6f, 0.78f, 0.95f, 1.0f), "Do prefab aninhado: %s",
+                           file.empty() ? "(não encontrado)" : motor::ToUtf8(file.stem()).c_str());
+        ImGui::SetItemTooltip("Esta entidade veio de uma instância de outro prefab posta dentro deste. Mudanças\n"
+                              "nele chegam aqui, menos o que foi mudado aqui (%zu alteração(ões)).",
+                              nested->link.overrides.size());
+    }
     for (size_t i = 0; i < e.components.size(); ++i) {
         if (prefabAsset && &e.components[i].Type() == prefabType) continue;
+        if (&e.components[i].Type() == nestedType) continue;
         ImGui::PushID(static_cast<int>(i));
         if (!DrawComponent(ctx, e.components[i], e.name, overridden)) toRemove = i;
+        if (!prefabAsset && toRemove != i && &e.components[i].Type() == motor::ComponentRegistry::TypeOf<motor::Animator>()) {
+            DrawAnimationPreview(ctx, e, *static_cast<motor::Animator*>(e.components[i].Data()));
+        }
         ImGui::PopID();
     }
     if (toRemove) e.components.erase(e.components.begin() + static_cast<std::ptrdiff_t>(*toRemove));
@@ -396,7 +518,7 @@ void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
         for (const bool scripts : {false, true}) {
             if (scripts) ImGui::SeparatorText("Scripts");
             for (const auto& type : motor::ComponentRegistry::Instance().Types()) {
-                if (type->IsScript() != scripts || type.get() == prefabType) continue;
+                if (type->IsScript() != scripts || type.get() == prefabType || type.get() == nestedType) continue;
                 if (ImGui::MenuItem(type->label.c_str(), nullptr, false, !e.Get(*type))) {
                     void* data = e.Add(*type);
                     if (type->onAdd) type->onAdd(data, ctx.assets);
@@ -439,10 +561,34 @@ struct PrefabEdit {
     std::string guid;
     EntityId entity = kNullEntity;  // entidade do prefab mostrada
     motor::Scene saved;             // conteúdo da última revisão vista
+    motor::Scene committed;         // conteúdo da última edição terminada (o "antes" do próximo desfazer)
     uint64_t revision = 0;
     bool dirty = false;             // mudou e ainda não foi gravado
 };
 PrefabEdit s_prefabEdit;
+// Prefabs editados durante o Play (GUID -> conteúdo de antes), para voltar ao parar.
+std::map<std::string, motor::Scene> s_playPrefabs;
+
+// Troca o conteúdo do prefab (desfazer, refazer, fim do Play): as instâncias seguem no próximo sync.
+void SetPrefabContent(EditorContext& ctx, const std::string& guid, const motor::Scene& content, bool save) {
+    std::string error;
+    motor::Prefab* prefab = ctx.prefabs.Get(guid, ctx.assets, &error);
+    if (!prefab) {
+        ctx.pendingError = std::move(error);
+        return;
+    }
+    prefab->scene = content;
+    ctx.prefabs.MarkChanged(*prefab);
+    if (save && !ctx.prefabs.Save(*prefab, ctx.assets, &error)) ctx.pendingError = std::move(error);
+    PrefabEdit& edit = s_prefabEdit;
+    if (edit.guid == guid) {
+        edit.saved = content;
+        edit.committed = content;
+        edit.revision = prefab->revision;
+        edit.dirty = false;
+        if (!prefab->scene.Find(edit.entity)) edit.entity = prefab->root;
+    }
+}
 
 void DrawPrefabTree(EditorContext& ctx, const motor::Prefab& prefab, EntityId id, int depth) {
     const motor::Entity* e = prefab.scene.Find(id);
@@ -468,6 +614,7 @@ void DrawPrefabAsset(EditorContext& ctx, const std::filesystem::path& file) {
     if (edit.guid != prefab->guid || edit.revision != prefab->revision) {
         // Outro prefab, ou este mudou por fora (arquivo relido, instância aplicada).
         if (edit.guid != prefab->guid || !prefab->scene.Find(edit.entity)) edit.entity = prefab->root;
+        if (edit.guid != prefab->guid || !edit.dirty) edit.committed = prefab->scene;
         edit.guid = prefab->guid;
         edit.saved = prefab->scene;
         edit.revision = prefab->revision;
@@ -498,6 +645,8 @@ void DrawPrefabAsset(EditorContext& ctx, const std::filesystem::path& file) {
     }
 
     if (!(prefab->scene == edit.saved)) {
+        // Mudança numa entidade de prefab aninhado vira override dela (senão o aninhado a desfaria).
+        motor::Prefabs::RecordNestedOverrides(*prefab, ctx.prefabs, ctx.assets);
         ctx.prefabs.MarkChanged(*prefab);
         edit.saved = prefab->scene;
         edit.revision = prefab->revision;
@@ -512,11 +661,35 @@ void SavePrefabEdit(EditorContext& ctx, bool interacting) {
     edit.dirty = false;
     std::string error;
     motor::Prefab* prefab = ctx.prefabs.Get(edit.guid, ctx.assets, &error);
-    if (!prefab || !ctx.prefabs.Save(*prefab, ctx.assets, &error)) ctx.pendingError = std::move(error);
+    if (!prefab) {
+        ctx.pendingError = std::move(error);
+        return;
+    }
+    const std::string guid = edit.guid;
+    const motor::Scene before = std::move(edit.committed);
+    edit.committed = prefab->scene;
+    if (ctx.playing) {
+        s_playPrefabs.try_emplace(guid, before);  // no Play não grava: volta ao parar
+        return;
+    }
+    if (!ctx.prefabs.Save(*prefab, ctx.assets, &error)) ctx.pendingError = std::move(error);
+    if (ctx.pushAssetUndo) {
+        const motor::Scene after = prefab->scene;
+        ctx.pushAssetUndo([&ctx, guid, before] { SetPrefabContent(ctx, guid, before, true); },
+                          [&ctx, guid, after] { SetPrefabContent(ctx, guid, after, true); });
+    }
 }
 } // namespace
 
+void RevertPlayAssetEdits(EditorContext& ctx) {
+    for (const auto& [ptr, original] : s_playMaterials) SetMaterial(ctx, original.material, original.saved, false);
+    s_playMaterials.clear();
+    for (const auto& [guid, content] : s_playPrefabs) SetPrefabContent(ctx, guid, content, false);
+    s_playPrefabs.clear();
+}
+
 void DrawInspectorPanel(EditorContext& ctx) {
+    UpdateAnimationPreview(ctx);
     const bool interacting = ImGui::IsAnyItemActive() || ImGui::IsMouseDown(ImGuiMouseButton_Left);
     SaveEditedMaterials(ctx, interacting);
     SavePrefabEdit(ctx, interacting);
@@ -540,7 +713,26 @@ void DrawInspectorPanel(EditorContext& ctx) {
         return;
     }
 
+    if (ctx.SelectionCount() <= 1) {
+        DrawEntity(ctx, *e, false);
+        ImGui::End();
+        return;
+    }
+
+    // Vários selecionados: mostra a principal e repete nos outros o que mudar nela (MultiEdit.h).
+    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.15f, 1.0f), "%zu objetos selecionados", ctx.SelectionCount());
+    ImGui::SetItemTooltip("Mostrando \"%s\" (o último escolhido). O que você mudar aqui vale para todos os\n"
+                          "selecionados que têm o mesmo componente; posição, rotação e escala só no eixo mudado.",
+                          e->name.c_str());
+    ImGui::Separator();
+    const motor::Entity before = *e;
     DrawEntity(ctx, *e, false);
+    if (const motor::Entity* after = ctx.scene.Find(ctx.selected)) {
+        for (EntityId id : ctx.selection) {
+            motor::Entity* target = id == ctx.selected ? nullptr : ctx.scene.Find(id);
+            if (target) PropagateEdits(before, *after, *target, ctx.assets);
+        }
+    }
     ImGui::End();
 }
 

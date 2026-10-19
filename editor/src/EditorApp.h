@@ -3,6 +3,7 @@
 #include "EditorContext.h"
 #include "EditorSettings.h"
 #include "export/ExportController.h"
+#include "play/GameView.h"
 #include "play/PlayController.h"
 #include "panels/ProjectPanel.h"
 #include "document/SceneDocument.h"
@@ -44,6 +45,7 @@ private:
     void DrawMenuBar();
     void BuildDockLayout(unsigned int dockspaceId);
     void HandleShortcuts();
+    void SelectAll();  // Ctrl+A
     bool IsInteracting() const;  // arrastando/editando algo: a alteração ainda não terminou
     void Undo();
     void Redo();
@@ -61,6 +63,7 @@ private:
     ProjectPanel m_projectPanel;
     UndoHistory m_history;
     SceneViewport m_viewport;
+    GameView m_gameView;  // janela Jogo (Cena e Jogo lado a lado)
     PlayController m_play;
     SceneDocument m_document;  // depois dos membros que ele referencia
     ScriptController m_scripts;  // depois do documento e do Play, que ele referencia

@@ -1,5 +1,7 @@
 #include "McpSceneTools.h"
 
+#include "panels/HierarchyFilter.h"
+
 #include <motor/scene/SceneSerializer.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -227,6 +229,7 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
             for (EntityId id : ctx.scene.Children(kNullEntity)) roots.push_back(TreeNode(ctx, *ctx.scene.Find(id), components));
             return ToolResult::Data({{"entity_count", ctx.scene.Entities().size()},
                                      {"selected", ctx.selected},
+                                     {"selection", ctx.selection},
                                      {"environment", EnvironmentJson(ctx)},
                                      {"entities", std::move(roots)}});
         },
@@ -239,6 +242,27 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
         .inputSchema = Schema({{"entity", kEntityProp}}, {"entity"}),
         .readOnly = true,
         .run = [&ctx](const Json& args) { return ToolResult::Data(EntityToJson(ctx, ResolveEntity(ctx, args))); },
+    });
+
+    protocol.AddTool({
+        .name = "scene_search",
+        .description = "Busca entidades como a caixa da Hierarquia: palavras no nome e t:<componente> (t:luz, "
+                       "t:collider, t:Girar), todas precisam bater, sem diferença de maiúsculas e acentos. Devolve "
+                       "id, nome e caminho do pai, na ordem da Hierarquia. select = true seleciona os resultados.",
+        .inputSchema = Schema({{"query", Prop("string", "texto da busca, ex.: \"porta t:collider\"")},
+                               {"select", Prop("boolean", "selecionar os resultados (padrão: false)")}},
+                              {"query"}),
+        .run = [&ctx](const Json& args) {
+            const HierarchyFilter filter = HierarchyFilter::Parse(args.value("query", std::string()));
+            if (filter.Empty()) throw ToolError("busca vazia: informe palavras do nome ou t:<componente>");
+            const std::vector<EntityId> found = SearchHierarchy(ctx.scene, filter);
+            Json list = Json::array();
+            for (EntityId id : found) {
+                list.push_back({{"id", id}, {"name", ctx.scene.Find(id)->name}, {"path", ParentPath(ctx.scene, id)}});
+            }
+            if (args.value("select", false)) ctx.SetSelection(found);
+            return ToolResult::Data({{"count", found.size()}, {"entities", std::move(list)}});
+        },
     });
 
     protocol.AddTool({
@@ -302,6 +326,55 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
 
 // Apagar, duplicar e selecionar entidades.
 void AddEntityEditTools(Protocol& protocol, EditorContext& ctx) {
+    // Copiar e recortar: as entidades pedidas (viram a seleção) ou, sem `entities`, a seleção atual.
+    auto selectArg = [&ctx](const Json& args) {
+        ctx.SyncSelection();
+        if (!args.contains("entities")) return;
+        if (!args["entities"].is_array()) throw ToolError("'entities' deve ser uma lista de ids ou nomes");
+        std::vector<EntityId> ids;
+        for (const Json& item : args["entities"]) ids.push_back(ResolveEntity(ctx, Json{{"entity", item}}).id);
+        ctx.SetSelection(ids);
+    };
+    const Json entitiesProp = {{"type", "array"}, {"items", kEntityProp},
+                               {"description", "entidades (padrão: as selecionadas); os filhos vão junto"}};
+    protocol.AddTool({
+        .name = "entity_copy",
+        .description = "Copia entidades (com os filhos) para a área de transferência do editor, como Ctrl+C. Vale "
+                       "colar em outra cena do projeto com entity_paste.",
+        .inputSchema = Schema({{"entities", entitiesProp}}),
+        .run = [&ctx, selectArg](const Json& args) {
+            selectArg(args);
+            if (ctx.selection.empty()) throw ToolError("nada selecionado para copiar");
+            ctx.CopySelected();
+            return ToolResult::Text(std::format("copiadas: {} entidade(s)", ctx.clipboard.Count()));
+        },
+    });
+    protocol.AddTool({
+        .name = "entity_cut",
+        .description = "Recorta entidades (com os filhos), como Ctrl+X: copia e apaga (dá para desfazer com undo).",
+        .inputSchema = Schema({{"entities", entitiesProp}}),
+        .run = [&ctx, selectArg](const Json& args) {
+            selectArg(args);
+            if (ctx.selection.empty()) throw ToolError("nada selecionado para recortar");
+            ctx.CutSelected();
+            if (!ctx.scene.Find(ctx.pendingDelete)) ctx.pendingDelete = kNullEntity;
+            return ToolResult::Text(std::format("recortadas: {} entidade(s)", ctx.clipboard.Count()));
+        },
+    });
+    protocol.AddTool({
+        .name = "entity_paste",
+        .description = "Cola o que foi copiado ou recortado, como Ctrl+V, no mesmo lugar do mundo de onde saiu. "
+                       "Com parent, as coladas viram filhas dela. Ficam selecionadas. Devolve as coladas.",
+        .inputSchema = Schema({{"parent", kEntityProp}}),
+        .run = [&ctx](const Json& args) {
+            if (ctx.clipboard.Empty()) throw ToolError("a área de transferência está vazia (use entity_copy)");
+            ctx.Paste(ParentArg(ctx, args));
+            Json pasted = Json::array();
+            for (EntityId id : ctx.selection) pasted.push_back(EntityToJson(ctx, *ctx.scene.Find(id)));
+            return ToolResult::Data({{"pasted", std::move(pasted)}});
+        },
+    });
+
     protocol.AddTool({
         .name = "entity_delete",
         .description = "Apaga uma entidade e todos os filhos (dá para desfazer com undo).",
@@ -330,17 +403,34 @@ void AddEntityEditTools(Protocol& protocol, EditorContext& ctx) {
 
     protocol.AddTool({
         .name = "select",
-        .description = "Seleciona uma entidade no editor (Hierarquia e Inspector), ou nenhuma com entity = 0.",
-        .inputSchema = Schema({{"entity", kEntityProp}}, {"entity"}),
+        .description = "Seleciona entidades no editor (Hierarquia e Inspector). entity: uma (0 = nenhuma); com "
+                       "add = true, soma à seleção atual. entities: várias de uma vez (a última vira a principal, a "
+                       "do Inspector e do gizmo). Devolve a seleção.",
+        .inputSchema = Schema({{"entity", kEntityProp},
+                               {"entities", {{"type", "array"}, {"items", kEntityProp},
+                                             {"description", "várias entidades (troca a seleção)"}}},
+                               {"add", Prop("boolean", "soma entity à seleção em vez de trocar (padrão: false)")}}),
         .run = [&ctx](const Json& args) {
-            if (args["entity"].is_number_integer() && args["entity"].get<int64_t>() == 0) {
-                ctx.selected = kNullEntity;
-                return ToolResult::Text("nenhuma entidade selecionada");
+            ctx.SyncSelection();
+            if (args.contains("entities")) {
+                if (!args["entities"].is_array()) throw ToolError("'entities' deve ser uma lista de ids ou nomes");
+                std::vector<EntityId> ids;
+                for (const Json& item : args["entities"]) ids.push_back(ResolveEntity(ctx, Json{{"entity", item}}).id);
+                ctx.SetSelection(ids);
+            } else if (!args.contains("entity")) {
+                throw ToolError("informe 'entity' ou 'entities'");
+            } else if (args["entity"].is_number_integer() && args["entity"].get<int64_t>() == 0) {
+                ctx.SelectOnly(kNullEntity);
+            } else {
+                const EntityId id = ResolveEntity(ctx, args).id;
+                if (args.value("add", false)) {
+                    ctx.AddToSelection(id);
+                } else {
+                    ctx.SelectOnly(id);
+                }
             }
-            Entity& e = ResolveEntity(ctx, args);
-            ctx.selected = e.id;
             ctx.inspectedAsset.clear();
-            return ToolResult::Text(std::format("selecionada: {} (id {})", e.name, e.id));
+            return ToolResult::Data({{"selected", ctx.selected}, {"selection", ctx.selection}});
         },
     });
 }

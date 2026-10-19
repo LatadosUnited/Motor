@@ -482,7 +482,8 @@ A física (Jolt Physics) é montada com componentes no editor; o script só reag
   escala: a altura e o raio são os do componente, e a origem da entidade é o centro da cápsula.
 - O Plano embutido não tem espessura: para usá-lo como chão, Collider caixa com tamanho `1 x 0.1 x 1` e
   centro `0 -0.05 0`. Ou use um Cubo achatado.
-- No viewport, o botão **Colliders** mostra as formas (verde), triggers (azul) e personagens.
+- No viewport, o botão **Colliders** mostra as formas (verde), triggers (azul) e personagens: só do objeto
+  selecionado (padrão), de todos ou de nenhum; um clique alterna.
 
 **Eventos.** Os dois lados recebem. Colisão precisa de Collider nas duas entidades (ou personagem) e de um
 Rigidbody ou personagem em pelo menos uma; um personagem não gera eventos com o chão estático (para saber se

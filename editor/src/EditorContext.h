@@ -1,5 +1,7 @@
 #pragma once
 
+#include "EntityClipboard.h"
+
 #include <motor/Motor.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -32,10 +34,31 @@ std::vector<std::filesystem::path> AcceptAnyPathDrop();  // qualquer arquivo ou 
 struct EditorContext {
     motor::Scene scene;
     motor::AssetLibrary assets;
+    // Seleção: `selected` é a principal (Inspector, gizmo, foco) e `selection` todas, na ordem em que foram
+    // escolhidas, com a principal no fim. Quem só troca `selected` (criar, MCP, desfazer) não precisa mexer
+    // em `selection`: SyncSelection, chamado a cada frame, volta a seleção para só a principal.
     EntityId selected = kNullEntity;
+    std::vector<EntityId> selection;
     EntityId pendingDelete = kNullEntity;  // processado no fim do frame, fora da iteração dos painéis
 
+    bool IsSelected(EntityId id) const;
+    size_t SelectionCount() const { return selection.size(); }
+    void SelectOnly(EntityId id);  // kNullEntity limpa
+    void AddToSelection(EntityId id);     // vira a principal
+    void ToggleSelected(EntityId id);     // Ctrl+clique: entra (como principal) ou sai
+    void SetSelection(const std::vector<EntityId>& ids);  // a última vira a principal
+    // Selecionados sem nenhum ancestral também selecionado, na ordem da seleção: mover, duplicar e excluir
+    // agem neles (os filhos vão junto com o pai).
+    std::vector<EntityId> SelectionRoots() const;
+    // Tira da seleção o que saiu da cena e a reduz à principal se esta foi trocada por fora.
+    void SyncSelection();
+
     std::string pendingError;  // mostrado pelo EditorApp num popup
+
+    // Material ou prefab editado no Inspector vira um passo de desfazer (UndoHistory::PushAction, ligado pelo
+    // EditorApp). `playing`: no Play essas edições não são gravadas e voltam ao parar (RevertPlayAssetEdits).
+    std::function<void(std::function<void()> undo, std::function<void()> redo)> pushAssetUndo;
+    bool playing = false;
 
     // Prefabs do projeto (.mprefab) e o asset mostrado no Inspector quando nenhuma entidade está
     // selecionada (material ou prefab clicado no painel Projeto).
@@ -62,7 +85,16 @@ struct EditorContext {
     motor::Entity* CreateFromMeshFile(const std::filesystem::path& file, EntityId parent = kNullEntity);
     // Aplica uma textura do projeto ao Mesh Renderer da entidade.
     bool ApplyTextureFile(EntityId id, const std::filesystem::path& file);
-    void DuplicateSelected();
+    void DuplicateSelected();  // todos os selecionados; as cópias ficam selecionadas
+
+    // Copiar / Recortar / Colar (Ctrl+C / Ctrl+X / Ctrl+V): os selecionados com os filhos. Colar vale em outra
+    // cena; as coladas ficam selecionadas, na raiz ou sob `parent`, no mesmo lugar do mundo de onde saíram.
+    EntityClipboard clipboard;
+    uint64_t sceneTag = 1;  // muda quando a cena é trocada inteira (ResetSceneState)
+    void CopySelected();
+    void CutSelected();
+    void Paste(EntityId parent = kNullEntity);
+    // Exclui `pendingDelete`; se ele estiver selecionado, exclui toda a seleção.
     void ApplyPendingDelete();
 
     // Materiais (.mmat): aplicar um arquivo ao Mesh Renderer, ou gravar o material próprio dele como asset
@@ -98,7 +130,10 @@ private:
 void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent);
 
 void DrawHierarchyPanel(EditorContext& ctx);
+void FocusHierarchySearch();  // Ctrl+F: foco na busca da Hierarquia
 void DrawInspectorPanel(EditorContext& ctx);
+// Fim do Play: materiais e prefabs editados no Inspector durante o jogo voltam a ser como antes dele.
+void RevertPlayAssetEdits(EditorContext& ctx);
 void DrawScenePanel(EditorContext& ctx);
 
 } // namespace editor

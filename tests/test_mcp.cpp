@@ -110,6 +110,36 @@ int main() {
 
         const Json base = Call(protocol, "entity_create", {{"kind", "empty"}, {"name", "Base"}, {"parent", "Torre"}});
         const int baseId = base["data"]["id"].get<int>();
+
+        // Seleção múltipla (Fase 20): várias de uma vez, somar uma, e a lista devolvida.
+        const Json both = Call(protocol, "select", {{"entities", {"Torre", baseId}}});
+        CHECK(both["isError"] == false && both["data"]["selection"].size() == 2);
+        CHECK(ctx.selected == static_cast<motor::EntityId>(baseId) && ctx.SelectionCount() == 2);
+        Call(protocol, "select", {{"entity", "Torre"}});
+        CHECK(ctx.SelectionCount() == 1);
+        Call(protocol, "select", {{"entity", baseId}, {"add", true}});
+        CHECK(ctx.SelectionCount() == 2 && ctx.IsSelected(static_cast<motor::EntityId>(torreId)));
+        CHECK(Call(protocol, "select", {{"entities", {"NaoExiste"}}})["isError"] == true);
+        CHECK(Call(protocol, "scene_tree", Json::object())["data"]["selection"].size() == 2);
+
+        // Busca como a da Hierarquia (Fase 20).
+        const Json search = Call(protocol, "scene_search", {{"query", "base"}, {"select", true}});
+        CHECK(search["isError"] == false && search["data"]["count"] == 1);
+        CHECK(search["data"]["entities"][0]["path"] == "Torre");
+        CHECK(ctx.selected == static_cast<motor::EntityId>(baseId) && ctx.SelectionCount() == 1);
+        CHECK(Call(protocol, "scene_search", {{"query", " "}})["isError"] == true);
+
+        // Copiar, recortar e colar (Fase 20).
+        CHECK(Call(protocol, "entity_paste", Json::object())["isError"] == true);  // nada copiado
+        CHECK(Call(protocol, "entity_copy", {{"entities", {"Torre"}}})["isError"] == false);
+        const size_t count = ctx.scene.Entities().size();
+        const Json pasted = Call(protocol, "entity_paste", Json::object());
+        CHECK(pasted["isError"] == false && pasted["data"]["pasted"].size() == 1);
+        CHECK(ctx.scene.Entities().size() == count + 2);  // Torre com a Base
+        const int copyId = pasted["data"]["pasted"][0]["id"].get<int>();
+        CHECK(Call(protocol, "entity_cut", {{"entities", {copyId}}})["isError"] == false);
+        CHECK(ctx.scene.Entities().size() == count && !ctx.scene.Find(static_cast<motor::EntityId>(copyId)));
+        Call(protocol, "select", {{"entity", baseId}});
         CHECK(base["data"]["parent"] == torreId);
 
         const Json tree = Call(protocol, "scene_tree", Json::object());

@@ -91,7 +91,7 @@ void SceneViewport::DrawIcons(const EditorContext& ctx, ImDrawList* dl, const Im
 
         // Fundo escuro redondo para o ícone se destacar de qualquer cena; entidade inativa fica apagada.
         dl->AddCircleFilled(c, kIconRadius + 3.0f, IM_COL32(20, 20, 24, active ? 170 : 90));
-        if (icon.entity == ctx.selected) dl->AddCircle(c, kIconRadius + 3.0f, kSelectionColorU32, 0, 2.0f);
+        if (ctx.IsSelected(icon.entity)) dl->AddCircle(c, kIconRadius + 3.0f, kSelectionColorU32, 0, 2.0f);
 
         const ImU32 inactive = IM_COL32(120, 120, 120, 255);
         if (const LightComponent* light = e->Get<LightComponent>()) {
@@ -178,19 +178,19 @@ void SceneViewport::DrawSelectedHelpers(const EditorContext& ctx, ImDrawList* dl
 }
 
 void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) {
+    if (m_prefs.colliders == ColliderOverlay::None) return;
     const Scene& scene = ctx.scene;
-    for (const auto& e : scene.Entities()) {
-        const ColliderComponent* collider = e->Get<ColliderComponent>();
-        const CharacterControllerComponent* character = e->Get<CharacterControllerComponent>();
-        if (!collider && !character) continue;
-        const bool active = scene.IsActiveInHierarchy(e->id);
-        const bool selected = e->id == ctx.selected;
-        if (!active && !selected) continue;
+    auto drawEntity = [&](const Entity& e) {
+        const ColliderComponent* collider = e.Get<ColliderComponent>();
+        const CharacterControllerComponent* character = e.Get<CharacterControllerComponent>();
+        if (!collider && !character) return;
+        const bool selected = ctx.IsSelected(e.id);
+        if (!ShouldDrawCollider(m_prefs.colliders, selected, scene.IsActiveInHierarchy(e.id))) return;
 
         m_lines.clear();
-        const glm::mat4 world = scene.WorldMatrix(e->id);
+        const glm::mat4 world = scene.WorldMatrix(e.id);
         if (collider) {
-            const MeshRenderer* mr = collider->shape == ColliderShape::Mesh ? e->Get<MeshRenderer>() : nullptr;
+            const MeshRenderer* mr = collider->shape == ColliderShape::Mesh ? e.Get<MeshRenderer>() : nullptr;
             if (mr && mr->mesh) {
                 const glm::vec3 lo = mr->mesh->BoundsMin(), hi = mr->mesh->BoundsMax();
                 AppendColliderLines(*collider, world, m_lines, &lo, &hi);
@@ -206,7 +206,16 @@ void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, cons
             const auto pa = Project(l.a), pb = Project(l.b);
             if (pa && pb) dl->AddLine(Add(origin, *pa), Add(origin, *pb), color, thickness);
         }
+    };
+
+    // Só os selecionados: nem percorre a cena (o custo não cresce com o número de objetos).
+    if (m_prefs.colliders == ColliderOverlay::Selected) {
+        for (EntityId id : ctx.selection) {
+            if (const Entity* e = scene.Find(id)) drawEntity(*e);
+        }
+        return;
     }
+    for (const auto& e : scene.Entities()) drawEntity(*e);
 }
 
 void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
@@ -222,28 +231,90 @@ void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
     ImGuizmo::Enable(!m_looking);
 
     ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
-    float snapStep = m_snapTranslate;
+    float snapStep = m_prefs.snapMove;
     if (m_gizmoTool == GizmoTool::Rotate) {
         op = ImGuizmo::ROTATE;
-        snapStep = m_snapRotate;
+        snapStep = m_prefs.snapRotate;
     } else if (m_gizmoTool == GizmoTool::Scale) {
         op = ImGuizmo::SCALE;
-        snapStep = m_snapScale;
+        snapStep = m_prefs.snapScale;
     }
     const ImGuizmo::MODE mode = m_gizmoLocal ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
 
     // Snap fixo pelo botão da barra, ou temporário segurando Ctrl.
-    const bool snap = m_snap || ImGui::GetIO().KeyCtrl;
+    const bool snap = m_prefs.snap || ImGui::GetIO().KeyCtrl;
     const float snapValues[3] = {snapStep, snapStep, snapStep};
 
     const glm::mat4 view = m_camera.View();
     const glm::mat4 projection = m_camera.Projection();
-    glm::mat4 world = ctx.scene.WorldMatrix(selected);
+    const glm::mat4 before = ctx.scene.WorldMatrix(selected);
+    glm::mat4 world = before;
 
     if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), op, mode, glm::value_ptr(world),
                              nullptr, snap ? snapValues : nullptr)) {
-        ctx.scene.SetWorldMatrix(selected, world);
+        // O ImGuizmo encaixa o deslocamento a partir de onde o arraste começou; aqui a posição vai para a
+        // grade (a mesma desenhada no viewport), e um objeto fora dela entra nela no primeiro passo.
+        if (snap && op == ImGuizmo::TRANSLATE) {
+            world[3] = glm::vec4(SnapToGrid(glm::vec3(before[3]), glm::vec3(world[3]), m_prefs.snapMove,
+                                            m_prefs.gridHeight), 1.0f);
+        }
+        if (ctx.SelectionCount() <= 1) {
+            ctx.scene.SetWorldMatrix(selected, world);
+            return;
+        }
+        // Vários selecionados: a mesma mudança da principal em cada um dos de cima (girar e escalar em volta do
+        // pivô da principal). Se a principal está dentro de outro selecionado, vai junto com ele.
+        const glm::mat4 delta = world * glm::inverse(before);
+        for (EntityId id : ctx.SelectionRoots()) {
+            if (id == selected) {
+                ctx.scene.SetWorldMatrix(id, world);
+            } else if (!IsUiEntity(*ctx.scene.Find(id))) {
+                ctx.scene.SetWorldMatrix(id, delta * ctx.scene.WorldMatrix(id));
+                ctx.ForgetAngles(id);
+            }
+        }
     }
+}
+
+void SceneViewport::DrawSnapPopup() {
+    if (!ImGui::BeginPopup("SnapOptions")) return;
+    ImGui::SeparatorText("Encaixe");
+    ImGui::Checkbox("Ligado", &m_prefs.snap);
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::DragFloat("Mover (m)", &m_prefs.snapMove, 0.01f, 0.01f, 100.0f, "%.3g", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip("Passo do mover; é também o tamanho da célula da grade");
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::DragFloat("Girar (°)", &m_prefs.snapRotate, 0.5f, 0.1f, 180.0f, "%.3g", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::DragFloat("Escalar", &m_prefs.snapScale, 0.005f, 0.001f, 10.0f, "%.3g", ImGuiSliderFlags_AlwaysClamp);
+    // Valores comuns num clique.
+    ImGui::TextDisabled("Mover:");
+    for (const float step : {0.1f, 0.25f, 0.5f, 1.0f, 2.0f}) {
+        ImGui::SameLine();
+        char label[16];
+        std::snprintf(label, sizeof(label), "%g", step);
+        if (ImGui::SmallButton(label)) m_prefs.snapMove = step;
+    }
+    ImGui::TextDisabled("Girar:");
+    for (const float step : {5.0f, 15.0f, 45.0f, 90.0f}) {
+        ImGui::SameLine();
+        char label[16];
+        std::snprintf(label, sizeof(label), "%g°", step);
+        if (ImGui::SmallButton(label)) m_prefs.snapRotate = step;
+    }
+    ImGui::SeparatorText("Grade");
+    ImGui::Checkbox("Visível", &m_prefs.grid);
+    ImGui::Checkbox("Linhas finas", &m_prefs.gridFine);
+    ImGui::SetItemTooltip("Também as linhas de cada passo do mover (senão só as de 10 em 10 passos)");
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::DragFloat("Altura (Y)", &m_prefs.gridHeight, 0.05f, -10000.0f, 10000.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip("Plano da grade; o encaixe do Y conta a partir daqui");
+    if (ImGui::SmallButton("Restaurar padrões")) {
+        const ColliderOverlay colliders = m_prefs.colliders;
+        m_prefs = ViewportPrefs{};
+        m_prefs.colliders = colliders;
+    }
+    ImGui::EndPopup();
 }
 
 void SceneViewport::DrawToolbar(const ImVec2& position) {
@@ -280,12 +351,23 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
     if (toggleButton(m_gizmoLocal ? "Local" : "Global", false)) m_gizmoLocal = !m_gizmoLocal;
     ImGui::SetItemTooltip("Eixos do gizmo: locais do objeto ou do mundo (X)");
     ImGui::SameLine();
-    if (toggleButton("Snap", m_snap)) m_snap = !m_snap;
-    ImGui::SetItemTooltip("Encaixe: %.2g m / %.0f° / %.2g (segure Ctrl para ativar temporariamente)",
-                          m_snapTranslate, m_snapRotate, m_snapScale);
+    if (toggleButton("Snap", m_prefs.snap)) m_prefs.snap = !m_prefs.snap;
+    ImGui::SetItemTooltip("Encaixe na grade: %.3g m / %.3g° / %.3g (segure Ctrl para ativar temporariamente)",
+                          m_prefs.snapMove, m_prefs.snapRotate, m_prefs.snapScale);
+    ImGui::SameLine(0.0f, 0.0f);
+    if (ImGui::ArrowButton("##snap_options", ImGuiDir_Down)) ImGui::OpenPopup("SnapOptions");
+    ImGui::SetItemTooltip("Passos do encaixe e grade");
+    DrawSnapPopup();
+    ImGui::SameLine();
+    if (toggleButton("Grade", m_prefs.grid)) m_prefs.grid = !m_prefs.grid;
+    ImGui::SetItemTooltip("Mostrar a grade no chão (uma linha a cada 10 passos do mover: %.3g m)",
+                          m_prefs.snapMove * 10.0f);
     ImGui::SameLine(0.0f, 14.0f);
-    if (toggleButton("Colliders", m_showColliders)) m_showColliders = !m_showColliders;
-    ImGui::SetItemTooltip("Mostrar as formas de colisão (verde), os triggers (azul) e os personagens");
+    if (toggleButton(ColliderOverlayLabel(m_prefs.colliders), m_prefs.colliders != ColliderOverlay::None)) {
+        m_prefs.colliders = NextColliderOverlay(m_prefs.colliders);
+    }
+    ImGui::SetItemTooltip("Formas de colisão (verde), triggers (azul) e personagens. Clique para alternar:\n"
+                          "Selecionado (só o objeto selecionado), Todos ou Nenhum.");
     ImGui::SameLine();
     if (toggleButton("UI", m_showUi)) m_showUi = !m_showUi;
     ImGui::SetItemTooltip("Mostrar a interface do jogo (HUD) por cima da cena. Com ela ligada, um clique na UI a\n"

@@ -102,10 +102,12 @@ target_compile_definitions(test_gltf PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_
 # Servidor MCP do editor (Fase 13): protocolo, ferramentas de cena, PNG/base64 e o transporte HTTP (cpp-httplib).
 motor_add_test(test_mcp
     ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/ImageEncode.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpServer.cpp)
 target_include_directories(test_mcp PRIVATE ${PROJECT_SOURCE_DIR}/editor/src ${httplib_SOURCE_DIR})
 target_link_libraries(test_mcp PRIVATE nlohmann_json::nlohmann_json)
@@ -156,3 +158,29 @@ add_test(NAME test_distribuicao COMMAND test_distribuicao ${CMAKE_CURRENT_BINARY
 # API dos scripts da Fase 17 (sem DLL): temporizadores, mensagens, aleatórios, GetComponent, EntityRef (cópias e
 # prefabs), MOTOR_FIELDS e campos renomeados ou perdidos na recarga.
 motor_add_test(test_script_api)
+
+# Viewport do editor (Fase 20): modo dos contornos de collider e a gravação dele no editor.json.
+motor_add_test(test_viewport
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorSettings.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/ColliderOverlay.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/ViewportPrefs.cpp)
+target_include_directories(test_viewport PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_viewport PRIVATE nlohmann_json::nlohmann_json)
+
+# Seleção múltipla (Fase 20): conjunto no EditorContext, duplicar/excluir vários, desfazer com a seleção e o
+# Inspector repetindo nos outros selecionados o que mudou na principal.
+motor_add_test(test_selection
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/MultiEdit.cpp)
+target_include_directories(test_selection PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Busca da Hierarquia (Fase 20): nome e t:componente, sem maiúsculas nem acentos, ordem e caminho do pai.
+motor_add_test(test_hierarchy_search ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
+target_include_directories(test_hierarchy_search PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Prefab dentro de prefab (Fase 20): aninhar ao criar e aplicar, o de fora seguindo o de dentro, gravar e
+# reabrir, recusar ciclos e desvincular voltando a ser instância do de dentro.
+motor_add_test(test_prefab_nested)

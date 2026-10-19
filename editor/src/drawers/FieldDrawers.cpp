@@ -1,5 +1,7 @@
 #include "drawers/FieldDrawers.h"
 
+#include <motor/assets/Model.h>
+
 #include <imgui.h>
 
 #include <string>
@@ -15,10 +17,14 @@ std::unordered_map<std::string, FieldDrawerFn>& Drawers() {
     return drawers;
 }
 
-// Texto curto para uma chave: arquivos mostram só o nome; o caminho completo vai na dica.
+// Texto curto para uma chave: arquivos mostram só o nome; o caminho completo vai na dica. Parte de um modelo
+// ("Assets/robo.glb#Corpo") aparece como "Corpo (robo.glb)".
 std::string DisplayName(const std::string& key) {
     if (!motor::AssetLibrary::IsFileKey(key)) return key;
-    return key.substr(key.find_last_of('/') + 1);
+    const std::string file = key.substr(key.find_last_of('/') + 1);
+    const size_t part = file.find(motor::AssetLibrary::kSubAssetSeparator);
+    if (part == std::string::npos) return file;
+    return file.substr(part + 1) + " (" + file.substr(0, part) + ")";
 }
 } // namespace
 
@@ -34,11 +40,16 @@ FieldDrawerFn FindFieldDrawer(std::string_view typeName) {
 std::optional<std::string> AssetCombo(EditorContext& ctx, const char* id, motor::AssetType type,
                                       const std::string* current, const char* noneLabel) {
     static std::vector<std::string> s_projectFiles;  // um combo aberto por vez
+    static std::vector<std::string> s_modelFiles;    // malhas: modelos glTF do projeto (as malhas de dentro)
     std::optional<std::string> chosen;
 
     const std::string preview = current ? DisplayName(*current) : (noneLabel ? noneLabel : "");
     if (ImGui::BeginCombo(id, preview.c_str())) {
-        if (ImGui::IsWindowAppearing()) s_projectFiles = ctx.assets.ScanFiles(type);
+        if (ImGui::IsWindowAppearing()) {
+            s_projectFiles = ctx.assets.ScanFiles(type);
+            s_modelFiles = type == motor::AssetType::Mesh ? ctx.assets.ScanFiles(motor::AssetType::Model)
+                                                          : std::vector<std::string>{};
+        }
 
         if (noneLabel && ImGui::Selectable(noneLabel, !current)) chosen = std::string();
         auto item = [&](const std::string& key) {
@@ -66,6 +77,28 @@ std::optional<std::string> AssetCombo(EditorContext& ctx, const char* id, motor:
             ImGui::TextDisabled("Abra um projeto para usar arquivos.");
         } else if (type == motor::AssetType::Material) {
             ImGui::TextDisabled("Nenhum .mmat no projeto (crie em Projeto > + Criar).");
+        }
+        // Malhas de dentro dos modelos glTF: o modelo só é lido quando o usuário abre o nó dele.
+        if (!s_modelFiles.empty()) {
+            ImGui::SeparatorText("Modelos");
+            for (const std::string& modelKey : s_modelFiles) {
+                ImGui::PushID(modelKey.c_str());
+                const bool holdsCurrent = current && current->starts_with(modelKey + motor::AssetLibrary::kSubAssetSeparator);
+                if (holdsCurrent) ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
+                if (ImGui::TreeNode("##model", "%s", DisplayName(modelKey).c_str())) {
+                    std::string error;
+                    if (const auto model = ctx.assets.GetModel(modelKey, &error)) {
+                        for (const auto& named : model->meshes) {
+                            item(modelKey + motor::AssetLibrary::kSubAssetSeparator + named.name);
+                        }
+                        if (model->meshes.empty()) ImGui::TextDisabled("(sem malhas)");
+                    } else {
+                        ImGui::TextDisabled("%s", error.c_str());
+                    }
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            }
         }
         ImGui::EndCombo();
     }

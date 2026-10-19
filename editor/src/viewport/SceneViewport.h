@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorContext.h"
+#include "viewport/ViewportPrefs.h"
 #include "viewport/UiEditor.h"
 
 #include <motor/Motor.h>
@@ -33,6 +34,12 @@ public:
     void Draw(EditorContext& ctx, PlayController& play, const motor::RenderStats& stats, float fps);
 
     void FocusSelected(const EditorContext& ctx);
+    // Câmera livre do editor (ferramenta view_camera do MCP). Sem `target`, mantém para onde olha.
+    const motor::Camera& EditorCamera() const { return m_camera; }
+    void SetEditorCamera(const glm::vec3& position, const std::optional<glm::vec3>& target) {
+        m_camera.position = position;
+        if (target) m_camera.LookAt(*target);
+    }
     void HandleGizmoShortcuts();  // Q/W/E/R/X, sem Ctrl
 
     // Imagem do último quadro desenhado (cena e HUD, sem os controles do ImGui por cima).
@@ -42,6 +49,13 @@ public:
     bool IsFocused() const { return m_focused; }
     void StopLooking() { m_looking = false; }
     void RequestFocus() { m_focusRequest = true; }
+
+    // Contornos de collider, encaixe e grade (lembrados no editor.json pelo EditorApp).
+    const ViewportPrefs& Prefs() const { return m_prefs; }
+    void SetPrefs(const ViewportPrefs& prefs) {
+        m_prefs = prefs;
+        m_prefs.Clamp();
+    }
 
 private:
     // Ícones de luzes e câmeras (que não têm malha para clicar): desenhados por cima da imagem e
@@ -54,13 +68,17 @@ private:
     void CollectIcons(const EditorContext& ctx);
     void DrawIcons(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) const;
     void DrawSelectedHelpers(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) const;
-    // Contorno dos colliders e personagens (física), em linhas por cima da imagem.
+    // Contorno dos colliders e personagens (física), em linhas por cima da imagem, conforme m_prefs.colliders.
     void DrawColliders(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin);
     // Ponto do mundo em pixels do viewport (relativo ao canto); nullopt se estiver atrás da câmera.
     std::optional<ImVec2> Project(const glm::vec3& world) const;
     void DrawGizmo(EditorContext& ctx, const ImVec2& origin);
     void DrawToolbar(const ImVec2& position);
+    void DrawSnapPopup();  // passos do encaixe e grade (botão ao lado do Snap)
+    void SubmitGrid(motor::Renderer& renderer) const;
     void PickAt(EditorContext& ctx, const glm::vec2& uv);  // uv no viewport, (0,0) = canto superior esquerdo
+    // Botão esquerdo pressionado na cena: ao soltar, clique (PickAt) ou retângulo de seleção, se arrastou.
+    void UpdateBoxSelection(EditorContext& ctx, const ImVec2& origin, bool gameView);
     std::pair<glm::vec3, glm::vec3> Ray(const glm::vec2& uv) const;  // origem, direção (não normalizada)
     void HandleDrop(EditorContext& ctx, const ImVec2& origin);
 
@@ -74,20 +92,21 @@ private:
     enum class GizmoTool { None, Translate, Rotate, Scale };
     GizmoTool m_gizmoTool = GizmoTool::Translate;
     bool m_gizmoLocal = false;  // false = eixos do mundo
-    bool m_snap = false;
-    float m_snapTranslate = 0.5f;
-    float m_snapRotate = 15.0f;  // graus
-    float m_snapScale = 0.1f;
+    ViewportPrefs m_prefs;
+    std::shared_ptr<motor::Mesh> m_gridMesh;       // linhas da grade fina (CreateGridMesh), escalada pela célula
+    std::shared_ptr<motor::Mesh> m_gridMajorMesh;  // grade grossa (a cada 10), mais curta em células
+    std::shared_ptr<motor::Mesh> m_axisMesh;  // uma linha só, para os eixos X e Z
 
     std::vector<Icon> m_icons;  // do frame atual
     std::vector<motor::GizmoLine> m_lines;  // reaproveitado entre entidades (sem alocar a cada frame)
-    bool m_showColliders = true;
     glm::vec2 m_size{1.0f};
     bool m_looking = false;            // botão direito segurado no viewport
     bool m_wasLooking = false;         // no quadro anterior (soltar o cursor só ao parar de voar)
     bool m_focused = false;            // o jogo só recebe teclado/mouse com o viewport em foco
     bool m_focusRequest = false;
     bool m_missingGameCamera = false;  // no Play sem câmera na cena: mostra pela câmera do editor
+    bool m_boxPending = false;         // botão esquerdo pressionado na cena, ainda não solto
+    ImVec2 m_boxStart;                 // onde foi pressionado (relativo ao canto do viewport)
 };
 
 } // namespace editor

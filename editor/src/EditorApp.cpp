@@ -47,6 +47,7 @@ EditorApp::EditorApp(Options options)
              .play = m_play,
              .scripts = m_scripts,
              .viewport = m_viewport,
+             .gameView = m_gameView,
              .requestHistory = [this](int direction) { m_historyRequest = direction; },
              .exporter = m_export}),
       m_startupProject(std::move(options.project)),
@@ -55,15 +56,23 @@ EditorApp::EditorApp(Options options)
       m_startupMcpPort(options.mcpPort) {}
 
 void EditorApp::OnInit() {
+    m_ctx.pushAssetUndo = [this](std::function<void()> undo, std::function<void()> redo) {
+        if (!m_play.IsActive()) {
+            m_history.PushAction(m_ctx.scene, m_ctx.selected, &m_ctx.selection, std::move(undo), std::move(redo));
+        }
+    };
     log::Info("Motor Editor {} (API de scripts {})", kVersion, kScriptApiVersion);
     if (EditorSettings::IsDisabled()) log::Info("Configuração do editor desligada (--no-settings)");
     m_viewport.Init();
+    m_gameView.Init();
 
     AddBuiltinAssets(m_ctx.assets);  // os mesmos do Player (jogo exportado)
 
     // Projeto da linha de comando, senão o último usado; sem projeto, mostra a cena de exemplo.
     m_settings = EditorSettings::Load();
     m_projectPanel.SetView({m_settings.projectGridView, m_settings.projectIconSize});
+    m_viewport.SetPrefs(m_settings.viewport);
+    m_play.SetSideBySide(m_settings.playSideBySide);
     std::error_code ec;
     bool opened = false;
     if (!m_createName.empty()) {
@@ -161,7 +170,7 @@ void EditorApp::OnUpdate(float dt) {
         SetFrameLimit(m_scripts.IsBuilding() ? 20.0 : 0.0);  // um segundo de "Compilando..." não precisa de 60 FPS
     }
     m_mcp.ApplyGameInput();
-    m_play.Update(dt, m_viewport.IsFocused(), GetWindow());
+    m_play.Update(dt, m_viewport.IsFocused(), m_gameView.IsFocused(), GetWindow());
     m_scripts.Update(dt);
     m_document.PollChanges(dt);
 
@@ -183,6 +192,7 @@ void EditorApp::OnUpdate(float dt) {
 
 void EditorApp::OnRender(Renderer& renderer) {
     m_viewport.Render(renderer, m_ctx, m_play.InGameView());
+    if (m_play.SideBySide()) m_gameView.Render(renderer, m_ctx);
 }
 
 void EditorApp::ApplyRequests() {
@@ -197,13 +207,14 @@ void EditorApp::ApplyRequests() {
 
 void EditorApp::ApplyPendingChanges(bool interactionFinished) {
     m_ctx.ApplyPendingDelete();
+    m_ctx.SyncSelection();
     m_ctx.ApplyPendingPrefabAction();
     // Instâncias seguem os prefabs que mudaram; o que mudou numa instância vira override (antes do Track,
     // para entrar no mesmo passo de desfazer). No Play, não: a cena do jogo é descartada ao parar.
     if (!m_play.IsActive()) m_ctx.UpdatePrefabs([this](const auto& fn) { m_history.ForEachScene(fn); });
     // Depois de todas as alterações do frame: se a cena mudou e o usuário terminou a interação, vira um passo.
     // No Play, não: ao parar a cena volta a ser igual à última foto do histórico.
-    if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, interactionFinished);
+    if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, interactionFinished, &m_ctx.selection);
 }
 
 void EditorApp::UpdateMinimized() {
@@ -217,6 +228,8 @@ void EditorApp::UpdateMinimized() {
 void EditorApp::OnImGui() {
     // Desfazer/refazer e Play/Parar pedidos no frame anterior: aplicados antes de os painéis desenharem a cena.
     ApplyRequests();
+    m_ctx.playing = m_play.IsActive();
+    m_ctx.SyncSelection();  // seleção trocada por fora (criar, MCP, desfazer) antes dos painéis
 
     ImGuizmo::BeginFrame();
     DrawMenuBar();
@@ -232,11 +245,13 @@ void EditorApp::OnImGui() {
         m_resetLayout = false;
     }
     ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport());
+    m_gameView.PrepareDock(m_play);
 
     DrawHierarchyPanel(m_ctx);
     DrawScenePanel(m_ctx);
     DrawInspectorPanel(m_ctx);
     m_viewport.Draw(m_ctx, m_play, GetRenderer().GetStats(), FramesPerSecond());
+    m_gameView.Draw(m_play);
     DrawProjectPanel();
     m_scripts.DrawPanel();
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
@@ -270,6 +285,8 @@ void EditorApp::OnShutdown() {
     m_scripts.CloseProject();  // nenhum objeto da DLL de scripts pode sobrar depois de descarregá-la
     m_settings.projectGridView = m_projectPanel.View().grid;
     m_settings.projectIconSize = m_projectPanel.View().iconSize;
+    m_settings.viewport = m_viewport.Prefs();
+    m_settings.playSideBySide = m_play.SideBySide();
     m_settings.Save();
 }
 
@@ -279,7 +296,12 @@ void EditorApp::ApplyPlayRequest() {
         case PlayController::Event::Started:
             m_document.SaveRecovery("play", &m_play.BackupScene());
             m_viewport.StopLooking();
-            m_viewport.RequestFocus();  // as teclas vão para o jogo sem precisar clicar no viewport
+            // As teclas vão para o jogo sem precisar clicar: na janela Jogo, se estiver lado a lado.
+            if (m_play.SideBySide()) {
+                m_gameView.RequestFocus();
+            } else {
+                m_viewport.RequestFocus();
+            }
             break;
         case PlayController::Event::Stopped: OnPlayStopped(); break;
     }
@@ -290,6 +312,8 @@ void EditorApp::StopPlay() {
 }
 
 void EditorApp::OnPlayStopped() {
+    m_ctx.playing = false;
+    RevertPlayAssetEdits(m_ctx);
     m_viewport.StopLooking();
     m_mcp.OnPlayStopped();
     m_scripts.OnPlayStopped();  // scripts recompilados durante o Play recarregam agora
@@ -327,8 +351,14 @@ void EditorApp::DrawMenuBar() {
         if (ImGui::MenuItem("Refazer", "Ctrl+Y", false, editing && m_history.CanRedo())) m_historyRequest = +1;
         ImGui::Separator();
         const bool hasSelection = m_ctx.scene.Find(m_ctx.selected) != nullptr;
+        if (ImGui::MenuItem("Recortar", "Ctrl+X", false, hasSelection)) m_ctx.CutSelected();
+        if (ImGui::MenuItem("Copiar", "Ctrl+C", false, hasSelection)) m_ctx.CopySelected();
+        if (ImGui::MenuItem("Colar", "Ctrl+V", false, !m_ctx.clipboard.Empty())) m_ctx.Paste();
         if (ImGui::MenuItem("Duplicar", "Ctrl+D", false, hasSelection)) m_ctx.DuplicateSelected();
         if (ImGui::MenuItem("Excluir", "Del", false, hasSelection)) m_ctx.pendingDelete = m_ctx.selected;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Selecionar tudo", "Ctrl+A", false, editing)) SelectAll();
+        if (ImGui::MenuItem("Buscar na hierarquia", "Ctrl+F")) FocusHierarchySearch();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Entidade")) {
@@ -396,7 +426,7 @@ void EditorApp::HandleShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_F8, false) && m_play.IsActive()) m_play.ToggleGameView();
     if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) m_scripts.RequestBuild();
     // Jogando com o viewport em foco, as teclas são do jogo (WASD não troca o gizmo, Del não exclui...).
-    if (m_play.InGameView() && m_viewport.IsFocused()) return;
+    if (m_play.GameHasInput()) return;
     // Com o painel Projeto em foco, Del/F2/Enter pertencem a ele (arquivos), não às entidades.
     // Editando um campo de texto, Ctrl+Z/Ctrl+Y desfazem o texto (o próprio ImGui cuida).
     if (io.WantTextInput) return;
@@ -412,8 +442,22 @@ void EditorApp::HandleShortcuts() {
         m_ctx.pendingDelete = m_ctx.selected;
     }
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) m_ctx.DuplicateSelected();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false)) SelectAll();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) m_ctx.CopySelected();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X, false)) m_ctx.CutSelected();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false)) m_ctx.Paste();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) FocusHierarchySearch();
     if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) m_viewport.FocusSelected(m_ctx);
-    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) m_ctx.selected = kNullEntity;
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) m_ctx.SelectOnly(kNullEntity);
+}
+
+void EditorApp::SelectAll() {
+    // Todas as entidades da cena, menos os elementos de UI (ficam na tela, não no mundo).
+    std::vector<EntityId> ids;
+    for (const auto& e : m_ctx.scene.Entities()) {
+        if (!IsUiEntity(*e)) ids.push_back(e->id);
+    }
+    m_ctx.SetSelection(ids);
 }
 
 bool EditorApp::IsInteracting() const {
@@ -422,7 +466,7 @@ bool EditorApp::IsInteracting() const {
 
 void EditorApp::Undo() {
     if (IsInteracting()) return;  // no meio de um arraste, desfazer bagunçaria o estado
-    if (m_history.Undo(m_ctx.scene, m_ctx.selected)) {
+    if (m_history.Undo(m_ctx.scene, m_ctx.selected, &m_ctx.selection)) {
         m_ctx.pendingDelete = kNullEntity;
         m_document.HasUnsavedChanges();  // atualiza o "*" do título na hora
     }
@@ -430,7 +474,7 @@ void EditorApp::Undo() {
 
 void EditorApp::Redo() {
     if (IsInteracting()) return;
-    if (m_history.Redo(m_ctx.scene, m_ctx.selected)) {
+    if (m_history.Redo(m_ctx.scene, m_ctx.selected, &m_ctx.selection)) {
         m_ctx.pendingDelete = kNullEntity;
         m_document.HasUnsavedChanges();
     }

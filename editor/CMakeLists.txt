@@ -9,6 +9,7 @@ add_executable(MotorEditor
     src/panels/InspectorPanel.cpp
     src/play/PlayController.cpp
     src/play/PlayMode.cpp
+    src/play/GameView.cpp
     src/panels/ProjectPanel.cpp
     src/panels/ProjectPanelDraw.cpp
     src/panels/ProjectPanelFiles.cpp
@@ -49,6 +50,11 @@ add_executable(MotorEditor
     src/mcp/McpServer.cpp
     src/export/GameExport.cpp
     src/export/ExportController.cpp
+    src/viewport/ColliderOverlay.cpp
+    src/viewport/ViewportPrefs.cpp
+    src/panels/MultiEdit.cpp
+    src/panels/HierarchyFilter.cpp
+    src/EntityClipboard.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 # Includes do editor a partir de src/ ("scripts/ScriptHost.h"); as peças comuns ficam na raiz de src/.

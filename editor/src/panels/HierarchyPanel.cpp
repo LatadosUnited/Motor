@@ -1,35 +1,96 @@
 #include "EditorContext.h"
+#include "panels/HierarchyFilter.h"
 
 #include <imgui.h>
+#include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cstdint>
+#include <string>
+#include <utility>
 
 namespace editor {
 
 namespace {
+// Ordem das linhas desenhadas (o Shift+clique seleciona o intervalo entre a âncora e a linha clicada). A do
+// frame anterior é a completa: a deste ainda está sendo montada quando o clique chega.
+std::vector<EntityId> g_rows;
+std::vector<EntityId> g_lastRows;
+EntityId g_anchor = kNullEntity;  // último clique sem Shift
+// Clique simples num item já selecionado entre vários: só vira seleção única ao soltar sem ter arrastado
+// (senão arrastar o grupo para outro pai seria impossível).
+EntityId g_collapseOnRelease = kNullEntity;
+std::string g_search;        // texto da busca (HierarchyFilter)
+bool g_focusSearch = false;  // Ctrl+F
+
 void AcceptEntityDrop(EditorContext& ctx, EntityId newParent) {
     if (!ImGui::BeginDragDropTarget()) return;
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
         const EntityId dragged = *static_cast<const EntityId*>(payload->Data);
-        ctx.scene.SetParent(dragged, newParent);  // recusa ciclos sozinho
+        // Arrastou um dos selecionados: vão todos (os de cima; os filhos acompanham o pai).
+        if (ctx.IsSelected(dragged)) {
+            for (EntityId id : ctx.SelectionRoots()) ctx.scene.SetParent(id, newParent);  // recusa ciclos sozinho
+        } else {
+            ctx.scene.SetParent(dragged, newParent);
+        }
     }
     ImGui::EndDragDropTarget();
 }
 
-void DrawEntityNode(EditorContext& ctx, EntityId id) {
+void SelectRange(EditorContext& ctx, EntityId from, EntityId to) {
+    const auto a = std::find(g_lastRows.begin(), g_lastRows.end(), from);
+    const auto b = std::find(g_lastRows.begin(), g_lastRows.end(), to);
+    if (a == g_lastRows.end() || b == g_lastRows.end()) {
+        ctx.AddToSelection(to);
+        return;
+    }
+    const auto [first, last] = std::minmax(a, b);
+    for (auto it = first; it != last + 1; ++it) {
+        if (*it != to) ctx.AddToSelection(*it);
+    }
+    ctx.AddToSelection(to);  // a clicada vira a principal
+}
+
+void OnRowClicked(EditorContext& ctx, EntityId id) {
+    const ImGuiIO& io = ImGui::GetIO();
+    g_collapseOnRelease = kNullEntity;
+    // Âncora: o último clique sem Shift; se ela saiu da seleção (clique no viewport, Esc), a principal.
+    const EntityId anchor = ctx.IsSelected(g_anchor) ? g_anchor : ctx.selected;
+    if (io.KeyShift && anchor != kNullEntity) {
+        if (!io.KeyCtrl) ctx.SelectOnly(kNullEntity);  // Shift sozinho troca a seleção pelo intervalo
+        SelectRange(ctx, anchor, id);
+        g_anchor = anchor;
+        return;
+    }
+    g_anchor = id;
+    if (io.KeyCtrl) {
+        ctx.ToggleSelected(id);
+    } else if (ctx.IsSelected(id) && ctx.SelectionCount() > 1) {
+        ctx.AddToSelection(id);  // vira a principal; os outros continuam até soltar
+        g_collapseOnRelease = id;
+    } else {
+        ctx.SelectOnly(id);
+    }
+}
+
+// Uma linha da Hierarquia com os filhos embaixo; `flat` (resultado da busca): só a linha, sem os filhos, com o
+// caminho do pai ao lado.
+void DrawEntityNode(EditorContext& ctx, EntityId id, bool flat = false) {
     motor::Entity* e = ctx.scene.Find(id);
     if (!e) return;
 
-    const std::vector<EntityId> children = ctx.scene.Children(id);
+    const std::vector<EntityId> children = flat ? std::vector<EntityId>{} : ctx.scene.Children(id);
 
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
     if (children.empty()) flags |= ImGuiTreeNodeFlags_Leaf;
-    if (ctx.selected == id) flags |= ImGuiTreeNodeFlags_Selected;
+    if (flat) flags |= ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    if (ctx.IsSelected(id)) flags |= ImGuiTreeNodeFlags_Selected;
+    g_rows.push_back(id);
 
     // Seleção dentro de um pai recolhido: abre o caminho até ela.
-    if (ctx.selected != id && ctx.scene.IsDescendantOf(ctx.selected, id)) ImGui::SetNextItemOpen(true);
+    if (!flat && ctx.selected != id && ctx.scene.IsDescendantOf(ctx.selected, id)) ImGui::SetNextItemOpen(true);
 
     // Instâncias de prefab em azul (mais claro na raiz), como no painel Projeto.
     const bool inactive = !ctx.scene.IsActiveInHierarchy(id);
@@ -44,12 +105,29 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
     const bool open = ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(id)), flags, "%s",
                                         e->name.c_str());
     if (colored) ImGui::PopStyleColor();
+    if (flat) {
+        const std::string path = ParentPath(ctx.scene, id);
+        if (!path.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", path.c_str());
+        }
+        ImGui::SetItemTooltip("Em: %s", path.empty() ? "(raiz)" : path.c_str());
+    }
 
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) ctx.selected = id;
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) OnRowClicked(ctx, id);
+    if (g_collapseOnRelease == id && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (ImGui::IsItemHovered()) ctx.SelectOnly(id);
+        g_collapseOnRelease = kNullEntity;
+    }
 
     if (ImGui::BeginDragDropSource()) {
+        g_collapseOnRelease = kNullEntity;  // arrastou: a seleção fica
         ImGui::SetDragDropPayload(kEntityPayload, &id, sizeof(id));
-        ImGui::TextUnformatted(e->name.c_str());
+        if (ctx.IsSelected(id) && ctx.SelectionCount() > 1) {
+            ImGui::Text("%s e mais %zu", e->name.c_str(), ctx.SelectionCount() - 1);
+        } else {
+            ImGui::TextUnformatted(e->name.c_str());
+        }
         ImGui::EndDragDropSource();
     }
     AcceptEntityDrop(ctx, id);
@@ -66,11 +144,15 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
     }
 
     if (ImGui::BeginPopupContextItem()) {
-        ctx.selected = id;
+        if (!ctx.IsSelected(id)) ctx.SelectOnly(id);  // clique direito num dos selecionados mantém o grupo
         if (ImGui::BeginMenu("Criar filho")) {
             DrawCreateEntityMenuItems(ctx, id);
             ImGui::EndMenu();
         }
+        if (ImGui::MenuItem("Recortar", "Ctrl+X")) ctx.CutSelected();  // todos os selecionados
+        if (ImGui::MenuItem("Copiar", "Ctrl+C")) ctx.CopySelected();
+        if (ImGui::MenuItem("Colar", "Ctrl+V", false, !ctx.clipboard.Empty())) ctx.Paste();
+        if (ImGui::MenuItem("Colar como filho", nullptr, false, !ctx.clipboard.Empty())) ctx.Paste(id);
         if (ImGui::MenuItem("Duplicar", "Ctrl+D")) ctx.DuplicateSelected();
         if (ImGui::MenuItem("Excluir", "Del")) ctx.pendingDelete = id;
         ImGui::Separator();
@@ -86,12 +168,34 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
         ImGui::EndPopup();
     }
 
-    if (open) {
+    if (open && !flat) {
         for (EntityId child : children) DrawEntityNode(ctx, child);
         ImGui::TreePop();
     }
 }
+
+// Caixa de busca. Devolve o filtro do texto atual (vazio = árvore normal).
+HierarchyFilter DrawSearchBox() {
+    if (std::exchange(g_focusSearch, false)) ImGui::SetKeyboardFocusHere();
+    const bool searching = !g_search.empty();
+    ImGui::SetNextItemWidth(searching ? -ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x : -FLT_MIN);
+    ImGui::InputTextWithHint("##hierarchy_search", "Buscar (Ctrl+F)", &g_search,
+                             ImGuiInputTextFlags_EscapeClearsAll);
+    ImGui::SetItemTooltip("Procura no nome; t: procura pelo componente (t:luz, t:collider, t:Girar).\n"
+                          "Várias palavras: todas precisam bater. Esc limpa.");
+    if (searching) {
+        ImGui::SameLine();
+        if (ImGui::Button("x", ImVec2(ImGui::GetFrameHeight(), 0.0f))) g_search.clear();
+        ImGui::SetItemTooltip("Limpar a busca");
+    }
+    return HierarchyFilter::Parse(g_search);
+}
 } // namespace
+
+void FocusHierarchySearch() {
+    g_focusSearch = true;
+    ImGui::SetWindowFocus("Hierarquia");
+}
 
 void DrawHierarchyPanel(EditorContext& ctx) {
     if (!ImGui::Begin("Hierarquia")) {
@@ -104,14 +208,29 @@ void DrawHierarchyPanel(EditorContext& ctx) {
         DrawCreateEntityMenuItems(ctx, kNullEntity);
         ImGui::EndPopup();
     }
+    ImGui::SameLine();
+    const HierarchyFilter filter = DrawSearchBox();
     ImGui::Separator();
 
-    for (EntityId root : ctx.scene.Children(kNullEntity)) DrawEntityNode(ctx, root);
+    g_rows.clear();
+    if (filter.Empty()) {
+        for (EntityId root : ctx.scene.Children(kNullEntity)) DrawEntityNode(ctx, root);
+    } else {
+        // Resultados numa lista só, na ordem da Hierarquia, com o caminho de cada um.
+        const std::vector<EntityId> found = SearchHierarchy(ctx.scene, filter);
+        ImGui::TextDisabled("%zu encontrada(s)", found.size());
+        if (!found.empty()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Selecionar todas")) ctx.SetSelection(found);
+        }
+        for (EntityId id : found) DrawEntityNode(ctx, id, true);
+    }
+    g_lastRows.swap(g_rows);
 
     // Área vazia restante: soltar aqui = mover para a raiz; clicar = limpar seleção.
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     ImGui::InvisibleButton("##hierarchy_background", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 24.0f)));
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) ctx.selected = kNullEntity;
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::GetIO().KeyCtrl) ctx.SelectOnly(kNullEntity);
     AcceptEntityDrop(ctx, kNullEntity);
     for (const auto& file : AcceptPathDrop(motor::AssetType::Mesh)) ctx.CreateFromMeshFile(file, kNullEntity);
     for (const auto& file : AcceptPathDrop(motor::AssetType::Model)) ctx.InstantiateModelFile(file, kNullEntity);
@@ -119,6 +238,8 @@ void DrawHierarchyPanel(EditorContext& ctx) {
 
     if (ImGui::BeginPopupContextItem("##hierarchy_background_ctx")) {
         DrawCreateEntityMenuItems(ctx, kNullEntity);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Colar", "Ctrl+V", false, !ctx.clipboard.Empty())) ctx.Paste();
         ImGui::EndPopup();
     }
 
