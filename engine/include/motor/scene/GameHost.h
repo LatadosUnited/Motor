@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motor/project/GameOptions.h"
+#include "motor/project/InputActions.h"
 #include "motor/project/SaveData.h"
 
 #include <string>
@@ -24,6 +25,8 @@ public:
     // Saves do jogo: %APPDATA%\<Jogo>\saves\ no Player, <projeto>/.motor/saves/ no editor. Gravados também
     // ao fechar o jogo e ao parar o Play.
     virtual SaveStore& Saves() = 0;
+    // Mapa de ações do projeto (Script::IsActionDown, GetAxis...).
+    virtual const InputActions& Actions() const = 0;
     // Versão do jogo (Configurações do jogo), para mostrar no menu.
     virtual std::string GameVersion() const = 0;
     // Fecha o jogo depois deste passo (no editor, para o Play).

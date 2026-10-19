@@ -37,6 +37,8 @@ struct HostDeTeste final : GameHost {
     std::string GameVersion() const override { return "1.0"; }
     void QuitGame() override {}
     SaveStore& Saves() override { return saves; }
+    InputActions actions;
+    const InputActions& Actions() const override { return actions; }
 };
 
 // Menu principal com "Continuar": na primeira vez não há save; joga, passa de fase e grava.

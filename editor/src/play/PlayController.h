@@ -40,6 +40,7 @@ public:
         motor::GameOptions options;
         std::string version;
         std::filesystem::path savesFolder;
+        motor::InputActions actions = motor::InputActions::Defaults();
     };
     void SetGameInfo(GameInfo info) { m_gameInfo = std::move(info); }
     // Jogo > Apagar saves do Play: apaga os .json da pasta dos saves. Devolve quantos apagou.

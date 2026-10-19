@@ -1,4 +1,6 @@
-// Jogador com física: anda com WASD (Shift corre) e pula com Espaço, sem atravessar o chão nem as paredes.
+// Jogador com física: anda com WASD ou o analógico (Shift ou apertar o analógico corre) e pula com Espaço ou o
+// botão A, sem atravessar o chão nem as paredes. Usa as ações do projeto (Arquivo > Controles): Horizontal,
+// Vertical, Pular e Correr.
 // Precisa do componente "Controlador de personagem" na mesma entidade; o chão e as paredes precisam de Collider.
 // W = -Z ("frente" no mundo). Script de exemplo do Motor.
 // Com um modelo animado (glTF com Animator) na entidade ou como filho, troca entre as animações parado,
@@ -17,7 +19,7 @@
 
 struct Jogador : motor::Script {
     float velocidade = 4.0f;  // metros por segundo
-    float corrida = 2.0f;     // multiplicador com Shift
+    float corrida = 2.0f;     // multiplicador ao correr
     float pulo = 5.0f;        // velocidade para cima ao pular (m/s): ~1.3 m de altura
     bool virar = true;        // vira a frente (-Z) para a direção do movimento
     std::string animParado = "Parado";    // clipes do Animator (vazio = não troca)
@@ -27,10 +29,10 @@ struct Jogador : motor::Script {
 
     bool querPular = false;  // não registrado: estado interno do Play
 
-    // A tecla é lida a cada frame (OnUpdate) e o pulo vai no passo da física (OnFixedUpdate): assim nenhum
-    // aperto de Espaço se perde entre dois passos.
+    // O botão é lido a cada frame (OnUpdate) e o pulo vai no passo da física (OnFixedUpdate): assim nenhum
+    // aperto de Pular se perde entre dois passos.
     void OnUpdate(float) override {
-        if (WasKeyPressed(motor::Key::Space)) querPular = true;
+        if (WasActionPressed("Pular")) querPular = true;
     }
 
     void OnFixedUpdate(float) override {
@@ -38,16 +40,13 @@ struct Jogador : motor::Script {
         auto* fisica = GetSystem<motor::PhysicsSystem>();
         if (!fisica) return;
 
-        using motor::Key;
-        glm::vec3 dir{0.0f};
-        if (IsKeyDown(Key::W)) dir.z -= 1.0f;
-        if (IsKeyDown(Key::S)) dir.z += 1.0f;
-        if (IsKeyDown(Key::A)) dir.x -= 1.0f;
-        if (IsKeyDown(Key::D)) dir.x += 1.0f;
-        const bool moving = glm::length(dir) > 1e-6f;
-        if (moving) dir = glm::normalize(dir);  // na diagonal não anda mais rápido
+        // Vertical para cima (W, analógico para a frente) = -Z.
+        glm::vec3 dir{GetAxis("Horizontal"), 0.0f, -GetAxis("Vertical")};
+        const bool moving = glm::length(dir) > 1e-3f;
+        // Na diagonal do teclado não anda mais rápido; o analógico meio inclinado anda mais devagar.
+        if (glm::length(dir) > 1.0f) dir = glm::normalize(dir);
 
-        const bool running = IsKeyDown(Key::LeftShift) || IsKeyDown(Key::RightShift);
+        const bool running = IsActionDown("Correr");
         // MoveCharacter vale até a próxima chamada: chamar a cada passo (com zero, para).
         fisica->MoveCharacter(GetId(), dir * velocidade * (running ? corrida : 1.0f));
         bool pulou = false;
@@ -76,7 +75,7 @@ MOTOR_SCRIPT(Jogador) {
         .Field("velocidade", "Velocidade", &Jogador::velocidade,
                {.speed = 0.1f, .min = 0.0f, .max = 100.0f, .format = "%.1f m/s"})
         .Field("corrida", "Corrida", &Jogador::corrida,
-               {.speed = 0.05f, .min = 1.0f, .max = 10.0f, .format = "x%.1f", .tooltip = "Multiplicador com Shift"})
+               {.speed = 0.05f, .min = 1.0f, .max = 10.0f, .format = "x%.1f", .tooltip = "Multiplicador ao correr (ação Correr)"})
         .Field("pulo", "Pulo", &Jogador::pulo,
                {.speed = 0.05f, .min = 0.0f, .max = 50.0f, .format = "%.1f m/s", .tooltip = "Velocidade para cima ao pular"})
         .Field("virar", "Virar", &Jogador::virar, {.tooltip = "Vira o objeto para a direção do movimento"})

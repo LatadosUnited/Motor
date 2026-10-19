@@ -88,6 +88,10 @@ private:
         motor::Key key;
         std::chrono::steady_clock::time_point releaseAt;  // max() = até pedirem para soltar
     };
+    struct HeldPadButton {
+        motor::GamepadButton button;
+        std::chrono::steady_clock::time_point releaseAt;
+    };
 
     // Ferramentas por grupo: editor e vista em McpController.cpp, arquivos em McpFileTools.cpp, jogo e scripts
     // em McpPlayTools.cpp.
@@ -121,6 +125,9 @@ private:
     // Entrada simulada no jogo: teclas a apertar/soltar no próximo quadro e as que estão presas.
     std::vector<std::pair<motor::Key, bool>> m_pendingKeys;
     std::vector<HeldKey> m_heldKeys;
+    // Controle simulado (game_gamepad): botões a apertar/soltar no próximo quadro e os presos.
+    std::vector<std::pair<motor::GamepadButton, bool>> m_pendingPad;
+    std::vector<HeldPadButton> m_heldPad;
     // Clique num botão da UI do jogo: posição na tela do jogo e etapa (1 = apertar, 2 = soltar, 0 = nada).
     int m_clickStage = 0;
     glm::vec2 m_clickPos{0.0f};

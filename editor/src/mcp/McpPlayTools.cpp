@@ -119,6 +119,56 @@ void McpController::AddPlayTools() {
     });
 
     m_protocol.AddTool({
+        .name = "game_gamepad",
+        .description = "Simula um controle (gamepad, padrão Xbox) no jogo durante o Play, sem um controle de verdade: "
+                       "botões (tap/press/release, como game_key) e eixos (value fica até mudar). Enquanto simulado, o "
+                       "controle de verdade é ignorado; disconnect (ou parar o Play) volta a ele. Ex.: tap 'A' para "
+                       "pular, axis 'LeftX' value 1 para andar para a direita.",
+        .inputSchema = Schema({{"button", Prop("string", "A, B, X, Y, LeftBumper, RightBumper, Back, Start, LeftThumb, "
+                                                         "RightThumb, DpadUp, DpadRight, DpadDown, DpadLeft")},
+                               {"axis", Prop("string", "LeftX, LeftY, RightX, RightY (-1 a 1, Y para cima +), "
+                                                       "LeftTrigger, RightTrigger (0 a 1)")},
+                               {"value", Prop("number", "valor do eixo")},
+                               {"action", {{"type", "string"}, {"enum", {"tap", "press", "release", "disconnect"}}}},
+                               {"seconds", Prop("number", "tap: quanto tempo segurar (padrão 0.1)")}}),
+        .run = [this](const Json& args) {
+            if (!m_host.play.IsActive()) throw ToolError("o jogo não está rodando (use play)");
+            const std::string action = args.value("action", std::string("tap"));
+            if (action == "disconnect") {
+                m_heldPad.clear();
+                m_pendingPad.clear();
+                Input::SetGamepadSimulated(false);
+                return ToolResult::Text("controle simulado desligado");
+            }
+            Input::SetGamepadSimulated(true);
+            m_host.play.SetExternalInput(true);
+            if (args.contains("axis")) {
+                const auto axis = ParseGamepadAxis(args["axis"].get<std::string>());
+                if (!axis) throw ToolError("eixo desconhecido: " + args["axis"].get<std::string>());
+                const float value = action == "release" ? 0.0f : args.value("value", 1.0f);
+                Input::SetGamepadAxisState(*axis, value);
+                return ToolResult::Text(std::format("eixo {} = {:.2f}", GamepadAxisName(*axis), Input::GamepadAxisValue(*axis)));
+            }
+            if (!args.contains("button")) throw ToolError("diga 'button' ou 'axis'");
+            const auto button = ParseGamepadButton(args["button"].get<std::string>());
+            if (!button) throw ToolError("botão desconhecido: " + args["button"].get<std::string>());
+            std::erase_if(m_heldPad, [&](const HeldPadButton& h) { return h.button == *button; });
+            if (action == "release") {
+                m_pendingPad.emplace_back(*button, false);
+            } else {
+                const double seconds = action == "tap" ? std::clamp(args.value("seconds", 0.1), 0.0, 30.0) : -1.0;
+                const auto releaseAt = seconds < 0 ? std::chrono::steady_clock::time_point::max()
+                                                   : std::chrono::steady_clock::now() +
+                                                         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                                             std::chrono::duration<double>(seconds + 0.02));
+                m_pendingPad.emplace_back(*button, true);
+                m_heldPad.push_back({*button, releaseAt});
+            }
+            return ToolResult::Text(std::format("botão {}: {}", GamepadButtonName(*button), action));
+        },
+    });
+
+    m_protocol.AddTool({
         .name = "ui_click",
         .description = "Clica num botão da interface do jogo (componente UI: Botão) durante o Play, pelo nome ou "
                        "id da entidade. O script vê WasClicked no quadro seguinte.",

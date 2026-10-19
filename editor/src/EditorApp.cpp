@@ -295,7 +295,7 @@ void EditorApp::ApplyPlayRequest() {
     const motor::Project* project = m_document.GetProject();
     if (project) {
         m_play.SetGameInfo({project->DefaultOptions(), project->Identity().version,
-                            project->RootDir() / ".motor" / "saves"});
+                            project->RootDir() / ".motor" / "saves", project->Actions()});
     } else {
         m_play.SetGameInfo({});
     }

@@ -167,6 +167,37 @@ void McpController::AddSceneFileTools() {
     });
 
     m_protocol.AddTool({
+        .name = "input_actions",
+        .description = "Lê ou muda o mapa de ações do projeto (como Arquivo > Controles): cada ação (\"Pular\", "
+                       "\"Horizontal\") com as entradas (key, mouse, gamepad ou axis, e scale -1 para o lado "
+                       "negativo de um eixo). Os scripts usam IsActionDown/WasActionPressed/GetAxis. Sem argumentos, só "
+                       "lê. actions substitui o mapa inteiro; reset volta ao padrão. Grava o .mproject.",
+        .inputSchema = Schema({{"actions", Prop("array", "[{\"name\": \"Pular\", \"bindings\": [{\"key\": \"Space\"}, "
+                                                         "{\"gamepad\": \"A\"}]}, {\"name\": \"Horizontal\", "
+                                                         "\"bindings\": [{\"key\": \"A\", \"scale\": -1}, "
+                                                         "{\"axis\": \"LeftX\"}]}]")},
+                               {"reset", Prop("boolean", "true = mapa padrão")}}),
+        .run = [this](const Json& args) {
+            const Project* project = m_host.document.GetProject();
+            if (!project) throw ToolError("nenhum projeto aberto");
+            InputActions actions = project->Actions();
+            std::string problems;
+            if (args.value("reset", false)) actions = InputActions::Defaults();
+            if (args.contains("actions")) {
+                if (!actions.FromJson(Json{{"actions", args["actions"]}}.dump(), &problems)) throw ToolError(problems);
+            }
+            if (!(actions == project->Actions())) {
+                std::string error;
+                if (!m_host.document.SetInputActions(actions, error)) throw ToolError(error);
+            }
+            Json result = Json::parse(actions.ToJson());
+            if (!problems.empty()) result["warnings"] = problems;
+            result["gamepad"] = Input::IsGamepadConnected() ? Input::GamepadName() : std::string();
+            return ToolResult::Data(result);
+        },
+    });
+
+    m_protocol.AddTool({
         .name = "game_settings",
         .description = "Lê ou muda as configurações do jogo (como Arquivo > Configurações do jogo): identidade do jogo "
                        "exportado (nome do .exe, versão, ícone) e as opções com que ele abre da primeira vez. Sem "

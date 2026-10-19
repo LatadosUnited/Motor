@@ -44,6 +44,7 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
             });
             m_mode.SetAssets(&ctx.assets);
             m_host.Reset(m_gameInfo.options, m_gameInfo.version, m_gameInfo.savesFolder);
+            m_host.SetActions(m_gameInfo.actions);
             m_mode.SetHost(&m_host);
             m_mode.Play(ctx.scene, ctx.selected);
             return Event::Started;

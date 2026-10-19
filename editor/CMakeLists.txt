@@ -20,6 +20,7 @@ add_executable(MotorEditor
     src/document/SceneDocumentUi.cpp
     src/document/SceneDocumentLayers.cpp
     src/document/SceneDocumentGame.cpp
+    src/document/SceneDocumentControls.cpp
     src/panels/ScenePanel.cpp
     src/viewport/SceneViewport.cpp
     src/viewport/SceneViewportOverlay.cpp

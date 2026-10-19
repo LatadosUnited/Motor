@@ -35,6 +35,8 @@ struct HostDeTeste final : GameHost {
     std::string GameVersion() const override { return "1.2.0"; }
     SaveStore saves;
     SaveStore& Saves() override { return saves; }
+    InputActions actions;
+    const InputActions& Actions() const override { return actions; }
     void QuitGame() override { quit = true; }
 };
 

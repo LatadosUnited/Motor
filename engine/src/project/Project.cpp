@@ -20,7 +20,8 @@ using json = nlohmann::ordered_json;
 namespace {
 constexpr const char* kFormatName = "motor-project";
 constexpr int kFormatVersion = 4;  // 2: engineVersion (Fase 14). 3: camadas de colisão em "physics" (Fase 18).
-                                   // 4: opções padrão do jogador em "player" e identidade em "game" (Fase 21)
+                                   // 4: opções padrão do jogador em "player", identidade em "game" e mapa de
+                                   //    ações em "input" (Fase 21)
 
 void SetError(std::string* error, std::string message) {
     if (error) *error = std::move(message);
@@ -173,6 +174,12 @@ std::optional<Project> Project::Open(const std::filesystem::path& fileOrDir, std
         if (const auto player = root.find("player"); player != root.end() && player->is_object()) {
             GameOptionsFromJson(player->dump(), project.m_options);  // formatos 1 a 3: opções padrão
         }
+        if (const auto input = root.find("input"); input != root.end() && input->is_object()) {
+            std::string problem;
+            if (!project.m_actions.FromJson(input->dump(), &problem) || !problem.empty()) {
+                log::Warn("Projeto: mapa de ações: {}", problem);
+            }
+        }
         if (const auto game = root.find("game"); game != root.end() && game->is_object()) {
             project.m_identity.executable = game->value("executable", std::string());
             project.m_identity.version = game->value("version", project.m_identity.version);
@@ -200,6 +207,7 @@ bool Project::Save(std::string* error) const {
     player.erase("format");
     player.erase("version");
     root["player"] = std::move(player);
+    root["input"] = json::parse(m_actions.ToJson());
     root["game"] = {{"executable", m_identity.executable}, {"version", m_identity.version}, {"icon", m_identity.icon}};
 
     // Grava ao lado e troca: uma falha no meio não estraga o projeto.

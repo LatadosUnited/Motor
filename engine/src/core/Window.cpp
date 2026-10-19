@@ -93,6 +93,7 @@ void Window::CancelClose() {
 
 void Window::PollEvents() {
     glfwPollEvents();
+    Input::PollGamepads();
     glfwGetFramebufferSize(m_window, &m_width, &m_height);
 }
 

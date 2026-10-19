@@ -206,6 +206,7 @@ public:
     }
     std::string GameVersion() const override { return m_project.Identity().version; }
     SaveStore& Saves() override { return m_saves; }
+    const InputActions& Actions() const override { return m_project.Actions(); }
     void QuitGame() override {
         log::Info("Jogo: fechado por um script (QuitGame)");
         Quit();

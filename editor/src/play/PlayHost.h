@@ -24,6 +24,8 @@ public:
     void QuitGame() override { m_quit = true; }
     std::string GameVersion() const override { return m_version; }
     motor::SaveStore& Saves() override { return m_saves; }
+    const motor::InputActions& Actions() const override { return m_actions; }
+    void SetActions(const motor::InputActions& actions) { m_actions = actions; }
 
     bool TakeQuit() { return std::exchange(m_quit, false); }
 
@@ -31,6 +33,7 @@ private:
     motor::GameOptions m_options;
     std::string m_version;
     motor::SaveStore m_saves;
+    motor::InputActions m_actions = motor::InputActions::Defaults();
     bool m_quit = false;
     bool m_warnedDisplay = false;
 };

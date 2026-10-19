@@ -2,6 +2,7 @@
 
 #include "motor/project/CollisionLayers.h"
 #include "motor/project/GameOptions.h"
+#include "motor/project/InputActions.h"
 
 #include <filesystem>
 #include <optional>
@@ -62,6 +63,10 @@ public:
     const CollisionLayers& Layers() const { return m_layers; }
     void SetLayers(const CollisionLayers& layers) { m_layers = layers; }
 
+    // Mapa de ações (Arquivo > Controles); projeto sem mapa gravado = InputActions::Defaults().
+    const InputActions& Actions() const { return m_actions; }
+    void SetActions(const InputActions& actions) { m_actions = actions; }
+
     const GameIdentity& Identity() const { return m_identity; }
     void SetIdentity(const GameIdentity& identity) { m_identity = identity; }
     // Nome do .exe exportado (sem ".exe"): o da identidade, ou o do projeto se vazio ou inválido.
@@ -82,6 +87,7 @@ private:
     CollisionLayers m_layers;
     GameOptions m_options;
     GameIdentity m_identity;
+    InputActions m_actions = InputActions::Defaults();
 };
 
 // "1.2.3" -> {1, 2, 3, 0}: até quatro números (os que faltam são 0); false se tiver algo além de números e pontos.

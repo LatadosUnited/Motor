@@ -46,6 +46,8 @@ public:
     bool SetGameOptions(const motor::GameOptions& options, std::string& error);
     // Grava a identidade (nome do .exe, versão, ícone) depois de conferir os valores. false com `error` se não serve.
     bool SetGameIdentity(const motor::GameIdentity& identity, std::string& error);
+    // Grava o mapa de ações (Arquivo > Controles). false sem projeto ou se não gravou.
+    bool SetInputActions(const motor::InputActions& actions, std::string& error);
     const std::filesystem::path& ScenePath() const { return m_scenePath; }
 
     // Pergunta antes se houver alterações não salvas. `path` é usado pelas ações *Path.
@@ -92,6 +94,7 @@ private:
     void DrawCollisionLayersWindow();  // Arquivo > Camadas de colisão
     void DrawGameSettingsWindow();     // Arquivo > Configurações do jogo
     void DrawGameIdentity();
+    void DrawControlsWindow();         // Arquivo > Controles
     void DrawUnsavedPopup();
     void DrawNewerVersionPopup();
     void DrawRecoveryPopup();
@@ -133,6 +136,8 @@ private:
     bool m_showGameSettingsWindow = false;
     motor::GameIdentity m_identityDraft;
     bool m_identityEditing = false;
+    bool m_showControlsWindow = false;
+    int m_listeningAction = -1;  // ação esperando "aperte uma tecla"
 };
 
 } // namespace editor

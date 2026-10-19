@@ -12,6 +12,7 @@
 
 #include "motor/core/Input.h"
 #include "motor/project/GameOptions.h"
+#include "motor/project/InputActions.h"
 #include "motor/project/SaveData.h"
 #include "motor/scene/RuntimeSystem.h"
 
@@ -156,6 +157,18 @@ protected:
     bool WasKeyPressed(Key key) const;
     bool IsMouseDown(MouseButton button) const;
     glm::vec2 MouseDelta() const;
+    // Ações do projeto (Arquivo > Controles): o mesmo código no teclado e no controle.
+    //   GetAxis("Horizontal")  -1 a 1 (A/D, setas, analógico esquerdo, direcional)
+    //   if (WasActionPressed("Pular")) ...   (Espaço ou botão A)
+    bool IsActionDown(std::string_view action) const;
+    bool WasActionPressed(std::string_view action) const;
+    bool WasActionReleased(std::string_view action) const;
+    float GetAxis(std::string_view action) const;
+    // Controle direto (o primeiro conectado; padrão Xbox): botões, analógicos (-1 a 1, Y para cima +) e gatilhos (0 a 1).
+    bool IsGamepadConnected() const;
+    bool IsGamepadButtonDown(GamepadButton button) const;
+    bool WasGamepadButtonPressed(GamepadButton button) const;
+    float GamepadAxisValue(GamepadAxis axis) const;
     // Cursor do jogo: Locked (preso e escondido, para olhar com MouseDelta), Hidden ou Normal (menus). No editor
     // vale com o jogo em foco e Esc solta o cursor; ao parar o Play ele volta ao normal.
     void SetCursorMode(CursorMode mode);
@@ -231,6 +244,7 @@ private:
     friend class SceneRuntime;
     void WriteLog(std::string_view fmt, const detail::LogArg* args, size_t count);
     bool InputEnabled() const;
+    const InputActions& Actions() const;
     RuntimeSystem* FindSystem(const std::type_info& type);
 
     SceneRuntime* m_runtime = nullptr;

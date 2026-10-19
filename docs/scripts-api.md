@@ -144,7 +144,22 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 | `glm::vec2 MouseDelta() const` | movimento do mouse neste frame, em pixels |
 | `void SetCursorMode(CursorMode mode)`, `CursorMode GetCursorMode() const` | cursor do jogo: `motor::CursorMode::Locked` (preso e escondido, para olhar com `MouseDelta`), `Hidden` ou `Normal`; no editor vale com o jogo em foco (Esc solta, clique prende de novo) e volta ao normal ao parar; continua ao trocar de cena |
 
-As quatro de entrada devolvem falso/zero quando o jogo não tem o foco. `motor::Input` (`motor/core/Input.h`)
+Ações do projeto (Arquivo > Controles; mapa em `motor::InputActions`, `motor/project/InputActions.h`) e o
+controle:
+
+| Método | Devolve |
+|---|---|
+| `float GetAxis(std::string_view action) const` | valor da ação, -1 a 1: soma das entradas (tecla/botão = `scale`, eixo = valor x `scale`) |
+| `bool IsActionDown(std::string_view action) const` | valor acima de 0,5 |
+| `bool WasActionPressed(std::string_view action) const`, `bool WasActionReleased(std::string_view action) const` | passou de 0,5 neste frame / voltou |
+| `bool IsGamepadConnected() const` | há um controle reconhecido como gamepad |
+| `bool IsGamepadButtonDown(GamepadButton button) const`, `bool WasGamepadButtonPressed(GamepadButton button) const` | botão do controle: `motor::GamepadButton::A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft` |
+| `float GamepadAxisValue(GamepadAxis axis) const` | `motor::GamepadAxis::LeftX`, `LeftY`, `RightX`, `RightY` (-1 a 1, Y para cima +, zona morta de 0,2) e `LeftTrigger`, `RightTrigger` (0 a 1) |
+
+Ação desconhecida devolve 0/falso e avisa uma vez no log. O controle é o primeiro conectado, no padrão do
+Xbox (a GLFW traduz PlayStation, Switch e outros: o `A` é o botão de baixo).
+
+As de entrada (teclado, mouse, ações e controle) devolvem falso/zero quando o jogo não tem o foco. `motor::Input` (`motor/core/Input.h`)
 tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas sem esse filtro de foco.
 
 `motor::GameTime`:

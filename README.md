@@ -437,7 +437,7 @@ MOTOR_SCRIPT(Girar) {
 
 - Menu **Scripts**: Novo script (modelos Vazio, Comportamento, Que segue, Coletável e Gerador; também em
   **+ Criar** no painel Projeto e pela ferramenta MCP `script_create`), Adicionar exemplo (Girar, Jogador,
-  Mover com WASD, Seguir, de `editor/templates/Scripts/`), Recompilar (F7), Abrir no VS Code, Abrir pasta. O
+  Mover (WASD ou controle), Seguir, de `editor/templates/Scripts/`), Recompilar (F7), Abrir no VS Code, Abrir pasta. O
   painel **Scripts** mostra erros e avisos; clicar num erro abre o arquivo na linha.
 - **VS Code configurado**: ao abrir o projeto o editor gera `.vscode/` (IntelliSense pelo `compile_commands.json`
   da compilação dos scripts, tarefa de compilar e "anexar ao editor" com o gdb). Só reescreve os arquivos que
@@ -658,6 +658,12 @@ Exportado/
   ícone (`.ico` com vários tamanhos ou `.png` de até 256x256, de `Assets/`). A exportação grava o ícone e a versão
   como recursos do Windows no `.exe` copiado; o ícone aparece no Explorer, na janela e na barra de tarefas (a
   GLFW usa o recurso `GLFW_ICON`). Ícone que não serve faz a exportação ser recusada antes de mexer na pasta.
+- **Controle e ações** (Fase 21): os scripts perguntam por ações (`GetAxis("Horizontal")`,
+  `WasActionPressed("Pular")`) do mapa do projeto (**Arquivo > Controles**, `.mproject` em `"input"`, MCP
+  `input_actions`), que liga teclas, mouse e o controle (gamepad, padrão Xbox, pela GLFW). O padrão traz
+  Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa. Controle direto: `IsGamepadButtonDown`,
+  `GamepadAxisValue`. Os modelos Jogador e MoverWASD andam com o teclado ou o analógico. O MCP `game_gamepad`
+  simula um controle no Play.
 - **Progresso salvo** (Fase 21): os scripts guardam chave/valor em "slots" com `SaveSlot()` (`motor::SaveData`:
   `GetInt`/`SetInt`, `GetString`, `GetVec3`... e `Save()`), `HasSave`, `DeleteSave` e `SaveFolder`. No jogo
   exportado ficam em `%APPDATA%\<Jogo>\saves\<slot>.json`; no Play do editor, em `<projeto>/.motor/saves/`
