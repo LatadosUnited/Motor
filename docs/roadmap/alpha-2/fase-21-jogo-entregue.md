@@ -24,7 +24,7 @@ salvo e controle.
   configurações do jogo, com API para os scripts montarem um menu de opções. O MSAA hoje é sempre 4x: o
   `Renderer::SetSamples` existe, mas o projeto não o expõe. Título da janela sem o FPS. *(origem: Fase 10,
   limitações; análise do código, item 3)* — `a31aaae`
-- [ ] **Identidade:** ícone e nome do `.exe` nas configurações do projeto; versão do jogo.
+- [x] **Identidade:** ícone e nome do `.exe` nas configurações do projeto; versão do jogo. — `ca7c989`
 - [ ] **Exportação sempre Release:** Player e `libMotor.dll` de Release da versão instalada, e a DLL de scripts
   recompilada em Release ao exportar. *(origem: Fase 10, limitação)*
 - [ ] **Salvar progresso:** API de dados persistentes para scripts (chave/valor e arquivos em
@@ -52,9 +52,19 @@ de continuar (save), e é jogável com controle.
   as sombras valem no viewport e `QuitGame` para o Play. Exemplo `docs/examples/MenuOpcoes.cpp` no guia.
   Testes: `test_game_options`; conferido no editor (MCP) e no Player com um script que aplica e sai.
 
+- **Identidade** (`ca7c989`): `GameIdentity` no projeto (nome do `.exe`, versão, ícone), na seção Identidade
+  das Configurações do jogo e no MCP `game_settings`. A exportação lê o ícone antes de mexer na pasta (`.ico`
+  com todas as imagens ou `.png` de até 256x256) e grava no `.exe` copiado, com `UpdateResource`
+  (`export/ExeResources`), o grupo de ícones `GLFW_ICON` (a GLFW o usa sozinha na janela e na barra de tarefas)
+  e o `VS_VERSIONINFO` (nome, versão, nome do arquivo). `Script::GameVersion` para o menu. Testes:
+  `test_exe_identity` (grava numa cópia do próprio teste e lê com `GetFileVersionInfo`/`FindResource`);
+  conferido exportando pelo MCP: propriedades do `.exe`, ícone no Explorer e na barra de título.
+
 ## Limitações
 
 - A troca para tela cheia e de resolução não foi testada automaticamente (mudaria a tela do usuário): fica no
   roteiro de teste à mão (seção 12). A janela Configurações do jogo também não foi vista (o MCP não abre menus).
 - No editor, tela cheia, resolução e vsync pedidos pelo jogo só ficam guardados (o editor não muda a própria
   janela), e as opções não são gravadas: cada Play volta às do projeto.
+- O `.png` vira uma imagem só no ícone: o Windows reduz para os tamanhos pequenos. Para ícones nítidos em 16 e
+  32 pixels, use um `.ico` com vários tamanhos. Sem nome de empresa nem direitos autorais nas propriedades.
