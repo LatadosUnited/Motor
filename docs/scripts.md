@@ -896,6 +896,41 @@ vazia `HUD` com **Scripts > HUD (vida e pontos)**. Para o menu: uma cena `Menu` 
 `Jogar` e `Creditos`, um Painel `PainelCreditos` e uma entidade `Menu` com **Scripts > Menu principal**
 (Cena do jogo = o nome da cena do mini jogo). Abra a cena `Menu` e aperte **Play**.
 
+### Salvar o progresso
+
+`SaveSlot()` é um arquivo de chave/valor (o slot "progresso"; dê outro nome para ter vários, como
+`SaveSlot("slot2")` ou `SaveSlot("config")`). Leia com `GetInt`, `GetFloat`, `GetBool`, `GetString` e `GetVec3`
+(com o valor de quando ainda não existe), mude com os `Set...` e grave com `Save()`. Um menu com **Continuar**
+(só aparece se houver save) e **Novo jogo** ([examples/MenuContinuar.cpp](examples/MenuContinuar.cpp)):
+
+```cpp
+        if (ui->WasClicked("Continuar")) {
+            LoadScene(SaveSlot().GetString("fase", primeiraFase));
+        } else if (ui->WasClicked("NovoJogo")) {
+            DeleteSave();  // começa do zero
+            LoadScene(primeiraFase);
+        }
+```
+
+E na cena de cada fase, o jogador grava onde está e volta para lá ao continuar:
+
+```cpp
+        motor::SaveData& save = SaveSlot();
+        if (save.GetString("fase") == fase && save.Has("posicao")) {
+            GetTransform().position = save.GetVec3("posicao");  // continuar: de onde parou
+        }
+        save.SetString("fase", fase);
+        save.SetInt("vezes", save.GetInt("vezes", 0) + 1);
+        save.Save();
+```
+
+- No jogo exportado os saves ficam em `%APPDATA%\<Jogo>\saves\` (um `.json` por slot); no Play do editor,
+  em `<projeto>/.motor/saves/`, separados: **Jogo > Apagar saves do Play** volta a ser um jogador novo.
+- O que mudou e não foi gravado com `Save()` é gravado ao fechar o jogo e ao parar o Play. Gravar a cada
+  mudança pequena (posição todo frame) é desperdício: grave em momentos certos (fase, checkpoint, a cada
+  alguns segundos).
+- Para arquivos próprios (uma foto, um replay), `SaveFolder()` é a pasta dos saves.
+
 ## 14. Som
 
 Arquivos `.wav`, `.ogg` e `.mp3` dentro de `Assets/` são **clipes de som** (aparecem no painel Projeto, com

@@ -293,8 +293,12 @@ void EditorApp::OnShutdown() {
 
 void EditorApp::ApplyPlayRequest() {
     const motor::Project* project = m_document.GetProject();
-    m_play.SetDefaultOptions(project ? project->DefaultOptions() : motor::GameOptions{},
-                             project ? project->Identity().version : std::string());
+    if (project) {
+        m_play.SetGameInfo({project->DefaultOptions(), project->Identity().version,
+                            project->RootDir() / ".motor" / "saves"});
+    } else {
+        m_play.SetGameInfo({});
+    }
     switch (m_play.ApplyRequest(m_ctx, m_history)) {
         case PlayController::Event::None: break;
         case PlayController::Event::Started:

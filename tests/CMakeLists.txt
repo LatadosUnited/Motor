@@ -211,3 +211,10 @@ motor_add_test(test_release_runtime
     ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptProject.cpp)
 target_include_directories(test_release_runtime PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_release_runtime PRIVATE nlohmann_json::nlohmann_json)
+
+# Progresso salvo (Fase 21): SaveData (tipos, arquivo, .corrompido), SaveStore (slots) e a API dos scripts, de um
+# jogo para o seguinte e no Play do editor.
+motor_add_test(test_save_data
+    ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/play/PlayHost.cpp)
+target_include_directories(test_save_data PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)

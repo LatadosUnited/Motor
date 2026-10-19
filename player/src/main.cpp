@@ -11,7 +11,8 @@
 // por cima. O log vai para "<Jogo>.log" ao lado do executável (ou na pasta temporária).
 //
 // Opções do jogador (tela cheia, resolução, vsync, MSAA, sombras): as padrão do projeto, trocadas pelas do
-// opcoes.json se ele existir; os scripts mudam e gravam com Script::ApplyOptions (GameHost).
+// opcoes.json se ele existir; os scripts mudam e gravam com Script::ApplyOptions (GameHost). Saves dos scripts
+// (Script::SaveSlot) em %APPDATA%\<Jogo>\saves\, gravados também ao fechar.
 
 #include <motor/Motor.h>
 #include <motor/app/GameQuality.h>
@@ -51,6 +52,7 @@ struct LaunchOptions {
 };
 
 constexpr const char* kOptionsFile = "opcoes.json";
+constexpr const char* kSavesFolder = "saves";
 
 std::vector<std::string> Arguments(int argc, char** argv) {
     std::vector<std::string> args;
@@ -171,7 +173,10 @@ private:
 class Player final : public Application, public GameHost {
 public:
     Player(Project project, const LaunchOptions& options, const GameOptions& gameOptions, const ApplicationDesc& desc)
-        : Application(desc), m_project(std::move(project)), m_options(options), m_gameOptions(gameOptions) {}
+        : Application(desc), m_project(std::move(project)), m_options(options), m_gameOptions(gameOptions) {
+        // Saves em %APPDATA%\<Jogo>\saves\ (sem pasta de usuário: só na memória).
+        if (const fs::path data = PlayerDataDir(m_project.Name()); !data.empty()) m_saves = SaveStore(data / kSavesFolder);
+    }
 
     // GameHost (scripts)
     GameOptions Options() const override { return m_gameOptions; }
@@ -200,6 +205,7 @@ public:
         return list;
     }
     std::string GameVersion() const override { return m_project.Identity().version; }
+    SaveStore& Saves() override { return m_saves; }
     void QuitGame() override {
         log::Info("Jogo: fechado por um script (QuitGame)");
         Quit();
@@ -275,6 +281,7 @@ private:
     void OnShutdown() override {
         if (m_runtime) m_runtime->Stop();
         m_runtime.reset();
+        m_saves.SaveAll();  // o que os scripts mudaram e não gravaram (também no OnDestroy)
         m_scene = Scene();  // os componentes dos scripts somem antes de descarregar a DLL
         m_ui.reset();
         m_scripts.Unload();
@@ -312,6 +319,7 @@ private:
     Project m_project;
     LaunchOptions m_options;
     GameOptions m_gameOptions;
+    SaveStore m_saves;
     AssetLibrary m_assets;
     ScriptLibrary m_scripts;  // declarado antes da cena: é destruído depois dela
     Scene m_scene;

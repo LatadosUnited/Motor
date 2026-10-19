@@ -33,6 +33,8 @@ struct HostDeTeste final : GameHost {
     }
     std::vector<Resolution> Resolutions() const override { return {{1280, 720}, {1920, 1080}}; }
     std::string GameVersion() const override { return "1.2.0"; }
+    SaveStore saves;
+    SaveStore& Saves() override { return saves; }
     void QuitGame() override { quit = true; }
 };
 

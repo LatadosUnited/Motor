@@ -7,9 +7,10 @@ namespace editor {
 
 using namespace motor;
 
-void PlayHost::Reset(const GameOptions& defaults, std::string version) {
+void PlayHost::Reset(const GameOptions& defaults, std::string version, std::filesystem::path savesFolder) {
     m_options = defaults;
     m_version = std::move(version);
+    m_saves = SaveStore(std::move(savesFolder));
     m_options.Clamp();
     m_quit = false;
     m_warnedDisplay = false;

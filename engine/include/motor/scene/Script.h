@@ -12,6 +12,7 @@
 
 #include "motor/core/Input.h"
 #include "motor/project/GameOptions.h"
+#include "motor/project/SaveData.h"
 #include "motor/scene/RuntimeSystem.h"
 
 #include <glm/vec2.hpp>
@@ -19,6 +20,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -170,6 +172,17 @@ protected:
     std::vector<Resolution> Resolutions() const;  // de tela cheia, da menor para a maior
     void QuitGame();  // fecha o jogo depois deste passo (no editor, para o Play)
     std::string GameVersion() const;  // versão do jogo (Arquivo > Configurações do jogo), ex.: "1.0.0"
+
+    // --- Progresso salvo (chave/valor em arquivos de "slot") ---
+    // No jogo exportado ficam em %APPDATA%\<Jogo>\saves\<slot>.json; no Play do editor, em
+    // <projeto>/.motor/saves/ (Jogo > Apagar saves do Play). Save() grava na hora; o que mudou também é gravado
+    // ao fechar o jogo e ao parar o Play.
+    //   SaveSlot().SetInt("fase", 2);  SaveSlot().Save();
+    //   const int fase = SaveSlot().GetInt("fase", 1);
+    SaveData& SaveSlot(std::string_view slot = SaveStore::kDefaultSlot);
+    bool HasSave(std::string_view slot = SaveStore::kDefaultSlot) const;  // para o botão "Continuar"
+    void DeleteSave(std::string_view slot = SaveStore::kDefaultSlot);     // "Novo jogo"
+    std::filesystem::path SaveFolder() const;  // para arquivos próprios (vazio se o jogo não tem pasta)
 
     // --- Temporizadores (tempo do jogo: não contam na pausa) ---
     // Chama `fn` daqui a `seconds` segundos (After) ou a cada `seconds` segundos (Every), antes do OnUpdate

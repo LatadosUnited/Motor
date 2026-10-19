@@ -4,5 +4,6 @@ motor_add_layer(project
         Project.cpp
         CollisionLayers.cpp
         GameOptions.cpp
+        SaveData.cpp
     DEPENDS core
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

@@ -34,11 +34,18 @@ public:
     void SetExternalInput(bool enabled) { m_externalInput = enabled; }
     Event ApplyRequest(EditorContext& ctx, UndoHistory& history);
     bool Stop(EditorContext& ctx);  // volta à edição; false se já estava editando
-    // Opções do jogador com que o próximo Play começa (as padrão do projeto).
-    void SetDefaultOptions(const motor::GameOptions& options, std::string version = {}) {
-        m_defaultOptions = options;
-        m_gameVersion = std::move(version);
-    }
+    // Do projeto aberto, para o próximo Play: opções padrão do jogador, versão do jogo e a pasta dos saves do Play
+    // (<projeto>/.motor/saves; vazia sem projeto).
+    struct GameInfo {
+        motor::GameOptions options;
+        std::string version;
+        std::filesystem::path savesFolder;
+    };
+    void SetGameInfo(GameInfo info) { m_gameInfo = std::move(info); }
+    // Jogo > Apagar saves do Play: apaga os .json da pasta dos saves. Devolve quantos apagou.
+    int DeletePlaySaves();
+    const std::filesystem::path& PlaySavesFolder() const { return m_gameInfo.savesFolder; }
+    motor::SaveStore* PlaySaves() { return m_mode.IsActive() ? &m_host.Saves() : nullptr; }
     // MSAA e sombras: as do jogo no Play (Script::ApplyOptions), as do editor fora dele. Antes de desenhar.
     void ApplyQuality(motor::Renderer& renderer) const;
 
@@ -59,8 +66,7 @@ private:
     void UpdateCursor(motor::Window& window);
     PlayMode m_mode;
     PlayHost m_host;
-    motor::GameOptions m_defaultOptions;
-    std::string m_gameVersion;
+    GameInfo m_gameInfo;
     Request m_request = Request::None;
     bool m_gameView = true;  // no Play: true = câmera do jogo, false = câmera livre do editor
     bool m_externalInput = false;

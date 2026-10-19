@@ -658,6 +658,11 @@ Exportado/
   ícone (`.ico` com vários tamanhos ou `.png` de até 256x256, de `Assets/`). A exportação grava o ícone e a versão
   como recursos do Windows no `.exe` copiado; o ícone aparece no Explorer, na janela e na barra de tarefas (a
   GLFW usa o recurso `GLFW_ICON`). Ícone que não serve faz a exportação ser recusada antes de mexer na pasta.
+- **Progresso salvo** (Fase 21): os scripts guardam chave/valor em "slots" com `SaveSlot()` (`motor::SaveData`:
+  `GetInt`/`SetInt`, `GetString`, `GetVec3`... e `Save()`), `HasSave`, `DeleteSave` e `SaveFolder`. No jogo
+  exportado ficam em `%APPDATA%\<Jogo>\saves\<slot>.json`; no Play do editor, em `<projeto>/.motor/saves/`
+  (**Jogo > Apagar saves do Play**, MCP `game_saves`). O que não foi gravado é gravado ao fechar o jogo e ao
+  parar o Play; arquivo estragado vira `.corrompido` e o jogo segue sem save.
 - **Opções do jogador** (Fase 21): tela cheia, resolução, vsync, MSAA e sombras. As iniciais ficam no projeto
   (**Arquivo > Configurações do jogo**, `.mproject` formato 4, ou a ferramenta MCP `game_settings`); depois valem
   as do jogador, gravadas em `%APPDATA%\<Jogo>\opcoes.json`. Os scripts montam o menu com `GetOptions`,

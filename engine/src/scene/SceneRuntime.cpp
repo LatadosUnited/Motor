@@ -578,6 +578,31 @@ std::vector<Resolution> Script::Resolutions() const {
     GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
     return host ? host->Resolutions() : std::vector<Resolution>{};
 }
+namespace {
+// Sem quem rode o jogo (testes): saves só na memória.
+SaveStore& FallbackSaves() {
+    static SaveStore store;
+    return store;
+}
+} // namespace
+
+SaveData& Script::SaveSlot(std::string_view slot) {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return (host ? host->Saves() : FallbackSaves()).Slot(slot);
+}
+bool Script::HasSave(std::string_view slot) const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return (host ? host->Saves() : FallbackSaves()).Exists(slot);
+}
+void Script::DeleteSave(std::string_view slot) {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    (host ? host->Saves() : FallbackSaves()).Delete(slot);
+}
+std::filesystem::path Script::SaveFolder() const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->Saves().Folder() : std::filesystem::path();
+}
+
 std::string Script::GameVersion() const {
     GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
     return host ? host->GameVersion() : std::string();

@@ -12,7 +12,8 @@ primeiro o [guia](scripts.md). Fontes, se quiser ir além: `engine/include/motor
 
 O teste `test_script_docs` confere que esta página cita todos os métodos públicos de `motor::Script`, de
 `motor::PhysicsSystem`, de `motor::UiSystem` e de `motor::AudioSystem`, todas as opções de campo e os campos de
-`GameTime`, `Collision`, `UiPointer`, `AudioSettings`, `AudioVoiceInfo` e `GameOptions`. `Message` e `EntityRef` também
+`GameTime`, `Collision`, `UiPointer`, `AudioSettings`, `AudioVoiceInfo` e `GameOptions`, e os métodos de
+`motor::SaveData`. `Message` e `EntityRef` também
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
@@ -186,6 +187,36 @@ motor::GameOptions o = GetOptions();
 o.fullscreen = !o.fullscreen;
 ApplyOptions(o);
 ```
+
+### Progresso salvo
+
+| Método | Efeito |
+|---|---|
+| `SaveData& SaveSlot(std::string_view slot = "progresso")` | o slot de save com esse nome (um arquivo `<slot>.json`), lido do disco na primeira vez |
+| `bool HasSave(std::string_view slot = "progresso") const` | há save (arquivo, ou valores ainda não gravados): para mostrar "Continuar" |
+| `void DeleteSave(std::string_view slot = "progresso")` | apaga o arquivo e esvazia o slot ("Novo jogo") |
+| `std::filesystem::path SaveFolder() const` | a pasta dos saves, para arquivos próprios do jogo (vazio se não houver) |
+
+No jogo exportado os saves ficam em `%APPDATA%\<Jogo>\saves\`; no Play do editor, em `<projeto>/.motor/saves/`
+(**Jogo > Apagar saves do Play** apaga; a ferramenta MCP `game_saves` lista e apaga). `Save()` grava na hora;
+o que mudou e não foi gravado é gravado ao fechar o jogo e ao parar o Play (também o que o `OnDestroy` mudar).
+Gravar troca o arquivo inteiro de uma vez: um jogo fechado no meio não deixa o save pela metade.
+
+`motor::SaveData` (`motor/project/SaveData.h`), chave/valor:
+
+| Método | Efeito |
+|---|---|
+| `bool Has(std::string_view key) const` | a chave existe |
+| `int GetInt(key, int fallback = 0) const`, `float GetFloat(key, float fallback = 0)` | número (inteiro e decimal se convertem); `fallback` se não existe ou é de outro tipo |
+| `bool GetBool(key, bool fallback = false) const`, `std::string GetString(key, fallback = "") const` | verdadeiro/falso e texto |
+| `glm::vec3 GetVec3(key, const glm::vec3& fallback = {}) const` | vetor (posição, cor) |
+| `void SetInt(key, int)`, `void SetFloat(key, float)`, `void SetBool(key, bool)`, `void SetString(key, text)`, `void SetVec3(key, glm::vec3)` | muda o valor (na memória, até gravar) |
+| `void Remove(std::string_view key)`, `void Clear()` | tira uma chave, ou todas |
+| `std::vector<std::string> Keys() const`, `bool Empty() const` | as chaves (em ordem alfabética); se está vazio |
+| `bool Save(std::string* error = nullptr)` | grava agora; `false` se não deu (o erro vai para `error`) |
+| `bool Load(std::string* error = nullptr)` | relê do disco (descarta o que não foi gravado). Arquivo estragado: fica vazio e uma cópia `.corrompido` é guardada |
+| `bool IsDirty() const`, `const std::filesystem::path& File() const` | mudou desde o último `Save`/`Load`; o arquivo |
+| `std::string ToJson() const`, `bool FromJson(std::string_view text, std::string* error = nullptr)` | o conteúdo como texto (o formato do arquivo) |
 
 ### Temporizadores
 

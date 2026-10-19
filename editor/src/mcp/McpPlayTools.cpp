@@ -167,6 +167,42 @@ void McpController::AddPlayTools() {
                                      {"voices", std::move(voices)}});
         },
     });
+
+    m_protocol.AddTool({
+        .name = "game_saves",
+        .description = "Saves dos scripts no Play do editor (Script::SaveSlot, pasta <projeto>/.motor/saves): lista os "
+                       "slots com os valores (no Play, também o que ainda não foi gravado) ou apaga (um slot ou todos, "
+                       "como Jogo > Apagar saves do Play).",
+        .inputSchema = Schema({{"action", Prop("string", "list (padrão) ou delete")},
+                               {"slot", Prop("string", "nome do slot; no delete sem slot, apaga todos")}}),
+        .run = [this](const Json& args) {
+            const std::filesystem::path folder = m_host.play.PlaySavesFolder();
+            if (folder.empty()) throw ToolError("nenhum projeto aberto");
+            const std::string action = args.value("action", std::string("list"));
+            SaveStore disk(folder);
+            SaveStore* live = m_host.play.PlaySaves();
+            if (action == "delete") {
+                if (args.contains("slot")) {
+                    const std::string slot = args["slot"].get<std::string>();
+                    disk.Delete(slot);
+                    if (live) live->Delete(slot);
+                    return ToolResult::Text("slot apagado: " + slot);
+                }
+                return ToolResult::Text(std::format("saves apagados: {}", m_host.play.DeletePlaySaves()));
+            }
+            if (action != "list") throw ToolError("action: use list ou delete");
+            std::vector<std::string> names = disk.List();
+            if (args.contains("slot")) names = {args["slot"].get<std::string>()};
+            Json slots = Json::array();
+            for (const std::string& name : names) {
+                SaveData& data = live ? live->Slot(name) : disk.Slot(name);
+                Json values = Json::parse(data.ToJson())["values"];
+                slots.push_back({{"slot", name}, {"file", ToUtf8(data.File())}, {"unsaved", data.IsDirty()},
+                                 {"values", std::move(values)}});
+            }
+            return ToolResult::Data({{"folder", ToUtf8(folder)}, {"slots", std::move(slots)}});
+        },
+    });
 }
 
 // --- Scripts e exportação do jogo -------------------------------------------------------------------

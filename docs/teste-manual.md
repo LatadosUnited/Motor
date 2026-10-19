@@ -185,6 +185,9 @@ versão nova, marca o que passou e anota o que não passou. Criado na
 - [ ] Menu de opções (guia, `examples/MenuOpcoes.cpp`) no jogo exportado: Tela cheia alterna janela e tela
   cheia, Resolução troca, Sombras some com as sombras, Sair fecha. Fechar e abrir de novo → volta com as
   opções escolhidas (`%APPDATA%\<Jogo>\opcoes.json`).
+- [ ] Menu com Continuar (guia, `examples/MenuContinuar.cpp`) no jogo exportado: na primeira vez só "Novo
+  jogo"; jogar, andar, fechar no X e abrir de novo → "Continuar" volta para a fase e perto de onde parou
+  (`%APPDATA%\<Jogo>\saves\progresso.json`). "Novo jogo" apaga. No editor, Jogo > **Apagar saves do Play**.
 - [ ] O mesmo menu no Play do editor → Sombras muda no viewport; Tela cheia não muda nada (só o log); Sair para
   o Play; Parar e dar Play de novo → volta às opções do projeto.
 

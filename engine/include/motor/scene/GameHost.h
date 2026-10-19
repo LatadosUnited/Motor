@@ -1,14 +1,15 @@
 #pragma once
 
 #include "motor/project/GameOptions.h"
+#include "motor/project/SaveData.h"
 
 #include <string>
 #include <vector>
 
 namespace motor {
 
-// Quem roda o jogo (o Player do jogo exportado, o Play do editor), visto pelos scripts: opções do jogador e
-// sair do jogo. O SceneRuntime só guarda o ponteiro (SetHost); sem host (testes), as opções são as padrão e
+// Quem roda o jogo (o Player do jogo exportado, o Play do editor), visto pelos scripts: opções do jogador,
+// progresso salvo e sair do jogo. O SceneRuntime só guarda o ponteiro (SetHost); sem host (testes), as opções são as padrão e
 // mudar ou sair não faz nada.
 class GameHost {
 public:
@@ -20,6 +21,9 @@ public:
     virtual void ApplyOptions(const GameOptions& options) = 0;
     // Resoluções de tela cheia do monitor principal, da menor para a maior.
     virtual std::vector<Resolution> Resolutions() const = 0;
+    // Saves do jogo: %APPDATA%\<Jogo>\saves\ no Player, <projeto>/.motor/saves/ no editor. Gravados também
+    // ao fechar o jogo e ao parar o Play.
+    virtual SaveStore& Saves() = 0;
     // Versão do jogo (Configurações do jogo), para mostrar no menu.
     virtual std::string GameVersion() const = 0;
     // Fecha o jogo depois deste passo (no editor, para o Play).
