@@ -31,11 +31,11 @@ Física, áudio, entrada, formas e transparência que jogos comuns pedem e que h
 
 ### Áudio
 
-- [ ] **Várias vozes por fonte** e `PlayOneShot(clipe)`: hoje `Play` recomeça o som, e passos ou coletas
-  seguidas se cortam.
-- [ ] **Carregar os clipes ao abrir a cena**, fora da thread principal: hoje o primeiro `Play` de cada clipe
-  decodifica o arquivo e trava um pouco.
-- [ ] **Grupos de volume** (música, efeitos, interface), com volume por grupo para o menu de opções.
+- [x] **Várias vozes por fonte** e `PlayOneShot(clipe)`: hoje `Play` recomeça o som, e passos ou coletas
+  seguidas se cortam. (7c6c616)
+- [x] **Carregar os clipes ao abrir a cena**, fora da thread principal: hoje o primeiro `Play` de cada clipe
+  decodifica o arquivo e trava um pouco. (7c6c616)
+- [x] **Grupos de volume** (música, efeitos, interface), com volume por grupo para o menu de opções. (7c6c616)
 
 ### Entrada e formas
 
