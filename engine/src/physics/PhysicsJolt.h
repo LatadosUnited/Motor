@@ -16,6 +16,8 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -24,6 +26,7 @@
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
@@ -216,6 +219,16 @@ public:
 
 private:
     EntityId m_ignore;
+};
+
+// Consultas de área: triggers só se pedidos.
+class AreaBodyFilter final : public JPH::BodyFilter {
+public:
+    explicit AreaBodyFilter(bool includeTriggers) : m_includeTriggers(includeTriggers) {}
+    bool ShouldCollideLocked(const JPH::Body& body) const override { return m_includeTriggers || !body.IsSensor(); }
+
+private:
+    bool m_includeTriggers;
 };
 
 } // namespace motor::physics_jolt

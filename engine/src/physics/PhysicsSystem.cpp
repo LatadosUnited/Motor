@@ -152,6 +152,77 @@ std::optional<PhysicsRaycastHit> PhysicsSystem::Raycast(const glm::vec3& origin,
     return result;
 }
 
+namespace {
+// Entidades distintas tocadas pela forma `shape` em `transform` (centro de massa no mundo).
+std::vector<EntityId> Overlap(const JPH::PhysicsSystem& physics, const JPH::Shape& shape, const JPH::RMat44& transform,
+                              uint32_t layerMask, bool includeTriggers) {
+    JPH::CollideShapeSettings settings;
+    settings.mBackFaceMode = JPH::EBackFaceMode::CollideWithBackFaces;  // dentro de um collider de malha também conta
+    JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
+    const LayerMaskFilter layers(layerMask);
+    const AreaBodyFilter bodies(includeTriggers);
+    physics.GetNarrowPhaseQueryNoLock().CollideShape(&shape, JPH::Vec3::sReplicate(1.0f), transform, settings,
+                                                     JPH::RVec3::sZero(), collector, {}, layers, bodies);
+    std::vector<EntityId> found;
+    const JPH::BodyLockInterfaceNoLock& locks = physics.GetBodyLockInterfaceNoLock();
+    for (const JPH::CollideShapeResult& hit : collector.mHits) {
+        JPH::BodyLockRead lock(locks, hit.mBodyID2);
+        if (!lock.Succeeded()) continue;
+        const auto id = static_cast<EntityId>(lock.GetBody().GetUserData());
+        if (std::find(found.begin(), found.end(), id) == found.end()) found.push_back(id);
+    }
+    return found;
+}
+} // namespace
+
+std::vector<EntityId> PhysicsSystem::OverlapSphere(const glm::vec3& center, float radius, uint32_t layerMask,
+                                                   bool includeTriggers) const {
+    if (!m_world || radius <= 0.0f) return {};
+    JPH::SphereShape sphere(radius);
+    sphere.SetEmbedded();  // na pilha: a contagem de referências não pode apagá-lo
+    return Overlap(m_world->physics, sphere, JPH::RMat44::sTranslation(ToJolt(center)), layerMask, includeTriggers);
+}
+
+std::vector<EntityId> PhysicsSystem::OverlapBox(const glm::vec3& center, const glm::vec3& halfExtents,
+                                                const glm::quat& rotation, uint32_t layerMask,
+                                                bool includeTriggers) const {
+    if (!m_world || halfExtents.x <= 0.0f || halfExtents.y <= 0.0f || halfExtents.z <= 0.0f) return {};
+    const glm::vec3 half = glm::max(halfExtents, glm::vec3(0.001f));
+    const float convexRadius = std::min(JPH::cDefaultConvexRadius, std::min(half.x, std::min(half.y, half.z)) * 0.5f);
+    JPH::BoxShape box(ToJolt(half), convexRadius);
+    box.SetEmbedded();
+    const JPH::RMat44 transform = JPH::RMat44::sRotationTranslation(ToJolt(glm::normalize(rotation)), ToJolt(center));
+    return Overlap(m_world->physics, box, transform, layerMask, includeTriggers);
+}
+
+std::optional<PhysicsRaycastHit> PhysicsSystem::SphereCast(const glm::vec3& origin, float radius,
+                                                           const glm::vec3& direction, float maxDistance,
+                                                           EntityId ignore, uint32_t layerMask) const {
+    if (!m_world || radius <= 0.0f || glm::length(direction) < 1e-8f || maxDistance <= 0.0f) return std::nullopt;
+    const glm::vec3 dir = glm::normalize(direction);
+    JPH::SphereShape sphere(radius);
+    sphere.SetEmbedded();
+    const JPH::RShapeCast cast = JPH::RShapeCast::sFromWorldTransform(
+        &sphere, JPH::Vec3::sReplicate(1.0f), JPH::RMat44::sTranslation(ToJolt(origin)), ToJolt(dir * maxDistance));
+    JPH::ShapeCastSettings settings;
+    settings.mBackFaceModeTriangles = JPH::EBackFaceMode::IgnoreBackFaces;
+    JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
+    const LayerMaskFilter layers(layerMask);
+    const RayBodyFilter bodies(ignore);
+    m_world->physics.GetNarrowPhaseQueryNoLock().CastShape(cast, settings, JPH::RVec3::sZero(), collector, {}, layers,
+                                                           bodies);
+    if (!collector.HadHit()) return std::nullopt;
+    const JPH::ShapeCastResult& hit = collector.mHit;
+    PhysicsRaycastHit result;
+    result.distance = hit.mFraction * maxDistance;
+    result.point = ToGlm(hit.mContactPointOn2);
+    const JPH::Vec3 axis = hit.mPenetrationAxis;
+    if (axis.LengthSq() > 1e-12f) result.normal = ToGlm(-axis.Normalized());
+    JPH::BodyLockRead lock(m_world->physics.GetBodyLockInterfaceNoLock(), hit.mBodyID2);
+    if (lock.Succeeded()) result.entity = static_cast<EntityId>(lock.GetBody().GetUserData());
+    return result;
+}
+
 bool PhysicsSystem::AddForce(EntityId id, const glm::vec3& force) {
     if (!m_world || !m_world->bodies.contains(id)) EnsureWorldAndBodies();
     const JPH::BodyID* body = m_world ? m_world->DynamicBody(id) : nullptr;
@@ -207,6 +278,13 @@ glm::vec3 PhysicsSystem::GetCharacterVelocity(EntityId id) const {
     if (!m_world) return glm::vec3(0.0f);
     auto it = m_world->characters.find(id);
     return it != m_world->characters.end() ? ToGlm(it->second.character->GetLinearVelocity()) : glm::vec3(0.0f);
+}
+
+void PhysicsSystem::SetCharacterVelocity(EntityId id, const glm::vec3& velocity) {
+    if (!m_world || !m_world->characters.contains(id)) EnsureWorldAndBodies();
+    if (!m_world) return;
+    auto it = m_world->characters.find(id);
+    if (it != m_world->characters.end()) it->second.velocity = velocity;
 }
 
 bool PhysicsSystem::HasBody(EntityId id) const {

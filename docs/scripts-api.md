@@ -300,7 +300,7 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::LightComponent` | Luz | `LightType type` (`Directional`, `Point`, `Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `bool castShadows`, `ShadowQuality shadowQuality` (`Low`, `Medium`, `High`) |
 | `motor::ColliderComponent` | Collider | `ColliderShape shape` (`Box`, `Sphere`, `Capsule`, `Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `CollisionLayer layer` |
 | `motor::RigidbodyComponent` | Rigidbody | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
-| `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass`, `CollisionLayer layer` |
+| `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass`, `bool useGravity`, `CollisionLayer layer` |
 | `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`; tocar e parar na seção [Som](#som-motoraudiosystem) |
 | `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
@@ -361,6 +361,10 @@ passo fixo) devolvem `false`/zero.
 | `bool Jump(EntityId id, float speed)` | personagem: pula com essa velocidade se estiver no chão; `true` se vai pular |
 | `bool IsGrounded(EntityId id) const` | personagem no chão |
 | `glm::vec3 GetCharacterVelocity(EntityId id) const` | velocidade do personagem |
+| `void SetCharacterVelocity(EntityId id, const glm::vec3& velocity)` | velocidade inteira do próximo passo, inclusive a vertical (trampolim, empurrão); a vertical continua depois, a horizontal volta a ser a de `MoveCharacter` |
+| `std::vector<EntityId> OverlapSphere(center, radius, layerMask = kAll, includeTriggers = true) const` | entidades dentro da esfera (corpos, triggers e personagens; cada uma uma vez) |
+| `std::vector<EntityId> OverlapBox(center, halfExtents, rotation = identidade, layerMask = kAll, includeTriggers = true) const` | entidades dentro da caixa (`halfExtents` = metade do tamanho) |
+| `std::optional<PhysicsRaycastHit> SphereCast(origin, radius, direction, maxDistance = 1000, ignore = kNullEntity, layerMask = kAll) const` | raio com espessura: primeiro corpo que a esfera toca (`distance` = quanto andou); triggers não contam |
 | `bool HasBody(EntityId id) const` | a entidade já tem corpo ou personagem |
 | `const PhysicsStats& Stats() const` | números do último passo (corpos, tempos em ms) |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |

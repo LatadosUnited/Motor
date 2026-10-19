@@ -399,7 +399,7 @@ Os componentes da engine:
 | Luz | `motor::LightComponent` | `type` (`motor::LightType::Directional`/`Point`/`Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `castShadows` |
 | Collider | `motor::ColliderComponent` | `shape` (`motor::ColliderShape::Box`/`Sphere`/`Capsule`/`Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `layer` |
 | Rigidbody | `motor::RigidbodyComponent` | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
-| Controlador de personagem | `motor::CharacterControllerComponent` | `height`, `radius`, `maxSlope`, `stepHeight`, `mass`, `layer` |
+| Controlador de personagem | `motor::CharacterControllerComponent` | `height`, `radius`, `maxSlope`, `stepHeight`, `mass`, `useGravity`, `layer` |
 
 Exemplo: trocar a cor do próprio objeto (do [examples/ExemploCampos.cpp](examples/ExemploCampos.cpp)):
 
@@ -518,6 +518,9 @@ inclua `<motor/physics/PhysicsSystem.h>`) e chame, de preferência no `OnFixedUp
 | Personagem: andar | `MoveCharacter(id, velocidade)` (m/s; vale até a próxima chamada; zero para parar) |
 | Personagem: pular | `Jump(id, velocidadeParaCima)` (só se estiver no chão) |
 | Personagem: estado | `IsGrounded(id)`, `GetCharacterVelocity(id)` |
+| Personagem: lançar | `SetCharacterVelocity(id, v)`: a velocidade inteira do próximo passo (trampolim, empurrão); sem gravidade: campo **Usa gravidade** do Controlador |
+| Área | `OverlapSphere(centro, raio)`, `OverlapBox(centro, metadeDoTamanho)`: quem está ali (triggers também; útil para coletas e explosões) |
+| Raio grosso | `SphereCast(origem, raio, direção, distânciaMáxima)`: como o `Raycast`, com uma esfera (não passa por frestas menores que ela) |
 | Raio | `Raycast(origem, direção, distânciaMáxima, idIgnorado, máscara)`: o primeiro corpo atingido (triggers não contam; `máscara` = camadas que o raio vê, `LayerMask({"Parede"})`) |
 
 A bola do [examples/BolaFisica.cpp](examples/BolaFisica.cpp) usa força, raio e impulso:

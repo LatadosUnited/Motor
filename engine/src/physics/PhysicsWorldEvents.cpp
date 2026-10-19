@@ -57,9 +57,15 @@ void PhysicsSystem::World::SyncCharacters(Scene& scene, float dt) {
         const glm::vec3 position = glm::vec3(scene.WorldMatrix(entity.id)[3]);
 
         auto it = characters.find(entity.id);
-        if (it != characters.end() && !(it->second.settings == *controller)) {
-            characters.erase(it);  // refaz com as medidas novas
-            it = characters.end();
+        if (it != characters.end()) {
+            CharacterControllerComponent same = it->second.settings;
+            same.useGravity = controller->useGravity;  // ligar/desligar a gravidade não refaz o personagem
+            if (!(same == *controller)) {
+                characters.erase(it);  // refaz com as medidas novas
+                it = characters.end();
+            } else {
+                it->second.settings.useGravity = controller->useGravity;
+            }
         }
         if (it == characters.end()) {
             CharacterRecord& r = characters[entity.id];
@@ -75,6 +81,7 @@ void PhysicsSystem::World::SyncCharacters(Scene& scene, float dt) {
             r.character->SetLinearVelocity(JPH::Vec3::sZero());
             r.walk = glm::vec3(0.0f);
             r.jump = 0.0f;
+            r.velocity.reset();
             r.written = position;
         }
         if (dt > 0.0f) UpdateCharacter(r, dt);
@@ -111,21 +118,27 @@ JPH::Ref<JPH::CharacterVirtual> PhysicsSystem::World::CreateCharacter(const Char
 
 void PhysicsSystem::World::UpdateCharacter(CharacterRecord& r, float dt) {
     JPH::CharacterVirtual& ch = *r.character;
-    const JPH::Vec3 gravity = ToJolt(settings.gravity);
+    const JPH::Vec3 gravity = r.settings.useGravity ? ToJolt(settings.gravity) : JPH::Vec3::sZero();
     ch.UpdateGroundVelocity();
     const JPH::Vec3 current = ch.GetLinearVelocity();
     const JPH::Vec3 ground = ch.GetGroundVelocity();
     JPH::Vec3 velocity;
-    // No chão e sem estar subindo (logo depois do pulo ainda está "no chão"): anda com o chão.
-    if (ch.GetGroundState() == JPH::CharacterVirtual::EGroundState::OnGround && current.GetY() - ground.GetY() < 0.1f) {
+    if (r.velocity) {
+        // SetCharacterVelocity: a velocidade inteira deste passo; a vertical continua nos próximos, a horizontal
+        // volta a ser só a de andar.
+        velocity = ToJolt(*r.velocity);
+        r.velocity.reset();
+    } else if (ch.GetGroundState() == JPH::CharacterVirtual::EGroundState::OnGround &&
+               current.GetY() - ground.GetY() < 0.1f) {
+        // No chão e sem estar subindo (logo depois do pulo ainda está "no chão"): anda com o chão.
         velocity = ground;
         if (r.jump > 0.0f) velocity += JPH::Vec3(0.0f, r.jump, 0.0f);
+        velocity += JPH::Vec3(r.walk.x, 0.0f, r.walk.z);
     } else {
-        velocity = JPH::Vec3(0.0f, current.GetY(), 0.0f);
+        velocity = JPH::Vec3(r.walk.x, current.GetY(), r.walk.z);
     }
     r.jump = 0.0f;
     velocity += gravity * dt;
-    velocity += JPH::Vec3(r.walk.x, 0.0f, r.walk.z);
     ch.SetLinearVelocity(velocity);
 
     JPH::CharacterVirtual::ExtendedUpdateSettings update;

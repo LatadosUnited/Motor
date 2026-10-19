@@ -17,6 +17,7 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -44,6 +45,7 @@ struct PhysicsSystem::World {
         glm::vec3 written{0.0f};  // posição no mundo escrita por último
         glm::vec3 walk{0.0f};     // velocidade pedida pelo script (só x e z)
         float jump = 0.0f;        // pulo pendente
+        std::optional<glm::vec3> velocity;  // SetCharacterVelocity pendente (substitui andar e pular no passo)
         uint32_t seen = 0;
     };
 

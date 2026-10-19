@@ -32,6 +32,7 @@
 #include <initializer_list>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace motor {
 
@@ -92,6 +93,20 @@ public:
                                              float maxDistance = 1000.0f, EntityId ignore = kNullEntity,
                                              uint32_t layerMask = CollisionLayers::kAll) const;
 
+    // --- Consultas de área (corpos, triggers e personagens; cada entidade uma vez, sem ordem) ---
+    // Quem está dentro da esfera / caixa (halfExtents = metade do tamanho; rotation da caixa no mundo).
+    // `layerMask`: só as camadas marcadas. `includeTriggers`: triggers contam (coletas costumam ser triggers).
+    std::vector<EntityId> OverlapSphere(const glm::vec3& center, float radius,
+                                        uint32_t layerMask = CollisionLayers::kAll, bool includeTriggers = true) const;
+    std::vector<EntityId> OverlapBox(const glm::vec3& center, const glm::vec3& halfExtents,
+                                     const glm::quat& rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+                                     uint32_t layerMask = CollisionLayers::kAll, bool includeTriggers = true) const;
+    // Raycast com espessura: a esfera de `radius` andando de `origin` na direção, até maxDistance. O primeiro
+    // corpo que ela toca (`distance` = quanto a esfera andou; `point` = ponto de contato). Triggers não contam.
+    std::optional<PhysicsRaycastHit> SphereCast(const glm::vec3& origin, float radius, const glm::vec3& direction,
+                                                float maxDistance = 1000.0f, EntityId ignore = kNullEntity,
+                                                uint32_t layerMask = CollisionLayers::kAll) const;
+
     // Máscara de camadas pelos nomes do projeto: Raycast(o, d, 50.0f, GetId(), fisica->LayerMask({"Parede"})).
     uint32_t LayerMask(std::initializer_list<std::string_view> layerNames) const {
         return m_settings.layers.Mask(layerNames);
@@ -111,6 +126,10 @@ public:
     bool Jump(EntityId id, float speed);
     bool IsGrounded(EntityId id) const;
     glm::vec3 GetCharacterVelocity(EntityId id) const;
+    // Velocidade inteira do próximo passo, inclusive a vertical (trampolim, empurrão, parar a queda): substitui
+    // andar e pular naquele passo. A vertical continua depois (com a gravidade); a horizontal volta a ser a de
+    // MoveCharacter. Gravidade do personagem: campo useGravity do CharacterControllerComponent.
+    void SetCharacterVelocity(EntityId id, const glm::vec3& velocity);
 
     bool HasBody(EntityId id) const;  // corpo ou personagem já criado para a entidade
     const PhysicsStats& Stats() const { return m_stats; }

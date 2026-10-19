@@ -15,6 +15,7 @@ struct CharacterControllerComponent {
     float stepHeight = 0.3f;  // degrau mais alto que sobe sozinho
     float mass = 70.0f;       // kg: quanto empurra caixas
     CollisionLayer layer;     // camada de colisão do projeto
+    bool useGravity = true;   // sem gravidade o personagem flutua (escada, nado, voo); mudar não refaz o corpo
 
     bool operator==(const CharacterControllerComponent&) const = default;
 };

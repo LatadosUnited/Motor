@@ -370,6 +370,78 @@ int main() {
         settings.layers = before;
     }
 
+    SECTION("Consultas de área: OverlapSphere, OverlapBox e SphereCast");
+    {
+        Scene scene;
+        AddFloor(scene);
+        Entity& boxEntity = scene.CreateEntity("Caixa");  // estática de 1 x 1 x 1 em cima do chão
+        boxEntity.transform.position = {2.0f, 0.5f, 0.0f};
+        boxEntity.Add<ColliderComponent>().layer.index = 2;
+        const EntityId box = boxEntity.id;
+        Entity& coin = scene.CreateEntity("Moeda");
+        coin.transform.position = {-2.0f, 0.5f, 0.0f};
+        coin.Add<ColliderComponent>().isTrigger = true;
+        const EntityId coinId = coin.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        auto* fisica = runtime.GetSystem<PhysicsSystem>();
+
+        CHECK(fisica->OverlapSphere({2.0f, 1.0f, 0.0f}, 0.6f) == std::vector<EntityId>{box});  // não chega no chão
+        CHECK(fisica->OverlapSphere({2.0f, 1.0f, 0.0f}, 0.6f, ~(1u << 2)).empty());          // camada fora da máscara
+        CHECK(fisica->OverlapSphere({-2.0f, 1.0f, 0.0f}, 0.6f) == std::vector<EntityId>{coinId});
+        CHECK(fisica->OverlapSphere({-2.0f, 1.0f, 0.0f}, 0.6f, CollisionLayers::kAll, false).empty());  // sem triggers
+        CHECK(fisica->OverlapSphere({0.0f, 5.0f, 0.0f}, 1.0f).empty());
+        auto both = fisica->OverlapBox({0.0f, 1.0f, 0.0f}, {3.0f, 0.2f, 1.0f});
+        std::sort(both.begin(), both.end());
+        CHECK((both == std::vector<EntityId>{std::min(box, coinId), std::max(box, coinId)}));
+        // Caixa longa em X: sem girar alcança a moeda e a caixa; girada 90° em Y fica longa em Z e não alcança nada.
+        const glm::quat turned = glm::angleAxis(glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        CHECK(fisica->OverlapBox({0.0f, 1.0f, 0.0f}, {1.8f, 0.2f, 0.2f}).size() == 2);
+        CHECK(fisica->OverlapBox({0.0f, 1.0f, 0.0f}, {1.8f, 0.2f, 0.2f}, turned).empty());
+
+        // O raio passa ao lado da caixa; a esfera de 0,3 m, no mesmo caminho, encosta nela. Triggers não contam.
+        CHECK(!fisica->Raycast({-6.0f, 0.5f, 0.6f}, {1.0f, 0.0f, 0.0f}, 20.0f, kNullEntity, 1u << 2));
+        auto hit = fisica->SphereCast({-6.0f, 0.5f, 0.6f}, 0.3f, {1.0f, 0.0f, 0.0f}, 20.0f);
+        CHECK(hit && hit->entity == box && Near(hit->point.z, 0.5f, 0.02f));
+        hit = fisica->SphereCast({-6.0f, 0.5f, 0.0f}, 0.3f, {1.0f, 0.0f, 0.0f}, 20.0f);
+        CHECK(hit && hit->entity == box && Near(hit->distance, 7.2f, 0.02f) && Near(hit->normal.x, -1.0f, 0.02f));
+        CHECK(!fisica->SphereCast({-6.0f, 0.5f, 0.0f}, 0.3f, {1.0f, 0.0f, 0.0f}, 20.0f, box));  // ignorada
+        CHECK(!fisica->SphereCast({-6.0f, 0.5f, 0.0f}, 0.3f, {1.0f, 0.0f, 0.0f}, 5.0f));       // curto demais
+        runtime.Stop();
+    }
+
+    SECTION("Personagem: SetCharacterVelocity e gravidade ligável sem refazer o corpo");
+    {
+        Scene scene;
+        AddFloor(scene);
+        Entity& player = scene.CreateEntity("Jogador");
+        player.transform.position = {0.0f, 0.9f, 0.0f};
+        player.Add<CharacterControllerComponent>();
+        player.Add<Jogador>().velocidade = 0.0f;
+        const EntityId id = player.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        auto* fisica = runtime.GetSystem<PhysicsSystem>();
+        Run(runtime, 0.5f);
+        CHECK(fisica->IsGrounded(id));
+        // Trampolim: 6 m/s para cima, a vertical continua nos passos seguintes.
+        fisica->SetCharacterVelocity(id, {0.0f, 6.0f, 0.0f});
+        Run(runtime, 0.3f);
+        CHECK(scene.Find(id)->transform.position.y > 2.0f && !fisica->IsGrounded(id));
+        // Sem gravidade: para no ar onde está (velocidade zerada) e fica.
+        scene.Find(id)->Get<CharacterControllerComponent>()->useGravity = false;
+        fisica->SetCharacterVelocity(id, glm::vec3(0.0f));
+        Run(runtime, 0.1f);
+        const float hover = scene.Find(id)->transform.position.y;
+        Run(runtime, 1.0f);
+        CHECK(Near(scene.Find(id)->transform.position.y, hover, 0.01f) && hover > 2.0f);
+        // Gravidade de novo: cai e volta ao chão.
+        scene.Find(id)->Get<CharacterControllerComponent>()->useGravity = true;
+        Run(runtime, 2.0f);
+        CHECK(fisica->IsGrounded(id) && Near(scene.Find(id)->transform.position.y, 0.9f, 0.05f));
+        runtime.Stop();
+    }
+
     SECTION("Personagem anda, pula, não atravessa o chão e empurra caixas");
     {
         Scene scene;

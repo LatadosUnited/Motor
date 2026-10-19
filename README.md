@@ -530,7 +530,8 @@ struct Jogador : motor::Script {
   lados recebem. Um par de entidades entra uma vez e sai quando não sobra nenhum contato entre elas.
 - `Raycast(origem, direção, distância, ignorar, máscara)`: primeiro corpo atingido (entidade, ponto, normal,
   distância); triggers não contam; `máscara` = camadas que o raio vê (`LayerMask({"Parede"})`). Rigidbody: `AddForce`, `AddImpulse`, `SetVelocity`, `GetVelocity`.
-  Personagem: `MoveCharacter`, `Jump`, `IsGrounded`, `GetCharacterVelocity`. Entidade criada neste passo só
+  Personagem: `MoveCharacter`, `Jump`, `IsGrounded`, `GetCharacterVelocity`, `SetCharacterVelocity` e o campo
+  `useGravity`. Área: `OverlapSphere`, `OverlapBox`, `SphereCast` (com máscara de camadas). Entidade criada neste passo só
   ganha corpo no próximo `FixedUpdate`.
 - **Camadas de colisão** (Fase 18): até 16 camadas com nome e a tabela de quem se choca com quem, no projeto
   (`.mproject`, formato 3; **Arquivo > Camadas de colisão** ou a ferramenta MCP `physics_layers`). Collider e
