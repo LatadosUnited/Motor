@@ -26,7 +26,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [x] **Seleção múltipla** na hierarquia e no viewport (Ctrl/Shift, retângulo), com gizmo e Inspector para vários. (59e5fb3)
 - [x] **Copiar, recortar, colar e duplicar** várias entidades (com filhos), também entre cenas. (e433492)
 - [x] **Snapping** na grade, em ângulos e em passos de escala; grade visível configurável. (bf1fae9)
-- [x] **Busca na hierarquia** (nome e tipo de componente). (COMMIT)
+- [x] **Busca na hierarquia** (nome e tipo de componente). (553051b)
 - [x] **Contorno verde do collider só no objeto selecionado**, como na Unity. Hoje o viewport desenha o de todos
   os objetos com collider o tempo todo (`SceneViewport::DrawColliders`, `editor/src/viewport/SceneViewportOverlay.cpp`),
   e desde a Fase 18 toda forma criada já vem com Collider: a cena enche de linhas e o custo na CPU cresce com o
