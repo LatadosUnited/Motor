@@ -34,7 +34,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
   **Selecionado / Todos / Nenhum** (padrão Selecionado), lembrado entre aberturas. *(origem: teste à mão da
   Fase 19, 19/10/2026, gravidade atrapalha)* (a826ec4)
 - [x] **Janelas Cena e Jogo lado a lado** no Play. (0dbd735) *(origem: Fase 2, limitação)*
-- [x] **Prefab dentro de prefab.** (COMMIT) *(origem: Fase 6, limitação)*
+- [x] **Prefab dentro de prefab.** (08a1958) *(origem: Fase 6, limitação)*
 - [ ] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
   limitação)*
 - [ ] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
