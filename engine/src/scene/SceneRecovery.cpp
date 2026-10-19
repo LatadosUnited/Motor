@@ -2,6 +2,7 @@
 
 #include "motor/scene/SceneSerializer.h"
 
+#include "motor/core/FileWrite.h"
 #include "SceneJson.h"
 
 #include "motor/assets/AssetLibrary.h"
@@ -48,24 +49,7 @@ bool SaveRecovery(const std::filesystem::path& projectRoot, const Scene& scene, 
 
     const std::filesystem::path sceneFile = dir / "cena.mscene";
     const std::string text = ToJson(scene, assets);
-    std::filesystem::path tempScene = sceneFile;
-    tempScene += ".tmp";
-    {
-        std::ofstream out(tempScene, std::ios::binary | std::ios::trunc);
-        if (!out || !(out << text) || !out.flush()) {
-            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(tempScene)));
-            return false;
-        }
-    }
-    std::filesystem::rename(tempScene, sceneFile, ec);
-    if (ec) {
-        std::filesystem::remove(sceneFile, ec);
-        std::filesystem::rename(tempScene, sceneFile, ec);
-    }
-    if (ec) {
-        SetError(error, std::format("Não foi possível salvar '{}': {}", ToUtf8(sceneFile), ec.message()));
-        return false;
-    }
+    if (!WriteFileAtomic(sceneFile, text, error)) return false;
 
     const auto now = std::chrono::system_clock::now();
     const int64_t savedAt = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
@@ -83,24 +67,7 @@ bool SaveRecovery(const std::filesystem::path& projectRoot, const Scene& scene, 
     meta["savedAt"] = savedAt;
 
     const std::filesystem::path metaFile = dir / "recuperacao.json";
-    std::filesystem::path tempMeta = metaFile;
-    tempMeta += ".tmp";
-    {
-        std::ofstream out(tempMeta, std::ios::binary | std::ios::trunc);
-        if (!out || !(out << meta.dump(2) << '\n') || !out.flush()) {
-            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(tempMeta)));
-            return false;
-        }
-    }
-    std::filesystem::rename(tempMeta, metaFile, ec);
-    if (ec) {
-        std::filesystem::remove(metaFile, ec);
-        std::filesystem::rename(tempMeta, metaFile, ec);
-    }
-    if (ec) {
-        SetError(error, std::format("Não foi possível salvar '{}': {}", ToUtf8(metaFile), ec.message()));
-        return false;
-    }
+    if (!WriteFileAtomic(metaFile, meta.dump(2) + '\n', error)) return false;
     return true;
 }
 

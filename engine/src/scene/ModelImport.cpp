@@ -1,5 +1,6 @@
 #include "motor/scene/ModelImport.h"
 
+#include "motor/core/FileWrite.h"
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/Model.h"
 #include "motor/core/Log.h"
@@ -35,21 +36,7 @@ std::string SafeFileName(std::string name) {
 }
 
 bool WriteBytes(const fs::path& file, const std::vector<uint8_t>& bytes) {
-    fs::path temp = file;
-    temp += ".tmp";
-    {
-        std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-        if (!out || !out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) {
-            return false;
-        }
-    }
-    std::error_code ec;
-    fs::rename(temp, file, ec);
-    if (ec) {
-        fs::remove(file, ec);
-        fs::rename(temp, file, ec);
-    }
-    return !ec;
+    return WriteFileAtomic(file, std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
 }
 
 std::string ImageExtension(const ModelImage& image) {

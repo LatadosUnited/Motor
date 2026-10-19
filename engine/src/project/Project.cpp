@@ -1,5 +1,6 @@
 #include "motor/project/Project.h"
 
+#include "motor/core/FileWrite.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/core/Version.h"
@@ -185,24 +186,9 @@ bool Project::Save(std::string* error) const {
     root["startupScene"] = m_startupScene;
     root["physics"] = LayersToJson(m_layers);
 
-    // Grava ao lado e renomeia: uma falha no meio não estraga o projeto.
-    const std::filesystem::path file = ProjectFile();
-    std::filesystem::path tmp = file;
-    tmp += ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out || !(out << root.dump(2, ' ', false, json::error_handler_t::replace) << '\n') || !out.flush()) {
-            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
-            return false;
-        }
-    }
-    std::error_code ec;
-    std::filesystem::rename(tmp, file, ec);
-    if (ec) {
-        std::filesystem::remove(tmp, ec);
-        SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
-        return false;
-    }
+    // Grava ao lado e troca: uma falha no meio não estraga o projeto.
+    const std::string text = root.dump(2, ' ', false, json::error_handler_t::replace) + '\n';
+    if (!WriteFileAtomic(ProjectFile(), text, error)) return false;
     m_engineVersion = kVersion;
     return true;
 }

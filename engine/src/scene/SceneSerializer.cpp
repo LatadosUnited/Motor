@@ -1,5 +1,6 @@
 #include "motor/scene/SceneSerializer.h"
 
+#include "motor/core/FileWrite.h"
 #include "SceneJson.h"
 
 #include "motor/assets/AssetLibrary.h"
@@ -285,27 +286,7 @@ bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibr
     const std::string text = ToJson(scene, assets, options);
 
     // Escreve num arquivo temporário e troca no fim, para não corromper a cena se algo falhar no meio.
-    std::filesystem::path temp = path;
-    temp += ".tmp";
-    {
-        std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-        if (!file || !(file << text) || !file.flush()) {
-            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(temp)));
-            return false;
-        }
-    }
-
-    std::error_code ec;
-    std::filesystem::rename(temp, path, ec);
-    if (ec) {
-        // Algumas implementações não substituem o destino existente.
-        std::filesystem::remove(path, ec);
-        std::filesystem::rename(temp, path, ec);
-    }
-    if (ec) {
-        SetError(error, std::format("Não foi possível salvar '{}': {}", ToUtf8(path), ec.message()));
-        return false;
-    }
+    if (!WriteFileAtomic(path, text, error)) return false;
 
     log::Info("{}: {}", std::string_view(options.format) == kPrefabFormat ? "Prefab salvo" : "Cena salva", ToUtf8(path));
     return true;
