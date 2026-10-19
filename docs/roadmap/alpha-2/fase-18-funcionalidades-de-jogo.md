@@ -25,9 +25,9 @@ Física, áudio, entrada, formas e transparência que jogos comuns pedem e que h
 - [x] **Camadas de colisão e máscaras:** quem colide com quem; raycast que ignora camadas, não só uma entidade
   (câmera orbital que não bate no próprio jogador). Decisão do usuário: tabela no projeto, como na Unity (16
   camadas com nome no `.mproject`; cada Collider e personagem escolhe a sua). (9d4947e)
-- [ ] **Consultas de área:** overlap de esfera e caixa, sphere cast ("o que está nesta área", para coletas).
-- [ ] **Personagem:** `SetCharacterVelocity` e gravidade ligável e desligável (hoje só há
-  `GetCharacterVelocity`; `SetVelocity` é dos corpos rígidos).
+- [x] **Consultas de área:** overlap de esfera e caixa, sphere cast ("o que está nesta área", para coletas). (83fbea3)
+- [x] **Personagem:** `SetCharacterVelocity` e gravidade ligável e desligável (hoje só há
+  `GetCharacterVelocity`; `SetVelocity` é dos corpos rígidos). (83fbea3)
 
 ### Áudio
 
