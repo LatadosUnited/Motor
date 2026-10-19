@@ -9,6 +9,7 @@ add_executable(MotorEditor
     src/panels/InspectorPanel.cpp
     src/play/PlayController.cpp
     src/play/PlayMode.cpp
+    src/play/GameView.cpp
     src/panels/ProjectPanel.cpp
     src/panels/ProjectPanelDraw.cpp
     src/panels/ProjectPanelFiles.cpp

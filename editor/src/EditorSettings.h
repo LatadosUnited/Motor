@@ -16,6 +16,7 @@ struct EditorSettings {
     bool projectGridView = false;   // painel Projeto: grade (true) ou lista
     float projectIconSize = 72.0f;
     ViewportPrefs viewport;  // contornos de collider, encaixe e grade
+    bool playSideBySide = false;  // Jogo > Cena e Jogo lado a lado
     bool mcpEnabled = false;  // servidor MCP (Ver > Servidor MCP) ligado ao abrir o editor
     int mcpPort = 47800;
 

@@ -56,23 +56,21 @@ bool PlayController::Stop(EditorContext& ctx) {
     return true;
 }
 
-void PlayController::Update(float dt, bool viewportFocused, motor::Window& window) {
-    // O jogo só lê teclado/mouse vendo pela câmera do jogo, com o viewport em foco e sem campo de texto ativo.
-    // Entrada externa (teclas mandadas pelo servidor MCP) vale sem foco: ela não vem do teclado de verdade.
-    if (SceneRuntime* runtime = m_mode.Runtime()) {
-        runtime->SetInputEnabled(m_externalInput ||
-                                 (InGameView() && viewportFocused && !ImGui::GetIO().WantTextInput));
-    }
+void PlayController::Update(float dt, bool viewportFocused, bool gameWindowFocused, motor::Window& window) {
+    // O jogo só lê teclado/mouse com a janela que o mostra em foco e sem campo de texto ativo. Entrada externa
+    // (teclas mandadas pelo servidor MCP) vale sem foco: ela não vem do teclado de verdade.
+    m_gameFocused = m_mode.IsActive() && !ImGui::GetIO().WantTextInput &&
+                    (m_sideBySide ? gameWindowFocused : InGameView() && viewportFocused);
+    if (SceneRuntime* runtime = m_mode.Runtime()) runtime->SetInputEnabled(m_externalInput || m_gameFocused);
     m_mode.Update(dt);
-    UpdateCursor(viewportFocused, window);
+    UpdateCursor(window);
 }
 
-void PlayController::UpdateCursor(bool viewportFocused, motor::Window& window) {
+void PlayController::UpdateCursor(motor::Window& window) {
     using motor::CursorMode;
     motor::SceneRuntime* runtime = m_mode.Runtime();
     const CursorMode requested = runtime ? runtime->GetCursorMode() : CursorMode::Normal;
-    const bool gameHasMouse = runtime && InGameView() && viewportFocused && !m_mode.IsPaused() &&
-                              !ImGui::GetIO().WantTextInput;
+    const bool gameHasMouse = runtime && m_gameFocused && !m_mode.IsPaused();
     if (!runtime || requested == CursorMode::Normal) {
         m_cursorReleased = false;
     } else if (gameHasMouse && !m_cursorReleased && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
@@ -102,7 +100,12 @@ void PlayController::DrawMenu() {
     if (ImGui::MenuItem("Avançar um quadro", nullptr, false, m_mode.IsPaused())) m_request = Request::Step;
     if (ImGui::MenuItem("Parar", "Ctrl+P", false, active)) m_request = Request::Stop;
     ImGui::Separator();
-    if (ImGui::MenuItem("Ver pela câmera do jogo", "F8", m_gameView, active)) m_gameView = !m_gameView;
+    if (ImGui::MenuItem("Ver pela câmera do jogo", "F8", m_gameView && !m_sideBySide, active && !m_sideBySide)) {
+        m_gameView = !m_gameView;
+    }
+    if (ImGui::MenuItem("Cena e Jogo lado a lado", nullptr, m_sideBySide)) m_sideBySide = !m_sideBySide;
+    ImGui::SetItemTooltip("Janela Jogo ao lado do Viewport: o jogo roda nela (clique para jogar) e o Viewport\n"
+                          "continua na câmera do editor, para mexer na cena enquanto joga.");
     ImGui::EndMenu();
 }
 
@@ -122,8 +125,9 @@ void PlayController::DrawControls(const ImVec2& origin, float viewportWidth) {
     const float size = ImGui::GetFrameHeight() + 6.0f;
     const float spacing = 4.0f;
     const char* viewLabel = m_gameView ? "Câmera: jogo" : "Câmera: editor";
-    const float viewWidth = active ? ImGui::CalcTextSize(viewLabel).x + ImGui::GetStyle().FramePadding.x * 2 : 0.0f;
-    const float width = size * 4 + spacing * 3 + (active ? spacing * 3 + viewWidth : 0.0f);
+    const bool viewButton = active && !m_sideBySide;  // lado a lado, o jogo já tem a janela dele
+    const float viewWidth = viewButton ? ImGui::CalcTextSize(viewLabel).x + ImGui::GetStyle().FramePadding.x * 2 : 0.0f;
+    const float width = size * 4 + spacing * 3 + (viewButton ? spacing * 3 + viewWidth : 0.0f);
 
     // Botões quadrados com o ícone desenhado (a fonte não tem os símbolos ▶ ⏸ ⏹).
     const ImVec4 activeColor = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
@@ -180,7 +184,7 @@ void PlayController::DrawControls(const ImVec2& origin, float viewportWidth) {
     if (iconButton("##stop", Icon::Stop, false, active, "Parar e voltar a cena ao estado de antes do Play (Ctrl+P)")) {
         m_request = Request::Stop;
     }
-    if (active) {
+    if (viewButton) {
         ImGui::SameLine(0.0f, spacing * 4);
         if (ImGui::Button(viewLabel, ImVec2(0.0f, size))) m_gameView = !m_gameView;
         ImGui::SetItemTooltip("Alterna entre a câmera do jogo e a câmera livre do editor (F8)");

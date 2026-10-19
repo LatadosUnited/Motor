@@ -47,6 +47,7 @@ EditorApp::EditorApp(Options options)
              .play = m_play,
              .scripts = m_scripts,
              .viewport = m_viewport,
+             .gameView = m_gameView,
              .requestHistory = [this](int direction) { m_historyRequest = direction; },
              .exporter = m_export}),
       m_startupProject(std::move(options.project)),
@@ -58,6 +59,7 @@ void EditorApp::OnInit() {
     log::Info("Motor Editor {} (API de scripts {})", kVersion, kScriptApiVersion);
     if (EditorSettings::IsDisabled()) log::Info("Configuração do editor desligada (--no-settings)");
     m_viewport.Init();
+    m_gameView.Init();
 
     AddBuiltinAssets(m_ctx.assets);  // os mesmos do Player (jogo exportado)
 
@@ -65,6 +67,7 @@ void EditorApp::OnInit() {
     m_settings = EditorSettings::Load();
     m_projectPanel.SetView({m_settings.projectGridView, m_settings.projectIconSize});
     m_viewport.SetPrefs(m_settings.viewport);
+    m_play.SetSideBySide(m_settings.playSideBySide);
     std::error_code ec;
     bool opened = false;
     if (!m_createName.empty()) {
@@ -162,7 +165,7 @@ void EditorApp::OnUpdate(float dt) {
         SetFrameLimit(m_scripts.IsBuilding() ? 20.0 : 0.0);  // um segundo de "Compilando..." não precisa de 60 FPS
     }
     m_mcp.ApplyGameInput();
-    m_play.Update(dt, m_viewport.IsFocused(), GetWindow());
+    m_play.Update(dt, m_viewport.IsFocused(), m_gameView.IsFocused(), GetWindow());
     m_scripts.Update(dt);
     m_document.PollChanges(dt);
 
@@ -184,6 +187,7 @@ void EditorApp::OnUpdate(float dt) {
 
 void EditorApp::OnRender(Renderer& renderer) {
     m_viewport.Render(renderer, m_ctx, m_play.InGameView());
+    if (m_play.SideBySide()) m_gameView.Render(renderer, m_ctx);
 }
 
 void EditorApp::ApplyRequests() {
@@ -235,11 +239,13 @@ void EditorApp::OnImGui() {
         m_resetLayout = false;
     }
     ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport());
+    m_gameView.PrepareDock(m_play);
 
     DrawHierarchyPanel(m_ctx);
     DrawScenePanel(m_ctx);
     DrawInspectorPanel(m_ctx);
     m_viewport.Draw(m_ctx, m_play, GetRenderer().GetStats(), FramesPerSecond());
+    m_gameView.Draw(m_play);
     DrawProjectPanel();
     m_scripts.DrawPanel();
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
@@ -274,6 +280,7 @@ void EditorApp::OnShutdown() {
     m_settings.projectGridView = m_projectPanel.View().grid;
     m_settings.projectIconSize = m_projectPanel.View().iconSize;
     m_settings.viewport = m_viewport.Prefs();
+    m_settings.playSideBySide = m_play.SideBySide();
     m_settings.Save();
 }
 
@@ -283,7 +290,12 @@ void EditorApp::ApplyPlayRequest() {
         case PlayController::Event::Started:
             m_document.SaveRecovery("play", &m_play.BackupScene());
             m_viewport.StopLooking();
-            m_viewport.RequestFocus();  // as teclas vão para o jogo sem precisar clicar no viewport
+            // As teclas vão para o jogo sem precisar clicar: na janela Jogo, se estiver lado a lado.
+            if (m_play.SideBySide()) {
+                m_gameView.RequestFocus();
+            } else {
+                m_viewport.RequestFocus();
+            }
             break;
         case PlayController::Event::Stopped: OnPlayStopped(); break;
     }
@@ -406,7 +418,7 @@ void EditorApp::HandleShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_F8, false) && m_play.IsActive()) m_play.ToggleGameView();
     if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) m_scripts.RequestBuild();
     // Jogando com o viewport em foco, as teclas são do jogo (WASD não troca o gizmo, Del não exclui...).
-    if (m_play.InGameView() && m_viewport.IsFocused()) return;
+    if (m_play.GameHasInput()) return;
     // Com o painel Projeto em foco, Del/F2/Enter pertencem a ele (arquivos), não às entidades.
     // Editando um campo de texto, Ctrl+Z/Ctrl+Y desfazem o texto (o próprio ImGui cuida).
     if (io.WantTextInput) return;

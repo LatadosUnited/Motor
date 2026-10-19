@@ -71,6 +71,7 @@ EditorSettings EditorSettings::Load() {
         v.grid = root.value("gridVisible", v.grid);
         v.gridHeight = root.value("gridHeight", v.gridHeight);
         v.Clamp();
+        settings.playSideBySide = root.value("playSideBySide", settings.playSideBySide);
         settings.mcpEnabled = root.value("mcpEnabled", settings.mcpEnabled);
         settings.mcpPort = std::clamp(root.value("mcpPort", settings.mcpPort), 1024, 65535);
     } catch (const json::exception& e) {
@@ -96,6 +97,7 @@ void EditorSettings::Save() const {
     root["snapScale"] = viewport.snapScale;
     root["gridVisible"] = viewport.grid;
     root["gridHeight"] = viewport.gridHeight;
+    root["playSideBySide"] = playSideBySide;
     root["mcpEnabled"] = mcpEnabled;
     root["mcpPort"] = mcpPort;
 

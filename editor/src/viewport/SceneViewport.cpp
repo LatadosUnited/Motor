@@ -165,8 +165,9 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     }
     play.DrawControls(origin, m_size.x);
 
-    // Mouse para a UI do jogo (botões): só na visão do jogo e fora dos botões de Play do viewport.
-    if (SceneRuntime* runtime = play.Runtime()) {
+    // Mouse para a UI do jogo (botões): só na visão do jogo e fora dos botões de Play do viewport. Lado a lado,
+    // quem informa é a janela Jogo (GameView).
+    if (SceneRuntime* runtime = play.SideBySide() ? nullptr : play.Runtime()) {
         if (UiSystem* ui = runtime->GetSystem<UiSystem>()) {
             const ImVec2 mouse = ImGui::GetMousePos();
             ui->SetPointer({m_size, {mouse.x - origin.x, mouse.y - origin.y},
@@ -222,7 +223,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         const char* warning = nullptr;
         if (m_missingGameCamera) {
             warning = "Nenhuma câmera ativa na cena: mostrando pela câmera do editor (adicione o componente Câmera)";
-        } else if (!gameView) {
+        } else if (!gameView && !play.SideBySide()) {  // lado a lado, o jogo está na janela Jogo
             warning = "Vendo pela câmera do editor (F8 volta para a câmera do jogo)";
         }
         if (warning) {

@@ -96,6 +96,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Play / Parar | botão ▶ / ⏹ no topo do viewport, Ctrl+P ou menu Jogo |
 | Pausa / Avançar um quadro | botões ⏸ / ⏭ (ou Ctrl+Shift+P) |
 | Câmera do jogo ↔ do editor no Play | botão "Câmera: jogo/editor" ou F8 |
+| Cena e Jogo lado a lado | Jogo > "Cena e Jogo lado a lado": a janela **Jogo** aparece à direita do Viewport e mostra a câmera do jogo (também fora do Play); no Play o jogo recebe teclado e mouse com ela em foco (clique nela) e o Viewport fica na câmera do editor, para mexer na cena jogando. Fechar a janela desliga; a escolha fica salva |
 
 **Desfazer** vale para tudo que muda a cena: transform (gizmo ou Inspector), criar, excluir, duplicar,
 reparentar, renomear, trocar malha/textura/cor, luz e ambiente. Cada interação vira **um** passo: um
@@ -686,7 +687,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
   | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
-  | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus` |
+  | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus`, `view_side_by_side` |
 
   As mudanças viram passos de **desfazer**, como as feitas na interface. Durante o Play, a cena é a do jogo:
   o que mudar é descartado ao parar. O servidor atende também com a janela do editor **minimizada**. Nesse

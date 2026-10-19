@@ -65,7 +65,9 @@ int main(int argc, char** argv) {
         settings.viewport.snapScale = 0.5f;
         settings.viewport.grid = false;
         settings.viewport.gridHeight = 2.0f;
+        settings.playSideBySide = true;
         settings.Save();
+        CHECK(EditorSettings::Load().playSideBySide);  // Cena e Jogo lado a lado
         const ViewportPrefs v = EditorSettings::Load().viewport;
         CHECK(v.snap && v.snapMove == 0.25f && v.snapRotate == 45.0f && v.snapScale == 0.5f);
         CHECK(!v.grid && v.gridHeight == 2.0f);

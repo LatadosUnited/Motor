@@ -126,6 +126,10 @@ versão nova, marca o que passou e anota o que não passou. Criado na
   (W/E/R, Del) não disparam durante o jogo.
 - [ ] Clicar num campo do Inspector durante o Play → as teclas vão para o campo, não para o jogo.
 - [ ] F8 alterna câmera do jogo e câmera livre sem parar.
+- [ ] Jogo > **Cena e Jogo lado a lado** → a janela Jogo aparece à direita do Viewport. Play → o jogo recebe
+  WASD com a janela Jogo em foco; clicar no Viewport tira o teclado do jogo e deixa mover objetos com o gizmo
+  enquanto ele roda; clicar no Jogo devolve. Botões da UI do jogo respondem ao clique na janela Jogo. Cursor
+  preso pelo jogo: Esc solta. Fechar a janela Jogo desliga o modo; reabrir o editor lembra a escolha.
 - [ ] Pausa (Ctrl+Shift+P) e Avançar um quadro.
 - [ ] Parar → a cena volta exatamente como estava antes do Play.
 - [ ] Script com `SetCursorMode(CursorMode::Locked)` → cursor some e fica preso; **Esc** solta; clique no

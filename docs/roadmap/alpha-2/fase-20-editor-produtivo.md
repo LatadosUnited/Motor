@@ -33,7 +33,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
   número de objetos (12 a ~100 linhas cada, refeitas a cada quadro). O botão **Colliders** da barra vira
   **Selecionado / Todos / Nenhum** (padrão Selecionado), lembrado entre aberturas. *(origem: teste à mão da
   Fase 19, 19/10/2026, gravidade atrapalha)* (a826ec4)
-- [ ] **Janelas Cena e Jogo lado a lado** no Play. *(origem: Fase 2, limitação)*
+- [x] **Janelas Cena e Jogo lado a lado** no Play. (COMMIT) *(origem: Fase 2, limitação)*
 - [ ] **Prefab dentro de prefab.** *(origem: Fase 6, limitação)*
 - [ ] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
   limitação)*
@@ -85,6 +85,13 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   caminho do pai; clique, Ctrl/Shift, arrastar e o menu de contexto funcionam como na árvore, e "Selecionar todas"
   pega os resultados. MCP: `scene_search` (com `select`). Testes `test_hierarchy_search` e casos no `test_mcp`;
   conferida a caixa numa captura. Digitar na busca não foi testado (precisa de teclado; item na seção 4).
+- **Cena e Jogo lado a lado:** Jogo > "Cena e Jogo lado a lado" abre a janela **Jogo** (`play/GameView`, com
+  framebuffer e HUD próprios), dividindo o nó do Viewport na primeira vez (depois o `imgui.ini` lembra). Nesse
+  modo o Viewport fica na câmera do editor (sem F8 nem o botão de câmera) e o jogo recebe a entrada e o mouse da
+  UI com a janela Jogo em foco (`PlayController::GameHasInput`); o Play põe o foco nela. A escolha fica no
+  `editor.json` (`playSideBySide`). MCP: `view_side_by_side` e `viewport_capture` com `view = game`. Conferido
+  numa captura no Play (Viewport com a grade e a câmera do editor, Jogo pela câmera do jogo).
+  Teclado, mouse e cursor preso na janela Jogo não foram testados (item na seção 8 do roteiro à mão).
 
 ## Limitações
 
@@ -98,6 +105,9 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 - A grade não esmaece com a distância (o shader das linhas é do renderer): ela termina a ~10 células grossas da
   câmera para não virar ruído no horizonte. Tamanho da célula da grade e passo do mover são o mesmo valor.
 - Com vários selecionados, só a principal vai para a grade; os outros andam o mesmo tanto.
+- Lado a lado, a cena é desenhada duas vezes por quadro no Play (as sombras também); fora do Play, a janela Jogo
+  só desenha quando está visível. Os botões de Play ficam no Viewport e, com ele estreito, cobrem as
+  estatísticas. A janela Jogo usa a proporção dela (não há resoluções fixas como 16:9 ou 1920x1080).
 - A busca não procura em valores de campos (ex.: entidades que usam um material) nem guarda buscas recentes;
   a dobra de acentos cobre as letras latinas comuns (português, espanhol), não todo o Unicode.
 - A área de transferência de entidades fica na memória do editor: não passa para outro editor aberto nem

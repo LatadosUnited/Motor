@@ -17,8 +17,14 @@ public:
 
     bool IsActive() const { return m_mode.IsActive(); }
     bool IsPaused() const { return m_mode.IsPaused(); }
-    bool InGameView() const { return m_mode.IsActive() && m_gameView; }  // viewport pela câmera do jogo
+    // Viewport pela câmera do jogo: no Play, sem o modo lado a lado (nele o jogo fica na janela Jogo).
+    bool InGameView() const { return m_mode.IsActive() && m_gameView && !m_sideBySide; }
     void ToggleGameView() { m_gameView = !m_gameView; }
+    // Cena e Jogo lado a lado: o Viewport fica na câmera do editor e a janela Jogo (GameView) mostra o jogo.
+    bool SideBySide() const { return m_sideBySide; }
+    void SetSideBySide(bool on) { m_sideBySide = on; }
+    // O jogo está com o teclado e o mouse neste quadro (calculado no Update).
+    bool GameHasInput() const { return m_gameFocused; }
     ImU32 StateColor() const;  // azul jogando, laranja em pausa
 
     // Pedidos de menus, botões e atalhos são aplicados no início do próximo frame, como o desfazer.
@@ -28,10 +34,10 @@ public:
     Event ApplyRequest(EditorContext& ctx, UndoHistory& history);
     bool Stop(EditorContext& ctx);  // volta à edição; false se já estava editando
 
-    // `viewportFocused`: o jogo só lê teclado/mouse vendo pela câmera do jogo com o viewport em foco. O cursor
-    // pedido pelo jogo (SceneRuntime::GetCursorMode) vale nessas condições, fora da pausa; Esc solta e um clique
-    // no viewport prende de novo.
-    void Update(float dt, bool viewportFocused, motor::Window& window);
+    // `viewportFocused` e `gameWindowFocused`: o jogo só lê teclado/mouse com a janela que o mostra em foco (o
+    // Viewport pela câmera do jogo, ou a janela Jogo no modo lado a lado). O cursor pedido pelo jogo
+    // (SceneRuntime::GetCursorMode) vale nessas condições, fora da pausa; Esc solta e um clique prende de novo.
+    void Update(float dt, bool viewportFocused, bool gameWindowFocused, motor::Window& window);
     void FixedUpdate(float dt) { m_mode.FixedUpdate(dt); }
     motor::SceneRuntime* Runtime() { return m_mode.Runtime(); }  // nullptr fora do Play
     void ForEachPlayScene(const std::function<void(motor::Scene&)>& fn) { m_mode.ForEachScene(fn); }
@@ -42,11 +48,13 @@ public:
     void DrawControls(const ImVec2& origin, float viewportWidth);  // botões no topo do viewport
 
 private:
-    void UpdateCursor(bool viewportFocused, motor::Window& window);
+    void UpdateCursor(motor::Window& window);
     PlayMode m_mode;
     Request m_request = Request::None;
     bool m_gameView = true;  // no Play: true = câmera do jogo, false = câmera livre do editor
     bool m_externalInput = false;
+    bool m_sideBySide = false;
+    bool m_gameFocused = false;
     bool m_cursorReleased = false;                          // Esc soltou o cursor preso pelo jogo
     motor::CursorMode m_appliedCursor = motor::CursorMode::Normal;  // o que o Play pôs na janela
 };

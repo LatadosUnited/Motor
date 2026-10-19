@@ -5,6 +5,7 @@
 #include "McpController.h"
 
 #include "export/ExportController.h"
+#include "play/GameView.h"
 #include "play/PlayController.h"
 #include "document/SceneDocument.h"
 #include "viewport/SceneViewport.h"
@@ -265,13 +266,23 @@ void McpController::AddViewTools() {
     m_protocol.AddTool({
         .name = "viewport_capture",
         .description = "Imagem (PNG) do viewport no último quadro: a cena com o HUD do jogo, pela câmera do editor "
-                       "ou, no Play, pela câmera do jogo. Sem os botões e gizmos do editor.",
+                       "ou, no Play, pela câmera do jogo. Sem os botões e gizmos do editor. Com Cena e Jogo lado "
+                       "a lado (view_side_by_side), view = \"game\" captura a janela Jogo.",
         .inputSchema = Schema({{"max_width", Prop("integer", "largura máxima em pixels (padrão 800)")},
-                               {"max_height", Prop("integer", "altura máxima em pixels (padrão 600)")}}),
+                               {"max_height", Prop("integer", "altura máxima em pixels (padrão 600)")},
+                               {"view", {{"type", "string"}, {"enum", {"scene", "game"}},
+                                         {"description", "scene (padrão): o Viewport; game: a janela Jogo"}}}}),
         .readOnly = true,
         .run = [this](const Json& args) {
-            const Framebuffer* fb = m_host.viewport.Target();
-            if (!fb || fb->Width() < 2 || fb->Height() < 2) throw ToolError("o viewport ainda não foi desenhado");
+            const bool game = args.value("view", std::string("scene")) == "game";
+            if (game && !m_host.play.SideBySide()) {
+                throw ToolError("a janela Jogo só existe com Cena e Jogo lado a lado (view_side_by_side)");
+            }
+            const Framebuffer* fb = game ? m_host.gameView.Target() : m_host.viewport.Target();
+            if (!fb || fb->Width() < 2 || fb->Height() < 2) {
+                throw ToolError(game ? "a janela Jogo ainda não foi desenhada (ou está numa aba escondida)"
+                                     : "o viewport ainda não foi desenhado");
+            }
             mcp::Image image{fb->Width(), fb->Height(), fb->ReadPixels()};
             const int maxW = std::clamp<int>(args.value("max_width", 800), 64, 2048);
             const int maxH = std::clamp<int>(args.value("max_height", 600), 64, 2048);
@@ -280,6 +291,19 @@ void McpController::AddViewTools() {
                                                         image.width, image.height, PlayState(m_host.play)));
             r.AddImage(mcp::Base64(mcp::EncodePng(image)), "image/png");
             return r;
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "view_side_by_side",
+        .description = "Liga ou desliga Cena e Jogo lado a lado (menu Jogo): a janela Jogo mostra o jogo e recebe a "
+                       "entrada; o Viewport fica na câmera do editor. Capture com viewport_capture view = game.",
+        .inputSchema = Schema({{"enabled", Prop("boolean", "true liga, false desliga")}}, {"enabled"}),
+        .run = [this](const Json& args) {
+            const bool on = args.value("enabled", false);
+            m_host.play.SetSideBySide(on);
+            return ToolResult::Text(on ? "Cena e Jogo lado a lado: ligado (a janela aparece no próximo quadro)"
+                                       : "Cena e Jogo lado a lado: desligado");
         },
     });
 

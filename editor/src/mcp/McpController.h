@@ -21,6 +21,7 @@ class ExportController;
 class PlayController;
 class SceneDocument;
 class SceneViewport;
+class GameView;
 class ScriptController;
 
 // Servidor MCP do editor (Fase 13): deixa um agente (Claude Code...) ver e mexer no editor pelas mesmas
@@ -38,6 +39,7 @@ public:
         PlayController& play;
         ScriptController& scripts;
         SceneViewport& viewport;
+        GameView& gameView;  // janela Jogo (Cena e Jogo lado a lado)
         std::function<void(int)> requestHistory;  // -1 desfazer, +1 refazer (no início do próximo quadro)
         ExportController& exporter;               // game_export (Fase 10)
     };
