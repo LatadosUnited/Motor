@@ -33,7 +33,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
   número de objetos (12 a ~100 linhas cada, refeitas a cada quadro). O botão **Colliders** da barra vira
   **Selecionado / Todos / Nenhum** (padrão Selecionado), lembrado entre aberturas. *(origem: teste à mão da
   Fase 19, 19/10/2026, gravidade atrapalha)* (a826ec4)
-- [x] **Janelas Cena e Jogo lado a lado** no Play. (COMMIT) *(origem: Fase 2, limitação)*
+- [x] **Janelas Cena e Jogo lado a lado** no Play. (0dbd735) *(origem: Fase 2, limitação)*
 - [ ] **Prefab dentro de prefab.** *(origem: Fase 6, limitação)*
 - [ ] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
   limitação)*
