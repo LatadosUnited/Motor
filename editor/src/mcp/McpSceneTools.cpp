@@ -1,5 +1,7 @@
 #include "McpSceneTools.h"
 
+#include "panels/HierarchyFilter.h"
+
 #include <motor/scene/SceneSerializer.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -240,6 +242,27 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
         .inputSchema = Schema({{"entity", kEntityProp}}, {"entity"}),
         .readOnly = true,
         .run = [&ctx](const Json& args) { return ToolResult::Data(EntityToJson(ctx, ResolveEntity(ctx, args))); },
+    });
+
+    protocol.AddTool({
+        .name = "scene_search",
+        .description = "Busca entidades como a caixa da Hierarquia: palavras no nome e t:<componente> (t:luz, "
+                       "t:collider, t:Girar), todas precisam bater, sem diferença de maiúsculas e acentos. Devolve "
+                       "id, nome e caminho do pai, na ordem da Hierarquia. select = true seleciona os resultados.",
+        .inputSchema = Schema({{"query", Prop("string", "texto da busca, ex.: \"porta t:collider\"")},
+                               {"select", Prop("boolean", "selecionar os resultados (padrão: false)")}},
+                              {"query"}),
+        .run = [&ctx](const Json& args) {
+            const HierarchyFilter filter = HierarchyFilter::Parse(args.value("query", std::string()));
+            if (filter.Empty()) throw ToolError("busca vazia: informe palavras do nome ou t:<componente>");
+            const std::vector<EntityId> found = SearchHierarchy(ctx.scene, filter);
+            Json list = Json::array();
+            for (EntityId id : found) {
+                list.push_back({{"id", id}, {"name", ctx.scene.Find(id)->name}, {"path", ParentPath(ctx.scene, id)}});
+            }
+            if (args.value("select", false)) ctx.SetSelection(found);
+            return ToolResult::Data({{"count", found.size()}, {"entities", std::move(list)}});
+        },
     });
 
     protocol.AddTool({

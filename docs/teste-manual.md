@@ -77,6 +77,9 @@ versão nova, marca o que passou e anota o que não passou. Criado na
   pega tudo. Com vários: o gizmo move/gira todos; o Inspector diz "N objetos selecionados" e mudar a Posição Y
   muda só o Y de todos; Del exclui todos e Ctrl+Z traz de volta com a seleção; arrastar o grupo na hierarquia
   reparenta todos; clique simples num deles (sem arrastar) volta a ser só ele.
+- [ ] **Busca na hierarquia:** Ctrl+F põe o cursor na caixa; "cubo" mostra só o Cubo, com o caminho do pai ao
+  lado se tiver; "t:luz" mostra o Sol; "t:collider" mostra as formas. Clicar num resultado seleciona; Ctrl+clique
+  e "Selecionar todas" pegam vários. Esc ou "x" volta à árvore.
 - [ ] **Copiar e colar:** Ctrl+C em dois objetos e Ctrl+V → cópias no mesmo lugar, selecionadas (mover com o
   gizmo mostra o original embaixo). Ctrl+X some com eles e Ctrl+V traz de volta; Ctrl+Z desfaz cada passo.
   Clique direito > Colar como filho põe sob o objeto clicado sem mudar o lugar. Abrir outra cena e Ctrl+V cola

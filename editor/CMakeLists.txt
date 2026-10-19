@@ -52,6 +52,7 @@ add_executable(MotorEditor
     src/viewport/ColliderOverlay.cpp
     src/viewport/ViewportPrefs.cpp
     src/panels/MultiEdit.cpp
+    src/panels/HierarchyFilter.cpp
     src/EntityClipboard.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)

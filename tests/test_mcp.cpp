@@ -122,6 +122,13 @@ int main() {
         CHECK(Call(protocol, "select", {{"entities", {"NaoExiste"}}})["isError"] == true);
         CHECK(Call(protocol, "scene_tree", Json::object())["data"]["selection"].size() == 2);
 
+        // Busca como a da Hierarquia (Fase 20).
+        const Json search = Call(protocol, "scene_search", {{"query", "base"}, {"select", true}});
+        CHECK(search["isError"] == false && search["data"]["count"] == 1);
+        CHECK(search["data"]["entities"][0]["path"] == "Torre");
+        CHECK(ctx.selected == static_cast<motor::EntityId>(baseId) && ctx.SelectionCount() == 1);
+        CHECK(Call(protocol, "scene_search", {{"query", " "}})["isError"] == true);
+
         // Copiar, recortar e colar (Fase 20).
         CHECK(Call(protocol, "entity_paste", Json::object())["isError"] == true);  // nada copiado
         CHECK(Call(protocol, "entity_copy", {{"entities", {"Torre"}}})["isError"] == false);

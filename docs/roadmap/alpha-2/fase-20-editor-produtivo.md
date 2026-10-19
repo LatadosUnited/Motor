@@ -26,7 +26,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [x] **Seleção múltipla** na hierarquia e no viewport (Ctrl/Shift, retângulo), com gizmo e Inspector para vários. (59e5fb3)
 - [x] **Copiar, recortar, colar e duplicar** várias entidades (com filhos), também entre cenas. (e433492)
 - [x] **Snapping** na grade, em ângulos e em passos de escala; grade visível configurável. (bf1fae9)
-- [ ] **Busca na hierarquia** (nome e tipo de componente).
+- [x] **Busca na hierarquia** (nome e tipo de componente). (COMMIT)
 - [x] **Contorno verde do collider só no objeto selecionado**, como na Unity. Hoje o viewport desenha o de todos
   os objetos com collider o tempo todo (`SceneViewport::DrawColliders`, `editor/src/viewport/SceneViewportOverlay.cpp`),
   e desde a Fase 18 toda forma criada já vem com Collider: a cena enche de linhas e o custo na CPU cresce com o
@@ -79,6 +79,12 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   respeita a profundidade da cena: célula = passo do mover, linha forte a cada 10, eixos X e Z; de longe as
   camadas sobem de 10 em 10. Testes no `test_viewport`; conferido em captura (grade, cubo tapando as linhas).
   O popup, o arraste com encaixe e a troca de altura não foram testados (precisam de mouse; item na seção 3).
+- **Busca na hierarquia:** caixa ao lado do "+ Criar" (Ctrl+F, também no menu Editar). Palavras no nome e
+  `t:componente` pelo rótulo ou pelo nome no código, todas precisam bater, sem diferença de maiúsculas e acentos
+  (`panels/HierarchyFilter`). Com busca, a Hierarquia vira uma lista dos resultados na ordem da árvore, com o
+  caminho do pai; clique, Ctrl/Shift, arrastar e o menu de contexto funcionam como na árvore, e "Selecionar todas"
+  pega os resultados. MCP: `scene_search` (com `select`). Testes `test_hierarchy_search` e casos no `test_mcp`;
+  conferida a caixa numa captura. Digitar na busca não foi testado (precisa de teclado; item na seção 4).
 
 ## Limitações
 
@@ -92,6 +98,8 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 - A grade não esmaece com a distância (o shader das linhas é do renderer): ela termina a ~10 células grossas da
   câmera para não virar ruído no horizonte. Tamanho da célula da grade e passo do mover são o mesmo valor.
 - Com vários selecionados, só a principal vai para a grade; os outros andam o mesmo tanto.
+- A busca não procura em valores de campos (ex.: entidades que usam um material) nem guarda buscas recentes;
+  a dobra de acentos cobre as letras latinas comuns (português, espanhol), não todo o Unicode.
 - A área de transferência de entidades fica na memória do editor: não passa para outro editor aberto nem
   sobrevive a fechá-lo, e não usa a do Windows. Colar entre projetos diferentes não foi pensado (materiais e
   prefabs são do projeto de origem).

@@ -1,9 +1,14 @@
 #include "EditorContext.h"
+#include "panels/HierarchyFilter.h"
 
 #include <imgui.h>
+#include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cstdint>
+#include <string>
+#include <utility>
 
 namespace editor {
 
@@ -16,6 +21,8 @@ EntityId g_anchor = kNullEntity;  // último clique sem Shift
 // Clique simples num item já selecionado entre vários: só vira seleção única ao soltar sem ter arrastado
 // (senão arrastar o grupo para outro pai seria impossível).
 EntityId g_collapseOnRelease = kNullEntity;
+std::string g_search;        // texto da busca (HierarchyFilter)
+bool g_focusSearch = false;  // Ctrl+F
 
 void AcceptEntityDrop(EditorContext& ctx, EntityId newParent) {
     if (!ImGui::BeginDragDropTarget()) return;
@@ -67,20 +74,23 @@ void OnRowClicked(EditorContext& ctx, EntityId id) {
     }
 }
 
-void DrawEntityNode(EditorContext& ctx, EntityId id) {
+// Uma linha da Hierarquia com os filhos embaixo; `flat` (resultado da busca): só a linha, sem os filhos, com o
+// caminho do pai ao lado.
+void DrawEntityNode(EditorContext& ctx, EntityId id, bool flat = false) {
     motor::Entity* e = ctx.scene.Find(id);
     if (!e) return;
 
-    const std::vector<EntityId> children = ctx.scene.Children(id);
+    const std::vector<EntityId> children = flat ? std::vector<EntityId>{} : ctx.scene.Children(id);
 
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
     if (children.empty()) flags |= ImGuiTreeNodeFlags_Leaf;
+    if (flat) flags |= ImGuiTreeNodeFlags_NoTreePushOnOpen;
     if (ctx.IsSelected(id)) flags |= ImGuiTreeNodeFlags_Selected;
     g_rows.push_back(id);
 
     // Seleção dentro de um pai recolhido: abre o caminho até ela.
-    if (ctx.selected != id && ctx.scene.IsDescendantOf(ctx.selected, id)) ImGui::SetNextItemOpen(true);
+    if (!flat && ctx.selected != id && ctx.scene.IsDescendantOf(ctx.selected, id)) ImGui::SetNextItemOpen(true);
 
     // Instâncias de prefab em azul (mais claro na raiz), como no painel Projeto.
     const bool inactive = !ctx.scene.IsActiveInHierarchy(id);
@@ -95,6 +105,14 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
     const bool open = ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(id)), flags, "%s",
                                         e->name.c_str());
     if (colored) ImGui::PopStyleColor();
+    if (flat) {
+        const std::string path = ParentPath(ctx.scene, id);
+        if (!path.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", path.c_str());
+        }
+        ImGui::SetItemTooltip("Em: %s", path.empty() ? "(raiz)" : path.c_str());
+    }
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) OnRowClicked(ctx, id);
     if (g_collapseOnRelease == id && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
@@ -150,12 +168,34 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
         ImGui::EndPopup();
     }
 
-    if (open) {
+    if (open && !flat) {
         for (EntityId child : children) DrawEntityNode(ctx, child);
         ImGui::TreePop();
     }
 }
+
+// Caixa de busca. Devolve o filtro do texto atual (vazio = árvore normal).
+HierarchyFilter DrawSearchBox() {
+    if (std::exchange(g_focusSearch, false)) ImGui::SetKeyboardFocusHere();
+    const bool searching = !g_search.empty();
+    ImGui::SetNextItemWidth(searching ? -ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x : -FLT_MIN);
+    ImGui::InputTextWithHint("##hierarchy_search", "Buscar (Ctrl+F)", &g_search,
+                             ImGuiInputTextFlags_EscapeClearsAll);
+    ImGui::SetItemTooltip("Procura no nome; t: procura pelo componente (t:luz, t:collider, t:Girar).\n"
+                          "Várias palavras: todas precisam bater. Esc limpa.");
+    if (searching) {
+        ImGui::SameLine();
+        if (ImGui::Button("x", ImVec2(ImGui::GetFrameHeight(), 0.0f))) g_search.clear();
+        ImGui::SetItemTooltip("Limpar a busca");
+    }
+    return HierarchyFilter::Parse(g_search);
+}
 } // namespace
+
+void FocusHierarchySearch() {
+    g_focusSearch = true;
+    ImGui::SetWindowFocus("Hierarquia");
+}
 
 void DrawHierarchyPanel(EditorContext& ctx) {
     if (!ImGui::Begin("Hierarquia")) {
@@ -168,10 +208,23 @@ void DrawHierarchyPanel(EditorContext& ctx) {
         DrawCreateEntityMenuItems(ctx, kNullEntity);
         ImGui::EndPopup();
     }
+    ImGui::SameLine();
+    const HierarchyFilter filter = DrawSearchBox();
     ImGui::Separator();
 
     g_rows.clear();
-    for (EntityId root : ctx.scene.Children(kNullEntity)) DrawEntityNode(ctx, root);
+    if (filter.Empty()) {
+        for (EntityId root : ctx.scene.Children(kNullEntity)) DrawEntityNode(ctx, root);
+    } else {
+        // Resultados numa lista só, na ordem da Hierarquia, com o caminho de cada um.
+        const std::vector<EntityId> found = SearchHierarchy(ctx.scene, filter);
+        ImGui::TextDisabled("%zu encontrada(s)", found.size());
+        if (!found.empty()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Selecionar todas")) ctx.SetSelection(found);
+        }
+        for (EntityId id : found) DrawEntityNode(ctx, id, true);
+    }
     g_lastRows.swap(g_rows);
 
     // Área vazia restante: soltar aqui = mover para a raiz; clicar = limpar seleção.

@@ -107,6 +107,7 @@ motor_add_test(test_mcp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/ImageEncode.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpServer.cpp)
 target_include_directories(test_mcp PRIVATE ${PROJECT_SOURCE_DIR}/editor/src ${httplib_SOURCE_DIR})
 target_link_libraries(test_mcp PRIVATE nlohmann_json::nlohmann_json)
@@ -175,3 +176,7 @@ motor_add_test(test_selection
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/panels/MultiEdit.cpp)
 target_include_directories(test_selection PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Busca da Hierarquia (Fase 20): nome e t:componente, sem maiúsculas nem acentos, ordem e caminho do pai.
+motor_add_test(test_hierarchy_search ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
+target_include_directories(test_hierarchy_search PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)

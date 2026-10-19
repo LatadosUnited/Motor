@@ -84,6 +84,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (padrão 0.5 m / 15° / 0.1). Mover com encaixe põe a posição na grade. A seta ao lado do Snap abre os passos (mover, girar, escalar) e a grade (visível, altura) |
 | Grade | botão "Grade": linhas no chão com célula = passo do mover, mais fortes a cada 10, eixos X (vermelho) e Z (azul); objetos na frente tapam a grade. Encaixe e grade ficam salvos no editor |
 | Reparentar | arrastar na hierarquia (soltar no vazio = raiz) |
+| Buscar na hierarquia | Ctrl+F ou a caixa ao lado do "+ Criar": palavras do nome e `t:componente` (`t:luz`, `t:collider`, `t:Girar`), sem diferença de maiúsculas e acentos; os resultados aparecem numa lista com o caminho do pai, e "Selecionar todas" pega todos. Esc ou "x" limpa |
 | Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia; as formas (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone) já vêm com o Collider que bate com elas |
 | Focar / Excluir / Duplicar | F / Del / Ctrl+D |
 | Copiar / Recortar / Colar | Ctrl+C / Ctrl+X / Ctrl+V (também no menu Editar e no clique direito da hierarquia, com "Colar como filho"): os selecionados com os filhos, colados no mesmo lugar do mundo; vale colar em outra cena do projeto |
@@ -680,7 +681,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Grupo | Ferramentas |
   |---|---|
   | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read` |
-  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
+  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
   | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |

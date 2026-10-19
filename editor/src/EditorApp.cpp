@@ -338,6 +338,7 @@ void EditorApp::DrawMenuBar() {
         if (ImGui::MenuItem("Excluir", "Del", false, hasSelection)) m_ctx.pendingDelete = m_ctx.selected;
         ImGui::Separator();
         if (ImGui::MenuItem("Selecionar tudo", "Ctrl+A", false, editing)) SelectAll();
+        if (ImGui::MenuItem("Buscar na hierarquia", "Ctrl+F")) FocusHierarchySearch();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Entidade")) {
@@ -425,6 +426,7 @@ void EditorApp::HandleShortcuts() {
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) m_ctx.CopySelected();
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X, false)) m_ctx.CutSelected();
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false)) m_ctx.Paste();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) FocusHierarchySearch();
     if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) m_viewport.FocusSelected(m_ctx);
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) m_ctx.SelectOnly(kNullEntity);
 }

@@ -125,6 +125,7 @@ private:
 void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent);
 
 void DrawHierarchyPanel(EditorContext& ctx);
+void FocusHierarchySearch();  // Ctrl+F: foco na busca da Hierarquia
 void DrawInspectorPanel(EditorContext& ctx);
 void DrawScenePanel(EditorContext& ctx);
 
