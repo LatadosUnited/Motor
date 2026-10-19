@@ -34,6 +34,12 @@ public:
     void Draw(EditorContext& ctx, PlayController& play, const motor::RenderStats& stats, float fps);
 
     void FocusSelected(const EditorContext& ctx);
+    // Câmera livre do editor (ferramenta view_camera do MCP). Sem `target`, mantém para onde olha.
+    const motor::Camera& EditorCamera() const { return m_camera; }
+    void SetEditorCamera(const glm::vec3& position, const std::optional<glm::vec3>& target) {
+        m_camera.position = position;
+        if (target) m_camera.LookAt(*target);
+    }
     void HandleGizmoShortcuts();  // Q/W/E/R/X, sem Ctrl
 
     // Imagem do último quadro desenhado (cena e HUD, sem os controles do ImGui por cima).

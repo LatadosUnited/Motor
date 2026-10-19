@@ -685,13 +685,13 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
 
   | Grupo | Ferramentas |
   |---|---|
-  | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read` |
+  | Situação | `editor_status`, `scene_tree`, `entity_get`, `component_types`, `log_read`, `events_read` (o que mudou no editor: seleção, cena, Play, scripts) |
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
   | Scripts | `scripts_build`, `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
-  | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus`, `view_side_by_side` |
+  | Ver | `viewport_capture` (PNG da cena e do HUD), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |
 
   As mudanças viram passos de **desfazer**, como as feitas na interface. Durante o Play, a cena é a do jogo:
   o que mudar é descartado ao parar. O servidor atende também com a janela do editor **minimizada**. Nesse

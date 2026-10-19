@@ -39,8 +39,8 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
   limitação)* (69fcdd7)
 - [x] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
   limitação)* (37b1574)
-- [ ] **MCP acompanha:** seleção múltipla, copiar/colar, mover a câmera do editor para um ponto, eventos para o
-  agente. *(origem: Fase 13, pendências)*
+- [x] **MCP acompanha:** seleção múltipla, copiar/colar, mover a câmera do editor para um ponto, eventos para o
+  agente. *(origem: Fase 13, pendências)* (COMMIT)
 
 ## Pronto quando
 
@@ -106,6 +106,13 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   quadro; a pose é estado interno (não é campo), então a cena não muda nem entra no desfazer, e volta ao repouso
   ao parar, trocar a seleção ou dar Play. Conferido em captura (linha de pré-visualização no Inspector do Robo);
   tocar e o combo de malhas não foram testados com o mouse (item na seção 6 do roteiro).
+- **MCP acompanha:** seleção múltipla (`select` com `entities` e `add`, `selection` no estado) e copiar/colar
+  (`entity_copy`, `entity_cut`, `entity_paste`) vieram com os itens deles; `scene_search` com a busca;
+  `view_side_by_side` e `viewport_capture` com `view = game` com o lado a lado. Novos: `view_camera` (move a câmera
+  do editor para um ponto e a vira para outro; sem argumentos, diz onde ela está) e `events_read` (o que mudou no
+  editor desde a última leitura: seleção, cena aberta/salva/modificada, entidades a mais ou a menos, Play e
+  compilação dos scripts, inclusive o que o usuário fez à mão; comparado a cada 0,2 s com o servidor ligado).
+  Conferidos no editor pelo MCP. Os eventos são lidos sob pedido: o servidor não empurra notificações.
 - **Prefab dentro de prefab:** componente novo `PrefabNested` (engine, `scene/PrefabNested`): no conteúdo do
   prefab de fora, as entidades vindas de outro prefab guardam o vínculo com ele e os overrides relativos a ele; o
   `PrefabInstance` continua sendo a identidade dentro do de fora. `Prefabs::UpdateNested` (chamado por `NeedsSync`

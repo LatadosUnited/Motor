@@ -44,7 +44,8 @@ constexpr const char* kInstructions =
     "Editor da engine Motor (C++/OpenGL). Ferramentas para ver e mudar a cena aberta como um usuário faria no "
     "editor. Comece com editor_status e scene_tree (ids das entidades). Cada mudança vira um passo de desfazer "
     "(undo/redo). Durante o Play (play) a cena é a do jogo: o que mudar é descartado ao parar. Para ver o "
-    "resultado use viewport_capture; para testar o jogo use play, game_key e ui_click e leia log_read. Scripts "
+    "resultado use viewport_capture (view_camera move a câmera); para testar o jogo use play, game_key e "
+    "ui_click e leia log_read. events_read conta o que mudou no editor desde a última leitura. Scripts "
     "ficam na pasta Scripts/ do projeto (edite os arquivos e chame scripts_build). Textos em português.";
 
 const char* LevelName(log::Level level) {
@@ -142,6 +143,52 @@ void McpController::UpdateUiClick() {
 void McpController::Pump() {
     m_server.Pump();
     UpdateUiClick();
+    if (IsRunning()) DetectEvents();
+}
+
+void McpController::AddEvent(std::string type, Json data) {
+    m_events.push_back({++m_eventCount, std::move(type), std::move(data)});
+    if (m_events.size() > 200) m_events.pop_front();
+}
+
+void McpController::DetectEvents() {
+    // A cada 0,2 s: comparar a cena com a salva e ler o estado dos scripts custa demais para todo quadro.
+    const auto now = std::chrono::steady_clock::now();
+    if (now < m_nextEventCheck) return;
+    m_nextEventCheck = now + std::chrono::milliseconds(200);
+
+    Watched w;
+    w.valid = true;
+    w.selection = m_host.ctx.selection;
+    w.scenePath = ToUtf8(m_host.document.ScenePath());
+    w.unsaved = m_host.document.HasUnsavedChanges();
+    w.entityCount = m_host.ctx.scene.Entities().size();
+    w.play = PlayState(m_host.play);
+    const ScriptController::Status s = m_host.scripts.GetStatus();
+    w.scripts = s.state;
+    for (const auto& d : s.diagnostics) w.scriptErrors += d.kind == ScriptProject::Diagnostic::Kind::Error;
+
+    const Watched& old = m_watched;
+    if (old.valid) {  // a primeira leitura só guarda o estado
+        if (w.scenePath != old.scenePath) {
+            AddEvent("scene_opened", {{"path", w.scenePath}});
+        } else if (old.unsaved && !w.unsaved) {
+            AddEvent("scene_saved", {{"path", w.scenePath}});
+        } else if (!old.unsaved && w.unsaved) {
+            AddEvent("scene_modified", Json::object());
+        }
+        if (w.entityCount != old.entityCount) {
+            AddEvent("entities_changed", {{"count", w.entityCount}, {"before", old.entityCount}});
+        }
+        if (w.selection != old.selection) {
+            AddEvent("selection_changed", {{"selected", m_host.ctx.selected}, {"selection", w.selection}});
+        }
+        if (w.play != old.play) AddEvent("play", {{"state", w.play}});
+        if (w.scripts != old.scripts || w.scriptErrors != old.scriptErrors) {
+            AddEvent("scripts", {{"state", w.scripts}, {"errors", w.scriptErrors}});
+        }
+    }
+    m_watched = std::move(w);
 }
 
 void McpController::DrawMenuItems(EditorSettings& settings) {
@@ -225,6 +272,26 @@ void McpController::AddEditorTools() {
     });
 
     m_protocol.AddTool({
+        .name = "events_read",
+        .description = "O que mudou no editor desde a última leitura, em ordem: selection_changed, scene_opened, "
+                       "scene_saved, scene_modified, entities_changed, play (editando/jogando/pausado) e scripts "
+                       "(compilando/ok/falhou, com erros). Inclui o que o usuário fez à mão. Use 'since' com o "
+                       "número do último evento lido para ver só os novos (a lista guarda os 200 mais recentes).",
+        .inputSchema = Schema({{"since", Prop("integer", "só eventos depois deste número (padrão 0: todos os guardados)")}}),
+        .readOnly = true,
+        .run = [this](const Json& args) {
+            const uint64_t since = args.value("since", uint64_t{0});
+            m_nextEventCheck = {};
+            DetectEvents();  // o que mudou desde a última verificação também entra
+            Json list = Json::array();
+            for (const Event& e : m_events) {
+                if (e.n > since) list.push_back({{"n", e.n}, {"type", e.type}, {"data", e.data}});
+            }
+            return ToolResult::Data({{"last", m_eventCount}, {"events", std::move(list)}});
+        },
+    });
+
+    m_protocol.AddTool({
         .name = "log_read",
         .description = "Últimas linhas do log do editor (o mesmo do console): erros de cena, mensagens dos "
                        "scripts (Log), compilação. Use 'since' com o número da última linha lida para ver só as "
@@ -291,6 +358,37 @@ void McpController::AddViewTools() {
                                                         image.width, image.height, PlayState(m_host.play)));
             r.AddImage(mcp::Base64(mcp::EncodePng(image)), "image/png");
             return r;
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "view_camera",
+        .description = "Câmera do editor (a do viewport fora do Play). Sem argumentos devolve onde ela está. "
+                       "position move a câmera para o ponto; look_at a vira para um ponto (mantendo a posição se "
+                       "position não vier). Para enquadrar uma entidade, view_focus é mais simples.",
+        .inputSchema = Schema({{"position", Prop("array", "posição [x, y, z] no mundo")},
+                               {"look_at", Prop("array", "ponto [x, y, z] para onde olhar")}}),
+        .run = [this](const Json& args) {
+            auto vec3 = [](const Json& v, const char* name) {
+                if (!v.is_array() || v.size() != 3 || !v[0].is_number() || !v[1].is_number() || !v[2].is_number()) {
+                    throw ToolError(std::format("'{}' deve ser [x, y, z]", name));
+                }
+                return glm::vec3(v[0].get<float>(), v[1].get<float>(), v[2].get<float>());
+            };
+            glm::vec3 position = m_host.viewport.EditorCamera().position;
+            if (args.contains("position")) position = vec3(args["position"], "position");
+            std::optional<glm::vec3> target;
+            if (args.contains("look_at")) target = vec3(args["look_at"], "look_at");
+            if (target && glm::length(*target - position) < 1e-4f) {
+                throw ToolError("look_at precisa ser diferente da posição da câmera");
+            }
+            if (args.contains("position") || target) m_host.viewport.SetEditorCamera(position, target);
+            const motor::Camera& cam = m_host.viewport.EditorCamera();
+            const glm::vec3 forward = cam.Forward();
+            return ToolResult::Data({{"position", {cam.position.x, cam.position.y, cam.position.z}},
+                                     {"forward", {forward.x, forward.y, forward.z}},
+                                     {"yaw", cam.yaw},
+                                     {"pitch", cam.pitch}});
         },
     });
 
