@@ -158,7 +158,7 @@ void McpController::AddPlayTools() {
                 const Entity* e = runtime->GetScene().Find(v.entity);
                 voices.push_back({{"entity", v.entity}, {"name", e ? e->name : std::string()}, {"clip", v.clip},
                                   {"playing", v.playing}, {"spatial", v.spatial}, {"distance", v.distance},
-                                  {"gain", v.gain}});
+                                  {"gain", v.gain}, {"one_shots", v.oneShots}});
             }
             const glm::vec3 p = audio->ListenerPosition();
             return ToolResult::Data({{"device", audio->HasDevice()}, {"paused", audio->IsPaused()},

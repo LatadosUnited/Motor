@@ -294,6 +294,70 @@ int main(int argc, char** argv) {
         runtime.Stop();
     }
 
+    SECTION("Vozes extras (PlayOneShot), grupos de volume e clipes pedidos ao carregador no início");
+    {
+        Scene scene;
+        Entity& steps = scene.CreateEntity("Passo");
+        AudioSource& stepSource = steps.Add<AudioSource>();
+        stepSource.clip = ClipFor(assets, clickFile);
+        stepSource.spatial = false;
+        stepSource.playOnStart = false;
+        const EntityId stepId = steps.id;
+        Entity& music = scene.CreateEntity("Musica");
+        AudioSource& musicSource = music.Add<AudioSource>();
+        musicSource.clip = ClipFor(assets, loopFile);
+        musicSource.spatial = false;
+        musicSource.loop = true;
+        musicSource.group = AudioGroup::Music;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        AudioSystem* audio = runtime.GetSystem<AudioSystem>();
+        CHECK(audio && audio->PreloadedClips() == 2);  // os dois clipes, já no início do Play
+        if (!audio) return TestResult();
+        auto oneShots = [&](EntityId id) {
+            for (const AudioVoiceInfo& v : audio->Voices()) {
+                if (v.entity == id) return v.oneShots;
+            }
+            return 0;
+        };
+
+        // Grupo Música: mudo sem mexer no volume da fonte; vale também para o próximo Play.
+        CHECK(audio->IsPlaying("Musica") && Measure(*audio).Mean() > 0.05f);
+        audio->SetGroupVolume(AudioGroup::Music, 0.0f);
+        CHECK(Measure(*audio).Mean() < 1e-4f && audio->GroupVolume(AudioGroup::Music) == 0.0f);
+        CHECK(AudioSettings::Global().groupVolumes[1] == 0.0f && musicSource.volume == 1.0f);
+        CHECK(audio->GroupVolume(AudioGroup::Effects) == 1.0f);
+
+        // Voz extra: não corta a principal (a música continua, agora no grupo mudo) e duas seguidas se somam.
+        CHECK(audio->PlayOneShot(stepId));
+        const float one = Measure(*audio, 1200).Mean();
+        CHECK(one > 0.05f && oneShots(stepId) == 1);
+        CHECK(audio->PlayOneShot("Passo"));
+        const float two = Measure(*audio, 1200).Mean();
+        CHECK(two > one * 1.3f && oneShots(stepId) == 2);
+        CHECK(audio->IsPlaying("Musica") && audio->IsPlaying("Passo"));
+        audio->ReadMix(48000);  // o clipe tem 0,2 s: as duas acabaram
+        runtime.Update(1.0f / 60.0f);
+        CHECK(oneShots(stepId) == 0 && !audio->IsPlaying("Passo"));
+        // Outro clipe pela mesma fonte, e no máximo 8 vozes extras por fonte.
+        CHECK(audio->PlayOneShot(stepId, ClipFor(assets, loopFile), 0.5f));
+        for (int i = 0; i < 10; ++i) audio->PlayOneShot(stepId);
+        CHECK(oneShots(stepId) == 8);
+        CHECK(audio->Stop("Passo") && oneShots(stepId) == 0);
+        runtime.Stop();
+
+        SceneRuntime again(scene);
+        again.Start();
+        AudioSystem* next = again.GetSystem<AudioSystem>();
+        CHECK(next && next->IsPlaying("Musica") && next->GroupVolume(AudioGroup::Music) == 0.0f);
+        CHECK(next && Measure(*next).Mean() < 1e-4f);
+        if (next) next->SetGroupVolume(AudioGroup::Music, 1.0f);
+        CHECK(next && Measure(*next).Mean() > 0.05f);
+        again.Stop();
+        AudioSettings::Global().groupVolumes = {1.0f, 1.0f, 1.0f};
+    }
+
     SECTION("Fora do Play não há sistema de áudio");
     {
         Scene scene;

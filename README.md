@@ -640,10 +640,11 @@ componentes comuns (Inspector, cena, desfazer):
   para música e sons da UI, a posição não importa.
 - **Play:** o som só toca no Play. **Parar** silencia tudo; **Pausa** pausa os sons e **Continuar** retoma.
   O dispositivo de som só abre quando o primeiro som toca; sem placa de som, o jogo roda igual, sem som.
-- **Arquivos:** até 2 MB são decodificados inteiros na primeira vez que tocam; maiores (música) são lidos aos
-  poucos durante o jogo. Arquivo que não abre vira aviso no console.
+- **Arquivos:** até 2 MB são decodificados inteiros numa thread ao iniciar o Play ou a cena (o primeiro toque
+  não trava; um toque antes do fim espera só o seu clipe); maiores (música) são lidos aos poucos durante o jogo. Arquivo que não abre vira aviso no console.
 - **Scripts:** `GetSystem<motor::AudioSystem>()` com `Play`, `Stop`, `SetVolume` e `IsPlaying` (pelo nome da
-  entidade ou pelo id). Ver a seção 14 do [guia de scripts](docs/scripts.md) e o exemplo
+  entidade ou pelo id), `PlayOneShot` (outra voz da mesma fonte, até 8) e `SetGroupVolume` (grupos Efeitos,
+  Música e Interface, campo **Grupo** da fonte). Ver a seção 14 do [guia de scripts](docs/scripts.md) e o exemplo
   `docs/examples/SonsDoMenu.cpp` (som de clique de botão e música).
 - **Clipes de uma cena** (para exportar o jogo): `motor::CollectAudioClips(scene)` (`motor/scene/AudioSource.h`)
   lista os clipes das Fontes de áudio; no `.mscene`, cada um é o campo `"clip"` do componente `"AudioSource"`,

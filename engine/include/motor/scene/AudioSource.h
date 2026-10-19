@@ -14,6 +14,13 @@ namespace motor {
 
 class Scene;
 
+// Grupo de volume da fonte (Fase 18): o menu de opções do jogo muda o volume de cada grupo de uma vez
+// (AudioSystem::SetGroupVolume).
+enum class AudioGroup { Effects, Music, Interface };
+inline constexpr int kAudioGroupCount = 3;
+const char* AudioGroupName(AudioGroup group);   // gravado na cena ("Effects", "Music", "Interface")
+const char* AudioGroupLabel(AudioGroup group);  // nome no editor ("Efeitos", "Música", "Interface")
+
 // Clipe de som: um arquivo de áudio do projeto, pelo GUID (com o caminho junto, como plano B).
 struct AudioClip {
     std::string guid;
@@ -35,9 +42,14 @@ struct AudioSource {
     bool spatial = true;         // som 3D: volume e lado mudam com a posição em relação ao ouvinte
     float minDistance = 1.0f;    // 3D: até esta distância, volume cheio
     float maxDistance = 30.0f;   // 3D: a partir desta, o volume para de cair
+    AudioGroup group = AudioGroup::Effects;
 };
 
 template <> struct FieldTraits<AudioClip> {
+    static CustomFieldType Describe();
+};
+
+template <> struct FieldTraits<AudioGroup> {
     static CustomFieldType Describe();
 };
 

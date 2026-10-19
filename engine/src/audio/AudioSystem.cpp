@@ -16,6 +16,7 @@
 #include <atomic>
 #include <cmath>
 #include <filesystem>
+#include <future>
 #include <map>
 #include <set>
 
@@ -29,6 +30,7 @@ constexpr ma_uint32 kSampleRateWithoutDevice = 48000;
 // Arquivos maiores que isso (música) são lidos aos poucos durante o jogo; os menores, decodificados inteiros
 // ao tocar a primeira vez (efeitos curtos sem atraso e sem custo no meio do jogo).
 constexpr std::uintmax_t kStreamAbove = 2 * 1024 * 1024;
+constexpr size_t kMaxOneShots = 8;  // vozes extras por fonte (PlayOneShot): a mais antiga para
 
 // Queda do volume com a distância do modelo "inverso" do miniaudio (o padrão), com rolloff 1.
 float DistanceGain(float distance, float minDistance, float maxDistance) {
@@ -51,6 +53,8 @@ struct AudioSystem::Voice {
     bool spatial = false;
     float distance = 0.0f;
     float gain = 1.0f;
+    AudioGroup group = AudioGroup::Effects;
+    float scale = 1.0f;  // PlayOneShot: volume em relação ao da fonte
 
     ~Voice() {
         if (initialized) ma_sound_uninit(&sound);
@@ -64,6 +68,13 @@ struct AudioSystem::Impl {
     AudioSettings settings;
     bool initTried = false;
     std::map<EntityId, std::unique_ptr<Voice>> voices;
+    std::map<EntityId, std::vector<std::unique_ptr<Voice>>> shots;  // PlayOneShot, por fonte
+    ma_sound_group groups[kAudioGroupCount]{};
+    bool groupsOk = false;
+    std::set<std::filesystem::path> preloaded;  // clipes já vistos pela pré-carga
+    std::map<std::filesystem::path, std::shared_future<void>> loading;  // pronto quando decodificado
+    std::vector<std::future<void>> workers;  // threads da pré-carga
+    size_t preloadRequests = 0;  // pedidos ao carregador (decodificados fora do jogo)
     std::set<EntityId> seen;               // fontes ativas que já passaram pelo "tocar ao iniciar"
     std::set<std::filesystem::path> failed;  // arquivos que não abriram (avisa uma vez por Play)
     std::atomic<float> level[kChannels] = {0.0f, 0.0f};
@@ -91,8 +102,17 @@ struct AudioSystem::Impl {
     }
 
     ~Impl() {
-        voices.clear();  // os sons antes do engine
+        for (auto& w : workers) w.wait();  // a pré-carga usa o carregador do engine
+        shots.clear();  // os sons antes dos grupos e do engine
+        voices.clear();
+        if (groupsOk) {
+            for (ma_sound_group& g : groups) ma_sound_group_uninit(&g);
+        }
         if (engineOk) ma_engine_uninit(&engine);
+    }
+
+    ma_sound_group* Group(AudioGroup group) {
+        return groupsOk ? &groups[static_cast<int>(group)] : nullptr;
     }
 };
 
@@ -103,6 +123,7 @@ void AudioSystem::OnStart(SceneRuntime& runtime) {
     m_runtime = &runtime;
     m_paused = false;
     m_impl->settings = AudioSettings::Global();
+    Preload(runtime.GetScene());  // a decodificação começa já, numa thread do miniaudio
     // As fontes com "Tocar ao iniciar" começam antes do OnStart dos scripts (que já podem pará-las).
     OnUpdate(runtime, 0.0f);
 }
@@ -120,6 +141,19 @@ bool AudioSystem::EnsureEngine() {
         impl.engineOk = impl.Init(false);
         if (!impl.engineOk) log::Error("Áudio: o miniaudio não iniciou; os sons ficam desligados neste Play");
     }
+    if (impl.engineOk) {
+        impl.groupsOk = true;
+        for (int i = 0; i < kAudioGroupCount; ++i) {
+            if (ma_sound_group_init(&impl.engine, 0, nullptr, &impl.groups[i]) != MA_SUCCESS) {
+                for (int j = 0; j < i; ++j) ma_sound_group_uninit(&impl.groups[j]);
+                impl.groupsOk = false;
+                log::Warn("Áudio: grupos de volume indisponíveis neste Play");
+                break;
+            }
+            const float volume = impl.settings.groupVolumes[static_cast<size_t>(i)];
+            ma_sound_group_set_volume(&impl.groups[i], std::max(0.0f, volume));
+        }
+    }
     if (impl.engineOk && m_runtime) UpdateListener(m_runtime->GetScene());
     return impl.engineOk;
 }
@@ -132,6 +166,7 @@ void AudioSystem::OnStop(SceneRuntime&) {
 
 void AudioSystem::OnUpdate(SceneRuntime& runtime, float) {
     Scene& scene = runtime.GetScene();
+    Preload(scene);  // fontes que apareceram durante o jogo (prefabs instanciados)
     if (m_impl->engineOk) UpdateListener(scene);
 
     for (const auto& e : scene.Entities()) {
@@ -142,11 +177,13 @@ void AudioSystem::OnUpdate(SceneRuntime& runtime, float) {
         if (!scene.IsActiveInHierarchy(id)) {
             // Desativada: para; ao reativar, "Tocar ao iniciar" vale de novo.
             if (it != m_impl->voices.end()) m_impl->voices.erase(it);
+            m_impl->shots.erase(id);
             m_impl->seen.erase(id);
             continue;
         }
-        if (it != m_impl->voices.end() && it->second->file != source->clip.file) {
-            m_impl->voices.erase(it);  // trocou o clipe: o som antigo para
+        if (it != m_impl->voices.end() &&
+            (it->second->file != source->clip.file || it->second->group != source->group)) {
+            m_impl->voices.erase(it);  // trocou o clipe ou o grupo: o som antigo para
             it = m_impl->voices.end();
         }
         if (m_impl->seen.insert(id).second && source->playOnStart) {
@@ -165,6 +202,7 @@ void AudioSystem::OnUpdate(SceneRuntime& runtime, float) {
             ++it;
         }
     }
+    UpdateOneShots(scene);
 }
 
 void AudioSystem::UpdateListener(Scene& scene) {
@@ -217,25 +255,33 @@ void AudioSystem::ApplySource(Voice& voice, const AudioSource& source, Scene& sc
 
 AudioSystem::Voice* AudioSystem::VoiceFor(EntityId id, const AudioSource& source) {
     if (auto it = m_impl->voices.find(id); it != m_impl->voices.end()) {
-        if (it->second->file == source.clip.file) return it->second.get();
+        if (it->second->file == source.clip.file && it->second->group == source.group) return it->second.get();
         m_impl->voices.erase(it);
     }
-    const std::filesystem::path& file = source.clip.file;
-    const std::string name = source.clip.path.empty() ? ToUtf8(file) : source.clip.path;
+    std::unique_ptr<Voice> voice = OpenVoice(source.clip, source.group);
+    if (!voice) return nullptr;
+    return m_impl->voices.emplace(id, std::move(voice)).first->second.get();
+}
+
+std::unique_ptr<AudioSystem::Voice> AudioSystem::OpenVoice(const AudioClip& clip, AudioGroup group) {
+    const std::filesystem::path& file = clip.file;
+    const std::string name = clip.path.empty() ? ToUtf8(file) : clip.path;
     if (file.empty()) {
         if (m_impl->failed.insert(std::filesystem::path()).second) {
-            log::Warn("Áudio: fonte de som sem clipe ({})", source.clip.IsEmpty() ? "nenhum escolhido" : name);
+            log::Warn("Áudio: fonte de som sem clipe ({})", clip.IsEmpty() ? "nenhum escolhido" : name);
         }
         return nullptr;
     }
     std::error_code ec;
     const auto size = std::filesystem::file_size(file, ec);
     const ma_uint32 flags = (!ec && size > kStreamAbove) ? MA_SOUND_FLAG_STREAM : MA_SOUND_FLAG_DECODE;
+    if (const auto it = m_impl->loading.find(file); it != m_impl->loading.end()) it->second.wait();
     auto voice = std::make_unique<Voice>();
+    ma_sound_group* parent = m_impl->Group(group);
 #ifdef _WIN32
-    const ma_result result = ma_sound_init_from_file_w(&m_impl->engine, file.c_str(), flags, nullptr, nullptr, &voice->sound);
+    const ma_result result = ma_sound_init_from_file_w(&m_impl->engine, file.c_str(), flags, parent, nullptr, &voice->sound);
 #else
-    const ma_result result = ma_sound_init_from_file(&m_impl->engine, file.c_str(), flags, nullptr, nullptr, &voice->sound);
+    const ma_result result = ma_sound_init_from_file(&m_impl->engine, file.c_str(), flags, parent, nullptr, &voice->sound);
 #endif
     if (result != MA_SUCCESS) {
         if (m_impl->failed.insert(file).second) {
@@ -247,7 +293,112 @@ AudioSystem::Voice* AudioSystem::VoiceFor(EntityId id, const AudioSource& source
     ma_sound_set_doppler_factor(&voice->sound, 0.0f);  // sem efeito Doppler: as entidades "teleportam"
     voice->file = file;
     voice->clip = name;
-    return m_impl->voices.emplace(id, std::move(voice)).first->second.get();
+    voice->group = group;
+    return voice;
+}
+
+void AudioSystem::Preload(Scene& scene) {
+    std::vector<std::filesystem::path> batch;
+    for (const auto& e : scene.Entities()) {
+        const AudioSource* source = e->Get<AudioSource>();
+        if (!source || source->clip.file.empty() || m_impl->preloaded.contains(source->clip.file)) continue;
+        const std::filesystem::path& file = source->clip.file;
+        m_impl->preloaded.insert(file);
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(file, ec);
+        if (ec || size > kStreamAbove) continue;  // sem arquivo, ou música (lida aos poucos durante o jogo)
+        batch.push_back(file);
+    }
+    if (batch.empty() || !EnsureEngine()) return;
+    // Uma thread decodifica os clipes, um por vez, no carregador do miniaudio (que guarda o resultado pelo
+    // caminho): o primeiro Play de cada um já acha o som pronto. Quem tocar antes espera só o seu clipe.
+    std::vector<std::promise<void>> done(batch.size());
+    for (size_t i = 0; i < batch.size(); ++i) m_impl->loading[batch[i]] = done[i].get_future().share();
+    m_impl->preloadRequests += batch.size();
+    ma_resource_manager* loader = ma_engine_get_resource_manager(&m_impl->engine);
+    m_impl->workers.push_back(std::async(std::launch::async, [loader, batch, done = std::move(done)]() mutable {
+        for (size_t i = 0; i < batch.size(); ++i) {
+#ifdef _WIN32
+            ma_resource_manager_register_file_w(loader, batch[i].c_str(), MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE);
+#else
+            ma_resource_manager_register_file(loader, batch[i].c_str(), MA_RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE);
+#endif
+            done[i].set_value();
+        }
+    }));
+}
+
+void AudioSystem::UpdateOneShots(Scene& scene) {
+    for (auto it = m_impl->shots.begin(); it != m_impl->shots.end();) {
+        const EntityId id = it->first;
+        const Entity* e = scene.Find(id);
+        const AudioSource* source = e ? e->Get<AudioSource>() : nullptr;
+        if (!source || !scene.IsActiveInHierarchy(id)) {
+            it = m_impl->shots.erase(it);
+            continue;
+        }
+        auto& list = it->second;
+        std::erase_if(list, [](const std::unique_ptr<Voice>& v) {
+            return !v->resumeOnUnpause && !ma_sound_is_playing(&v->sound);  // terminou (ou foi parada)
+        });
+        for (auto& voice : list) ApplyOneShot(*voice, *source, scene, id);
+        it = list.empty() ? m_impl->shots.erase(it) : std::next(it);
+    }
+}
+
+void AudioSystem::ApplyOneShot(Voice& voice, const AudioSource& source, Scene& scene, EntityId id) {
+    ApplySource(voice, source, scene, id);
+    ma_sound_set_looping(&voice.sound, MA_FALSE);  // voz extra nunca repete
+    ma_sound_set_volume(&voice.sound, std::max(0.0f, source.volume) * voice.scale);
+    voice.gain *= voice.scale;
+}
+
+bool AudioSystem::PlayOneShot(EntityId id, const AudioClip* clip, float volumeScale) {
+    Entity* e = FindEntity(id);
+    const AudioSource* source = e ? e->Get<AudioSource>() : nullptr;
+    if (!source || !EnsureEngine()) return false;
+    std::unique_ptr<Voice> voice = OpenVoice(clip ? *clip : source->clip, source->group);
+    if (!voice) return false;
+    voice->scale = std::max(0.0f, volumeScale);
+    auto& list = m_impl->shots[id];
+    if (list.size() >= kMaxOneShots) list.erase(list.begin());  // a mais antiga para
+    Voice& v = *list.emplace_back(std::move(voice));
+    ApplyOneShot(v, *source, m_runtime->GetScene(), id);
+    if (m_paused) {
+        v.resumeOnUnpause = true;
+    } else {
+        ma_sound_start(&v.sound);
+    }
+    return true;
+}
+
+bool AudioSystem::PlayOneShot(EntityId entity, float volumeScale) {
+    return PlayOneShot(entity, nullptr, volumeScale);
+}
+
+bool AudioSystem::PlayOneShot(EntityId entity, const AudioClip& clip, float volumeScale) {
+    return PlayOneShot(entity, &clip, volumeScale);
+}
+
+bool AudioSystem::PlayOneShot(std::string_view entity, float volumeScale) {
+    const Entity* e = FindEntity(entity);
+    return e && PlayOneShot(e->id, nullptr, volumeScale);
+}
+
+void AudioSystem::SetGroupVolume(AudioGroup group, float volume) {
+    const auto i = static_cast<size_t>(group);
+    volume = std::max(0.0f, volume);
+    AudioSettings::Global().groupVolumes[i] = volume;  // próximas cenas e próximo Play
+    m_impl->settings.groupVolumes[i] = volume;
+    if (ma_sound_group* g = m_impl->Group(group)) ma_sound_group_set_volume(g, volume);
+}
+
+float AudioSystem::GroupVolume(AudioGroup group) const {
+    return m_impl->settings.groupVolumes[static_cast<size_t>(group)];
+}
+
+size_t AudioSystem::PreloadedClips() const {
+    return m_impl->preloadRequests;
 }
 
 Entity* AudioSystem::FindEntity(std::string_view name) const {
@@ -288,6 +439,7 @@ bool AudioSystem::Stop(EntityId id) {
         ma_sound_seek_to_pcm_frame(&it->second->sound, 0);
         it->second->resumeOnUnpause = false;
     }
+    m_impl->shots.erase(id);  // as vozes extras também param
     return true;
 }
 
@@ -313,9 +465,11 @@ bool AudioSystem::SetVolume(std::string_view entity, float volume) {
 }
 
 bool AudioSystem::IsPlaying(EntityId id) const {
-    const auto it = m_impl->voices.find(id);
-    if (it == m_impl->voices.end()) return false;
-    return it->second->resumeOnUnpause || ma_sound_is_playing(&it->second->sound);
+    auto playing = [](const Voice& v) { return v.resumeOnUnpause || ma_sound_is_playing(&v.sound); };
+    if (const auto it = m_impl->voices.find(id); it != m_impl->voices.end() && playing(*it->second)) return true;
+    const auto shots = m_impl->shots.find(id);
+    return shots != m_impl->shots.end() &&
+           std::any_of(shots->second.begin(), shots->second.end(), [&](const auto& v) { return playing(*v); });
 }
 
 bool AudioSystem::IsPlaying(std::string_view entity) const {
@@ -328,19 +482,24 @@ void AudioSystem::StopAll() {
         ma_sound_stop(&voice->sound);
         voice->resumeOnUnpause = false;
     }
+    m_impl->shots.clear();
 }
 
 void AudioSystem::SetPaused(bool paused) {
     if (paused == m_paused) return;
     m_paused = paused;
-    for (auto& [id, voice] : m_impl->voices) {
-        if (paused && ma_sound_is_playing(&voice->sound)) {
-            ma_sound_stop(&voice->sound);  // guarda a posição: start continua dali
-            voice->resumeOnUnpause = true;
-        } else if (!paused && voice->resumeOnUnpause) {
-            ma_sound_start(&voice->sound);
-            voice->resumeOnUnpause = false;
+    auto apply = [paused](Voice& voice) {
+        if (paused && ma_sound_is_playing(&voice.sound)) {
+            ma_sound_stop(&voice.sound);  // guarda a posição: start continua dali
+            voice.resumeOnUnpause = true;
+        } else if (!paused && voice.resumeOnUnpause) {
+            ma_sound_start(&voice.sound);
+            voice.resumeOnUnpause = false;
         }
+    };
+    for (auto& [id, voice] : m_impl->voices) apply(*voice);
+    for (auto& [id, list] : m_impl->shots) {
+        for (auto& voice : list) apply(*voice);
     }
 }
 
@@ -368,6 +527,15 @@ std::vector<AudioVoiceInfo> AudioSystem::Voices() const {
     std::vector<AudioVoiceInfo> out;
     for (const auto& [id, voice] : m_impl->voices) {
         out.push_back({id, voice->clip, IsPlaying(id), voice->spatial, voice->distance, voice->gain});
+    }
+    // Vozes extras: somadas na fonte (ou numa linha própria, se ela ainda não tocou a voz principal).
+    for (const auto& [id, list] : m_impl->shots) {
+        auto it = std::find_if(out.begin(), out.end(), [id](const AudioVoiceInfo& v) { return v.entity == id; });
+        if (it == out.end() && !list.empty()) {
+            const Voice& first = *list.front();
+            it = out.insert(out.end(), {id, first.clip, true, first.spatial, first.distance, first.gain});
+        }
+        if (it != out.end()) it->oneShots = static_cast<int>(list.size());
     }
     return out;
 }

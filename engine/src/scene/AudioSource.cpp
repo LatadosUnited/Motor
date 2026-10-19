@@ -54,6 +54,50 @@ CustomFieldType FieldTraits<AudioClip>::Describe() {
             }};
 }
 
+namespace {
+constexpr AudioGroup kGroups[] = {AudioGroup::Effects, AudioGroup::Music, AudioGroup::Interface};
+} // namespace
+
+const char* AudioGroupName(AudioGroup group) {
+    switch (group) {
+        case AudioGroup::Effects: return "Effects";
+        case AudioGroup::Music: return "Music";
+        case AudioGroup::Interface: return "Interface";
+    }
+    return "Effects";
+}
+
+const char* AudioGroupLabel(AudioGroup group) {
+    switch (group) {
+        case AudioGroup::Effects: return "Efeitos";
+        case AudioGroup::Music: return "Música";
+        case AudioGroup::Interface: return "Interface";
+    }
+    return "?";
+}
+
+// Na cena é o nome ("Music"); números também são aceitos.
+CustomFieldType FieldTraits<AudioGroup>::Describe() {
+    return {"AudioGroup",
+            [](const void* a, const void* b) { return *static_cast<const AudioGroup*>(a) == *static_cast<const AudioGroup*>(b); },
+            [](const void* v, const AssetLibrary&) {
+                return nlohmann::json(AudioGroupName(*static_cast<const AudioGroup*>(v))).dump();
+            },
+            [](std::string_view text, void* v, AssetLibrary&, std::string* error) {
+                const auto json = nlohmann::json::parse(text, nullptr, false);
+                auto& group = *static_cast<AudioGroup*>(v);
+                for (int i = 0; i < kAudioGroupCount; ++i) {
+                    if ((json.is_string() && json.get<std::string>() == AudioGroupName(kGroups[i])) ||
+                        (json.is_number_integer() && json.get<int>() == i)) {
+                        group = kGroups[i];
+                        return true;
+                    }
+                }
+                if (error) *error = "esperado \"Effects\", \"Music\" ou \"Interface\"";
+                return false;
+            }};
+}
+
 std::vector<AudioClip> CollectAudioClips(const Scene& scene) {
     std::vector<AudioClip> clips;
     for (const auto& e : scene.Entities()) {
@@ -80,7 +124,9 @@ MOTOR_COMPONENT_MODULE(SoundSource) {
         .Field("minDistance", "Distância mínima", &AudioSource::minDistance,
                {.speed = 0.1f, .min = 0.01f, .max = 10000.0f, .format = "%.1f m", .tooltip = "3D: até aqui, volume cheio"})
         .Field("maxDistance", "Distância máxima", &AudioSource::maxDistance,
-               {.speed = 0.5f, .min = 0.01f, .max = 10000.0f, .format = "%.1f m", .tooltip = "3D: daqui em diante o volume para de cair"});
+               {.speed = 0.5f, .min = 0.01f, .max = 10000.0f, .format = "%.1f m", .tooltip = "3D: daqui em diante o volume para de cair"})
+        .Field("group", "Grupo", &AudioSource::group,
+               {.tooltip = "Grupo de volume (Efeitos, Música, Interface): o menu de opções muda cada um de uma vez"});
 }
 
 } // namespace motor

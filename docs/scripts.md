@@ -906,6 +906,10 @@ tecla M ([examples/SonsDoMenu.cpp](examples/SonsDoMenu.cpp)):
 - `Play(nome)`, `Stop(nome)`, `SetVolume(nome, volume)` e `IsPlaying(nome)` também aceitam o id da entidade e
   devolvem `false` se ela não existe ou não tem Fonte de áudio. `Play` também devolve `false` sem clipe ou se
   o arquivo não abriu (com aviso no console).
+- `PlayOneShot(nome)` toca **outra voz** da mesma fonte, sem cortar a que já toca: passos e coletas seguidas
+  não se cortam (com outro clipe: `PlayOneShot(id, clipe)`, de um campo `motor::AudioClip` do script).
+- Cada fonte tem um **Grupo** (Efeitos, Música, Interface): `SetGroupVolume(motor::AudioGroup::Music, 0.5f)`
+  muda todos os sons do grupo de uma vez e vale nas próximas cenas (o menu de opções do jogo).
 - Mudar os campos da Fonte de áudio (volume, tom, a posição da entidade) vale na hora, mesmo tocando.
 - Sem placa de som (ou sem saída), o jogo roda igual, só sem som.
 
