@@ -3,12 +3,12 @@ tipo: fase
 alpha: 2
 fase: 20
 titulo: Editor produtivo
-status: em andamento
+status: pronta
 prioridade: 5
 areas: [editor, mcp, assets]
 branch: fase-20-editor-produtivo
 inicio: 2026-10-19
-fim: 
+fim: 2026-10-19
 ---
 
 # Fase 20 — Editor produtivo
@@ -125,6 +125,8 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 
 ## Limitações
 
+- Fechada e juntada ao main sem o teste à mão dos itens novos (decisão do usuário, 19/10/2026): ficam no roteiro
+  ([teste-manual.md](../../teste-manual.md), seções 3, 4, 6 e 8) e o que aparecer vai para a [entrada](../entrada.md).
 - Em Selecionado, os colliders dos filhos do objeto selecionado não aparecem (como na Unity): selecione o filho
   ou use Todos.
 - Com vários selecionados, girar e escalar pelo gizmo usam o pivô da principal (a Unity também oferece o centro do
