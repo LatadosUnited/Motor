@@ -36,7 +36,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [x] **Janelas Cena e Jogo lado a lado** no Play. (0dbd735) *(origem: Fase 2, limitação)*
 - [x] **Prefab dentro de prefab.** (08a1958) *(origem: Fase 6, limitação)*
 - [x] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
-  limitação)* (COMMIT)
+  limitação)* (69fcdd7)
 - [ ] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
   limitação)*
 - [ ] **MCP acompanha:** seleção múltipla, copiar/colar, mover a câmera do editor para um ponto, eventos para o
