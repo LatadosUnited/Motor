@@ -156,3 +156,10 @@ add_test(NAME test_distribuicao COMMAND test_distribuicao ${CMAKE_CURRENT_BINARY
 # API dos scripts da Fase 17 (sem DLL): temporizadores, mensagens, aleatórios, GetComponent, EntityRef (cópias e
 # prefabs), MOTOR_FIELDS e campos renomeados ou perdidos na recarga.
 motor_add_test(test_script_api)
+
+# Viewport do editor (Fase 20): modo dos contornos de collider e a gravação dele no editor.json.
+motor_add_test(test_viewport
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorSettings.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/ColliderOverlay.cpp)
+target_include_directories(test_viewport PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_viewport PRIVATE nlohmann_json::nlohmann_json)

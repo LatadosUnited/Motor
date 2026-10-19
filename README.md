@@ -509,7 +509,8 @@ no `FixedUpdate`, **antes** dos scripts, só no Play. Tudo é montado por compon
   convexo, se tiver Rigidbody dinâmico). Malhas com pele usam a pose de repouso.
 - Mexer no Transform de um corpo (script ou editor) durante o Play o teleporta; mudar um componente refaz o
   corpo; desativar ou excluir a entidade tira o corpo. Corpos parados "dormem" e quase não custam.
-- No viewport, o botão **Colliders** mostra as formas (verde), os triggers (azul) e os personagens.
+- No viewport, o botão **Colliders** mostra as formas (verde), os triggers (azul) e os personagens. Um clique
+  alterna **Selecionado** (padrão: só o objeto selecionado), **Todos** e **Nenhum**; a escolha fica salva no editor.
 
 Scripts recebem os contatos (depois do passo da física, antes do próprio `OnFixedUpdate`) e usam o sistema:
 

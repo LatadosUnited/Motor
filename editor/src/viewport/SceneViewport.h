@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorContext.h"
+#include "viewport/ColliderOverlay.h"
 #include "viewport/UiEditor.h"
 
 #include <motor/Motor.h>
@@ -43,6 +44,10 @@ public:
     void StopLooking() { m_looking = false; }
     void RequestFocus() { m_focusRequest = true; }
 
+    // Contornos de collider: Selecionado / Todos / Nenhum (lembrado no editor.json pelo EditorApp).
+    ColliderOverlay GetColliderOverlay() const { return m_colliderOverlay; }
+    void SetColliderOverlay(ColliderOverlay mode) { m_colliderOverlay = mode; }
+
 private:
     // Ícones de luzes e câmeras (que não têm malha para clicar): desenhados por cima da imagem e
     // selecionáveis com o clique, antes do raio contra as malhas.
@@ -54,7 +59,7 @@ private:
     void CollectIcons(const EditorContext& ctx);
     void DrawIcons(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) const;
     void DrawSelectedHelpers(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) const;
-    // Contorno dos colliders e personagens (física), em linhas por cima da imagem.
+    // Contorno dos colliders e personagens (física), em linhas por cima da imagem, conforme m_colliderOverlay.
     void DrawColliders(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin);
     // Ponto do mundo em pixels do viewport (relativo ao canto); nullopt se estiver atrás da câmera.
     std::optional<ImVec2> Project(const glm::vec3& world) const;
@@ -81,7 +86,7 @@ private:
 
     std::vector<Icon> m_icons;  // do frame atual
     std::vector<motor::GizmoLine> m_lines;  // reaproveitado entre entidades (sem alocar a cada frame)
-    bool m_showColliders = true;
+    ColliderOverlay m_colliderOverlay = ColliderOverlay::Selected;
     glm::vec2 m_size{1.0f};
     bool m_looking = false;            // botão direito segurado no viewport
     bool m_wasLooking = false;         // no quadro anterior (soltar o cursor só ao parar de voar)

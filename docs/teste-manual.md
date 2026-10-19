@@ -55,6 +55,8 @@ versão nova, marca o que passou e anota o que não passou. Criado na
 - [ ] Do painel Projeto para o viewport: uma textura ou um `.mmat` sobre um objeto → aplica; um `.obj`, `.glb` ou
   `.mprefab` → cria a entidade onde o mouse aponta, apoiada no chão.
 - [ ] Ver > Wireframe liga e desliga.
+- [ ] Botão **Colliders** da barra do viewport: em **Selecionado** (padrão) só o objeto selecionado tem contorno
+  verde; um clique passa para **Todos**, outro para **Nenhum**. Fechar e abrir o editor mantém a escolha.
 
 ## 4. Hierarquia, Inspector e desfazer
 

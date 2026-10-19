@@ -104,7 +104,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         CollectIcons(ctx);
         ImDrawList* overlay = ImGui::GetWindowDrawList();
         if (m_showUi) m_uiTool.Draw(ctx, overlay, origin, m_ui->Canvas().Layout());
-        if (m_showColliders) DrawColliders(ctx, overlay, origin);
+        DrawColliders(ctx, overlay, origin);
         DrawSelectedHelpers(ctx, overlay, origin);
         DrawIcons(ctx, overlay, origin);
         DrawGizmo(ctx, origin);

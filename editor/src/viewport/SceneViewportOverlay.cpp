@@ -178,19 +178,19 @@ void SceneViewport::DrawSelectedHelpers(const EditorContext& ctx, ImDrawList* dl
 }
 
 void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) {
+    if (m_colliderOverlay == ColliderOverlay::None) return;
     const Scene& scene = ctx.scene;
-    for (const auto& e : scene.Entities()) {
-        const ColliderComponent* collider = e->Get<ColliderComponent>();
-        const CharacterControllerComponent* character = e->Get<CharacterControllerComponent>();
-        if (!collider && !character) continue;
-        const bool active = scene.IsActiveInHierarchy(e->id);
-        const bool selected = e->id == ctx.selected;
-        if (!active && !selected) continue;
+    auto drawEntity = [&](const Entity& e) {
+        const ColliderComponent* collider = e.Get<ColliderComponent>();
+        const CharacterControllerComponent* character = e.Get<CharacterControllerComponent>();
+        if (!collider && !character) return;
+        const bool selected = e.id == ctx.selected;
+        if (!ShouldDrawCollider(m_colliderOverlay, selected, scene.IsActiveInHierarchy(e.id))) return;
 
         m_lines.clear();
-        const glm::mat4 world = scene.WorldMatrix(e->id);
+        const glm::mat4 world = scene.WorldMatrix(e.id);
         if (collider) {
-            const MeshRenderer* mr = collider->shape == ColliderShape::Mesh ? e->Get<MeshRenderer>() : nullptr;
+            const MeshRenderer* mr = collider->shape == ColliderShape::Mesh ? e.Get<MeshRenderer>() : nullptr;
             if (mr && mr->mesh) {
                 const glm::vec3 lo = mr->mesh->BoundsMin(), hi = mr->mesh->BoundsMax();
                 AppendColliderLines(*collider, world, m_lines, &lo, &hi);
@@ -206,7 +206,14 @@ void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, cons
             const auto pa = Project(l.a), pb = Project(l.b);
             if (pa && pb) dl->AddLine(Add(origin, *pa), Add(origin, *pb), color, thickness);
         }
+    };
+
+    // Só o selecionado: nem percorre a cena (o custo não cresce com o número de objetos).
+    if (m_colliderOverlay == ColliderOverlay::Selected) {
+        if (const Entity* e = scene.Find(ctx.selected)) drawEntity(*e);
+        return;
     }
+    for (const auto& e : scene.Entities()) drawEntity(*e);
 }
 
 void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
@@ -284,8 +291,11 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
     ImGui::SetItemTooltip("Encaixe: %.2g m / %.0f° / %.2g (segure Ctrl para ativar temporariamente)",
                           m_snapTranslate, m_snapRotate, m_snapScale);
     ImGui::SameLine(0.0f, 14.0f);
-    if (toggleButton("Colliders", m_showColliders)) m_showColliders = !m_showColliders;
-    ImGui::SetItemTooltip("Mostrar as formas de colisão (verde), os triggers (azul) e os personagens");
+    if (toggleButton(ColliderOverlayLabel(m_colliderOverlay), m_colliderOverlay != ColliderOverlay::None)) {
+        m_colliderOverlay = NextColliderOverlay(m_colliderOverlay);
+    }
+    ImGui::SetItemTooltip("Formas de colisão (verde), triggers (azul) e personagens. Clique para alternar:\n"
+                          "Selecionado (só o objeto selecionado), Todos ou Nenhum.");
     ImGui::SameLine();
     if (toggleButton("UI", m_showUi)) m_showUi = !m_showUi;
     ImGui::SetItemTooltip("Mostrar a interface do jogo (HUD) por cima da cena. Com ela ligada, um clique na UI a\n"
