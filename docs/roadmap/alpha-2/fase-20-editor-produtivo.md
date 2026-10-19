@@ -38,7 +38,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [x] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
   limitação)* (69fcdd7)
 - [x] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
-  limitação)* (COMMIT)
+  limitação)* (37b1574)
 - [ ] **MCP acompanha:** seleção múltipla, copiar/colar, mover a câmera do editor para um ponto, eventos para o
   agente. *(origem: Fase 13, pendências)*
 
