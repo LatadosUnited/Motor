@@ -23,7 +23,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [ ] ~~**Antes de tudo, dividir os arquivos que esta fase vai mexer**, um por commit, sem mudar comportamento:
   `ProjectPanel.cpp` (~1200 linhas), `SceneViewport.cpp` e `SceneDocument.cpp` (~600).~~ Feito na
   [Organização do código](organizacao-do-codigo.md). *(origem: revisão do código de 17/10/2026)*
-- [ ] **Seleção múltipla** na hierarquia e no viewport (Ctrl/Shift, retângulo), com gizmo e Inspector para vários.
+- [x] **Seleção múltipla** na hierarquia e no viewport (Ctrl/Shift, retângulo), com gizmo e Inspector para vários. (59e5fb3)
 - [ ] **Copiar, recortar, colar e duplicar** várias entidades (com filhos), também entre cenas.
 - [ ] **Snapping** na grade, em ângulos e em passos de escala; grade visível configurável.
 - [ ] **Busca na hierarquia** (nome e tipo de componente).
@@ -54,8 +54,24 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   no `editor.json` (`viewportColliders`; arquivo antigo sem o campo abre em Selecionado). Teste `test_viewport`
   e item novo na seção 3 do [roteiro à mão](../../teste-manual.md). Conferido numa captura da janela: só o objeto
   selecionado tem contorno. O clique no botão e a troca de modo não foram testados (o MCP não clica na barra).
+- **Seleção múltipla:** `EditorContext::selection` com a principal em `selected` (Inspector, gizmo, foco);
+  `SyncSelection` reduz a seleção à principal quando alguém troca só ela (criar, MCP, desfazer), então o código
+  antigo continua certo. Hierarquia: Ctrl+clique alterna, Shift+clique pega o intervalo, arrastar leva o grupo,
+  clique simples num dos selecionados só reduz ao soltar sem arrastar. Viewport: Ctrl/Shift+clique alterna,
+  arrastar no vazio faz o retângulo (centro da malha ou ícone dentro). Gizmo aplica a mudança da principal nos
+  outros; Del, Ctrl+D e Ctrl+A (novo, menu Editar) agem em todos; o desfazer guarda a seleção. Inspector: mostra a
+  principal e repete nos outros o que mudou nela, campo a campo, eixo a eixo no Transform, e componentes
+  adicionados/removidos (`panels/MultiEdit`). MCP: `select` com `entities` e `add`, e `selection` no `scene_tree`
+  e no estado do editor. Testes `test_selection` e casos no `test_mcp`; conferido numa captura com dois objetos
+  selecionados pelo MCP. Ctrl/Shift+clique, retângulo e o gizmo com vários **não foram testados** (precisam de
+  mouse; itens novos na seção 4 do roteiro à mão).
 
 ## Limitações
 
 - Em Selecionado, os colliders dos filhos do objeto selecionado não aparecem (como na Unity): selecione o filho
   ou use Todos.
+- Com vários selecionados, girar e escalar pelo gizmo usam o pivô da principal (a Unity também oferece o centro do
+  grupo e o pivô de cada um). Escala em objetos girados de forma diferente pode distorcê-los.
+- O Inspector com vários mostra os valores da principal, sem marcar os campos que diferem entre os selecionados;
+  o nome não é repetido. "Salvar como asset" do material com vários faz todos usarem o asset novo.
+- O retângulo usa o centro de cada objeto, não a forma: um objeto grande só entra com o centro dentro.
