@@ -62,8 +62,17 @@ README.
   compilar, 0,23 s de ligar e o resto do editor e do processo). O que sobra: o `.gch` tem ~107 MB e só
   carregá-lo leva ~0,4 s por arquivo (um script vazio compila em 0,45 s). Caminhos: PCH menor (menos headers no
   `ScriptModule.h`), ou compilar o arquivo salvo num compilador que fica aberto. *(origem: medição de 18/10/2026)*
-- [ ] **Medir o projeto de jogo real** (88 a 124 s do zero no começo da fase; a meta é menos de 30 s). O de
-  referência com 50 scripts compila do zero em 11,5 s. *(origem: Pronto quando)*
+  No Island (mesmo dia, com outro programa ocupando ~2 núcleos): salvar → recarregado em 1,5 a 1,9 s no
+  `Girar.cpp`, mas **5 a 6,5 s** no `JogadorIlha.cpp` e no `HudVila.cpp`. Perceber o arquivo salvo leva menos de
+  0,2 s e recarregar 0,02 s: quase tudo é compilar. O peso é o `<format>` dos scripts: só incluir custa ~1,8 s
+  por arquivo, usar `std::format` mais ~1 s, e gerar o objeto em Debug quase dobra (JogadorIlha: 3,4 s só a
+  sintaxe, 6,9 s com o objeto). Os headers da engine fora do PCH (`PhysicsSystem.h`, `UiSystem.h`,
+  `Animator.h`) custam 0,1 a 0,25 s cada. Próximo passo: medir com o `<format>` no PCH (e o tamanho/carga do
+  `.gch` que isso traz), ou oferecer aos scripts um formatador da engine compilado na `libMotor.dll`.
+- [x] **Medir o projeto de jogo real** (88 a 124 s do zero no começo da fase; a meta é menos de 30 s). O de
+  referência com 50 scripts compila do zero em 11,5 s. *(origem: Pronto quando)* Medido em 18/10/2026 no
+  Island (9 arquivos, 6 scripts; cópia na pasta temporária, editor de teste pelo MCP): **9,9 s do zero**
+  (configurar 3,4 s, compilar 5,6 s, ligar 0,8 s). Meta cumprida. (MEDHASH)
 
 ## Pronto quando
 
