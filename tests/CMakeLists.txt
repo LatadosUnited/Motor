@@ -184,3 +184,10 @@ target_include_directories(test_hierarchy_search PRIVATE ${PROJECT_SOURCE_DIR}/e
 # Prefab dentro de prefab (Fase 20): aninhar ao criar e aplicar, o de fora seguindo o de dentro, gravar e
 # reabrir, recusar ciclos e desvincular voltando a ser instância do de dentro.
 motor_add_test(test_prefab_nested)
+
+# Opções do jogador (Fase 21): JSON, opcoes.json, padrão no .mproject, pasta de dados e a API dos scripts com um
+# GameHost (de teste e o do Play do editor).
+motor_add_test(test_game_options
+    ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/play/PlayHost.cpp)
+target_include_directories(test_game_options PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)

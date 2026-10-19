@@ -43,7 +43,8 @@ namespace motor {
 //     FieldOptions::formerKey.
 // 13: Fase 18: camadas de colisão (campo layer no Collider e no CharacterController, máscara no Raycast),
 //     consultas de área, SetCharacterVelocity, useGravity; PlayOneShot e grupo de volume no AudioSource.
-inline constexpr int kScriptApiVersion = 13;
+// 14: Fase 21: opções do jogador (GetOptions/ApplyOptions/Resolutions) e QuitGame.
+inline constexpr int kScriptApiVersion = 14;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

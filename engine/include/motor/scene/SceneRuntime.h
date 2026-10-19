@@ -21,6 +21,7 @@
 namespace motor {
 
 class AssetLibrary;
+class GameHost;
 class PrefabLibrary;
 struct ComponentType;
 class Scene;
@@ -54,6 +55,9 @@ public:
     // Biblioteca de assets do projeto (opcional): usada por Instantiate para carregar os prefabs com as malhas,
     // texturas e materiais do projeto. Sem ela, Instantiate usa uma biblioteca local se `prefab.file` existir.
     void SetAssets(AssetLibrary* assets) { m_assets = assets; }
+    // Quem roda o jogo (opções do jogador, sair), para os scripts. Opcional; precisa viver mais que o runtime.
+    void SetHost(GameHost* host) { m_host = host; }
+    GameHost* Host() const { return m_host; }
 
     // --- API usada pelos scripts ---
     Entity* FindEntity(std::string_view name);
@@ -138,6 +142,7 @@ private:
 
     Scene& m_scene;
     AssetLibrary* m_assets = nullptr;
+    GameHost* m_host = nullptr;
     std::unique_ptr<PrefabLibrary> m_prefabs;
     std::unique_ptr<AssetLibrary> m_fallbackAssets;
     GameTime m_time;

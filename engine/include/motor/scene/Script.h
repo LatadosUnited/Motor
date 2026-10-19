@@ -11,6 +11,7 @@
 //   registry.Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
 
 #include "motor/core/Input.h"
+#include "motor/project/GameOptions.h"
 #include "motor/scene/RuntimeSystem.h"
 
 #include <glm/vec2.hpp>
@@ -23,6 +24,7 @@
 #include <string_view>
 #include <type_traits>
 #include <typeinfo>
+#include <vector>
 
 namespace motor {
 
@@ -156,6 +158,17 @@ protected:
     // vale com o jogo em foco e Esc solta o cursor; ao parar o Play ele volta ao normal.
     void SetCursorMode(CursorMode mode);
     CursorMode GetCursorMode() const;
+
+    // --- Opções do jogador (menu de opções) e sair ---
+    // Tela cheia, resolução, vsync, MSAA e sombras. No jogo exportado, ApplyOptions muda na hora e grava em
+    // %APPDATA%\<Jogo>\opcoes.json (o jogo abre com elas da próxima vez); no editor só a qualidade vale no Play.
+    //   motor::GameOptions o = GetOptions();
+    //   o.fullscreen = !o.fullscreen;
+    //   ApplyOptions(o);
+    GameOptions GetOptions() const;
+    void ApplyOptions(const GameOptions& options);
+    std::vector<Resolution> Resolutions() const;  // de tela cheia, da menor para a maior
+    void QuitGame();  // fecha o jogo depois deste passo (no editor, para o Play)
 
     // --- Temporizadores (tempo do jogo: não contam na pausa) ---
     // Chama `fn` daqui a `seconds` segundos (After) ou a cada `seconds` segundos (Every), antes do OnUpdate

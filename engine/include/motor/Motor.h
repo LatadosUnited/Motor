@@ -42,3 +42,4 @@
 #include "motor/assets/BuiltinAssets.h"
 #include "motor/core/EngineAssets.h"
 #include "motor/audio/AudioSystem.h"
+#include "motor/scene/GameHost.h"

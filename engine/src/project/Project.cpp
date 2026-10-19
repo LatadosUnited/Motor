@@ -4,6 +4,7 @@
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/core/Version.h"
+#include "motor/project/GameOptions.h"
 
 #include <nlohmann/json.hpp>
 
@@ -17,7 +18,8 @@ using json = nlohmann::ordered_json;
 
 namespace {
 constexpr const char* kFormatName = "motor-project";
-constexpr int kFormatVersion = 3;  // 2: engineVersion (Fase 14). 3: camadas de colisão em "physics" (Fase 18)
+constexpr int kFormatVersion = 4;  // 2: engineVersion (Fase 14). 3: camadas de colisão em "physics" (Fase 18).
+                                   // 4: opções padrão do jogador em "player" (Fase 21)
 
 void SetError(std::string* error, std::string message) {
     if (error) *error = std::move(message);
@@ -167,6 +169,9 @@ std::optional<Project> Project::Open(const std::filesystem::path& fileOrDir, std
         if (const auto physics = root.find("physics"); physics != root.end() && physics->is_object()) {
             project.m_layers = LayersFromJson(*physics);  // formatos 1 e 2: camadas padrão
         }
+        if (const auto player = root.find("player"); player != root.end() && player->is_object()) {
+            GameOptionsFromJson(player->dump(), project.m_options);  // formatos 1 a 3: opções padrão
+        }
 
         std::filesystem::create_directories(project.AssetsDir(), ec);  // projeto copiado sem Assets/ ainda abre
         log::Info("Projeto aberto: {} ({})", project.m_name, ToUtf8(project.m_root));
@@ -185,6 +190,10 @@ bool Project::Save(std::string* error) const {
     root["engineVersion"] = kVersion;
     root["startupScene"] = m_startupScene;
     root["physics"] = LayersToJson(m_layers);
+    json player = json::parse(GameOptionsToJson(m_options));
+    player.erase("format");
+    player.erase("version");
+    root["player"] = std::move(player);
 
     // Grava ao lado e troca: uma falha no meio não estraga o projeto.
     const std::string text = root.dump(2, ' ', false, json::error_handler_t::replace) + '\n';

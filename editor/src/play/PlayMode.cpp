@@ -16,6 +16,7 @@ void PlayMode::Play(motor::Scene& scene, motor::EntityId selected) {
     m_scenesLoaded = 0;
     m_runtime = std::make_unique<motor::SceneRuntime>(scene);
     m_runtime->SetAssets(m_assets);
+    m_runtime->SetHost(m_host);
     motor::log::Info("Play");
     m_runtime->Start();
     PauseOnError();
@@ -100,6 +101,7 @@ void PlayMode::ApplySceneRequest() {
     *m_scene = std::move(next);
     m_runtime = std::make_unique<motor::SceneRuntime>(*m_scene);
     m_runtime->SetAssets(m_assets);
+    m_runtime->SetHost(m_host);
     m_runtime->SetInputEnabled(inputEnabled);
     m_runtime->SetCursorMode(cursor);
     ++m_scenesLoaded;

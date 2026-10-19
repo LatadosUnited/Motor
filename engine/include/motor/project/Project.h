@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motor/project/CollisionLayers.h"
+#include "motor/project/GameOptions.h"
 
 #include <filesystem>
 #include <optional>
@@ -53,6 +54,10 @@ public:
     const CollisionLayers& Layers() const { return m_layers; }
     void SetLayers(const CollisionLayers& layers) { m_layers = layers; }
 
+    // Opções com que o jogo exportado abre da primeira vez (antes de o jogador mudar alguma).
+    const GameOptions& DefaultOptions() const { return m_options; }
+    void SetDefaultOptions(const GameOptions& options) { m_options = options; }
+
     std::filesystem::path ToAbsolute(std::string_view relative) const;
     std::string ToRelative(const std::filesystem::path& absolute) const;  // vazio se estiver fora do projeto
 
@@ -62,6 +67,7 @@ private:
     std::string m_startupScene;  // relativo à raiz
     mutable std::string m_engineVersion;  // Save (const) grava a versão atual
     CollisionLayers m_layers;
+    GameOptions m_options;
 };
 
 } // namespace motor

@@ -284,6 +284,7 @@ int main(int argc, char** argv) {
         const std::string componentH = ReadText(include / "scene" / "Component.h");
         const std::string uiH = ReadText(include / "ui" / "UiSystem.h");
         const std::string audioH = ReadText(include / "audio" / "AudioSystem.h");
+        const std::string optionsH = ReadText(include / "project" / "GameOptions.h");
 
         std::set<std::string> names = DeclaredFunctions(Between(scriptH, "class Script {", "private:"));
         for (const std::string& n : DeclaredFunctions(Between(physicsH, "class PhysicsSystem", "private:"))) names.insert(n);
@@ -304,7 +305,8 @@ int main(int argc, char** argv) {
         const std::regex member(R"((\w+)\s*(?:=|\{))");
         const std::pair<const std::string*, const char*> structs[] = {
             {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"},
-            {&uiH, "struct UiPointer {"}, {&audioH, "struct AudioSettings {"}, {&audioH, "struct AudioVoiceInfo {"}};
+            {&uiH, "struct UiPointer {"}, {&audioH, "struct AudioSettings {"}, {&audioH, "struct AudioVoiceInfo {"},
+            {&optionsH, "struct GameOptions {"}};
         for (const auto& [header, type] : structs) {
             const std::string body = Between(*header, type, "};");
             CHECK(!body.empty());

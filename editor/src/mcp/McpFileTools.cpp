@@ -165,6 +165,50 @@ void McpController::AddSceneFileTools() {
             return ToolResult::Data({{"layers", std::move(list)}});
         },
     });
+
+    m_protocol.AddTool({
+        .name = "game_settings",
+        .description = "Lê ou muda as configurações do jogo (como Arquivo > Configurações do jogo): opções com que o "
+                       "jogo exportado abre da primeira vez. Sem argumentos, só lê. Grava o .mproject.",
+        .inputSchema = Schema({{"fullscreen", Prop("boolean", "tela cheia")},
+                               {"width", Prop("integer", "largura (0 = padrão: 1280 em janela, a da tela em tela cheia)")},
+                               {"height", Prop("integer", "altura (0 = padrão)")},
+                               {"vsync", Prop("boolean", "sincronizar com a tela")},
+                               {"msaa", Prop("integer", "amostras de MSAA: 1 (sem), 2, 4 ou 8")},
+                               {"shadows", Prop("string", "desligadas, baixas, medias ou altas")}}),
+        .run = [this](const Json& args) {
+            const Project* project = m_host.document.GetProject();
+            if (!project) throw ToolError("nenhum projeto aberto");
+            GameOptions options = project->DefaultOptions();
+            if (args.contains("fullscreen")) options.fullscreen = args["fullscreen"].get<bool>();
+            if (args.contains("width")) options.width = args["width"].get<int>();
+            if (args.contains("height")) options.height = args["height"].get<int>();
+            if (args.contains("vsync")) options.vsync = args["vsync"].get<bool>();
+            if (args.contains("msaa")) options.msaa = args["msaa"].get<int>();
+            if (args.contains("shadows")) {
+                const std::string name = args["shadows"].get<std::string>();
+                bool found = false;
+                for (ShadowSetting s : {ShadowSetting::Off, ShadowSetting::Low, ShadowSetting::Medium, ShadowSetting::High}) {
+                    if (name == ShadowSettingName(s)) {
+                        options.shadows = s;
+                        found = true;
+                    }
+                }
+                if (!found) throw ToolError("shadows: use desligadas, baixas, medias ou altas");
+            }
+            options.Clamp();
+            if (!(options == project->DefaultOptions())) {
+                std::string error;
+                if (!m_host.document.SetGameOptions(options, error)) throw ToolError(error);
+            }
+            return ToolResult::Data({{"fullscreen", options.fullscreen},
+                                     {"width", options.width},
+                                     {"height", options.height},
+                                     {"vsync", options.vsync},
+                                     {"msaa", options.msaa},
+                                     {"shadows", ShadowSettingName(options.shadows)}});
+        },
+    });
 }
 
 // --- Arquivos: assets, prefabs, modelos, materiais ---------------------------------------------------

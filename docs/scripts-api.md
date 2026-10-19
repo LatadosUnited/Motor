@@ -12,11 +12,11 @@ primeiro o [guia](scripts.md). Fontes, se quiser ir além: `engine/include/motor
 
 O teste `test_script_docs` confere que esta página cita todos os métodos públicos de `motor::Script`, de
 `motor::PhysicsSystem`, de `motor::UiSystem` e de `motor::AudioSystem`, todas as opções de campo e os campos de
-`GameTime`, `Collision`, `UiPointer`, `AudioSettings` e `AudioVoiceInfo`. `Message` e `EntityRef` também
+`GameTime`, `Collision`, `UiPointer`, `AudioSettings`, `AudioVoiceInfo` e `GameOptions`. `Message` e `EntityRef` também
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 13 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 14 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -154,6 +154,37 @@ tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas se
 | `fixedDelta` | `float` | passo do `OnFixedUpdate` |
 | `elapsed` | `double` | segundos desde o Play (sem as pausas) |
 | `frame` | `uint64_t` | quantos `OnUpdate` já rodaram |
+
+### Opções do jogador e sair
+
+| Método | Efeito |
+|---|---|
+| `GameOptions GetOptions() const` | as opções atuais do jogador (abaixo) |
+| `void ApplyOptions(const GameOptions& options)` | aplica na hora; valores fora do lugar são corrigidos (MSAA 3 vira 2 ou 4) |
+| `std::vector<Resolution> Resolutions() const` | resoluções de tela cheia do monitor (`width`, `height`), da menor para a maior |
+| `void QuitGame()` | fecha o jogo depois deste passo; no editor, para o Play |
+
+No jogo exportado, `ApplyOptions` muda a janela, o vsync, o MSAA e as sombras e grava as opções em
+`%APPDATA%\<Jogo>\opcoes.json`: o jogo abre com elas da próxima vez. Na primeira vez valem as padrão do projeto
+(Arquivo > Configurações do jogo). No Play do editor, cada Play começa nas padrão do projeto, nada é gravado e
+só o MSAA e as sombras mudam de verdade; tela cheia, resolução e vsync ficam guardados para `GetOptions`.
+
+`motor::GameOptions` (`motor/project/GameOptions.h`):
+
+| Campo | Tipo | Significado |
+|---|---|---|
+| `fullscreen` | `bool` | tela cheia no monitor principal |
+| `width`, `height` | `int` | tamanho da janela ou resolução da tela cheia; 0 = padrão (1280x720 em janela, a da tela em tela cheia) |
+| `vsync` | `bool` | sincroniza com a tela |
+| `msaa` | `int` | amostras de MSAA: 1 (sem), 2, 4 ou 8 (`GameOptions::kMsaaChoices`) |
+| `shadows` | `ShadowSetting` | `Off` (sem sombras), `Low`, `Medium` ou `High` (limite da qualidade de cada luz) |
+
+```cpp
+// Botão "Tela cheia" de um menu de opções.
+motor::GameOptions o = GetOptions();
+o.fullscreen = !o.fullscreen;
+ApplyOptions(o);
+```
 
 ### Temporizadores
 

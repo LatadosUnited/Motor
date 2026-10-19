@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorContext.h"
+#include "play/PlayHost.h"
 #include "play/PlayMode.h"
 #include "UndoHistory.h"
 
@@ -33,6 +34,10 @@ public:
     void SetExternalInput(bool enabled) { m_externalInput = enabled; }
     Event ApplyRequest(EditorContext& ctx, UndoHistory& history);
     bool Stop(EditorContext& ctx);  // volta à edição; false se já estava editando
+    // Opções do jogador com que o próximo Play começa (as padrão do projeto).
+    void SetDefaultOptions(const motor::GameOptions& options) { m_defaultOptions = options; }
+    // MSAA e sombras: as do jogo no Play (Script::ApplyOptions), as do editor fora dele. Antes de desenhar.
+    void ApplyQuality(motor::Renderer& renderer) const;
 
     // `viewportFocused` e `gameWindowFocused`: o jogo só lê teclado/mouse com a janela que o mostra em foco (o
     // Viewport pela câmera do jogo, ou a janela Jogo no modo lado a lado). O cursor pedido pelo jogo
@@ -50,6 +55,8 @@ public:
 private:
     void UpdateCursor(motor::Window& window);
     PlayMode m_mode;
+    PlayHost m_host;
+    motor::GameOptions m_defaultOptions;
     Request m_request = Request::None;
     bool m_gameView = true;  // no Play: true = câmera do jogo, false = câmera livre do editor
     bool m_externalInput = false;

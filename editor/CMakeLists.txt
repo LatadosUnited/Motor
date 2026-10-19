@@ -9,6 +9,7 @@ add_executable(MotorEditor
     src/panels/InspectorPanel.cpp
     src/play/PlayController.cpp
     src/play/PlayMode.cpp
+    src/play/PlayHost.cpp
     src/play/GameView.cpp
     src/panels/ProjectPanel.cpp
     src/panels/ProjectPanelDraw.cpp
@@ -18,6 +19,7 @@ add_executable(MotorEditor
     src/document/SceneDocumentProject.cpp
     src/document/SceneDocumentUi.cpp
     src/document/SceneDocumentLayers.cpp
+    src/document/SceneDocumentGame.cpp
     src/panels/ScenePanel.cpp
     src/viewport/SceneViewport.cpp
     src/viewport/SceneViewportOverlay.cpp

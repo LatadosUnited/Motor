@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
         CHECK(antigo && antigo->Layers().names[2] == "Água" && antigo->Layers().Collide(0, 2));
         CHECK(antigo && !antigo->Layers().Collide(2, 5) && !antigo->Layers().Collide(5, 2) && antigo->Layers().Collide(5, 6));
         // Versão mais nova que a deste editor é recusada.
-        { std::ofstream(old / "Antigo.mproject") << R"({"format": "motor-project", "version": 4, "name": "Antigo"})"; }
+        { std::ofstream(old / "Antigo.mproject") << R"({"format": "motor-project", "version": 5, "name": "Antigo"})"; }
         CHECK(!Project::Open(old, &error).has_value());
     }
 

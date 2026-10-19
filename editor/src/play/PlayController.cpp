@@ -1,5 +1,8 @@
 #include "play/PlayController.h"
 
+#include <motor/app/GameQuality.h>
+#include <motor/core/Log.h>
+
 #include <algorithm>
 #include <utility>
 
@@ -39,6 +42,8 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
                 return SceneSerializer::Load(file, out, ctx.assets, &error);
             });
             m_mode.SetAssets(&ctx.assets);
+            m_host.Reset(m_defaultOptions);
+            m_mode.SetHost(&m_host);
             m_mode.Play(ctx.scene, ctx.selected);
             return Event::Started;
         case Request::Pause: m_mode.SetPaused(!m_mode.IsPaused()); break;
@@ -46,6 +51,10 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
         case Request::Step: m_mode.Step(1.0f / 60.0f); break;
     }
     return Event::None;
+}
+
+void PlayController::ApplyQuality(Renderer& renderer) const {
+    ApplyGameQuality(renderer, m_mode.IsActive() ? m_host.Options() : GameOptions{});
 }
 
 bool PlayController::Stop(EditorContext& ctx) {
@@ -63,6 +72,10 @@ void PlayController::Update(float dt, bool viewportFocused, bool gameWindowFocus
                     (m_sideBySide ? gameWindowFocused : InGameView() && viewportFocused);
     if (SceneRuntime* runtime = m_mode.Runtime()) runtime->SetInputEnabled(m_externalInput || m_gameFocused);
     m_mode.Update(dt);
+    if (m_host.TakeQuit() && m_mode.IsActive()) {
+        log::Info("QuitGame: o jogo pediu para fechar; parando o Play");
+        m_request = Request::Stop;
+    }
     UpdateCursor(window);
 }
 

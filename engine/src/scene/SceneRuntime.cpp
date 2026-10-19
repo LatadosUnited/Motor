@@ -4,6 +4,7 @@
 #include "motor/assets/AssetLoaders.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
+#include "motor/scene/GameHost.h"
 #include "motor/scene/Prefab.h"
 #include "motor/scene/Scene.h"
 
@@ -563,6 +564,23 @@ void Script::SetCursorMode(CursorMode mode) {
     if (m_runtime) m_runtime->SetCursorMode(mode);
 }
 CursorMode Script::GetCursorMode() const { return m_runtime ? m_runtime->GetCursorMode() : CursorMode::Normal; }
+
+GameOptions Script::GetOptions() const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->Options() : GameOptions{};
+}
+void Script::ApplyOptions(const GameOptions& options) {
+    GameOptions clamped = options;
+    clamped.Clamp();
+    if (GameHost* host = m_runtime ? m_runtime->Host() : nullptr) host->ApplyOptions(clamped);
+}
+std::vector<Resolution> Script::Resolutions() const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->Resolutions() : std::vector<Resolution>{};
+}
+void Script::QuitGame() {
+    if (GameHost* host = m_runtime ? m_runtime->Host() : nullptr) host->QuitGame();
+}
 
 } // namespace motor
 

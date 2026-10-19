@@ -42,6 +42,8 @@ public:
     // Grava as camadas de colisão no projeto e as passa para a física (próximo Play). false sem projeto ou se
     // não conseguiu gravar (`error`).
     bool SetCollisionLayers(const motor::CollisionLayers& layers, std::string& error);
+    // Grava as opções iniciais do jogador no projeto (Configurações do jogo). false sem projeto ou se não gravou.
+    bool SetGameOptions(const motor::GameOptions& options, std::string& error);
     const std::filesystem::path& ScenePath() const { return m_scenePath; }
 
     // Pergunta antes se houver alterações não salvas. `path` é usado pelas ações *Path.
@@ -86,6 +88,7 @@ private:
     void UpdateWindowTitle();
     void DrawNewProjectPopup();
     void DrawCollisionLayersWindow();  // Arquivo > Camadas de colisão
+    void DrawGameSettingsWindow();     // Arquivo > Configurações do jogo
     void DrawUnsavedPopup();
     void DrawNewerVersionPopup();
     void DrawRecoveryPopup();
@@ -124,6 +127,7 @@ private:
     std::string m_errorMessage;
     bool m_openErrorPopup = false;
     bool m_showLayersWindow = false;
+    bool m_showGameSettingsWindow = false;
 };
 
 } // namespace editor

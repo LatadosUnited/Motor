@@ -638,7 +638,14 @@ Exportado/
 - **Player** (`build/bin/Player.exe`, pasta `player/`): o executável do jogo, compilado junto com o editor.
   Abre `Dados/` ao lado dele, carrega a DLL de scripts e roda a cena inicial como o Play do editor (mesmo
   `SceneRuntime`, física, HUD e câmera principal). Para testar um projeto sem exportar:
-  `Player.exe "C:/caminho/MeuJogo"`. `--quadros N` fecha sozinho depois de N quadros (testes automáticos).
+  `Player.exe "C:/caminho/MeuJogo"`. `--quadros N` fecha sozinho depois de N quadros (testes automáticos);
+  `--janela` abre em janela mesmo com tela cheia nas opções; `--opcoes "<arquivo>"` usa outro arquivo de opções.
+  O título da janela é só o nome do jogo (sem FPS).
+- **Opções do jogador** (Fase 21): tela cheia, resolução, vsync, MSAA e sombras. As iniciais ficam no projeto
+  (**Arquivo > Configurações do jogo**, `.mproject` formato 4, ou a ferramenta MCP `game_settings`); depois valem
+  as do jogador, gravadas em `%APPDATA%\<Jogo>\opcoes.json`. Os scripts montam o menu com `GetOptions`,
+  `ApplyOptions`, `Resolutions` e `QuitGame` (guia, seção "Interface do jogo"). No Play do editor só o MSAA e as
+  sombras valem, e nada é gravado.
   Os shaders são procurados em `engine/` ao lado do executável e, se não houver, na pasta do código-fonte.
 - Pelo servidor MCP: ferramenta `game_export` (cena, pasta, `set_startup`). Testes: `tests/test_export.cpp`.
 

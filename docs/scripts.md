@@ -863,6 +863,32 @@ E um menu com o botão **Jogar** troca de cena ([examples/MenuPrincipal.cpp](exa
 - `LoadScene("Fase1")` acha a cena pelo nome (ou pelo caminho, `"Assets/Cenas/Fase1.mscene"`). A cena atual
   para (`OnDestroy` de todos) e a nova começa do zero. No editor, **Parar** volta à cena de antes do Play.
 
+**Menu de opções** (tela cheia, resolução, vsync, sombras e sair): `GetOptions()` devolve as opções atuais do
+jogador (`motor::GameOptions`), `ApplyOptions(o)` aplica na hora e `QuitGame()` fecha o jogo
+([examples/MenuOpcoes.cpp](examples/MenuOpcoes.cpp)):
+
+```cpp
+        } else if (ui->WasClicked("Vsync")) {
+            o.vsync = !o.vsync;
+        } else if (ui->WasClicked("Sombras")) {
+            o.shadows = static_cast<motor::ShadowSetting>((static_cast<int>(o.shadows) + 1) % 4);  // desligadas..altas
+        } else if (ui->WasClicked("Sair")) {
+            QuitGame();
+            mudou = false;
+        } else {
+            mudou = false;
+        }
+        if (mudou) {
+            ApplyOptions(o);
+            Mostrar();
+        }
+```
+
+- No jogo exportado as opções ficam gravadas em `%APPDATA%\<Jogo>\opcoes.json` e o jogo abre com elas da
+  próxima vez. Na primeira vez valem as de **Arquivo > Configurações do jogo**.
+- No Play do editor, cada Play começa nas opções do projeto e nada é gravado; só o MSAA e as sombras mudam de
+  verdade (tela cheia, resolução e vsync são do jogo exportado). `QuitGame` para o Play.
+
 Para pôr o HUD no mini jogo da seção anterior: copie `Hud.cpp` para `Scripts/`; crie **Entidade > Interface
 (UI) > Texto** com o nome `Vida` (Âncora em cima à esquerda, Posição `40 40`) e outro, `Pontos` (em cima à
 direita, Posição `-40 40`); um **Painel** chamado `FimDeJogo` com um Texto filho "Fim de jogo"; e uma entidade

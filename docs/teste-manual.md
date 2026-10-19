@@ -174,6 +174,13 @@ versão nova, marca o que passou e anota o que não passou. Criado na
   usados.
 - [ ] Rodar o jogo exportado com o editor fechado → abre na cena inicial, som, cursor e scripts funcionam.
 - [ ] Levar a pasta para outro computador sem o Motor (quando houver) → roda igual.
+- [ ] Arquivo > **Configurações do jogo...** → marcar Tela cheia, MSAA 2x, Sombras Baixas → o `.mproject`
+  ganha o bloco `"player"`; exportar e abrir → o jogo abre em tela cheia, título sem FPS.
+- [ ] Menu de opções (guia, `examples/MenuOpcoes.cpp`) no jogo exportado: Tela cheia alterna janela e tela
+  cheia, Resolução troca, Sombras some com as sombras, Sair fecha. Fechar e abrir de novo → volta com as
+  opções escolhidas (`%APPDATA%\<Jogo>\opcoes.json`).
+- [ ] O mesmo menu no Play do editor → Sombras muda no viewport; Tela cheia não muda nada (só o log); Sair para
+  o Play; Parar e dar Play de novo → volta às opções do projeto.
 
 ## 13. Gerais
 
