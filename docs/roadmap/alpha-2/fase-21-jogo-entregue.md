@@ -3,12 +3,12 @@ tipo: fase
 alpha: 2
 fase: 21
 titulo: Jogo entregue
-status: em andamento
+status: pronta
 prioridade: 6
 areas: [player, exportacao, core, scripts]
 branch: fase-21-jogo-entregue
 inicio: 2026-10-19
-fim: 
+fim: 2026-10-19
 ---
 
 # Fase 21 — Jogo entregue
@@ -98,7 +98,8 @@ de continuar (save), e é jogável com controle.
   renderer inicia. Teste: `test_loading_screen`; conferido no jogo exportado (capturas da tela padrão e da
   janela só aparecendo pronta).
 
-Todas as tarefas estão feitas. Falta o "Pronto quando": o jogo da Fase 19 exportado com tudo isso (tela cheia,
+Todas as tarefas estão feitas; a fase entrou no `main` (2026-10-19) antes da validação, por decisão do
+usuário. Falta o "Pronto quando": o jogo da Fase 19 exportado com tudo isso (tela cheia,
 ícone, menu de opções e de continuar, controle), e o teste à mão do roteiro (seção 12).
 
 ## Limitações
