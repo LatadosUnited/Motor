@@ -29,8 +29,8 @@ salvo e controle.
   recompilada em Release ao exportar. *(origem: Fase 10, limitação)* — `7e2e64e`
 - [x] **Salvar progresso:** API de dados persistentes para scripts (chave/valor e arquivos em
   `%APPDATA%\<Jogo>\`), com exemplo no guia. — `c6d8a39`
-- [ ] **Controle (gamepad)** pela GLFW, com mapeamento de ações ("Pular" = Espaço ou botão A) configurável no
-  projeto. *(origem: análise do código, item 9: "WASD ou analógico")*
+- [x] **Controle (gamepad)** pela GLFW, com mapeamento de ações ("Pular" = Espaço ou botão A) configurável no
+  projeto. *(origem: análise do código, item 9: "WASD ou analógico")* — `d5e6b3f`
 - [ ] **Tela de carregamento** simples ao trocar de cena.
 
 ## Pronto quando
@@ -79,6 +79,17 @@ de continuar (save), e é jogável com controle.
   onde parou). Testes: `test_save_data`; conferido no Play do editor (MCP) e no jogo exportado em Release
   rodado duas vezes.
 
+- **Controle e mapa de ações** (`d5e6b3f`): o `motor::Input` lê o primeiro controle que a GLFW reconhece como
+  gamepad (padrão Xbox; analógicos com Y para cima positivo e zona morta de 0,2; gatilhos de 0 a 1), com nomes
+  para teclas, botões e eixos e um modo simulado (testes e MCP). `motor::InputActions` (`project/`) é o mapa de
+  ações do projeto, no `.mproject` (`"input"`): cada ação soma as entradas (`scale` -1 para o lado negativo),
+  limitada a -1..1, e conta como apertada acima de 0,5. Padrão: Horizontal, Vertical, Olhar X/Y, Pular,
+  Correr, Interagir e Pausa. Scripts: `GetAxis`, `IsActionDown`, `WasActionPressed`/`WasActionReleased` e o
+  controle direto, todos com o filtro de foco. **Arquivo > Controles** edita o mapa (aperte para ligar, menu
+  com todas as entradas, valor ao vivo de cada ação); MCP `input_actions` e `game_gamepad` (controle
+  simulado). Os modelos Jogador e MoverWASD agora usam as ações. Testes: `test_input_actions`; conferido no
+  Play pelo MCP com o controle simulado (analógico, teclado junto, botões A e Start).
+
 ## Limitações
 
 - A troca para tela cheia e de resolução não foi testada automaticamente (mudaria a tela do usuário): fica no
@@ -93,3 +104,6 @@ de continuar (save), e é jogável com controle.
   ou o jogo leva uma `libMotor.dll` velha (com API de scripts diferente é recusado; com a mesma, pode quebrar).
 - Saves sem nuvem nem vários perfis de jogador; a versão do formato (`motor-save` 1) sobe se o formato mudar,
   mas os valores que o jogo grava são do jogo: mudar o significado de uma chave entre versões é com o script.
+- Controle de verdade não testado (sem um aqui): a leitura é a da GLFW (`glfwGetGamepadState`), conferida só
+  com o controle simulado. Um controle só (o primeiro); sem vibração e sem trocar teclas dentro do jogo
+  exportado (o mapa é o do projeto). A janela Controles não foi vista na tela (o MCP não abre menus).
