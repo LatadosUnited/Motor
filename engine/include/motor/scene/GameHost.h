@@ -10,8 +10,8 @@
 namespace motor {
 
 // Quem roda o jogo (o Player do jogo exportado, o Play do editor), visto pelos scripts: opções do jogador,
-// progresso salvo e sair do jogo. O SceneRuntime só guarda o ponteiro (SetHost); sem host (testes), as opções são as padrão e
-// mudar ou sair não faz nada.
+// progresso salvo, mapa de ações e sair do jogo. O SceneRuntime só guarda o ponteiro (SetHost); sem host
+// (testes), as opções e as ações são as padrão, os saves ficam na memória e mudar ou sair não faz nada.
 class GameHost {
 public:
     virtual ~GameHost() = default;

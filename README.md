@@ -658,6 +658,11 @@ Exportado/
   ícone (`.ico` com vários tamanhos ou `.png` de até 256x256, de `Assets/`). A exportação grava o ícone e a versão
   como recursos do Windows no `.exe` copiado; o ícone aparece no Explorer, na janela e na barra de tarefas (a
   GLFW usa o recurso `GLFW_ICON`). Ícone que não serve faz a exportação ser recusada antes de mexer na pasta.
+- **Tela de carregamento** (Fase 21): o jogo exportado desenha uma cena parada enquanto abre e a cada
+  `LoadScene` (o carregamento trava o jogo até terminar). Sem configurar, fundo escuro e "Carregando..."; com
+  **Configurações do jogo > Tela de carregamento** (MCP `game_settings`, `loading_scene`), uma cena do projeto
+  feita no editor com UI (imagem, texto) e, se quiser, câmera e objetos. Ela é só desenhada: scripts e física
+  não rodam nela. No Play do editor a troca de cena não mostra a tela.
 - **Controle e ações** (Fase 21): os scripts perguntam por ações (`GetAxis("Horizontal")`,
   `WasActionPressed("Pular")`) do mapa do projeto (**Arquivo > Controles**, `.mproject` em `"input"`, MCP
   `input_actions`), que liga teclas, mouse e o controle (gamepad, padrão Xbox, pela GLFW). O padrão traz

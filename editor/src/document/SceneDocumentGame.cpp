@@ -51,6 +51,14 @@ bool SceneDocument::SetGameIdentity(const GameIdentity& identity, std::string& e
         error = "a versão precisa ser números separados por ponto (ex.: 1.0.0)";
         return false;
     }
+    if (!identity.loadingScene.empty()) {
+        std::error_code ec;
+        if (PathFromUtf8(identity.loadingScene).extension() != ".mscene" ||
+            !std::filesystem::is_regular_file(m_project->ToAbsolute(identity.loadingScene), ec)) {
+            error = "a tela de carregamento precisa ser uma cena (.mscene) do projeto";
+            return false;
+        }
+    }
     if (!identity.icon.empty()) {
         const std::string ext = ToUtf8(PathFromUtf8(identity.icon).extension());
         std::error_code ec;
@@ -110,6 +118,32 @@ void SceneDocument::DrawGameIdentity() {
     }
     ImGui::SetItemTooltip("Ícone do .exe, da janela e da barra de tarefas. Use um .ico com vários tamanhos ou um "
                           ".png de 256x256.");
+
+    // Tela de carregamento: uma cena do projeto (UI, e se quiser câmera e objetos), desenhada parada.
+    const std::string loadingLabel = draft.loadingScene.empty() ? std::string("(padrão: \"Carregando...\")")
+                                                                : draft.loadingScene;
+    if (ImGui::BeginCombo("Tela de carregamento", loadingLabel.c_str())) {
+        if (ImGui::Selectable("(padrão: \"Carregando...\")", draft.loadingScene.empty())) {
+            draft.loadingScene.clear();
+            commit = true;
+        }
+        std::vector<std::string> scenes;
+        std::error_code ec;
+        for (auto it = std::filesystem::recursive_directory_iterator(m_project->AssetsDir(), ec);
+             !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+            if (it->is_regular_file(ec) && it->path().extension() == ".mscene") scenes.push_back(m_project->ToRelative(it->path()));
+        }
+        std::sort(scenes.begin(), scenes.end());
+        for (const std::string& scene : scenes) {
+            if (ImGui::Selectable(scene.c_str(), scene == draft.loadingScene)) {
+                draft.loadingScene = scene;
+                commit = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("Mostrada no jogo exportado enquanto ele abre e a cada troca de cena (LoadScene). É uma cena "
+                          "comum, sem scripts rodando: faça com UI (imagem, texto) e, se quiser, uma câmera.");
 
     if (commit && !(draft == m_project->Identity())) {
         std::string error;

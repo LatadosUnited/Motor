@@ -880,6 +880,8 @@ E um menu com o botão **Jogar** troca de cena ([examples/MenuPrincipal.cpp](exa
   leia no `OnUpdate`. O elemento de cima ganha o clique; texto sozinho não bloqueia.
 - `LoadScene("Fase1")` acha a cena pelo nome (ou pelo caminho, `"Assets/Cenas/Fase1.mscene"`). A cena atual
   para (`OnDestroy` de todos) e a nova começa do zero. No editor, **Parar** volta à cena de antes do Play.
+  No jogo exportado, enquanto a cena nova carrega aparece a **tela de carregamento** (Arquivo > Configurações
+  do jogo: uma cena sua com UI, ou a padrão "Carregando..."). Ela é desenhada parada: scripts não rodam nela.
 
 **Menu de opções** (tela cheia, resolução, vsync, sombras e sair): `GetOptions()` devolve as opções atuais do
 jogador (`motor::GameOptions`), `ApplyOptions(o)` aplica na hora e `QuitGame()` fecha o jogo

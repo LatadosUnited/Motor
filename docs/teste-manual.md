@@ -185,6 +185,9 @@ versão nova, marca o que passou e anota o que não passou. Criado na
 - [ ] Menu de opções (guia, `examples/MenuOpcoes.cpp`) no jogo exportado: Tela cheia alterna janela e tela
   cheia, Resolução troca, Sombras some com as sombras, Sair fecha. Fechar e abrir de novo → volta com as
   opções escolhidas (`%APPDATA%\<Jogo>\opcoes.json`).
+- [ ] Configurações do jogo > **Tela de carregamento** = uma cena com uma Imagem e um Texto → no jogo exportado
+  ela aparece ao abrir e a cada troca de cena (`LoadScene`), no lugar da janela branca. Sem escolher: fundo
+  escuro com "Carregando..." embaixo à direita.
 - [ ] Arquivo > **Controles...** → com um controle ligado aparece o nome dele; mexer o analógico e apertar
   Espaço/A move as barras de Horizontal e Pular; **Adicionar (aperte)** + apertar uma tecla liga a tecla.
   No Play com o modelo Jogador: anda com o analógico (meio inclinado anda devagar), pula com A, corre

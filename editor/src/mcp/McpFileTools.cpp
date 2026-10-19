@@ -206,6 +206,8 @@ void McpController::AddSceneFileTools() {
                                {"version", Prop("string", "versão do jogo: números separados por ponto (1.0.0)")},
                                {"icon", Prop("string", "ícone .png (até 256x256) ou .ico, relativo ao projeto "
                                                        "(\"Assets/icone.png\"); vazio = sem ícone")},
+                               {"loading_scene", Prop("string", "cena da tela de carregamento, relativa ao projeto; "
+                                                                "vazio = a padrão (\"Carregando...\")")},
                                {"fullscreen", Prop("boolean", "tela cheia")},
                                {"width", Prop("integer", "largura (0 = padrão: 1280 em janela, a da tela em tela cheia)")},
                                {"height", Prop("integer", "altura (0 = padrão)")},
@@ -219,6 +221,7 @@ void McpController::AddSceneFileTools() {
             if (args.contains("executable")) identity.executable = args["executable"].get<std::string>();
             if (args.contains("version")) identity.version = args["version"].get<std::string>();
             if (args.contains("icon")) identity.icon = args["icon"].get<std::string>();
+            if (args.contains("loading_scene")) identity.loadingScene = args["loading_scene"].get<std::string>();
             if (!(identity == project->Identity())) {
                 std::string error;
                 if (!m_host.document.SetGameIdentity(identity, error)) throw ToolError(error);
@@ -248,6 +251,7 @@ void McpController::AddSceneFileTools() {
             return ToolResult::Data({{"executable", project->ExecutableName() + ".exe"},
                                      {"version", identity.version},
                                      {"icon", identity.icon},
+                                     {"loading_scene", identity.loadingScene},
                                      {"fullscreen", options.fullscreen},
                                      {"width", options.width},
                                      {"height", options.height},

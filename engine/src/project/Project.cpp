@@ -184,6 +184,7 @@ std::optional<Project> Project::Open(const std::filesystem::path& fileOrDir, std
             project.m_identity.executable = game->value("executable", std::string());
             project.m_identity.version = game->value("version", project.m_identity.version);
             project.m_identity.icon = game->value("icon", std::string());
+            project.m_identity.loadingScene = game->value("loadingScene", std::string());
         }
 
         std::filesystem::create_directories(project.AssetsDir(), ec);  // projeto copiado sem Assets/ ainda abre
@@ -208,7 +209,8 @@ bool Project::Save(std::string* error) const {
     player.erase("version");
     root["player"] = std::move(player);
     root["input"] = json::parse(m_actions.ToJson());
-    root["game"] = {{"executable", m_identity.executable}, {"version", m_identity.version}, {"icon", m_identity.icon}};
+    root["game"] = {{"executable", m_identity.executable}, {"version", m_identity.version}, {"icon", m_identity.icon},
+                    {"loadingScene", m_identity.loadingScene}};
 
     // Grava ao lado e troca: uma falha no meio não estraga o projeto.
     const std::string text = root.dump(2, ' ', false, json::error_handler_t::replace) + '\n';

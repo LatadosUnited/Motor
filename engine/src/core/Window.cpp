@@ -31,6 +31,7 @@ Window::Window(const WindowDesc& desc) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, desc.msaaSamples);
+    glfwWindowHint(GLFW_VISIBLE, desc.visible ? GLFW_TRUE : GLFW_FALSE);
 #ifndef NDEBUG
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
@@ -99,6 +100,10 @@ void Window::PollEvents() {
 
 void Window::SwapBuffers() {
     glfwSwapBuffers(m_window);
+}
+
+void Window::Show() {
+    if (!glfwGetWindowAttrib(m_window, GLFW_VISIBLE)) glfwShowWindow(m_window);
 }
 
 void Window::SetTitle(const std::string& title) {

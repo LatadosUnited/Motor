@@ -16,6 +16,7 @@ struct GameIdentity {
     std::string executable;        // nome do .exe sem a extensão; vazio = o nome do projeto
     std::string version = "1.0.0";  // vai para as propriedades do .exe (números separados por ponto)
     std::string icon;              // .ico ou .png do projeto, relativo à raiz ("Assets/icone.png"); vazio = sem
+    std::string loadingScene;      // cena da tela de carregamento, relativa à raiz; vazio = a padrão
     bool operator==(const GameIdentity&) const = default;
 };
 

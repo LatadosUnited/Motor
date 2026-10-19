@@ -17,6 +17,9 @@ struct WindowDesc {
     bool vsync = true;
     int msaaSamples = 4;
     bool fullscreen = false;  // no monitor principal, com width x height (0 = a resolução atual do monitor)
+    // false: a janela nasce escondida e aparece no Show() (o jogo exportado mostra quando já tem o que desenhar,
+    // em vez de uma janela branca enquanto o renderer inicia).
+    bool visible = true;
 };
 
 // Resolução que o monitor principal aceita em tela cheia.
@@ -41,6 +44,7 @@ public:
     void SwapBuffers();
 
     void SetTitle(const std::string& title);
+    void Show();  // mostra a janela criada com visible = false (sem efeito se já está visível)
     void SetVSync(bool enabled);
 
     // Tela cheia no monitor principal (width/height 0 = a resolução atual dele) ou janela com esse tamanho

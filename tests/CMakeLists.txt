@@ -222,3 +222,6 @@ target_include_directories(test_save_data PRIVATE ${PROJECT_SOURCE_DIR}/editor/s
 # Controle e mapa de ações (Fase 21): nomes, mapa padrão, JSON, valores com teclas e controle simulado, .mproject e
 # a API dos scripts. Sem janela (o controle é simulado no estado do motor::Input).
 motor_add_test(test_input_actions)
+
+# Tela de carregamento (Fase 21): a padrão (layout em vários tamanhos de tela) e a cena do projeto no .mproject.
+motor_add_test(test_loading_screen)

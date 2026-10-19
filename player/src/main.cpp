@@ -224,6 +224,8 @@ private:
         ApplyGameQuality(GetRenderer(), m_gameOptions);
 
         std::string error;
+        PrepareLoadingScreen();
+        ShowLoadingScreen();
         if (!m_scripts.Load(m_project.RootDir(), error)) return Fail(error);
 
         const fs::path startup = m_project.StartupScene();
@@ -244,6 +246,7 @@ private:
 
     void OnUpdate(float dt) override {
         if (Failed()) return Quit();  // o erro do OnInit (o Run só começa a valer o Quit depois dele)
+        GetWindow().Show();  // se a tela de carregamento não chegou a aparecer
         if (!m_runtime) return;
         // Mouse para os botões da UI do jogo, na tela inteira.
         if (UiSystem* ui = m_runtime->GetSystem<UiSystem>()) {
@@ -263,20 +266,50 @@ private:
 
     void OnRender(Renderer& renderer) override {
         if (!m_runtime) return;
+        DrawScene(renderer, m_scene, true);
+    }
+
+    // A cena pela câmera principal e a UI por cima. Sem câmera: de um ponto fixo olhando a origem (`fallbackCamera`)
+    // ou só a UI (a tela de carregamento pode ser só imagem e texto).
+    void DrawScene(Renderer& renderer, Scene& scene, bool fallbackCamera) {
         const Window& window = GetWindow();
-        // Pela câmera principal da cena; sem ela, de um ponto fixo olhando a origem.
         Camera camera;
-        if (!m_scene.ApplyCamera(m_scene.FindMainCamera(), camera)) {
-            if (!m_warnedCamera) log::Warn("A cena não tem câmera principal: usando uma câmera fixa");
-            m_warnedCamera = true;
-            camera.position = {0.0f, 3.0f, 8.0f};
-            camera.LookAt({0.0f, 0.0f, 0.0f});
+        const bool hasCamera = scene.ApplyCamera(scene.FindMainCamera(), camera);
+        if (hasCamera || fallbackCamera) {
+            if (!hasCamera) {
+                if (!m_warnedCamera) log::Warn("A cena não tem câmera principal: usando uma câmera fixa");
+                m_warnedCamera = true;
+                camera.position = {0.0f, 3.0f, 8.0f};
+                camera.LookAt({0.0f, 0.0f, 0.0f});
+            }
+            camera.aspect = window.AspectRatio();
+            renderer.BeginScene(camera, scene.CollectLights(), scene.environment);
+            scene.SubmitTo(renderer);
+            renderer.EndScene();
         }
-        camera.aspect = window.AspectRatio();
-        renderer.BeginScene(camera, m_scene.CollectLights(), m_scene.environment);
-        m_scene.SubmitTo(renderer);
-        renderer.EndScene();
-        m_ui->Render(m_scene, m_assets, window.Width(), window.Height());
+        m_ui->Render(scene, m_assets, window.Width(), window.Height());
+    }
+
+    // Tela de carregamento: a cena do projeto (Configurações do jogo), ou a padrão se não houver ou não abrir.
+    void PrepareLoadingScreen() {
+        const std::string& file = m_project.Identity().loadingScene;
+        if (!file.empty()) {
+            std::string error;
+            if (SceneSerializer::Load(m_project.ToAbsolute(file), m_loadingScene, m_assets, &error)) return;
+            log::Warn("Tela de carregamento '{}' não abriu ({}): usando a padrão", file, error);
+        }
+        m_loadingScene = DefaultLoadingScene();
+    }
+
+    // Desenha a tela de carregamento e mostra já (o carregamento a seguir trava o loop até terminar).
+    void ShowLoadingScreen() {
+        Window& window = GetWindow();
+        if (window.IsMinimized()) return;
+        Renderer& renderer = GetRenderer();
+        renderer.BeginFrame(window.Width(), window.Height());
+        DrawScene(renderer, m_loadingScene, false);
+        window.SwapBuffers();
+        window.Show();
     }
 
     void OnShutdown() override {
@@ -284,6 +317,7 @@ private:
         m_runtime.reset();
         m_saves.SaveAll();  // o que os scripts mudaram e não gravaram (também no OnDestroy)
         m_scene = Scene();  // os componentes dos scripts somem antes de descarregar a DLL
+        m_loadingScene = Scene();
         m_ui.reset();
         m_scripts.Unload();
     }
@@ -300,6 +334,7 @@ private:
         if (!m_runtime || !m_runtime->HasSceneRequest()) return;
         const std::string request = m_runtime->TakeSceneRequest();
         const fs::path file = FindSceneFile(m_assets, request);
+        if (!file.empty()) ShowLoadingScreen();
         Scene next;
         std::string error = "cena não encontrada no jogo";
         if (file.empty() || !SceneSerializer::Load(file, next, m_assets, &error)) {
@@ -324,6 +359,7 @@ private:
     AssetLibrary m_assets;
     ScriptLibrary m_scripts;  // declarado antes da cena: é destruído depois dela
     Scene m_scene;
+    Scene m_loadingScene;
     std::unique_ptr<SceneRuntime> m_runtime;
     std::unique_ptr<UiRenderer> m_ui;
     std::string m_fatal;
@@ -382,6 +418,7 @@ int main(int argc, char** argv) {
         desc.window.width = gameOptions.width;
         desc.window.height = gameOptions.height;
         desc.window.vsync = gameOptions.vsync;
+        desc.window.visible = false;  // aparece já com a tela de carregamento (ShowLoadingScreen)
         desc.statsInTitle = false;
         Player player(std::move(*project), options, gameOptions, desc);
         player.Run();
