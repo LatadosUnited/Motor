@@ -8,13 +8,63 @@
 namespace editor {
 
 namespace {
+// Ordem das linhas desenhadas (o Shift+clique seleciona o intervalo entre a âncora e a linha clicada). A do
+// frame anterior é a completa: a deste ainda está sendo montada quando o clique chega.
+std::vector<EntityId> g_rows;
+std::vector<EntityId> g_lastRows;
+EntityId g_anchor = kNullEntity;  // último clique sem Shift
+// Clique simples num item já selecionado entre vários: só vira seleção única ao soltar sem ter arrastado
+// (senão arrastar o grupo para outro pai seria impossível).
+EntityId g_collapseOnRelease = kNullEntity;
+
 void AcceptEntityDrop(EditorContext& ctx, EntityId newParent) {
     if (!ImGui::BeginDragDropTarget()) return;
     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
         const EntityId dragged = *static_cast<const EntityId*>(payload->Data);
-        ctx.scene.SetParent(dragged, newParent);  // recusa ciclos sozinho
+        // Arrastou um dos selecionados: vão todos (os de cima; os filhos acompanham o pai).
+        if (ctx.IsSelected(dragged)) {
+            for (EntityId id : ctx.SelectionRoots()) ctx.scene.SetParent(id, newParent);  // recusa ciclos sozinho
+        } else {
+            ctx.scene.SetParent(dragged, newParent);
+        }
     }
     ImGui::EndDragDropTarget();
+}
+
+void SelectRange(EditorContext& ctx, EntityId from, EntityId to) {
+    const auto a = std::find(g_lastRows.begin(), g_lastRows.end(), from);
+    const auto b = std::find(g_lastRows.begin(), g_lastRows.end(), to);
+    if (a == g_lastRows.end() || b == g_lastRows.end()) {
+        ctx.AddToSelection(to);
+        return;
+    }
+    const auto [first, last] = std::minmax(a, b);
+    for (auto it = first; it != last + 1; ++it) {
+        if (*it != to) ctx.AddToSelection(*it);
+    }
+    ctx.AddToSelection(to);  // a clicada vira a principal
+}
+
+void OnRowClicked(EditorContext& ctx, EntityId id) {
+    const ImGuiIO& io = ImGui::GetIO();
+    g_collapseOnRelease = kNullEntity;
+    // Âncora: o último clique sem Shift; se ela saiu da seleção (clique no viewport, Esc), a principal.
+    const EntityId anchor = ctx.IsSelected(g_anchor) ? g_anchor : ctx.selected;
+    if (io.KeyShift && anchor != kNullEntity) {
+        if (!io.KeyCtrl) ctx.SelectOnly(kNullEntity);  // Shift sozinho troca a seleção pelo intervalo
+        SelectRange(ctx, anchor, id);
+        g_anchor = anchor;
+        return;
+    }
+    g_anchor = id;
+    if (io.KeyCtrl) {
+        ctx.ToggleSelected(id);
+    } else if (ctx.IsSelected(id) && ctx.SelectionCount() > 1) {
+        ctx.AddToSelection(id);  // vira a principal; os outros continuam até soltar
+        g_collapseOnRelease = id;
+    } else {
+        ctx.SelectOnly(id);
+    }
 }
 
 void DrawEntityNode(EditorContext& ctx, EntityId id) {
@@ -26,7 +76,8 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
                                ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
     if (children.empty()) flags |= ImGuiTreeNodeFlags_Leaf;
-    if (ctx.selected == id) flags |= ImGuiTreeNodeFlags_Selected;
+    if (ctx.IsSelected(id)) flags |= ImGuiTreeNodeFlags_Selected;
+    g_rows.push_back(id);
 
     // Seleção dentro de um pai recolhido: abre o caminho até ela.
     if (ctx.selected != id && ctx.scene.IsDescendantOf(ctx.selected, id)) ImGui::SetNextItemOpen(true);
@@ -45,11 +96,20 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
                                         e->name.c_str());
     if (colored) ImGui::PopStyleColor();
 
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) ctx.selected = id;
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) OnRowClicked(ctx, id);
+    if (g_collapseOnRelease == id && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (ImGui::IsItemHovered()) ctx.SelectOnly(id);
+        g_collapseOnRelease = kNullEntity;
+    }
 
     if (ImGui::BeginDragDropSource()) {
+        g_collapseOnRelease = kNullEntity;  // arrastou: a seleção fica
         ImGui::SetDragDropPayload(kEntityPayload, &id, sizeof(id));
-        ImGui::TextUnformatted(e->name.c_str());
+        if (ctx.IsSelected(id) && ctx.SelectionCount() > 1) {
+            ImGui::Text("%s e mais %zu", e->name.c_str(), ctx.SelectionCount() - 1);
+        } else {
+            ImGui::TextUnformatted(e->name.c_str());
+        }
         ImGui::EndDragDropSource();
     }
     AcceptEntityDrop(ctx, id);
@@ -66,12 +126,12 @@ void DrawEntityNode(EditorContext& ctx, EntityId id) {
     }
 
     if (ImGui::BeginPopupContextItem()) {
-        ctx.selected = id;
+        if (!ctx.IsSelected(id)) ctx.SelectOnly(id);  // clique direito num dos selecionados mantém o grupo
         if (ImGui::BeginMenu("Criar filho")) {
             DrawCreateEntityMenuItems(ctx, id);
             ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Duplicar", "Ctrl+D")) ctx.DuplicateSelected();
+        if (ImGui::MenuItem("Duplicar", "Ctrl+D")) ctx.DuplicateSelected();  // todos os selecionados
         if (ImGui::MenuItem("Excluir", "Del")) ctx.pendingDelete = id;
         ImGui::Separator();
         if (ImGui::MenuItem("Criar prefab")) ctx.CreatePrefabFromEntity(id);
@@ -106,12 +166,14 @@ void DrawHierarchyPanel(EditorContext& ctx) {
     }
     ImGui::Separator();
 
+    g_rows.clear();
     for (EntityId root : ctx.scene.Children(kNullEntity)) DrawEntityNode(ctx, root);
+    g_lastRows.swap(g_rows);
 
     // Área vazia restante: soltar aqui = mover para a raiz; clicar = limpar seleção.
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     ImGui::InvisibleButton("##hierarchy_background", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 24.0f)));
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) ctx.selected = kNullEntity;
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::GetIO().KeyCtrl) ctx.SelectOnly(kNullEntity);
     AcceptEntityDrop(ctx, kNullEntity);
     for (const auto& file : AcceptPathDrop(motor::AssetType::Mesh)) ctx.CreateFromMeshFile(file, kNullEntity);
     for (const auto& file : AcceptPathDrop(motor::AssetType::Model)) ctx.InstantiateModelFile(file, kNullEntity);

@@ -25,6 +25,15 @@ using namespace motor;
 namespace {
 constexpr glm::vec4 kSelectionColor{1.0f, 0.62f, 0.15f, 1.0f};
 constexpr float kIconPickRadius = 14.0f;  // tolerância do clique
+constexpr float kBoxMinDrag = 4.0f;       // pixels arrastados até o clique virar retângulo de seleção
+constexpr ImU32 kBoxFill = IM_COL32(255, 158, 38, 40);
+constexpr ImU32 kBoxBorder = IM_COL32(255, 158, 38, 200);
+
+// Ctrl ou Shift: o clique e o retângulo somam à seleção em vez de trocá-la.
+bool AddingToSelection() {
+    const ImGuiIO& io = ImGui::GetIO();
+    return io.KeyCtrl || io.KeyShift;
+}
 } // namespace
 
 void SceneViewport::Init() {
@@ -64,11 +73,15 @@ void SceneViewport::Render(Renderer& renderer, const EditorContext& ctx, bool ga
     scene.SubmitTo(renderer);
 
     // Contorno em wireframe da seleção (e de seus descendentes). A visão do jogo fica limpa.
+    auto inSelection = [&](EntityId id) {
+        return std::any_of(ctx.selection.begin(), ctx.selection.end(),
+                           [&](EntityId s) { return id == s || scene.IsDescendantOf(id, s); });
+    };
     for (const auto& e : scene.Entities()) {
-        if (gameView) break;
+        if (gameView || ctx.selection.empty()) break;
         const MeshRenderer* mr = e->Get<MeshRenderer>();
         if (!mr || !mr->mesh) continue;
-        if (e->id != ctx.selected && !scene.IsDescendantOf(e->id, ctx.selected)) continue;
+        if (!inSelection(e->id)) continue;
         renderer.SubmitWireframe(*mr->mesh, scene.WorldMatrix(e->id), kSelectionColor);
     }
     renderer.EndScene();
@@ -139,10 +152,13 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
                 return dx * dx + dy * dy <= kIconPickRadius * kIconPickRadius;
             });
             if (onIcon || !m_showUi || !m_uiTool.OnClick(ctx, local, m_ui->Canvas().Layout())) {
-                PickAt(ctx, {local.x / m_size.x, local.y / m_size.y});
+                // Seleciona ao soltar: sem arrastar é um clique; arrastando, um retângulo.
+                m_boxPending = true;
+                m_boxStart = ImVec2(local.x, local.y);
             }
         }
     }
+    if (m_boxPending) UpdateBoxSelection(ctx, origin, gameView);
     if (!gameView) m_uiTool.Update(ctx, m_size);
 
     // Overlay com estatísticas.
@@ -218,14 +234,62 @@ void SceneViewport::PickAt(EditorContext& ctx, const glm::vec2& uv) {
         if (dx * dx + dy * dy > kIconPickRadius * kIconPickRadius) continue;
         if (!best || icon.depth < best->depth) best = &icon;
     }
+    EntityId picked = kNullEntity;
     if (best) {
-        ctx.selected = best->entity;
+        picked = best->entity;
+    } else {
+        const auto [origin, direction] = Ray(uv);
+        const auto hit = ctx.scene.Raycast(origin, direction);
+        if (hit) picked = hit->entity;
+    }
+    if (!AddingToSelection()) {
+        ctx.SelectOnly(picked);
+    } else if (picked != kNullEntity) {
+        ctx.ToggleSelected(picked);  // Ctrl/Shift+clique no vazio mantém a seleção
+    }
+}
+
+void SceneViewport::UpdateBoxSelection(EditorContext& ctx, const ImVec2& origin, bool gameView) {
+    if (gameView || m_looking) {
+        m_boxPending = false;
         return;
     }
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const ImVec2 end{std::clamp(mouse.x - origin.x, 0.0f, m_size.x), std::clamp(mouse.y - origin.y, 0.0f, m_size.y)};
+    const bool dragged = std::abs(end.x - m_boxStart.x) > kBoxMinDrag || std::abs(end.y - m_boxStart.y) > kBoxMinDrag;
+    const ImVec2 lo{std::min(m_boxStart.x, end.x), std::min(m_boxStart.y, end.y)};
+    const ImVec2 hi{std::max(m_boxStart.x, end.x), std::max(m_boxStart.y, end.y)};
+    if (dragged) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 a{origin.x + lo.x, origin.y + lo.y}, b{origin.x + hi.x, origin.y + hi.y};
+        dl->AddRectFilled(a, b, kBoxFill);
+        dl->AddRect(a, b, kBoxBorder);
+    }
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) return;
 
-    const auto [origin, direction] = Ray(uv);
-    const auto hit = ctx.scene.Raycast(origin, direction);
-    ctx.selected = hit ? hit->entity : kNullEntity;
+    m_boxPending = false;
+    if (!dragged) {
+        PickAt(ctx, {m_boxStart.x / m_size.x, m_boxStart.y / m_size.y});
+        return;
+    }
+    // Entra quem tem o centro (da malha, ou o ícone de luz/câmera) dentro do retângulo. Elementos de UI,
+    // entidades vazias e inativas ficam de fora.
+    std::vector<EntityId> inside;
+    for (const auto& e : ctx.scene.Entities()) {
+        if (!ctx.scene.IsActiveInHierarchy(e->id) || IsUiEntity(*e)) continue;
+        const glm::mat4 world = ctx.scene.WorldMatrix(e->id);
+        glm::vec3 center{world[3]};
+        const MeshRenderer* mr = e->Get<MeshRenderer>();
+        if (mr && mr->mesh) {
+            center = glm::vec3(world * glm::vec4((mr->mesh->BoundsMin() + mr->mesh->BoundsMax()) * 0.5f, 1.0f));
+        } else if (!e->Has<LightComponent>() && !e->Has<CameraComponent>()) {
+            continue;
+        }
+        const auto p = Project(center);
+        if (p && p->x >= lo.x && p->x <= hi.x && p->y >= lo.y && p->y <= hi.y) inside.push_back(e->id);
+    }
+    if (!AddingToSelection()) ctx.SelectOnly(kNullEntity);
+    for (EntityId id : inside) ctx.AddToSelection(id);
 }
 
 void SceneViewport::HandleDrop(EditorContext& ctx, const ImVec2& origin) {

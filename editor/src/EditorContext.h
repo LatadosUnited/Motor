@@ -32,8 +32,24 @@ std::vector<std::filesystem::path> AcceptAnyPathDrop();  // qualquer arquivo ou 
 struct EditorContext {
     motor::Scene scene;
     motor::AssetLibrary assets;
+    // Seleção: `selected` é a principal (Inspector, gizmo, foco) e `selection` todas, na ordem em que foram
+    // escolhidas, com a principal no fim. Quem só troca `selected` (criar, MCP, desfazer) não precisa mexer
+    // em `selection`: SyncSelection, chamado a cada frame, volta a seleção para só a principal.
     EntityId selected = kNullEntity;
+    std::vector<EntityId> selection;
     EntityId pendingDelete = kNullEntity;  // processado no fim do frame, fora da iteração dos painéis
+
+    bool IsSelected(EntityId id) const;
+    size_t SelectionCount() const { return selection.size(); }
+    void SelectOnly(EntityId id);  // kNullEntity limpa
+    void AddToSelection(EntityId id);     // vira a principal
+    void ToggleSelected(EntityId id);     // Ctrl+clique: entra (como principal) ou sai
+    void SetSelection(const std::vector<EntityId>& ids);  // a última vira a principal
+    // Selecionados sem nenhum ancestral também selecionado, na ordem da seleção: mover, duplicar e excluir
+    // agem neles (os filhos vão junto com o pai).
+    std::vector<EntityId> SelectionRoots() const;
+    // Tira da seleção o que saiu da cena e a reduz à principal se esta foi trocada por fora.
+    void SyncSelection();
 
     std::string pendingError;  // mostrado pelo EditorApp num popup
 
@@ -62,7 +78,8 @@ struct EditorContext {
     motor::Entity* CreateFromMeshFile(const std::filesystem::path& file, EntityId parent = kNullEntity);
     // Aplica uma textura do projeto ao Mesh Renderer da entidade.
     bool ApplyTextureFile(EntityId id, const std::filesystem::path& file);
-    void DuplicateSelected();
+    void DuplicateSelected();  // todos os selecionados; as cópias ficam selecionadas
+    // Exclui `pendingDelete`; se ele estiver selecionado, exclui toda a seleção.
     void ApplyPendingDelete();
 
     // Materiais (.mmat): aplicar um arquivo ao Mesh Renderer, ou gravar o material próprio dele como asset

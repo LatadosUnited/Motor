@@ -79,6 +79,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 |---|---|
 | Voar pela cena | segurar botão direito no viewport + WASD/QE (Shift acelera) |
 | Selecionar | clique no objeto no viewport ou na hierarquia (Esc limpa) |
+| Selecionar vários | Ctrl+clique alterna (viewport e hierarquia); Shift+clique na hierarquia pega o intervalo; arrastar no vazio do viewport faz um retângulo (com Ctrl/Shift, soma); Ctrl+A seleciona tudo. Gizmo, Del, Ctrl+D e arrastar na hierarquia agem em todos; o Inspector mostra o último escolhido e repete nos outros o que mudar nele |
 | Gizmo | Q nenhum / W mover / E rotacionar / R escalar; X alterna eixos Local/Global |
 | Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (0.5 m / 15° / 0.1) |
 | Reparentar | arrastar na hierarquia (soltar no vazio = raiz) |

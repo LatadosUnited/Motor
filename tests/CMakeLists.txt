@@ -163,3 +163,12 @@ motor_add_test(test_viewport
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/ColliderOverlay.cpp)
 target_include_directories(test_viewport PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_viewport PRIVATE nlohmann_json::nlohmann_json)
+
+# Seleção múltipla (Fase 20): conjunto no EditorContext, duplicar/excluir vários, desfazer com a seleção e o
+# Inspector repetindo nos outros selecionados o que mudou na principal.
+motor_add_test(test_selection
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/MultiEdit.cpp)
+target_include_directories(test_selection PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)

@@ -110,6 +110,18 @@ int main() {
 
         const Json base = Call(protocol, "entity_create", {{"kind", "empty"}, {"name", "Base"}, {"parent", "Torre"}});
         const int baseId = base["data"]["id"].get<int>();
+
+        // Seleção múltipla (Fase 20): várias de uma vez, somar uma, e a lista devolvida.
+        const Json both = Call(protocol, "select", {{"entities", {"Torre", baseId}}});
+        CHECK(both["isError"] == false && both["data"]["selection"].size() == 2);
+        CHECK(ctx.selected == static_cast<motor::EntityId>(baseId) && ctx.SelectionCount() == 2);
+        Call(protocol, "select", {{"entity", "Torre"}});
+        CHECK(ctx.SelectionCount() == 1);
+        Call(protocol, "select", {{"entity", baseId}, {"add", true}});
+        CHECK(ctx.SelectionCount() == 2 && ctx.IsSelected(static_cast<motor::EntityId>(torreId)));
+        CHECK(Call(protocol, "select", {{"entities", {"NaoExiste"}}})["isError"] == true);
+        CHECK(Call(protocol, "scene_tree", Json::object())["data"]["selection"].size() == 2);
+        Call(protocol, "select", {{"entity", baseId}});
         CHECK(base["data"]["parent"] == torreId);
 
         const Json tree = Call(protocol, "scene_tree", Json::object());

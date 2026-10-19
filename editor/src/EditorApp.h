@@ -44,6 +44,7 @@ private:
     void DrawMenuBar();
     void BuildDockLayout(unsigned int dockspaceId);
     void HandleShortcuts();
+    void SelectAll();  // Ctrl+A
     bool IsInteracting() const;  // arrastando/editando algo: a alteração ainda não terminou
     void Undo();
     void Redo();

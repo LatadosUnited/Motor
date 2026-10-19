@@ -297,12 +297,76 @@ void EditorContext::UpdatePrefabs(const std::function<void(const std::function<v
     motor::Prefabs::RecordOverrides(scene, prefabs, assets);
 }
 
+bool EditorContext::IsSelected(EntityId id) const {
+    return id != kNullEntity && std::find(selection.begin(), selection.end(), id) != selection.end();
+}
+
+void EditorContext::SelectOnly(EntityId id) {
+    selected = scene.Find(id) ? id : kNullEntity;
+    selection.clear();
+    if (selected != kNullEntity) selection.push_back(selected);
+}
+
+void EditorContext::AddToSelection(EntityId id) {
+    if (!scene.Find(id)) return;
+    std::erase(selection, id);
+    selection.push_back(id);
+    selected = id;
+}
+
+void EditorContext::ToggleSelected(EntityId id) {
+    if (!IsSelected(id)) {
+        AddToSelection(id);
+        return;
+    }
+    std::erase(selection, id);
+    selected = selection.empty() ? kNullEntity : selection.back();
+}
+
+void EditorContext::SetSelection(const std::vector<EntityId>& ids) {
+    selection.clear();
+    selected = kNullEntity;
+    for (EntityId id : ids) AddToSelection(id);
+}
+
+std::vector<EntityId> EditorContext::SelectionRoots() const {
+    std::vector<EntityId> roots;
+    for (EntityId id : selection) {
+        if (!scene.Find(id)) continue;
+        const bool underSelected = std::any_of(selection.begin(), selection.end(), [&](EntityId other) {
+            return other != id && scene.IsDescendantOf(id, other);
+        });
+        if (!underSelected) roots.push_back(id);
+    }
+    return roots;
+}
+
+void EditorContext::SyncSelection() {
+    if (!scene.Find(selected)) selected = kNullEntity;
+    if (selected == kNullEntity) {
+        selection.clear();
+        return;
+    }
+    std::erase_if(selection, [this](EntityId id) { return !scene.Find(id); });
+    if (!IsSelected(selected)) {
+        selection.assign(1, selected);
+    } else if (selection.back() != selected) {
+        // Principal trocada por outra já selecionada (ex.: MCP): vai para o fim, as outras ficam.
+        std::erase(selection, selected);
+        selection.push_back(selected);
+    }
+}
+
 void EditorContext::DuplicateSelected() {
-    if (scene.Find(selected)) selected = scene.Duplicate(selected);
+    SyncSelection();
+    std::vector<EntityId> copies;
+    for (EntityId id : SelectionRoots()) copies.push_back(scene.Duplicate(id));
+    if (!copies.empty()) SetSelection(copies);
 }
 
 void EditorContext::ResetSceneState() {
     selected = kNullEntity;
+    selection.clear();
     pendingDelete = kNullEntity;
     ForgetAngles();
 }
@@ -322,8 +386,13 @@ bool EditorContext::TakeForgottenAngles(EntityId id) {
 
 void EditorContext::ApplyPendingDelete() {
     if (pendingDelete == kNullEntity) return;
-    scene.DestroyEntity(pendingDelete);
-    if (!scene.Find(selected)) selected = kNullEntity;
+    SyncSelection();
+    if (IsSelected(pendingDelete)) {
+        for (EntityId id : SelectionRoots()) scene.DestroyEntity(id);
+    } else {
+        scene.DestroyEntity(pendingDelete);
+    }
+    SyncSelection();
     pendingDelete = kNullEntity;
 }
 

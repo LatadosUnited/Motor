@@ -68,6 +68,11 @@ versão nova, marca o que passou e anota o que não passou. Criado na
 - [ ] Ctrl+Z / Ctrl+Y depois de: mover com o gizmo, renomear, excluir, reparentar, trocar cor → cada ação volta
   em **um** passo, com a seleção junto. Segurar Ctrl+Z repete.
 - [ ] Ctrl+Z dentro de um campo de texto desfaz só o texto.
+- [ ] **Seleção múltipla:** Ctrl+clique na hierarquia e no viewport alterna; Shift+clique na hierarquia pega o
+  intervalo; arrastar no vazio do viewport desenha o retângulo e seleciona o que está dentro (Ctrl soma); Ctrl+A
+  pega tudo. Com vários: o gizmo move/gira todos; o Inspector diz "N objetos selecionados" e mudar a Posição Y
+  muda só o Y de todos; Del exclui todos e Ctrl+Z traz de volta com a seleção; arrastar o grupo na hierarquia
+  reparenta todos; clique simples num deles (sem arrastar) volta a ser só ele.
 - [ ] O título mostra `*` com alterações; Nova cena, Abrir cena e fechar a janela perguntam Salvar / Não salvar /
   Cancelar.
 

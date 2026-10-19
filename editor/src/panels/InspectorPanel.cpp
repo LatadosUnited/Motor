@@ -1,5 +1,6 @@
 #include "EditorContext.h"
 #include "drawers/FieldDrawers.h"
+#include "panels/MultiEdit.h"
 
 #include <motor/core/Paths.h>
 
@@ -540,7 +541,26 @@ void DrawInspectorPanel(EditorContext& ctx) {
         return;
     }
 
+    if (ctx.SelectionCount() <= 1) {
+        DrawEntity(ctx, *e, false);
+        ImGui::End();
+        return;
+    }
+
+    // Vários selecionados: mostra a principal e repete nos outros o que mudar nela (MultiEdit.h).
+    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.15f, 1.0f), "%zu objetos selecionados", ctx.SelectionCount());
+    ImGui::SetItemTooltip("Mostrando \"%s\" (o último escolhido). O que você mudar aqui vale para todos os\n"
+                          "selecionados que têm o mesmo componente; posição, rotação e escala só no eixo mudado.",
+                          e->name.c_str());
+    ImGui::Separator();
+    const motor::Entity before = *e;
     DrawEntity(ctx, *e, false);
+    if (const motor::Entity* after = ctx.scene.Find(ctx.selected)) {
+        for (EntityId id : ctx.selection) {
+            motor::Entity* target = id == ctx.selected ? nullptr : ctx.scene.Find(id);
+            if (target) PropagateEdits(before, *after, *target, ctx.assets);
+        }
+    }
     ImGui::End();
 }
 

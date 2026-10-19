@@ -91,7 +91,7 @@ void SceneViewport::DrawIcons(const EditorContext& ctx, ImDrawList* dl, const Im
 
         // Fundo escuro redondo para o ícone se destacar de qualquer cena; entidade inativa fica apagada.
         dl->AddCircleFilled(c, kIconRadius + 3.0f, IM_COL32(20, 20, 24, active ? 170 : 90));
-        if (icon.entity == ctx.selected) dl->AddCircle(c, kIconRadius + 3.0f, kSelectionColorU32, 0, 2.0f);
+        if (ctx.IsSelected(icon.entity)) dl->AddCircle(c, kIconRadius + 3.0f, kSelectionColorU32, 0, 2.0f);
 
         const ImU32 inactive = IM_COL32(120, 120, 120, 255);
         if (const LightComponent* light = e->Get<LightComponent>()) {
@@ -184,7 +184,7 @@ void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, cons
         const ColliderComponent* collider = e.Get<ColliderComponent>();
         const CharacterControllerComponent* character = e.Get<CharacterControllerComponent>();
         if (!collider && !character) return;
-        const bool selected = e.id == ctx.selected;
+        const bool selected = ctx.IsSelected(e.id);
         if (!ShouldDrawCollider(m_colliderOverlay, selected, scene.IsActiveInHierarchy(e.id))) return;
 
         m_lines.clear();
@@ -208,9 +208,11 @@ void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, cons
         }
     };
 
-    // Só o selecionado: nem percorre a cena (o custo não cresce com o número de objetos).
+    // Só os selecionados: nem percorre a cena (o custo não cresce com o número de objetos).
     if (m_colliderOverlay == ColliderOverlay::Selected) {
-        if (const Entity* e = scene.Find(ctx.selected)) drawEntity(*e);
+        for (EntityId id : ctx.selection) {
+            if (const Entity* e = scene.Find(id)) drawEntity(*e);
+        }
         return;
     }
     for (const auto& e : scene.Entities()) drawEntity(*e);
@@ -245,11 +247,26 @@ void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
 
     const glm::mat4 view = m_camera.View();
     const glm::mat4 projection = m_camera.Projection();
-    glm::mat4 world = ctx.scene.WorldMatrix(selected);
+    const glm::mat4 before = ctx.scene.WorldMatrix(selected);
+    glm::mat4 world = before;
 
     if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), op, mode, glm::value_ptr(world),
                              nullptr, snap ? snapValues : nullptr)) {
-        ctx.scene.SetWorldMatrix(selected, world);
+        if (ctx.SelectionCount() <= 1) {
+            ctx.scene.SetWorldMatrix(selected, world);
+            return;
+        }
+        // Vários selecionados: a mesma mudança da principal em cada um dos de cima (girar e escalar em volta do
+        // pivô da principal). Se a principal está dentro de outro selecionado, vai junto com ele.
+        const glm::mat4 delta = world * glm::inverse(before);
+        for (EntityId id : ctx.SelectionRoots()) {
+            if (id == selected) {
+                ctx.scene.SetWorldMatrix(id, world);
+            } else if (!IsUiEntity(*ctx.scene.Find(id))) {
+                ctx.scene.SetWorldMatrix(id, delta * ctx.scene.WorldMatrix(id));
+                ctx.ForgetAngles(id);
+            }
+        }
     }
 }
 

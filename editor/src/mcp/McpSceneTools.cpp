@@ -227,6 +227,7 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
             for (EntityId id : ctx.scene.Children(kNullEntity)) roots.push_back(TreeNode(ctx, *ctx.scene.Find(id), components));
             return ToolResult::Data({{"entity_count", ctx.scene.Entities().size()},
                                      {"selected", ctx.selected},
+                                     {"selection", ctx.selection},
                                      {"environment", EnvironmentJson(ctx)},
                                      {"entities", std::move(roots)}});
         },
@@ -330,17 +331,34 @@ void AddEntityEditTools(Protocol& protocol, EditorContext& ctx) {
 
     protocol.AddTool({
         .name = "select",
-        .description = "Seleciona uma entidade no editor (Hierarquia e Inspector), ou nenhuma com entity = 0.",
-        .inputSchema = Schema({{"entity", kEntityProp}}, {"entity"}),
+        .description = "Seleciona entidades no editor (Hierarquia e Inspector). entity: uma (0 = nenhuma); com "
+                       "add = true, soma à seleção atual. entities: várias de uma vez (a última vira a principal, a "
+                       "do Inspector e do gizmo). Devolve a seleção.",
+        .inputSchema = Schema({{"entity", kEntityProp},
+                               {"entities", {{"type", "array"}, {"items", kEntityProp},
+                                             {"description", "várias entidades (troca a seleção)"}}},
+                               {"add", Prop("boolean", "soma entity à seleção em vez de trocar (padrão: false)")}}),
         .run = [&ctx](const Json& args) {
-            if (args["entity"].is_number_integer() && args["entity"].get<int64_t>() == 0) {
-                ctx.selected = kNullEntity;
-                return ToolResult::Text("nenhuma entidade selecionada");
+            ctx.SyncSelection();
+            if (args.contains("entities")) {
+                if (!args["entities"].is_array()) throw ToolError("'entities' deve ser uma lista de ids ou nomes");
+                std::vector<EntityId> ids;
+                for (const Json& item : args["entities"]) ids.push_back(ResolveEntity(ctx, Json{{"entity", item}}).id);
+                ctx.SetSelection(ids);
+            } else if (!args.contains("entity")) {
+                throw ToolError("informe 'entity' ou 'entities'");
+            } else if (args["entity"].is_number_integer() && args["entity"].get<int64_t>() == 0) {
+                ctx.SelectOnly(kNullEntity);
+            } else {
+                const EntityId id = ResolveEntity(ctx, args).id;
+                if (args.value("add", false)) {
+                    ctx.AddToSelection(id);
+                } else {
+                    ctx.SelectOnly(id);
+                }
             }
-            Entity& e = ResolveEntity(ctx, args);
-            ctx.selected = e.id;
             ctx.inspectedAsset.clear();
-            return ToolResult::Text(std::format("selecionada: {} (id {})", e.name, e.id));
+            return ToolResult::Data({{"selected", ctx.selected}, {"selection", ctx.selection}});
         },
     });
 }

@@ -198,13 +198,14 @@ void EditorApp::ApplyRequests() {
 
 void EditorApp::ApplyPendingChanges(bool interactionFinished) {
     m_ctx.ApplyPendingDelete();
+    m_ctx.SyncSelection();
     m_ctx.ApplyPendingPrefabAction();
     // Instâncias seguem os prefabs que mudaram; o que mudou numa instância vira override (antes do Track,
     // para entrar no mesmo passo de desfazer). No Play, não: a cena do jogo é descartada ao parar.
     if (!m_play.IsActive()) m_ctx.UpdatePrefabs([this](const auto& fn) { m_history.ForEachScene(fn); });
     // Depois de todas as alterações do frame: se a cena mudou e o usuário terminou a interação, vira um passo.
     // No Play, não: ao parar a cena volta a ser igual à última foto do histórico.
-    if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, interactionFinished);
+    if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, interactionFinished, &m_ctx.selection);
 }
 
 void EditorApp::UpdateMinimized() {
@@ -218,6 +219,7 @@ void EditorApp::UpdateMinimized() {
 void EditorApp::OnImGui() {
     // Desfazer/refazer e Play/Parar pedidos no frame anterior: aplicados antes de os painéis desenharem a cena.
     ApplyRequests();
+    m_ctx.SyncSelection();  // seleção trocada por fora (criar, MCP, desfazer) antes dos painéis
 
     ImGuizmo::BeginFrame();
     DrawMenuBar();
@@ -331,6 +333,8 @@ void EditorApp::DrawMenuBar() {
         const bool hasSelection = m_ctx.scene.Find(m_ctx.selected) != nullptr;
         if (ImGui::MenuItem("Duplicar", "Ctrl+D", false, hasSelection)) m_ctx.DuplicateSelected();
         if (ImGui::MenuItem("Excluir", "Del", false, hasSelection)) m_ctx.pendingDelete = m_ctx.selected;
+        ImGui::Separator();
+        if (ImGui::MenuItem("Selecionar tudo", "Ctrl+A", false, editing)) SelectAll();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Entidade")) {
@@ -414,8 +418,18 @@ void EditorApp::HandleShortcuts() {
         m_ctx.pendingDelete = m_ctx.selected;
     }
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false)) m_ctx.DuplicateSelected();
+    if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false)) SelectAll();
     if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) m_viewport.FocusSelected(m_ctx);
-    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) m_ctx.selected = kNullEntity;
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) m_ctx.SelectOnly(kNullEntity);
+}
+
+void EditorApp::SelectAll() {
+    // Todas as entidades da cena, menos os elementos de UI (ficam na tela, não no mundo).
+    std::vector<EntityId> ids;
+    for (const auto& e : m_ctx.scene.Entities()) {
+        if (!IsUiEntity(*e)) ids.push_back(e->id);
+    }
+    m_ctx.SetSelection(ids);
 }
 
 bool EditorApp::IsInteracting() const {
@@ -424,7 +438,7 @@ bool EditorApp::IsInteracting() const {
 
 void EditorApp::Undo() {
     if (IsInteracting()) return;  // no meio de um arraste, desfazer bagunçaria o estado
-    if (m_history.Undo(m_ctx.scene, m_ctx.selected)) {
+    if (m_history.Undo(m_ctx.scene, m_ctx.selected, &m_ctx.selection)) {
         m_ctx.pendingDelete = kNullEntity;
         m_document.HasUnsavedChanges();  // atualiza o "*" do título na hora
     }
@@ -432,7 +446,7 @@ void EditorApp::Undo() {
 
 void EditorApp::Redo() {
     if (IsInteracting()) return;
-    if (m_history.Redo(m_ctx.scene, m_ctx.selected)) {
+    if (m_history.Redo(m_ctx.scene, m_ctx.selected, &m_ctx.selection)) {
         m_ctx.pendingDelete = kNullEntity;
         m_document.HasUnsavedChanges();
     }

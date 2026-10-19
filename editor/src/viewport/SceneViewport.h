@@ -66,6 +66,8 @@ private:
     void DrawGizmo(EditorContext& ctx, const ImVec2& origin);
     void DrawToolbar(const ImVec2& position);
     void PickAt(EditorContext& ctx, const glm::vec2& uv);  // uv no viewport, (0,0) = canto superior esquerdo
+    // Botão esquerdo pressionado na cena: ao soltar, clique (PickAt) ou retângulo de seleção, se arrastou.
+    void UpdateBoxSelection(EditorContext& ctx, const ImVec2& origin, bool gameView);
     std::pair<glm::vec3, glm::vec3> Ray(const glm::vec2& uv) const;  // origem, direção (não normalizada)
     void HandleDrop(EditorContext& ctx, const ImVec2& origin);
 
@@ -93,6 +95,8 @@ private:
     bool m_focused = false;            // o jogo só recebe teclado/mouse com o viewport em foco
     bool m_focusRequest = false;
     bool m_missingGameCamera = false;  // no Play sem câmera na cena: mostra pela câmera do editor
+    bool m_boxPending = false;         // botão esquerdo pressionado na cena, ainda não solto
+    ImVec2 m_boxStart;                 // onde foi pressionado (relativo ao canto do viewport)
 };
 
 } // namespace editor

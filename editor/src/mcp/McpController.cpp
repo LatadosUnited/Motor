@@ -192,6 +192,7 @@ void McpController::AddEditorTools() {
                           {"entity_count", m_host.ctx.scene.Entities().size()}};
             j["play"] = PlayState(m_host.play);
             j["selected"] = m_host.ctx.selected;
+            j["selection"] = m_host.ctx.selection;
             const ScriptController::Status s = m_host.scripts.GetStatus();
             size_t errors = 0;
             for (const auto& d : s.diagnostics) errors += d.kind == ScriptProject::Diagnostic::Kind::Error;

@@ -50,6 +50,7 @@ add_executable(MotorEditor
     src/export/GameExport.cpp
     src/export/ExportController.cpp
     src/viewport/ColliderOverlay.cpp
+    src/panels/MultiEdit.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 # Includes do editor a partir de src/ ("scripts/ScriptHost.h"); as peças comuns ficam na raiz de src/.
