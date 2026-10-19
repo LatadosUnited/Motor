@@ -65,18 +65,19 @@ int main(int argc, char** argv) {
         settings.viewport.snapScale = 0.5f;
         settings.viewport.grid = false;
         settings.viewport.gridHeight = 2.0f;
+        settings.viewport.gridFine = true;
         settings.playSideBySide = true;
         settings.Save();
         CHECK(EditorSettings::Load().playSideBySide);  // Cena e Jogo lado a lado
         const ViewportPrefs v = EditorSettings::Load().viewport;
         CHECK(v.snap && v.snapMove == 0.25f && v.snapRotate == 45.0f && v.snapScale == 0.5f);
-        CHECK(!v.grid && v.gridHeight == 2.0f);
+        CHECK(!v.grid && v.gridHeight == 2.0f && v.gridFine);
     }
     std::ofstream(file, std::ios::binary | std::ios::trunc) << R"({"snapMove": -3, "snapRotate": 9999})";
     {
         const ViewportPrefs v = EditorSettings::Load().viewport;
         CHECK(v.snapMove == 0.01f && v.snapRotate == 180.0f);
-        CHECK(v.grid && !v.snap);  // campos ausentes: padrão
+        CHECK(v.grid && !v.snap && !v.gridFine);  // campos ausentes: padrão (sem as linhas finas)
     }
 
     SECTION("Mover com encaixe vai para a grade só nos eixos mexidos");

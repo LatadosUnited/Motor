@@ -69,6 +69,7 @@ EditorSettings EditorSettings::Load() {
         v.snapRotate = root.value("snapRotate", v.snapRotate);
         v.snapScale = root.value("snapScale", v.snapScale);
         v.grid = root.value("gridVisible", v.grid);
+        v.gridFine = root.value("gridFine", v.gridFine);
         v.gridHeight = root.value("gridHeight", v.gridHeight);
         v.Clamp();
         settings.playSideBySide = root.value("playSideBySide", settings.playSideBySide);
@@ -96,6 +97,7 @@ void EditorSettings::Save() const {
     root["snapRotate"] = viewport.snapRotate;
     root["snapScale"] = viewport.snapScale;
     root["gridVisible"] = viewport.grid;
+    root["gridFine"] = viewport.gridFine;
     root["gridHeight"] = viewport.gridHeight;
     root["playSideBySide"] = playSideBySide;
     root["mcpEnabled"] = mcpEnabled;

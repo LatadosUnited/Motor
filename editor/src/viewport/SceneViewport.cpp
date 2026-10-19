@@ -72,7 +72,8 @@ void SceneViewport::SubmitGrid(Renderer& renderer) const {
         const glm::mat4 model = glm::scale(glm::translate(glm::mat4(1.0f), center), glm::vec3(cell, 1.0f, cell));
         renderer.SubmitWireframe(mesh, model, color);
     };
-    layer(*m_gridMesh, minor, major, kGridMinorColor);
+    // As finas enchem a tela de quadradinhos perto da câmera: só quando pedidas.
+    if (m_prefs.gridFine) layer(*m_gridMesh, minor, major, kGridMinorColor);
     layer(*m_gridMajorMesh, major, major, kGridMajorColor);
 
     // Eixos X (vermelho) e Z (azul) do mundo, na altura da grade.

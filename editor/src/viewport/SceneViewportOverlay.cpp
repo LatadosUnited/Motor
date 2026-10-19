@@ -304,6 +304,8 @@ void SceneViewport::DrawSnapPopup() {
     }
     ImGui::SeparatorText("Grade");
     ImGui::Checkbox("Visível", &m_prefs.grid);
+    ImGui::Checkbox("Linhas finas", &m_prefs.gridFine);
+    ImGui::SetItemTooltip("Também as linhas de cada passo do mover (senão só as de 10 em 10 passos)");
     ImGui::SetNextItemWidth(110.0f);
     ImGui::DragFloat("Altura (Y)", &m_prefs.gridHeight, 0.05f, -10000.0f, 10000.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::SetItemTooltip("Plano da grade; o encaixe do Y conta a partir daqui");
@@ -358,7 +360,8 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
     DrawSnapPopup();
     ImGui::SameLine();
     if (toggleButton("Grade", m_prefs.grid)) m_prefs.grid = !m_prefs.grid;
-    ImGui::SetItemTooltip("Mostrar a grade no chão (célula = passo do mover: %.3g m)", m_prefs.snapMove);
+    ImGui::SetItemTooltip("Mostrar a grade no chão (uma linha a cada 10 passos do mover: %.3g m)",
+                          m_prefs.snapMove * 10.0f);
     ImGui::SameLine(0.0f, 14.0f);
     if (toggleButton(ColliderOverlayLabel(m_prefs.colliders), m_prefs.colliders != ColliderOverlay::None)) {
         m_prefs.colliders = NextColliderOverlay(m_prefs.colliders);

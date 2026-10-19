@@ -18,6 +18,7 @@ struct ViewportPrefs {
     float snapRotate = 15.0f;   // graus
     float snapScale = 0.1f;
     bool grid = true;           // grade visível no plano horizontal
+    bool gridFine = false;      // também as linhas finas (célula = passo do mover); senão só as de 10 em 10
     float gridHeight = 0.0f;    // altura (Y) do plano da grade
 
     // Valores fora da faixa (editor.json editado à mão) voltam para dentro dela.
