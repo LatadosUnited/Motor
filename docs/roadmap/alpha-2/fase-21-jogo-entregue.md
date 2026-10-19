@@ -27,8 +27,8 @@ salvo e controle.
 - [x] **Identidade:** ícone e nome do `.exe` nas configurações do projeto; versão do jogo. — `ca7c989`
 - [x] **Exportação sempre Release:** Player e `libMotor.dll` de Release da versão instalada, e a DLL de scripts
   recompilada em Release ao exportar. *(origem: Fase 10, limitação)* — `7e2e64e`
-- [ ] **Salvar progresso:** API de dados persistentes para scripts (chave/valor e arquivos em
-  `%APPDATA%\<Jogo>\`), com exemplo no guia.
+- [x] **Salvar progresso:** API de dados persistentes para scripts (chave/valor e arquivos em
+  `%APPDATA%\<Jogo>\`), com exemplo no guia. — `c6d8a39`
 - [ ] **Controle (gamepad)** pela GLFW, com mapeamento de ações ("Pular" = Espaço ou botão A) configurável no
   projeto. *(origem: análise do código, item 9: "WASD ou analógico")*
 - [ ] **Tela de carregamento** simples ao trocar de cena.
@@ -70,6 +70,15 @@ de continuar (save), e é jogável com controle.
   de `sdk/include`). Conferido: pelo editor de Debug do código e pelo editor do pacote, a pasta exportada caiu
   de ~117 MB para ~12 MB, a DLL de scripts de Release carrega e o jogo roda. Teste: `test_release_runtime`.
 
+- **Salvar progresso** (`c6d8a39`): `motor::SaveData` (chave/valor com int, float, bool, texto e vec3; gravação
+  atômica; arquivo estragado vira `.corrompido`) e `SaveStore` (slots `<nome>.json` numa pasta), em
+  `project/SaveData.h`. Scripts: `SaveSlot`, `HasSave`, `DeleteSave` e `SaveFolder`, pelo `GameHost::Saves`. O
+  Player grava em `%APPDATA%\<Jogo>\saves\`; o Play do editor em `<projeto>/.motor/saves` (relidos a cada
+  Play; **Jogo > Apagar saves do Play**; MCP `game_saves`). O que não foi gravado é gravado ao fechar o jogo e
+  ao parar o Play. Exemplo `docs/examples/MenuContinuar.cpp` (Continuar / Novo jogo e o jogador voltando para
+  onde parou). Testes: `test_save_data`; conferido no Play do editor (MCP) e no jogo exportado em Release
+  rodado duas vezes.
+
 ## Limitações
 
 - A troca para tela cheia e de resolução não foi testada automaticamente (mudaria a tela do usuário): fica no
@@ -80,4 +89,7 @@ de continuar (save), e é jogável com controle.
   32 pixels, use um `.ico` com vários tamanhos. Sem nome de empresa nem direitos autorais nas propriedades.
 - Quem compila o Motor em Debug precisa compilar também o `build-release` (pelo menos o alvo `Player`) para
   exportar em Release; sem ele a exportação sai em Debug com um aviso. O build de Release não é refeito sozinho
-  quando o código muda: um Player de Release velho com uma API de scripts diferente é recusado ao abrir o jogo.
+  quando o código muda: depois de mudar a engine, recompile o `build-release` (alvo `Player`) antes de exportar,
+  ou o jogo leva uma `libMotor.dll` velha (com API de scripts diferente é recusado; com a mesma, pode quebrar).
+- Saves sem nuvem nem vários perfis de jogador; a versão do formato (`motor-save` 1) sobe se o formato mudar,
+  mas os valores que o jogo grava são do jogo: mudar o significado de uma chave entre versões é com o script.
