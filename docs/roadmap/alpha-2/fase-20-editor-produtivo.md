@@ -25,7 +25,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
   [Organização do código](organizacao-do-codigo.md). *(origem: revisão do código de 17/10/2026)*
 - [x] **Seleção múltipla** na hierarquia e no viewport (Ctrl/Shift, retângulo), com gizmo e Inspector para vários. (59e5fb3)
 - [x] **Copiar, recortar, colar e duplicar** várias entidades (com filhos), também entre cenas. (e433492)
-- [ ] **Snapping** na grade, em ângulos e em passos de escala; grade visível configurável.
+- [x] **Snapping** na grade, em ângulos e em passos de escala; grade visível configurável. (COMMIT)
 - [ ] **Busca na hierarquia** (nome e tipo de componente).
 - [x] **Contorno verde do collider só no objeto selecionado**, como na Unity. Hoje o viewport desenha o de todos
   os objetos com collider o tempo todo (`SceneViewport::DrawColliders`, `editor/src/viewport/SceneViewportOverlay.cpp`),
@@ -72,6 +72,13 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   agia em vários desde a seleção múltipla. MCP: `entity_copy`, `entity_cut`, `entity_paste`. Testes em
   `test_selection` e `test_mcp`; conferido numa captura depois de copiar e colar pelo MCP. Os atalhos de teclado
   não foram testados (precisam de teclado; item novo na seção 4 do roteiro).
+- **Encaixe e grade:** passos de mover, girar e escalar configuráveis na seta ao lado do Snap (com valores comuns
+  num clique) e salvos no `editor.json` junto com o Snap ligado, a grade e a altura dela (`ViewportPrefs`).
+  Mover com encaixe põe a posição na grade (`SnapToGrid`, só nos eixos mexidos; o Y conta a partir da altura da
+  grade). Grade desenhada pelo renderer como wireframe (`CreateGridMesh`, linhas como triângulos degenerados), então
+  respeita a profundidade da cena: célula = passo do mover, linha forte a cada 10, eixos X e Z; de longe as
+  camadas sobem de 10 em 10. Testes no `test_viewport`; conferido em captura (grade, cubo tapando as linhas).
+  O popup, o arraste com encaixe e a troca de altura não foram testados (precisam de mouse; item na seção 3).
 
 ## Limitações
 
@@ -82,6 +89,9 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 - O Inspector com vários mostra os valores da principal, sem marcar os campos que diferem entre os selecionados;
   o nome não é repetido. "Salvar como asset" do material com vários faz todos usarem o asset novo.
 - O retângulo usa o centro de cada objeto, não a forma: um objeto grande só entra com o centro dentro.
+- A grade não esmaece com a distância (o shader das linhas é do renderer): ela termina a ~10 células grossas da
+  câmera para não virar ruído no horizonte. Tamanho da célula da grade e passo do mover são o mesmo valor.
+- Com vários selecionados, só a principal vai para a grade; os outros andam o mesmo tanto.
 - A área de transferência de entidades fica na memória do editor: não passa para outro editor aberto nem
   sobrevive a fechá-lo, e não usa a do Windows. Colar entre projetos diferentes não foi pensado (materiais e
   prefabs são do projeto de origem).

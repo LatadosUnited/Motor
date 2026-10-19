@@ -10,6 +10,7 @@
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/matrix.hpp>
 
@@ -28,6 +29,14 @@ constexpr float kIconPickRadius = 14.0f;  // tolerância do clique
 constexpr float kBoxMinDrag = 4.0f;       // pixels arrastados até o clique virar retângulo de seleção
 constexpr ImU32 kBoxFill = IM_COL32(255, 158, 38, 40);
 constexpr ImU32 kBoxBorder = IM_COL32(255, 158, 38, 200);
+// Linhas para cada lado do centro: a camada fina vai 20 células longe, a grossa 10 (de 10 células cada). Mais que
+// isso vira ruído perto do horizonte (as linhas não somem com a distância).
+constexpr int kGridMinorHalfCount = 20;
+constexpr int kGridMajorHalfCount = 10;
+constexpr glm::vec4 kGridMinorColor{0.42f, 0.44f, 0.48f, 1.0f};
+constexpr glm::vec4 kGridMajorColor{0.62f, 0.64f, 0.68f, 1.0f};
+constexpr glm::vec4 kGridAxisX{0.85f, 0.3f, 0.3f, 1.0f};
+constexpr glm::vec4 kGridAxisZ{0.3f, 0.45f, 0.9f, 1.0f};
 
 // Ctrl ou Shift: o clique e o retângulo somam à seleção em vez de trocá-la.
 bool AddingToSelection() {
@@ -42,6 +51,36 @@ void SceneViewport::Init() {
     m_ui = std::make_unique<UiRenderer>();
     m_camera.position = {0.0f, 4.0f, 9.0f};
     m_camera.LookAt({0.0f, 0.5f, 0.0f});
+    m_gridMesh = CreateGridMesh(kGridMinorHalfCount);
+    m_gridMajorMesh = CreateGridMesh(kGridMajorHalfCount);
+    const Vertex axis[2] = {{{-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+                            {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}}};
+    const uint32_t axisIndices[3] = {0, 1, 1};
+    m_axisMesh = std::make_shared<Mesh>(axis, axisIndices);
+}
+
+void SceneViewport::SubmitGrid(Renderer& renderer) const {
+    // Duas camadas: células do passo do mover e linhas mais fortes a cada 10. De longe, as duas sobem de 10 em
+    // 10 (senão a grade fina vira uma mancha e a de 50 células acaba antes do horizonte).
+    const float height = std::abs(m_camera.position.y - m_prefs.gridHeight);
+    float minor = m_prefs.snapMove;
+    for (int i = 0; i < 4 && height > minor * 15.0f; ++i) minor *= 10.0f;
+    const float major = minor * 10.0f;
+
+    auto layer = [&](const Mesh& mesh, float cell, float alignTo, const glm::vec4& color) {
+        const glm::vec3 center = GridCenter(m_camera.position, alignTo, m_prefs.gridHeight);
+        const glm::mat4 model = glm::scale(glm::translate(glm::mat4(1.0f), center), glm::vec3(cell, 1.0f, cell));
+        renderer.SubmitWireframe(mesh, model, color);
+    };
+    layer(*m_gridMesh, minor, major, kGridMinorColor);
+    layer(*m_gridMajorMesh, major, major, kGridMajorColor);
+
+    // Eixos X (vermelho) e Z (azul) do mundo, na altura da grade.
+    const float extent = major * static_cast<float>(kGridMajorHalfCount);
+    const glm::mat4 base = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, m_prefs.gridHeight, 0.0f));
+    renderer.SubmitWireframe(*m_axisMesh, glm::scale(base, glm::vec3(extent, 1.0f, 1.0f)), kGridAxisX);
+    const glm::mat4 alongZ = glm::rotate(base, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    renderer.SubmitWireframe(*m_axisMesh, glm::scale(alongZ, glm::vec3(extent, 1.0f, 1.0f)), kGridAxisZ);
 }
 
 void SceneViewport::UpdateCamera(float dt, Window& window) {
@@ -84,6 +123,7 @@ void SceneViewport::Render(Renderer& renderer, const EditorContext& ctx, bool ga
         if (!inSelection(e->id)) continue;
         renderer.SubmitWireframe(*mr->mesh, scene.WorldMatrix(e->id), kSelectionColor);
     }
+    if (!gameView && m_prefs.grid) SubmitGrid(renderer);
     renderer.EndScene();
 
     // UI do jogo por cima, no mesmo framebuffer (no Play e na edição, para ver o HUD no lugar).

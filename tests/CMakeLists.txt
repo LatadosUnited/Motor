@@ -161,7 +161,8 @@ motor_add_test(test_script_api)
 # Viewport do editor (Fase 20): modo dos contornos de collider e a gravação dele no editor.json.
 motor_add_test(test_viewport
     ${PROJECT_SOURCE_DIR}/editor/src/EditorSettings.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/viewport/ColliderOverlay.cpp)
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/ColliderOverlay.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/ViewportPrefs.cpp)
 target_include_directories(test_viewport PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_viewport PRIVATE nlohmann_json::nlohmann_json)
 

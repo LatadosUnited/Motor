@@ -62,7 +62,15 @@ EditorSettings EditorSettings::Load() {
         }
         settings.projectGridView = root.value("projectGridView", settings.projectGridView);
         settings.projectIconSize = std::clamp(root.value("projectIconSize", settings.projectIconSize), 40.0f, 160.0f);
-        settings.viewportColliders = ParseColliderOverlay(root.value("viewportColliders", std::string()));
+        ViewportPrefs& v = settings.viewport;
+        v.colliders = ParseColliderOverlay(root.value("viewportColliders", std::string()));
+        v.snap = root.value("snapEnabled", v.snap);
+        v.snapMove = root.value("snapMove", v.snapMove);
+        v.snapRotate = root.value("snapRotate", v.snapRotate);
+        v.snapScale = root.value("snapScale", v.snapScale);
+        v.grid = root.value("gridVisible", v.grid);
+        v.gridHeight = root.value("gridHeight", v.gridHeight);
+        v.Clamp();
         settings.mcpEnabled = root.value("mcpEnabled", settings.mcpEnabled);
         settings.mcpPort = std::clamp(root.value("mcpPort", settings.mcpPort), 1024, 65535);
     } catch (const json::exception& e) {
@@ -81,7 +89,13 @@ void EditorSettings::Save() const {
     root["recentProjects"] = std::move(recent);
     root["projectGridView"] = projectGridView;
     root["projectIconSize"] = projectIconSize;
-    root["viewportColliders"] = std::string(ColliderOverlayName(viewportColliders));
+    root["viewportColliders"] = std::string(ColliderOverlayName(viewport.colliders));
+    root["snapEnabled"] = viewport.snap;
+    root["snapMove"] = viewport.snapMove;
+    root["snapRotate"] = viewport.snapRotate;
+    root["snapScale"] = viewport.snapScale;
+    root["gridVisible"] = viewport.grid;
+    root["gridHeight"] = viewport.gridHeight;
     root["mcpEnabled"] = mcpEnabled;
     root["mcpPort"] = mcpPort;
 

@@ -50,6 +50,7 @@ add_executable(MotorEditor
     src/export/GameExport.cpp
     src/export/ExportController.cpp
     src/viewport/ColliderOverlay.cpp
+    src/viewport/ViewportPrefs.cpp
     src/panels/MultiEdit.cpp
     src/EntityClipboard.cpp
 )

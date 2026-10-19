@@ -1,6 +1,6 @@
 #pragma once
 
-#include "viewport/ColliderOverlay.h"
+#include "viewport/ViewportPrefs.h"
 
 #include <filesystem>
 #include <vector>
@@ -15,7 +15,7 @@ struct EditorSettings {
     std::vector<std::filesystem::path> recentProjects;
     bool projectGridView = false;   // painel Projeto: grade (true) ou lista
     float projectIconSize = 72.0f;
-    ColliderOverlay viewportColliders = ColliderOverlay::Selected;  // contornos de collider no viewport
+    ViewportPrefs viewport;  // contornos de collider, encaixe e grade
     bool mcpEnabled = false;  // servidor MCP (Ver > Servidor MCP) ligado ao abrir o editor
     int mcpPort = 47800;
 

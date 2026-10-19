@@ -178,14 +178,14 @@ void SceneViewport::DrawSelectedHelpers(const EditorContext& ctx, ImDrawList* dl
 }
 
 void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin) {
-    if (m_colliderOverlay == ColliderOverlay::None) return;
+    if (m_prefs.colliders == ColliderOverlay::None) return;
     const Scene& scene = ctx.scene;
     auto drawEntity = [&](const Entity& e) {
         const ColliderComponent* collider = e.Get<ColliderComponent>();
         const CharacterControllerComponent* character = e.Get<CharacterControllerComponent>();
         if (!collider && !character) return;
         const bool selected = ctx.IsSelected(e.id);
-        if (!ShouldDrawCollider(m_colliderOverlay, selected, scene.IsActiveInHierarchy(e.id))) return;
+        if (!ShouldDrawCollider(m_prefs.colliders, selected, scene.IsActiveInHierarchy(e.id))) return;
 
         m_lines.clear();
         const glm::mat4 world = scene.WorldMatrix(e.id);
@@ -209,7 +209,7 @@ void SceneViewport::DrawColliders(const EditorContext& ctx, ImDrawList* dl, cons
     };
 
     // Só os selecionados: nem percorre a cena (o custo não cresce com o número de objetos).
-    if (m_colliderOverlay == ColliderOverlay::Selected) {
+    if (m_prefs.colliders == ColliderOverlay::Selected) {
         for (EntityId id : ctx.selection) {
             if (const Entity* e = scene.Find(id)) drawEntity(*e);
         }
@@ -231,18 +231,18 @@ void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
     ImGuizmo::Enable(!m_looking);
 
     ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
-    float snapStep = m_snapTranslate;
+    float snapStep = m_prefs.snapMove;
     if (m_gizmoTool == GizmoTool::Rotate) {
         op = ImGuizmo::ROTATE;
-        snapStep = m_snapRotate;
+        snapStep = m_prefs.snapRotate;
     } else if (m_gizmoTool == GizmoTool::Scale) {
         op = ImGuizmo::SCALE;
-        snapStep = m_snapScale;
+        snapStep = m_prefs.snapScale;
     }
     const ImGuizmo::MODE mode = m_gizmoLocal ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
 
     // Snap fixo pelo botão da barra, ou temporário segurando Ctrl.
-    const bool snap = m_snap || ImGui::GetIO().KeyCtrl;
+    const bool snap = m_prefs.snap || ImGui::GetIO().KeyCtrl;
     const float snapValues[3] = {snapStep, snapStep, snapStep};
 
     const glm::mat4 view = m_camera.View();
@@ -252,6 +252,12 @@ void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
 
     if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection), op, mode, glm::value_ptr(world),
                              nullptr, snap ? snapValues : nullptr)) {
+        // O ImGuizmo encaixa o deslocamento a partir de onde o arraste começou; aqui a posição vai para a
+        // grade (a mesma desenhada no viewport), e um objeto fora dela entra nela no primeiro passo.
+        if (snap && op == ImGuizmo::TRANSLATE) {
+            world[3] = glm::vec4(SnapToGrid(glm::vec3(before[3]), glm::vec3(world[3]), m_prefs.snapMove,
+                                            m_prefs.gridHeight), 1.0f);
+        }
         if (ctx.SelectionCount() <= 1) {
             ctx.scene.SetWorldMatrix(selected, world);
             return;
@@ -268,6 +274,45 @@ void SceneViewport::DrawGizmo(EditorContext& ctx, const ImVec2& origin) {
             }
         }
     }
+}
+
+void SceneViewport::DrawSnapPopup() {
+    if (!ImGui::BeginPopup("SnapOptions")) return;
+    ImGui::SeparatorText("Encaixe");
+    ImGui::Checkbox("Ligado", &m_prefs.snap);
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::DragFloat("Mover (m)", &m_prefs.snapMove, 0.01f, 0.01f, 100.0f, "%.3g", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip("Passo do mover; é também o tamanho da célula da grade");
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::DragFloat("Girar (°)", &m_prefs.snapRotate, 0.5f, 0.1f, 180.0f, "%.3g", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::DragFloat("Escalar", &m_prefs.snapScale, 0.005f, 0.001f, 10.0f, "%.3g", ImGuiSliderFlags_AlwaysClamp);
+    // Valores comuns num clique.
+    ImGui::TextDisabled("Mover:");
+    for (const float step : {0.1f, 0.25f, 0.5f, 1.0f, 2.0f}) {
+        ImGui::SameLine();
+        char label[16];
+        std::snprintf(label, sizeof(label), "%g", step);
+        if (ImGui::SmallButton(label)) m_prefs.snapMove = step;
+    }
+    ImGui::TextDisabled("Girar:");
+    for (const float step : {5.0f, 15.0f, 45.0f, 90.0f}) {
+        ImGui::SameLine();
+        char label[16];
+        std::snprintf(label, sizeof(label), "%g°", step);
+        if (ImGui::SmallButton(label)) m_prefs.snapRotate = step;
+    }
+    ImGui::SeparatorText("Grade");
+    ImGui::Checkbox("Visível", &m_prefs.grid);
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::DragFloat("Altura (Y)", &m_prefs.gridHeight, 0.05f, -10000.0f, 10000.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip("Plano da grade; o encaixe do Y conta a partir daqui");
+    if (ImGui::SmallButton("Restaurar padrões")) {
+        const ColliderOverlay colliders = m_prefs.colliders;
+        m_prefs = ViewportPrefs{};
+        m_prefs.colliders = colliders;
+    }
+    ImGui::EndPopup();
 }
 
 void SceneViewport::DrawToolbar(const ImVec2& position) {
@@ -304,12 +349,19 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
     if (toggleButton(m_gizmoLocal ? "Local" : "Global", false)) m_gizmoLocal = !m_gizmoLocal;
     ImGui::SetItemTooltip("Eixos do gizmo: locais do objeto ou do mundo (X)");
     ImGui::SameLine();
-    if (toggleButton("Snap", m_snap)) m_snap = !m_snap;
-    ImGui::SetItemTooltip("Encaixe: %.2g m / %.0f° / %.2g (segure Ctrl para ativar temporariamente)",
-                          m_snapTranslate, m_snapRotate, m_snapScale);
+    if (toggleButton("Snap", m_prefs.snap)) m_prefs.snap = !m_prefs.snap;
+    ImGui::SetItemTooltip("Encaixe na grade: %.3g m / %.3g° / %.3g (segure Ctrl para ativar temporariamente)",
+                          m_prefs.snapMove, m_prefs.snapRotate, m_prefs.snapScale);
+    ImGui::SameLine(0.0f, 0.0f);
+    if (ImGui::ArrowButton("##snap_options", ImGuiDir_Down)) ImGui::OpenPopup("SnapOptions");
+    ImGui::SetItemTooltip("Passos do encaixe e grade");
+    DrawSnapPopup();
+    ImGui::SameLine();
+    if (toggleButton("Grade", m_prefs.grid)) m_prefs.grid = !m_prefs.grid;
+    ImGui::SetItemTooltip("Mostrar a grade no chão (célula = passo do mover: %.3g m)", m_prefs.snapMove);
     ImGui::SameLine(0.0f, 14.0f);
-    if (toggleButton(ColliderOverlayLabel(m_colliderOverlay), m_colliderOverlay != ColliderOverlay::None)) {
-        m_colliderOverlay = NextColliderOverlay(m_colliderOverlay);
+    if (toggleButton(ColliderOverlayLabel(m_prefs.colliders), m_prefs.colliders != ColliderOverlay::None)) {
+        m_prefs.colliders = NextColliderOverlay(m_prefs.colliders);
     }
     ImGui::SetItemTooltip("Formas de colisão (verde), triggers (azul) e personagens. Clique para alternar:\n"
                           "Selecionado (só o objeto selecionado), Todos ou Nenhum.");

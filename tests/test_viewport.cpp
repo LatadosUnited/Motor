@@ -4,7 +4,9 @@
 
 #include "EditorSettings.h"
 #include "viewport/ColliderOverlay.h"
+#include "viewport/ViewportPrefs.h"
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -41,18 +43,59 @@ int main(int argc, char** argv) {
     SECTION("Lembrado entre aberturas do editor");
     const fs::path file = base / "Configuração Ação" / "editor.json";
     EditorSettings::UseFile(file);
-    CHECK(EditorSettings::Load().viewportColliders == ColliderOverlay::Selected);  // primeira execução
+    CHECK(EditorSettings::Load().viewport.colliders == ColliderOverlay::Selected);  // primeira execução
     {
         EditorSettings settings;
-        settings.viewportColliders = ColliderOverlay::None;
+        settings.viewport.colliders = ColliderOverlay::None;
         settings.Save();
     }
-    CHECK(EditorSettings::Load().viewportColliders == ColliderOverlay::None);
+    CHECK(EditorSettings::Load().viewport.colliders == ColliderOverlay::None);
     // editor.json de antes desta versão (sem o campo): padrão Selecionado.
     std::ofstream(file, std::ios::binary | std::ios::trunc) << R"({"projectGridView": true})";
     const EditorSettings old = EditorSettings::Load();
-    CHECK(old.viewportColliders == ColliderOverlay::Selected);
+    CHECK(old.viewport.colliders == ColliderOverlay::Selected);
     CHECK(old.projectGridView);
+
+    SECTION("Encaixe e grade lembrados; valores absurdos voltam para a faixa");
+    {
+        EditorSettings settings;
+        settings.viewport.snap = true;
+        settings.viewport.snapMove = 0.25f;
+        settings.viewport.snapRotate = 45.0f;
+        settings.viewport.snapScale = 0.5f;
+        settings.viewport.grid = false;
+        settings.viewport.gridHeight = 2.0f;
+        settings.Save();
+        const ViewportPrefs v = EditorSettings::Load().viewport;
+        CHECK(v.snap && v.snapMove == 0.25f && v.snapRotate == 45.0f && v.snapScale == 0.5f);
+        CHECK(!v.grid && v.gridHeight == 2.0f);
+    }
+    std::ofstream(file, std::ios::binary | std::ios::trunc) << R"({"snapMove": -3, "snapRotate": 9999})";
+    {
+        const ViewportPrefs v = EditorSettings::Load().viewport;
+        CHECK(v.snapMove == 0.01f && v.snapRotate == 180.0f);
+        CHECK(v.grid && !v.snap);  // campos ausentes: padrão
+    }
+
+    SECTION("Mover com encaixe vai para a grade só nos eixos mexidos");
+    {
+        const glm::vec3 before{0.3f, 1.1f, -0.7f};
+        // Arrastou só o X: X na grade de 0,5; Y e Z ficam onde estavam (fora da grade).
+        const glm::vec3 x = SnapToGrid(before, {0.3f + 0.5f, 1.1f, -0.7f}, 0.5f, 0.0f);
+        CHECK(x == glm::vec3(1.0f, 1.1f, -0.7f));
+        // Y conta a partir da altura da grade.
+        const glm::vec3 y = SnapToGrid(before, {0.3f, 1.6f, -0.7f}, 0.5f, 0.2f);
+        CHECK(std::abs(y.y - 1.7f) < 1e-5f && y.x == 0.3f);
+        CHECK(SnapToGrid(before, {-1.26f, 1.1f, 3.1f}, 0.25f, 0.0f) == glm::vec3(-1.25f, 1.1f, 3.0f));
+        CHECK(SnapToGrid(before, before, 0.5f, 0.0f) == before);  // nada mexido
+    }
+
+    SECTION("Malha e posição da grade");
+    {
+        const auto mesh = CreateGridMesh(2);
+        CHECK(mesh->IndexCount() == 5 * 2 * 3);  // 5 linhas em X e 5 em Z, um triângulo (a, b, b) cada
+        CHECK(GridCenter({12.4f, 30.0f, -7.6f}, 5.0f, 1.0f) == glm::vec3(10.0f, 1.0f, -10.0f));
+    }
 
     std::error_code ec;
     fs::remove_all(base, ec);

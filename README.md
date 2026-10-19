@@ -81,7 +81,8 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Selecionar | clique no objeto no viewport ou na hierarquia (Esc limpa) |
 | Selecionar vários | Ctrl+clique alterna (viewport e hierarquia); Shift+clique na hierarquia pega o intervalo; arrastar no vazio do viewport faz um retângulo (com Ctrl/Shift, soma); Ctrl+A seleciona tudo. Gizmo, Del, Ctrl+D e arrastar na hierarquia agem em todos; o Inspector mostra o último escolhido e repete nos outros o que mudar nele |
 | Gizmo | Q nenhum / W mover / E rotacionar / R escalar; X alterna eixos Local/Global |
-| Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (0.5 m / 15° / 0.1) |
+| Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (padrão 0.5 m / 15° / 0.1). Mover com encaixe põe a posição na grade. A seta ao lado do Snap abre os passos (mover, girar, escalar) e a grade (visível, altura) |
+| Grade | botão "Grade": linhas no chão com célula = passo do mover, mais fortes a cada 10, eixos X (vermelho) e Z (azul); objetos na frente tapam a grade. Encaixe e grade ficam salvos no editor |
 | Reparentar | arrastar na hierarquia (soltar no vazio = raiz) |
 | Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia; as formas (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone) já vêm com o Collider que bate com elas |
 | Focar / Excluir / Duplicar | F / Del / Ctrl+D |

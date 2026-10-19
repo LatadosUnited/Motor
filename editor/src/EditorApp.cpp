@@ -64,7 +64,7 @@ void EditorApp::OnInit() {
     // Projeto da linha de comando, senão o último usado; sem projeto, mostra a cena de exemplo.
     m_settings = EditorSettings::Load();
     m_projectPanel.SetView({m_settings.projectGridView, m_settings.projectIconSize});
-    m_viewport.SetColliderOverlay(m_settings.viewportColliders);
+    m_viewport.SetPrefs(m_settings.viewport);
     std::error_code ec;
     bool opened = false;
     if (!m_createName.empty()) {
@@ -273,7 +273,7 @@ void EditorApp::OnShutdown() {
     m_scripts.CloseProject();  // nenhum objeto da DLL de scripts pode sobrar depois de descarregá-la
     m_settings.projectGridView = m_projectPanel.View().grid;
     m_settings.projectIconSize = m_projectPanel.View().iconSize;
-    m_settings.viewportColliders = m_viewport.GetColliderOverlay();
+    m_settings.viewport = m_viewport.Prefs();
     m_settings.Save();
 }
 
