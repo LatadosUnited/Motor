@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
 
     SECTION("Cena inicial persiste");
     p->SetStartupScene(scene);
-    CHECK(p->Save(&error));
+    CHECK(p->Save(&error) || (std::printf("  erro: %s\n", error.c_str()), false));
     auto byFile = Project::Open(p->ProjectFile(), &error);
     CHECK(byFile.has_value());
     if (byFile) {

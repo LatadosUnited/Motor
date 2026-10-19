@@ -13,6 +13,7 @@ function(motor_add_test name)
 endfunction()
 
 motor_add_test(test_project)
+motor_add_test(test_file_write)
 motor_add_test(test_assets)
 motor_add_test(test_guid)
 motor_add_test(test_components)

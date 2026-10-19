@@ -88,7 +88,9 @@ ctest --test-dir build --output-on-failure
   o caso de teste padrão ("Jogo Ação").
 - JSON com `nlohmann::ordered_json`; formatos versionados (`"format"`, `"version"`) e leitura tolerante
   (campo ausente = padrão). Mudou o formato? Suba a versão e continue lendo as antigas.
-- Gravação de arquivos importantes: escreve `.tmp` e renomeia (ver `SceneSerializer::Save`).
+- Gravação de arquivos importantes: `motor::WriteFileAtomic` (`motor/core/FileWrite.h`): escreve o `.tmp` e troca,
+  tentando de novo se o Windows estiver com o arquivo preso (antivírus); nunca apague o original para "tentar de
+  novo". Hub, distribuição e instalador não ligam na engine e ainda trocam com `fs::rename` simples.
 - Assets de arquivo são referenciados por **GUID** (`.meta` ao lado). Quem move/renomeia/exclui arquivo
   no editor leva o `.meta` junto (`ProjectPanel`). Exclusão vai sempre para a **Lixeira**, nunca definitiva.
 - **Recurso novo de entidade = componente registrado** (`motor/scene/Component.h`, exemplos no README e em
@@ -138,6 +140,8 @@ ctest --test-dir build --output-on-failure
 
 ## Armadilhas do ambiente
 
+- O `windows.h` define macros com nomes comuns (`ReplaceFile`, `CreateFile`, `GetObject`, `min`/`max`...): uma
+  função nossa com esse nome vira outra num `.cpp` que inclui o `windows.h` (erro de link "undefined reference").
 - No Bash deste ambiente, sequências como `\0` e `\n` dentro de comandos/heredocs chegam já convertidas
   em bytes reais. Para editar C++ com barras invertidas, use as ferramentas Edit/Write, não scripts.
 - Python no Windows grava CRLF em modo texto: use `newline=''` ou `newline='\n'`. Os fontes usam LF.

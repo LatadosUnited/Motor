@@ -12,10 +12,8 @@ Formato: `- AAAA-MM-DD — quem achou — o quê — onde (arquivo:linha, se sou
 
 ## Para triar
 
-- 2026-10-18 — Claude (correção do projeto antigo; Fase 18) — testes intermitentes com o `ctest -j4`:
-  `test_export`, `test_distribuicao` e `test_project_version` falharam uma vez cada e passaram sozinhos e nas
-  rodadas seguintes. No `test_project_version` foi o `Project::Save` (grava `.tmp` e renomeia): provável
-  antivírus ou indexador do Windows segurando o arquivo novo por um instante. Se for isso, o mesmo pode
-  acontecer com o usuário ao salvar cena, projeto ou material. Investigar e, se confirmar, repetir a troca de
-  nome algumas vezes antes de desistir — `engine/src/project/Project.cpp` (Save), `SceneSerializer::Save`,
-  `AssetLibrary` (WriteTextAtomic)
+- 2026-10-19 — Claude (gravação segura, Fase 16) — a falha intermitente do `Project::Save` não se repetiu em
+  8 rodadas para capturar a mensagem; a correção (troca que tenta de novo, cf18356) cobre o caso do arquivo
+  preso, que reproduz "Acesso negado". Se `test_export` ou `test_distribuicao` voltarem a falhar em paralelo,
+  guardar a mensagem. Hub, distribuição e instalador ainda trocam com `fs::rename` simples
+  (`hub/src/HubCore.cpp:430`, `distrib/src/Manifest.cpp:44`, `installer/src/Setup.cpp:61`)

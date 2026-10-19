@@ -3,6 +3,7 @@
 #include "motor/assets/AssetLibrary.h"
 
 #include "AssetLibraryUtil.h"
+#include "motor/core/FileWrite.h"
 
 #include "motor/assets/Model.h"
 #include "motor/core/Log.h"
@@ -43,28 +44,9 @@ bool ReadText(const fs::path& file, std::string& out) {
     return true;
 }
 
-// Escreve num .tmp e renomeia no fim, para não deixar o arquivo pela metade se algo falhar.
+// Escreve num .tmp e troca no fim, para não deixar o arquivo pela metade se algo falhar.
 bool WriteTextAtomic(const fs::path& file, const std::string& text, std::string* error) {
-    fs::path temp = file;
-    temp += ".tmp";
-    {
-        std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-        if (!out || !(out << text) || !out.flush()) {
-            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(temp)));
-            return false;
-        }
-    }
-    std::error_code ec;
-    fs::rename(temp, file, ec);
-    if (ec) {
-        fs::remove(file, ec);  // algumas implementações não substituem o destino
-        fs::rename(temp, file, ec);
-    }
-    if (ec) {
-        SetError(error, std::format("Não foi possível salvar '{}': {}", ToUtf8(file), ec.message()));
-        return false;
-    }
-    return true;
+    return WriteFileAtomic(file, text, error);
 }
 } // namespace
 // --- Materiais --------------------------------------------------------------------
