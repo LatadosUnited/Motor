@@ -3,14 +3,15 @@
 # Não liga na libMotor.dll nem usa headers da engine: o hub abre projetos de qualquer versão (inclusive futuras)
 # e não pode ficar preso a uma. Usa só GLFW, ImGui e nlohmann_json, estáticos (as mesmas bibliotecas do Motor,
 # baixadas pelo CMakeLists.txt da raiz). Pode virar um repositório próprio: este CMakeLists só precisa dos alvos
-# glfw, imgui (objetos) e nlohmann_json::nlohmann_json.
+# glfw, imgui (objetos), nlohmann_json::nlohmann_json e motor_common (common/, sem dependências).
 set(MOTOR_HUB_VERSION 0.2.0)  # versão do hub, separada da do Motor (0.2: baixa versões de servidores)
 set(MOTOR_HUB_VERSION ${MOTOR_HUB_VERSION} PARENT_SCOPE)  # o instalador (installer/) leva este hub
 
 # Núcleo sem janela (testado em tests/test_hub.cpp).
 add_library(motor_hub_core STATIC src/HubCore.cpp)
 target_include_directories(motor_hub_core PUBLIC src)
-target_link_libraries(motor_hub_core PUBLIC nlohmann_json::nlohmann_json)
+# motor_common (common/): só a gravação segura de arquivos, sem nada da engine.
+target_link_libraries(motor_hub_core PUBLIC nlohmann_json::nlohmann_json motor_common)
 
 add_executable(MotorHub
     src/main.cpp

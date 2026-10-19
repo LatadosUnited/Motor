@@ -1,6 +1,7 @@
 #include "InstallPlan.h"
 
 #include <HubCore.h>
+#include <motor/common/FileWrite.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -76,22 +77,7 @@ bool InstallRecord::Save(const fs::path& file, std::string* error) const {
 
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);
-    fs::path tmp = file;
-    tmp += ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out || !(out << root.dump(2, ' ', false, json::error_handler_t::replace) << '\n') || !out.flush()) {
-            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
-            return false;
-        }
-    }
-    fs::rename(tmp, file, ec);
-    if (ec) {
-        fs::remove(tmp, ec);
-        SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
-        return false;
-    }
-    return true;
+    return motor::WriteFileAtomic(file, root.dump(2, ' ', false, json::error_handler_t::replace) + '\n', error);
 }
 
 std::string HubArguments(const fs::path& dataDir) {

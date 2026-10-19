@@ -54,6 +54,7 @@ editor/            MotorEditor: hierarquia, inspector, cena, viewport, projeto (
   templates/Scripts/  scripts de exemplo copiados para os projetos (Girar, Jogador, MoverWASD, Seguir)
 sandbox/           app de demonstração
 player/            Player: o executável do jogo exportado (roda um projeto sem o editor)
+common/            gravação segura de arquivos, comum à engine, ao Hub e à distribuição (sem dependências)
 hub/               MotorHub: projetos e versões do Motor instaladas (não liga na libMotor.dll)
 distrib/           núcleo da distribuição: manifesto de versões, SHA-256, download com retomada, plano de instalação
 server/            MotorServidor: publica e serve versões do Motor e o Hub por HTTP

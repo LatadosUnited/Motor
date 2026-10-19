@@ -1,5 +1,6 @@
 #include "HubCore.h"
 
+#include <motor/common/FileWrite.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -227,7 +228,7 @@ std::optional<InstalledVersion> InstallVersion(const fs::path& source, const fs:
     fs::remove_all(tmp, ec);
     fs::create_directories(tmp, ec);
     if (!ec) fs::copy(source, tmp, fs::copy_options::recursive, ec);
-    if (!ec) fs::rename(tmp, dest, ec);
+    if (!ec) motor::ReplaceFileAtomic(tmp, dest, ec);  // espera se o antivírus estiver lendo a cópia
     if (ec) {
         std::error_code ignored;
         fs::remove_all(tmp, ignored);
@@ -418,22 +419,7 @@ bool HubConfig::Save(const fs::path& file, std::string* error) const {
 
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);
-    fs::path tmp = file;
-    tmp += ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out || !(out << root.dump(2, ' ', false, json::error_handler_t::replace) << '\n') || !out.flush()) {
-            SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
-            return false;
-        }
-    }
-    fs::rename(tmp, file, ec);
-    if (ec) {
-        fs::remove(tmp, ec);
-        SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(file)));
-        return false;
-    }
-    return true;
+    return motor::WriteFileAtomic(file, root.dump(2, ' ', false, json::error_handler_t::replace) + '\n', error);
 }
 
 HubProject* HubConfig::FindProject(const fs::path& root) {

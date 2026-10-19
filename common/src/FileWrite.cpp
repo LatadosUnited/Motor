@@ -1,6 +1,4 @@
-#include "motor/core/FileWrite.h"
-
-#include "motor/core/Paths.h"
+#include "motor/common/FileWrite.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -14,6 +12,12 @@
 namespace motor {
 
 namespace {
+// Para as mensagens de erro (sem o Paths.h da engine: esta biblioteca não depende de nada).
+std::string Utf8(const std::filesystem::path& path) {
+    const std::u8string s = path.u8string();
+    return std::string(s.begin(), s.end());
+}
+
 #ifdef _WIN32
 // Erros de arquivo preso por outro processo: passam sozinhos em milissegundos.
 bool IsTransient(DWORD code) {
@@ -49,13 +53,13 @@ bool WriteFileAtomic(const std::filesystem::path& file, std::string_view data, s
     {
         std::ofstream out(temp, std::ios::binary | std::ios::trunc);
         if (!out || !out.write(data.data(), static_cast<std::streamsize>(data.size())) || !out.flush()) {
-            if (error) *error = std::format("Não foi possível escrever '{}'.", ToUtf8(temp));
+            if (error) *error = std::format("Não foi possível escrever '{}'.", Utf8(temp));
             return false;
         }
     }
     std::error_code ec;
     if (!ReplaceFileAtomic(temp, file, ec)) {
-        if (error) *error = std::format("Não foi possível salvar '{}': {}", ToUtf8(file), ec.message());
+        if (error) *error = std::format("Não foi possível salvar '{}': {}", Utf8(file), ec.message());
         std::error_code ignored;
         std::filesystem::remove(temp, ignored);
         return false;

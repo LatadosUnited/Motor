@@ -1,6 +1,6 @@
 #include "motor/scene/ModelImport.h"
 
-#include "motor/core/FileWrite.h"
+#include "motor/common/FileWrite.h"
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/Model.h"
 #include "motor/core/Log.h"

@@ -79,6 +79,8 @@ ctest --test-dir build --output-on-failure
   `tests/test_distribuicao.cpp`; `server/` é o `MotorServidor.exe` (cpp-httplib, publica e serve versões);
   `installer/` é o `MotorSetup.exe` (Hub embutido como recurso, atalhos, registro de desinstalação no HKCU).
   Como o hub, não ligam na `libMotor.dll`.
+- `common/` — `motor_common`, código sem dependências usado pela engine e pelos programas que não ligam nela
+  (hub, distribuição, servidor, instalador): hoje só a gravação segura (`motor/common/FileWrite.h`).
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -88,9 +90,10 @@ ctest --test-dir build --output-on-failure
   o caso de teste padrão ("Jogo Ação").
 - JSON com `nlohmann::ordered_json`; formatos versionados (`"format"`, `"version"`) e leitura tolerante
   (campo ausente = padrão). Mudou o formato? Suba a versão e continue lendo as antigas.
-- Gravação de arquivos importantes: `motor::WriteFileAtomic` (`motor/core/FileWrite.h`): escreve o `.tmp` e troca,
+- Gravação de arquivos importantes: `motor::WriteFileAtomic` (`motor/common/FileWrite.h`): escreve o `.tmp` e troca,
   tentando de novo se o Windows estiver com o arquivo preso (antivírus); nunca apague o original para "tentar de
-  novo". Hub, distribuição e instalador não ligam na engine e ainda trocam com `fs::rename` simples.
+  novo". Para pôr no lugar um arquivo ou pasta já copiado para `.tmp`, `motor::ReplaceFileAtomic`. Vale também
+  no hub, distribuição e instalador: não use `fs::rename` para trocar um arquivo.
 - Assets de arquivo são referenciados por **GUID** (`.meta` ao lado). Quem move/renomeia/exclui arquivo
   no editor leva o `.meta` junto (`ProjectPanel`). Exclusão vai sempre para a **Lixeira**, nunca definitiva.
 - **Recurso novo de entidade = componente registrado** (`motor/scene/Component.h`, exemplos no README e em

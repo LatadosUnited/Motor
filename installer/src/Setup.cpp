@@ -1,6 +1,7 @@
 #include "Setup.h"
 
 #include <HubCore.h>
+#include <motor/common/FileWrite.h>
 #include <Platform.h>
 
 #include <format>
@@ -46,26 +47,12 @@ std::string NowIso() {
                        tm.tm_hour, tm.tm_min, tm.tm_sec);
 }
 
-// Grava `bytes` em `dest` passando por .tmp (um hub aberto não fica pela metade).
+// Grava `bytes` em `dest` passando por .tmp (um hub aberto não fica pela metade). Um antivírus lendo o arquivo por
+// um instante só atrasa; o Hub aberto segura o .exe até fechar.
 bool WriteAtomic(const fs::path& dest, const std::string& bytes, std::string& error) {
-    fs::path tmp = dest;
-    tmp += ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out || !out.write(bytes.data(), static_cast<std::streamsize>(bytes.size())) || !out.flush()) {
-            error = std::format("Não foi possível escrever '{}'.", ToUtf8(dest));
-            return false;
-        }
-    }
-    std::error_code ec;
-    fs::rename(tmp, dest, ec);
-    if (ec) {
-        fs::remove(tmp, ec);
-        error = std::format("Não foi possível substituir '{}' (o Hub está aberto? Feche-o e tente de novo).",
-                            ToUtf8(dest));
-        return false;
-    }
-    return true;
+    if (motor::WriteFileAtomic(dest, bytes, &error)) return true;
+    error += " (o Hub está aberto? Feche-o e tente de novo)";
+    return false;
 }
 
 bool InstallMotor(const Options& o, const fs::path& versionsDir, const LogFn& log, const ProgressFn& progress,
@@ -164,7 +151,7 @@ bool Install(const Options& options, const LogFn& log, const ProgressFn& progres
         fs::path tmp = plan.setupExe;
         tmp += ".tmp";
         fs::copy_file(self, tmp, fs::copy_options::overwrite_existing, ec);
-        if (!ec) fs::rename(tmp, plan.setupExe, ec);
+        if (!ec) motor::ReplaceFileAtomic(tmp, plan.setupExe, ec);
         if (ec) {
             error = std::format("Não foi possível copiar o instalador para '{}': {}", ToUtf8(plan.setupExe), ec.message());
             return false;

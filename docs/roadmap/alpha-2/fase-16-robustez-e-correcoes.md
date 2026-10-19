@@ -69,6 +69,11 @@ em jogos de verdade.
   `.tmp` pelo original tentando de novo por até ~1,3 s (antivírus, indexador) e nunca apaga o original antes;
   cena, prefab, recuperação, material, projeto e modelo importado usam. Antes, com o `.tmp` preso, a cena podia
   sumir (o original era apagado para tentar de novo). *(origem: entrada.md, testes intermitentes)* (cf18356)
+- [x] **Hub, distribuição e instalador também esperam o arquivo preso:** a gravação segura saiu da engine para
+  `common/` (`motor_common`, sem dependências; o hub continua sem a engine). `hub.json`, registro da instalação,
+  manifesto, Hub e instalador copiados e as pastas de versões instaladas, baixadas ou publicadas usam
+  `WriteFileAtomic`/`ReplaceFileAtomic` em vez do `fs::rename` que falhava na primeira tentativa.
+  *(origem: entrada.md, gravação segura)* (476b975)
 
 ## Pronto quando
 

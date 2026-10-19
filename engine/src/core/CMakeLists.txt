@@ -6,12 +6,13 @@ motor_add_layer(core
         Window.cpp
         Input.cpp
         ImGuiLayer.cpp
-        FileWrite.cpp
     PRIVATE_LIBS glfw)
 
 # ImGui: os objetos entram na libMotor.dll pelo alvo Motor; aqui só os headers (públicos: o editor e os scripts
 # usam o ImGui pelos headers da engine).
 target_link_libraries(motor_core PRIVATE imgui)
+# Gravação segura (motor/common/FileWrite.h, em common/): as outras camadas usam; os objetos entram na libMotor.dll.
+target_link_libraries(motor_core PUBLIC motor_common)
 target_include_directories(motor_core PUBLIC ${MOTOR_IMGUI_INCLUDE_DIRS})
 
 # Fase 14: número de versão (project(Motor VERSION ...) na raiz) num header gerado, motor/core/Version.h.
