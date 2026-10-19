@@ -65,6 +65,10 @@ em jogos de verdade.
   ("MSYS Makefiles") é apagado e reconfigurado (`ScriptProject::WriteBuildFiles`); antes, sem carimbo, o
   `cmake --build` falhava sempre em 0,05 s com "0 erro(s)". *(origem: entrada.md, verificação da Organização do
   código)* (c4f8bb3)
+- [x] **Salvar não perde o arquivo quando o Windows o segura por um instante:** `motor::WriteFileAtomic` troca o
+  `.tmp` pelo original tentando de novo por até ~1,3 s (antivírus, indexador) e nunca apaga o original antes;
+  cena, prefab, recuperação, material, projeto e modelo importado usam. Antes, com o `.tmp` preso, a cena podia
+  sumir (o original era apagado para tentar de novo). *(origem: entrada.md, testes intermitentes)* (cf18356)
 
 ## Pronto quando
 
