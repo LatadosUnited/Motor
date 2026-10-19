@@ -1,5 +1,7 @@
 #pragma once
 
+#include "motor/core/Input.h"
+
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -33,8 +35,10 @@ public:
     void SetTitle(const std::string& title);
     void SetVSync(bool enabled);
 
-    void SetCursorCaptured(bool captured);
-    bool IsCursorCaptured() const { return m_cursorCaptured; }
+    void SetCursorMode(CursorMode mode);
+    CursorMode GetCursorMode() const { return m_cursorMode; }
+    void SetCursorCaptured(bool captured) { SetCursorMode(captured ? CursorMode::Locked : CursorMode::Normal); }
+    bool IsCursorCaptured() const { return m_cursorMode == CursorMode::Locked; }
 
     // Tamanho do framebuffer em pixels (pode diferir do tamanho lógico em telas HiDPI).
     int Width() const { return m_width; }
@@ -54,7 +58,7 @@ private:
     GLFWwindow* m_window = nullptr;
     int m_width = 0;
     int m_height = 0;
-    bool m_cursorCaptured = false;
+    CursorMode m_cursorMode = CursorMode::Normal;
     std::vector<std::filesystem::path> m_droppedFiles;
 };
 

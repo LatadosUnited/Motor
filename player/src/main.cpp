@@ -202,6 +202,7 @@ private:
         }
         m_runtime->Update(dt);
         ApplySceneRequest();
+        if (m_runtime) GetWindow().SetCursorMode(m_runtime->GetCursorMode());  // pedido pelos scripts
 
         if (m_options.frames > 0 && ++m_frame >= m_options.frames) {
             log::Info("Jogo: {} quadros rodados (--quadros), fechando", m_frame);
@@ -252,11 +253,13 @@ private:
             log::Error("LoadScene(\"{}\"): {}", request, error);
             return;
         }
+        const CursorMode cursor = m_runtime->GetCursorMode();  // continua na cena nova
         m_runtime->Stop();
         m_runtime.reset();
         m_scene = std::move(next);
         log::Info("Cena trocada pelo jogo: {}", request);
         StartRuntime();
+        if (m_runtime) m_runtime->SetCursorMode(cursor);
     }
 
     void Fail(std::string message) { m_fatal = std::move(message); }

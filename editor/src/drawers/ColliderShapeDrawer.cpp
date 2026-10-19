@@ -6,7 +6,8 @@
 MOTOR_FIELD_DRAWER(ColliderShape) {
     auto& shape = *static_cast<motor::ColliderShape*>(value);
     constexpr motor::ColliderShape kShapes[] = {motor::ColliderShape::Box, motor::ColliderShape::Sphere,
-                                                motor::ColliderShape::Capsule, motor::ColliderShape::Mesh};
+                                                motor::ColliderShape::Capsule, motor::ColliderShape::Cylinder,
+                                                motor::ColliderShape::Mesh};
     if (ImGui::BeginCombo("##v", motor::ColliderShapeLabel(shape))) {
         for (motor::ColliderShape s : kShapes) {
             const bool selected = s == shape;

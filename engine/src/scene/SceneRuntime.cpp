@@ -559,6 +559,10 @@ bool Script::IsKeyDown(Key key) const { return InputEnabled() && Input::IsKeyDow
 bool Script::WasKeyPressed(Key key) const { return InputEnabled() && Input::WasKeyPressed(key); }
 bool Script::IsMouseDown(MouseButton button) const { return InputEnabled() && Input::IsMouseDown(button); }
 glm::vec2 Script::MouseDelta() const { return InputEnabled() ? Input::MouseDelta() : glm::vec2(0.0f); }
+void Script::SetCursorMode(CursorMode mode) {
+    if (m_runtime) m_runtime->SetCursorMode(mode);
+}
+CursorMode Script::GetCursorMode() const { return m_runtime ? m_runtime->GetCursorMode() : CursorMode::Normal; }
 
 } // namespace motor
 

@@ -9,7 +9,7 @@ namespace motor {
 
 namespace {
 constexpr ColliderShape kShapes[] = {ColliderShape::Box, ColliderShape::Sphere, ColliderShape::Capsule,
-                                     ColliderShape::Mesh};
+                                     ColliderShape::Mesh, ColliderShape::Cylinder};
 } // namespace
 
 const char* ColliderShapeName(ColliderShape shape) {
@@ -18,6 +18,7 @@ const char* ColliderShapeName(ColliderShape shape) {
         case ColliderShape::Sphere: return "Sphere";
         case ColliderShape::Capsule: return "Capsule";
         case ColliderShape::Mesh: return "Mesh";
+        case ColliderShape::Cylinder: return "Cylinder";
     }
     return "Box";
 }
@@ -28,6 +29,7 @@ const char* ColliderShapeLabel(ColliderShape shape) {
         case ColliderShape::Sphere: return "Esfera";
         case ColliderShape::Capsule: return "Cápsula";
         case ColliderShape::Mesh: return "Malha";
+        case ColliderShape::Cylinder: return "Cilindro";
     }
     return "?";
 }
@@ -57,7 +59,7 @@ CustomFieldType FieldTraits<ColliderShape>::Describe() {
                         return true;
                     }
                 }
-                if (error) *error = "esperado \"Box\", \"Sphere\", \"Capsule\" ou \"Mesh\"";
+                if (error) *error = "esperado \"Box\", \"Sphere\", \"Capsule\", \"Cylinder\" ou \"Mesh\"";
                 return false;
             }};
 }
@@ -69,10 +71,10 @@ MOTOR_COMPONENT_MODULE(Collider) {
         .Field("size", "Tamanho", &ColliderComponent::size,
                {.speed = 0.01f, .min = 0.001f, .max = 10000.0f, .format = "%.3f", .tooltip = "Caixa: tamanho total"})
         .Field("radius", "Raio", &ColliderComponent::radius,
-               {.speed = 0.01f, .min = 0.001f, .max = 10000.0f, .format = "%.3f", .tooltip = "Esfera e cápsula"})
+               {.speed = 0.01f, .min = 0.001f, .max = 10000.0f, .format = "%.3f", .tooltip = "Esfera, cápsula e cilindro"})
         .Field("height", "Altura", &ColliderComponent::height,
                {.speed = 0.01f, .min = 0.001f, .max = 10000.0f, .format = "%.3f",
-                .tooltip = "Cápsula: altura total, com as pontas (eixo Y local)"})
+                .tooltip = "Cápsula (altura total, com as pontas) e cilindro, no eixo Y local"})
         .Field("center", "Centro", &ColliderComponent::center,
                {.speed = 0.01f, .tooltip = "Deslocamento da forma em relação à origem da entidade"})
         .Field("isTrigger", "Trigger", &ColliderComponent::isTrigger,

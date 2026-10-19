@@ -81,7 +81,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Gizmo | Q nenhum / W mover / E rotacionar / R escalar; X alterna eixos Local/Global |
 | Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (0.5 m / 15° / 0.1) |
 | Reparentar | arrastar na hierarquia (soltar no vazio = raiz) |
-| Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia |
+| Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia; as formas (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone) já vêm com o Collider que bate com elas |
 | Focar / Excluir / Duplicar | F / Del / Ctrl+D |
 | Desfazer / Refazer | Ctrl+Z / Ctrl+Y (ou Ctrl+Shift+Z), também no menu Editar; segurar repete |
 | Restaurar layout | Ver > Restaurar layout (o layout fica salvo em `imgui.ini`) |

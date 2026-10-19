@@ -141,6 +141,7 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 | `bool WasKeyPressed(Key key) const` | tecla desceu neste frame (use no `OnUpdate`) |
 | `bool IsMouseDown(MouseButton button) const` | botão do mouse apertado: `MouseButton::Left`, `Right`, `Middle` |
 | `glm::vec2 MouseDelta() const` | movimento do mouse neste frame, em pixels |
+| `void SetCursorMode(CursorMode mode)`, `CursorMode GetCursorMode() const` | cursor do jogo: `motor::CursorMode::Locked` (preso e escondido, para olhar com `MouseDelta`), `Hidden` ou `Normal`; no editor vale com o jogo em foco (Esc solta, clique prende de novo) e volta ao normal ao parar; continua ao trocar de cena |
 
 As quatro de entrada devolvem falso/zero quando o jogo não tem o foco. `motor::Input` (`motor/core/Input.h`)
 tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas sem esse filtro de foco.
@@ -298,7 +299,7 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::PrefabInstance` | Prefab | `PrefabLink link` (`guid` do `.mprefab`, `source`, `overrides`); posto pelo editor em cada entidade de uma instância de prefab, não precisa mexer |
 | `motor::CameraComponent` | Câmera | `fov` (graus, vertical), `nearPlane`, `farPlane`, `bool main` |
 | `motor::LightComponent` | Luz | `LightType type` (`Directional`, `Point`, `Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `bool castShadows`, `ShadowQuality shadowQuality` (`Low`, `Medium`, `High`) |
-| `motor::ColliderComponent` | Collider | `ColliderShape shape` (`Box`, `Sphere`, `Capsule`, `Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `CollisionLayer layer` |
+| `motor::ColliderComponent` | Collider | `ColliderShape shape` (`Box`, `Sphere`, `Capsule`, `Cylinder`, `Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `CollisionLayer layer` |
 | `motor::RigidbodyComponent` | Rigidbody | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
 | `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass`, `bool useGravity`, `CollisionLayer layer` |
 | `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`, `AudioGroup group` (`Effects`, `Music`, `Interface`); tocar e parar na seção [Som](#som-motoraudiosystem) |

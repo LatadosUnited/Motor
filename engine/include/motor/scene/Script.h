@@ -152,6 +152,10 @@ protected:
     bool WasKeyPressed(Key key) const;
     bool IsMouseDown(MouseButton button) const;
     glm::vec2 MouseDelta() const;
+    // Cursor do jogo: Locked (preso e escondido, para olhar com MouseDelta), Hidden ou Normal (menus). No editor
+    // vale com o jogo em foco e Esc solta o cursor; ao parar o Play ele volta ao normal.
+    void SetCursorMode(CursorMode mode);
+    CursorMode GetCursorMode() const;
 
     // --- Temporizadores (tempo do jogo: não contam na pausa) ---
     // Chama `fn` daqui a `seconds` segundos (After) ou a cada `seconds` segundos (Every), antes do OnUpdate

@@ -94,6 +94,18 @@ void Capsule(const Frame& f, const glm::vec3& center, float radius, float halfCy
     Arc(f, bottom, radius, 2, 1, kPi, 2.0f * kPi, half, out);
 }
 
+void Cylinder(const Frame& f, const glm::vec3& center, float radius, float halfHeight, std::vector<GizmoLine>& out) {
+    const glm::vec3 top = center + glm::vec3(0.0f, halfHeight, 0.0f);
+    const glm::vec3 bottom = center - glm::vec3(0.0f, halfHeight, 0.0f);
+    Arc(f, top, radius, 0, 2, 0.0f, 2.0f * kPi, kCircleSegments, out);
+    Arc(f, bottom, radius, 0, 2, 0.0f, 2.0f * kPi, kCircleSegments, out);
+    for (int i = 0; i < 4; ++i) {
+        const float angle = static_cast<float>(i) * 0.5f * kPi;
+        const glm::vec3 side(std::cos(angle) * radius, 0.0f, std::sin(angle) * radius);
+        Line(f, top + side, bottom + side, out);
+    }
+}
+
 float MaxComponent(const glm::vec3& v) { return std::max(v.x, std::max(v.y, v.z)); }
 
 } // namespace
@@ -111,6 +123,9 @@ void AppendColliderLines(const ColliderComponent& c, const glm::mat4& world, std
             Capsule(f, center, radius, c.height * s.y * 0.5f - radius, out);
             break;
         }
+        case ColliderShape::Cylinder:
+            Cylinder(f, center, std::max(c.radius * std::max(s.x, s.z), 0.005f), std::max(c.height * s.y * 0.5f, 0.005f), out);
+            break;
         case ColliderShape::Mesh: {
             if (meshMin && meshMax) {
                 Box(f, center + (*meshMin + *meshMax) * 0.5f * s, glm::max((*meshMax - *meshMin) * 0.5f * s, glm::vec3(0.005f)), out);

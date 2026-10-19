@@ -38,20 +38,18 @@ void SceneViewport::Init() {
 void SceneViewport::UpdateCamera(float dt, Window& window) {
     if (m_looking && !Input::IsMouseDown(MouseButton::Right)) m_looking = false;
 
-    if (m_looking) {
-        m_cameraController.Update(dt, window);
-    } else {
-        window.SetCursorCaptured(false);
-    }
-
-    // Enquanto voa com a câmera, o ImGui não deve reagir ao mouse.
+    // Enquanto voa com a câmera, o ImGui não deve reagir ao mouse. Ao parar de voar, solta o cursor uma vez só:
+    // no resto do tempo quem decide é o jogo no Play (cursor preso por script, PlayController).
     ImGuiIO& io = ImGui::GetIO();
     const ImGuiConfigFlags mouseFlags = ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange;
     if (m_looking) {
+        m_cameraController.Update(dt, window);
         io.ConfigFlags |= mouseFlags;
-    } else {
+    } else if (m_wasLooking) {
+        window.SetCursorCaptured(false);
         io.ConfigFlags &= ~mouseFlags;
     }
+    m_wasLooking = m_looking;
 }
 
 void SceneViewport::Render(Renderer& renderer, const EditorContext& ctx, bool gameView) {

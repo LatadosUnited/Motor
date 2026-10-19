@@ -84,6 +84,7 @@ private:
     bool m_showColliders = true;
     glm::vec2 m_size{1.0f};
     bool m_looking = false;            // botão direito segurado no viewport
+    bool m_wasLooking = false;         // no quadro anterior (soltar o cursor só ao parar de voar)
     bool m_focused = false;            // o jogo só recebe teclado/mouse com o viewport em foco
     bool m_focusRequest = false;
     bool m_missingGameCamera = false;  // no Play sem câmera na cena: mostra pela câmera do editor

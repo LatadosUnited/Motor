@@ -160,7 +160,7 @@ Tipos de campo suportados:
 | `int`, `float` | número (arrastar ou digitar; slider com `.slider = true`) |
 | `glm::vec2`, `glm::vec3`, `glm::vec4` | 2, 3 ou 4 números; `vec3`/`vec4` viram seletor de cor com `.color = true` |
 | `std::string` | texto |
-| `std::shared_ptr<motor::Mesh>` | malha (Cubo, Esfera, Plano ou um `.obj` do projeto) |
+| `std::shared_ptr<motor::Mesh>` | malha (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone ou um `.obj` do projeto) |
 | `std::shared_ptr<motor::Texture2D>` | textura (`.png`/`.jpg` do projeto) |
 | `motor::PrefabRef` | prefab (`.mprefab` do projeto, para `Instantiate`) |
 | `motor::EntityRef` | outra entidade da cena: escolha na lista ou arraste da Hierarquia (seção 6) |
@@ -301,6 +301,7 @@ Dentro do script:
 | `WasKeyPressed(motor::Key::Space)` | `true` só no frame em que a tecla desceu |
 | `IsMouseDown(motor::MouseButton::Left)` | `true` enquanto o botão está apertado (`Left`, `Right`, `Middle`) |
 | `MouseDelta()` | quanto o mouse andou neste frame, em pixels (`glm::vec2`) |
+| `SetCursorMode(motor::CursorMode::Locked)` | prende e esconde o cursor (câmera em primeira pessoa); `Hidden` só esconde, `Normal` devolve (menus). No editor, Esc solta e um clique no jogo prende de novo |
 | `Time().delta` | segundos desde o último `OnUpdate` (o mesmo `dt`) |
 | `Time().fixedDelta` | o passo do `OnFixedUpdate` (1/60 s) |
 | `Time().elapsed` | segundos de jogo desde o Play (sem as pausas), em `double` |
@@ -397,7 +398,7 @@ Os componentes da engine:
 | Mesh Renderer | `motor::MeshRenderer` | `mesh`, `sharedMaterial` (asset `.mmat`) e `material` (o próprio): `color` (vec4), `albedo` (textura), `metallic`, `roughness`, `specular`, `emissive`... (PBR, ver a referência) |
 | Câmera | `motor::CameraComponent` | `fov` (graus), `nearPlane`, `farPlane`, `main` |
 | Luz | `motor::LightComponent` | `type` (`motor::LightType::Directional`/`Point`/`Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `castShadows` |
-| Collider | `motor::ColliderComponent` | `shape` (`motor::ColliderShape::Box`/`Sphere`/`Capsule`/`Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `layer` |
+| Collider | `motor::ColliderComponent` | `shape` (`motor::ColliderShape::Box`/`Sphere`/`Capsule`/`Cylinder`/`Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `layer` |
 | Rigidbody | `motor::RigidbodyComponent` | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
 | Controlador de personagem | `motor::CharacterControllerComponent` | `height`, `radius`, `maxSlope`, `stepHeight`, `mass`, `useGravity`, `layer` |
 

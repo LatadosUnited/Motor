@@ -102,6 +102,13 @@ JPH::ShapeRefC PhysicsSystem::World::BuildShape(const ColliderComponent& c, cons
             else shape = new JPH::SphereShape(radius);
             break;
         }
+        case ColliderShape::Cylinder: {
+            const float radius = std::max(c.radius * std::max(s.x, s.z), 0.005f);
+            const float halfHeight = std::max(c.height * s.y * 0.5f, 0.005f);
+            const float convexRadius = std::min(JPH::cDefaultConvexRadius, std::min(radius, halfHeight) * 0.5f);
+            shape = new JPH::CylinderShape(halfHeight, radius, convexRadius);
+            break;
+        }
         case ColliderShape::Mesh: {
             if (!mesh) {
                 WarnOnce(id, "Física: Collider de malha sem MeshRenderer com malha; usando uma caixa 1x1x1");

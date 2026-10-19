@@ -7,6 +7,7 @@
 #include <motor/assets/AssetLoaders.h>
 #include <motor/physics/ColliderGizmo.h>
 #include <motor/physics/PhysicsSystem.h>
+#include <motor/renderer/Mesh.h>
 #include <motor/scene/Components.h>
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneRuntime.h>
@@ -588,6 +589,64 @@ int main() {
         const glm::vec3 mn(-1.0f, 0.0f, -1.0f), mx(1.0f, 0.0f, 1.0f);
         AppendColliderLines(mesh, glm::mat4(1.0f), lines, &mn, &mx);
         CHECK(lines.size() == 12);
+    }
+
+    SECTION("Formas prontas: malhas de cilindro, cápsula e cone para fora, e o collider de cilindro");
+    {
+        struct Shape {
+            const char* name;
+            std::shared_ptr<Mesh> mesh;
+            glm::vec3 lo, hi;
+        };
+        const Shape shapes[] = {{"cilindro", Mesh::CreateCylinder(), {-0.5f, -1.0f, -0.5f}, {0.5f, 1.0f, 0.5f}},
+                                {"cápsula", Mesh::CreateCapsule(), {-0.5f, -1.0f, -0.5f}, {0.5f, 1.0f, 0.5f}},
+                                {"cone", Mesh::CreateCone(), {-0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, 0.5f}}};
+        for (const Shape& s : shapes) {
+            const auto& p = s.mesh->Positions();
+            const auto& idx = s.mesh->Indices();
+            CHECK(idx.size() % 3 == 0 && !idx.empty());
+            CHECK(glm::all(glm::lessThan(glm::abs(s.mesh->BoundsMin() - s.lo), glm::vec3(1e-3f))));
+            CHECK(glm::all(glm::lessThan(glm::abs(s.mesh->BoundsMax() - s.hi), glm::vec3(1e-3f))));
+            // Formas convexas em volta da origem: todo triângulo de verdade aponta para fora (CCW visto de fora).
+            int inward = 0;
+            for (size_t i = 0; i + 2 < idx.size(); i += 3) {
+                const glm::vec3 a = p[idx[i]], b = p[idx[i + 1]], c = p[idx[i + 2]];
+                const glm::vec3 n = glm::cross(b - a, c - a);
+                if (glm::length(n) < 1e-7f) continue;  // polos da cápsula
+                if (glm::dot(n, (a + b + c) / 3.0f) <= 0.0f) ++inward;
+            }
+            if (inward) std::printf("  %s: %d triângulos para dentro\n", s.name, inward);
+            CHECK(inward == 0);
+        }
+
+        // Cilindro de 2 m com Rigidbody cai e fica de pé no chão (centro em y = 1).
+        Scene scene;
+        AddFloor(scene);
+        Entity& cylinder = scene.CreateEntity("Cilindro");
+        cylinder.transform.position = {0.0f, 3.0f, 0.0f};
+        cylinder.Add<ColliderComponent>().shape = ColliderShape::Cylinder;
+        cylinder.Add<RigidbodyComponent>();
+        const EntityId id = cylinder.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        Run(runtime, 2.0f);
+        CHECK(Near(scene.Find(id)->transform.position.y, 1.0f, 0.05f));
+        auto* fisica = runtime.GetSystem<PhysicsSystem>();
+        CHECK(fisica->OverlapSphere({0.45f, 1.0f, 0.0f}, 0.1f).size() == 1);  // dentro do raio 0,5
+        CHECK(fisica->OverlapSphere({0.45f, 1.0f, 0.45f}, 0.05f).empty());   // no canto da caixa, fora do cilindro
+        runtime.Stop();
+
+        std::vector<GizmoLine> lines;
+        ColliderComponent c;
+        c.shape = ColliderShape::Cylinder;
+        AppendColliderLines(c, glm::mat4(1.0f), lines);
+        glm::vec3 lo(1e9f), hi(-1e9f);
+        for (const GizmoLine& l : lines) {
+            lo = glm::min(lo, glm::min(l.a, l.b));
+            hi = glm::max(hi, glm::max(l.a, l.b));
+        }
+        CHECK(!lines.empty() && Near(lo.y, -1.0f, 1e-3f) && Near(hi.y, 1.0f, 1e-3f) && Near(hi.x, 0.5f, 1e-3f));
+        CHECK(std::string(ColliderShapeName(ColliderShape::Cylinder)) == "Cylinder");
     }
 
     SECTION("Exceção em evento de física não derruba a física nem os outros scripts");

@@ -93,6 +93,7 @@ void PlayMode::ApplySceneRequest() {
         return;
     }
     const bool inputEnabled = m_runtime->InputEnabled();
+    const motor::CursorMode cursor = m_runtime->GetCursorMode();  // continua na cena nova
     m_runtime->Stop();  // OnDestroy ainda vê a cena que sai
     const bool stopFailed = m_runtime->TakeError();
     m_runtime.reset();
@@ -100,6 +101,7 @@ void PlayMode::ApplySceneRequest() {
     m_runtime = std::make_unique<motor::SceneRuntime>(*m_scene);
     m_runtime->SetAssets(m_assets);
     m_runtime->SetInputEnabled(inputEnabled);
+    m_runtime->SetCursorMode(cursor);
     ++m_scenesLoaded;
     motor::log::Info("Cena trocada pelo jogo: {}", request);
     m_runtime->Start();

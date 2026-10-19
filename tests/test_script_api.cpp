@@ -90,6 +90,15 @@ struct Pulo : Script {
 };
 MOTOR_FIELDS(Pulo, alturaMaxima, vidas, alvo)
 
+// Câmera em primeira pessoa: prende o cursor ao começar; Esc do jogo (aqui, um campo) devolve.
+struct Mira : Script {
+    bool soltar = false;
+    void OnStart() override { SetCursorMode(CursorMode::Locked); }
+    void OnUpdate(float) override {
+        if (soltar) SetCursorMode(CursorMode::Normal);
+    }
+};
+
 // Campo renomeado: "forca" era "velocidade".
 struct Empurrar : Script {
     float forca = 1.0f;
@@ -102,6 +111,7 @@ void Register() {
     registry.Register<Porta>("Porta", "Porta");
     registry.Register<Botao>("Botao", "Botão").Field("porta", &Botao::porta);
     registry.Register<Dado>("Dado", "Dado");
+    registry.Register<Mira>("Mira", "Mira");
     detail::RegisterModuleScripts(registry);  // MOTOR_FIELDS deste arquivo
     registry.Register<Empurrar>("Empurrar", "Empurrar")
         .Field("forca", "Força", &Empurrar::forca, {.formerKey = "velocidade"})
@@ -191,6 +201,21 @@ int main(int argc, char** argv) {
         CHECK(Comp<Dado>(scene, aId).sequencia == Comp<Dado>(scene, bId).sequencia);  // mesma semente
         runtime.Stop();
         CHECK(runtime.RandomInt(5, 5) == 5 && runtime.Random(1.0f, 1.0f) == 1.0f);
+    }
+
+    SECTION("Cursor: o script pede, o runtime guarda (quem roda o jogo aplica na janela)");
+    {
+        Scene scene;
+        Entity& e = scene.CreateEntity("Jogador");
+        Mira& mira = e.Add<Mira>();
+        SceneRuntime runtime(scene);
+        CHECK(runtime.GetCursorMode() == CursorMode::Normal);
+        runtime.Start();
+        CHECK(runtime.GetCursorMode() == CursorMode::Locked);
+        mira.soltar = true;
+        runtime.Update(1.0f / 60.0f);
+        CHECK(runtime.GetCursorMode() == CursorMode::Normal);
+        runtime.Stop();
     }
 
     SECTION("Registro curto: MOTOR_FIELDS e rótulos tirados do nome");
