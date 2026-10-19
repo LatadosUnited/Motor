@@ -3,11 +3,11 @@ tipo: fase
 alpha: 2
 fase: 18
 titulo: Funcionalidades de jogo
-status: planejada
+status: em andamento
 prioridade: 3
 areas: [physics, audio, renderer, assets, scripts]
-branch: 
-inicio: 
+branch: fase-18-funcionalidades
+inicio: 2026-10-18
 fim: 
 ---
 
@@ -22,8 +22,9 @@ Física, áudio, entrada, formas e transparência que jogos comuns pedem e que h
 
 ### Física
 
-- [ ] **Camadas de colisão e máscaras:** quem colide com quem; raycast que ignora camadas, não só uma entidade
-  (câmera orbital que não bate no próprio jogador).
+- [x] **Camadas de colisão e máscaras:** quem colide com quem; raycast que ignora camadas, não só uma entidade
+  (câmera orbital que não bate no próprio jogador). Decisão do usuário: tabela no projeto, como na Unity (16
+  camadas com nome no `.mproject`; cada Collider e personagem escolhe a sua). (9d4947e)
 - [ ] **Consultas de área:** overlap de esfera e caixa, sphere cast ("o que está nesta área", para coletas).
 - [ ] **Personagem:** `SetCharacterVelocity` e gravidade ligável e desligável (hoje só há
   `GetCharacterVelocity`; `SetVelocity` é dos corpos rígidos).
