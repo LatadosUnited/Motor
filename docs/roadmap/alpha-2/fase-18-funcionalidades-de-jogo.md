@@ -39,9 +39,10 @@ Física, áudio, entrada, formas e transparência que jogos comuns pedem e que h
 
 ### Entrada e formas
 
-- [ ] **Prender e esconder o cursor** pelos scripts (a `Window` já sabe; falta a API). O controle (gamepad) está
-  na [Fase 21](fase-21-jogo-entregue.md).
-- [ ] **Formas prontas:** cilindro, cápsula e cone, com o collider certo (hoje só Cubo, Esfera e Plano).
+- [x] **Prender e esconder o cursor** pelos scripts (a `Window` já sabe; falta a API). O controle (gamepad) está
+  na [Fase 21](fase-21-jogo-entregue.md). (bc15343)
+- [x] **Formas prontas:** cilindro, cápsula e cone, com o collider certo (hoje só Cubo, Esfera e Plano). As formas do menu Criar
+  agora vêm com o Collider, como na Unity. (bc15343)
 
 ### Transparência 3D
 
