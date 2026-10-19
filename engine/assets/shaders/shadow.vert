@@ -3,6 +3,7 @@
 // Profundidade vista da luz (mapas de sombra). SKINNED: com a pele, como o skinned.vert.
 
 layout(location = 0) in vec3 aPosition;
+layout(location = 2) in vec2 aUV;
 #ifdef SKINNED
 layout(location = 3) in vec4 aJoints;
 layout(location = 4) in vec4 aWeights;
@@ -17,6 +18,7 @@ uniform mat4 uModel;
 uniform mat4 uLightViewProjection;
 
 out vec3 vWorldPos;
+out vec2 vUV;
 
 void main() {
     vec4 local = vec4(aPosition, 1.0);
@@ -30,5 +32,6 @@ void main() {
 #endif
     vec4 world = uModel * local;
     vWorldPos = world.xyz;
+    vUV = aUV;
     gl_Position = uLightViewProjection * world;
 }

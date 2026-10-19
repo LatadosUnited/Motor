@@ -240,6 +240,12 @@ vários objetos: editar o material muda todos os que o usam. Materiais da versã
 continuam abrindo: o "brilho" vira rugosidade. Os mapas de dados (normal, metal/rugosidade, oclusão) são
 lidos sem a conversão sRGB; o de normal é em espaço tangente com +Y para cima (OpenGL/glTF).
 
+**Alfa** (Fase 18, `.mmat` versão 3): **Opaco** ignora o alfa da cor e da textura; **Recorte** some onde o
+alfa fica abaixo do **Limite do recorte** (folhas, grades; a sombra também é recortada); **Transparente**
+mistura com o que está atrás (vidro, água simples): desenhado depois dos opacos e do céu, de trás para frente
+pelo centro, sem gravar profundidade e sem sombra. **Duas faces** mostra as faces de trás (planos de folha,
+grade, vidro fino). O importador glTF lê `alphaMode`, `alphaCutoff` e `doubleSided`.
+
 - **Criar:** painel Projeto > "+ Criar" > "Novo material", ou no Inspector de um Mesh Renderer o botão
   "Salvar como asset" (grava o material daquele objeto em `Assets/Materiais` e passa a usá-lo).
 - **Usar:** campo "Material" do Mesh Renderer (combo ou arrastando o `.mmat`), ou arraste o `.mmat` sobre

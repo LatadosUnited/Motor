@@ -120,6 +120,9 @@ bool ImportMaterials(const ModelData& data, AssetLibrary& assets, ModelImportRes
         material.occlusionStrength = m.occlusionStrength;
         material.emissive = m.emissive;
         material.emissiveIntensity = m.emissiveIntensity;
+        material.blend = m.blend;
+        material.alphaCutoff = m.alphaCutoff;
+        material.doubleSided = m.doubleSided;
         const fs::path file = result.folder / PathFromUtf8(SafeFileName(m.name) + kMaterialFileExtension);
         std::string problem;
         if (!assets.WriteMaterialFile(file, material, textures, &problem)) {

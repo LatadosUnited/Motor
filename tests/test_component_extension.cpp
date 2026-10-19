@@ -73,7 +73,7 @@ int main() {
     const ComponentType* mesh = registry.Find("MeshRenderer");
     const ComponentType* sensor = registry.Find("Sensor");
     CHECK(camera && mesh && sensor);
-    CHECK(mesh && mesh->fields.size() == 15);  // malha, material (asset) e os 13 do material próprio (PBR, Fase 7)
+    CHECK(mesh && mesh->fields.size() == 18);  // malha, material (asset) e os 16 do material próprio (PBR, Fase 7; alfa, Fase 18)
     CHECK(ComponentRegistry::TypeOf<CameraComponent>() == camera);
     CHECK(ComponentRegistry::TypeOf<Sensor>() == sensor);
     // Módulos "Camera" < "MeshRenderer" < "Sensores" (outros módulos da engine podem ficar no meio).

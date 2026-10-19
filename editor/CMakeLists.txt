@@ -37,6 +37,7 @@ add_executable(MotorEditor
     src/drawers/ShadowQualityDrawer.cpp
     src/drawers/AudioClipDrawer.cpp
     src/drawers/AudioGroupDrawer.cpp
+    src/drawers/BlendModeDrawer.cpp
     src/drawers/EntityRefDrawer.cpp
     src/drawers/CollisionLayerDrawer.cpp
     src/mcp/ImageEncode.cpp

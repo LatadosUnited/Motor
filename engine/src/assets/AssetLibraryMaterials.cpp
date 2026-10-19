@@ -27,7 +27,7 @@ using namespace asset_library;
 namespace {
 constexpr const char* kMaterialFormat = "motor-material";
 // 1: Blinn-Phong (cor, textura, especular, brilho). 2: PBR da Fase 7 (metal, rugosidade, mapas, emissão).
-constexpr int kMaterialVersion = 2;
+constexpr int kMaterialVersion = 3;  // 3: modo de alfa, limite do recorte e duas faces (Fase 18)
 
 // float -> double pela representação decimal mais curta ("0.6" no arquivo, e não "0.6000000238418579").
 double Num(float value) {
@@ -209,6 +209,9 @@ std::string AssetLibrary::MaterialToJson(const Material& m, const MaterialTextur
     root["emissive"] = json::array({Num(m.emissive.r), Num(m.emissive.g), Num(m.emissive.b)});
     root["emissiveIntensity"] = Num(m.emissiveIntensity);
     root["emissiveMap"] = TextureJson(t.emissive);
+    root["blend"] = BlendModeName(m.blend);
+    root["alphaCutoff"] = Num(m.alphaCutoff);
+    root["doubleSided"] = m.doubleSided;
 
     // Uma chave por linha, cada valor compacto (a cor fica [1.0,0.5,0.2,1.0]).
     std::string text = "{\n";
@@ -263,6 +266,13 @@ bool AssetLibrary::MaterialFromJson(std::string_view text, Material& out, std::s
     ReadNumber(root, "normalStrength", m.normalStrength);
     ReadNumber(root, "occlusionStrength", m.occlusionStrength);
     ReadNumber(root, "emissiveIntensity", m.emissiveIntensity);
+    ReadNumber(root, "alphaCutoff", m.alphaCutoff);
+    if (auto it = root.find("blend"); it != root.end() && it->is_string()) {
+        for (BlendMode mode : {BlendMode::Opaque, BlendMode::Cutout, BlendMode::Transparent}) {
+            if (it->get<std::string>() == BlendModeName(mode)) m.blend = mode;
+        }
+    }
+    if (auto it = root.find("doubleSided"); it != root.end() && it->is_boolean()) m.doubleSided = it->get<bool>();
     if (auto it = root.find("emissive"); it != root.end() && AllNumbers(*it, 3)) {
         for (glm::length_t i = 0; i < 3; ++i) m.emissive[i] = (*it)[static_cast<size_t>(i)].get<float>();
     }

@@ -223,6 +223,11 @@ ModelMaterial ReadMaterial(const cgltf_data& d, const cgltf_material& m, const s
     out.emissive = LinearToSrgb(glm::make_vec3(m.emissive_factor));
     out.emissiveImage = ImageOf(d, m.emissive_texture);
     if (m.has_emissive_strength) out.emissiveIntensity = std::max(m.emissive_strength.emissive_strength, 0.0f);
+    out.blend = m.alpha_mode == cgltf_alpha_mode_mask    ? BlendMode::Cutout
+                : m.alpha_mode == cgltf_alpha_mode_blend ? BlendMode::Transparent
+                                                         : BlendMode::Opaque;
+    out.alphaCutoff = std::clamp(m.alpha_cutoff, 0.0f, 1.0f);
+    out.doubleSided = m.double_sided;
     return out;
 }
 

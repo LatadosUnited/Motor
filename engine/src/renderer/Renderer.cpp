@@ -294,11 +294,7 @@ void Renderer::DrawScene() {
 
     const Frustum frustum = Frustum::FromMatrix(projection * view);
     const Shader* bound = nullptr;
-    for (const DrawItem& item : m_items) {
-        if (!frustum.Intersects(item.bounds)) {
-            ++m_stats.culled;
-            continue;
-        }
+    auto draw = [&](const DrawItem& item) {
         Shader& shader = item.skinned ? *m_skinnedShader : *m_litShader;
         if (bound != &shader) {
             shader.Bind();
@@ -306,6 +302,10 @@ void Renderer::DrawScene() {
         }
         if (item.skinned) UploadJoints(item);
         const Material& m = item.material;
+        // Duas faces: sem descartar as de trás (o lit.frag vira a normal delas).
+        if (m.doubleSided) glDisable(GL_CULL_FACE);
+        const float cutoff = std::clamp(m.alphaCutoff, 0.0f, 1.0f);
+        shader.SetVec4("uAlphaMode", glm::vec4(static_cast<float>(m.blend), cutoff, 0.0f, 0.0f));
         shader.SetMat4("uModel", item.model);
         shader.SetMat3("uNormalMatrix", glm::inverseTranspose(glm::mat3(item.model)));
         shader.SetVec4("uColor", m.color);
@@ -319,12 +319,48 @@ void Renderer::DrawScene() {
         (m.emissiveMap ? m.emissiveMap : m_whiteTexture)->Bind(kUnitEmissive);
 
         item.mesh->Draw();
+        if (m.doubleSided) glEnable(GL_CULL_FACE);
         ++m_stats.drawCalls;
         m_stats.triangles += item.mesh->IndexCount() / 3;
+    };
+
+    // Opacos e recortes primeiro; os transparentes ficam para depois do céu, de trás para frente.
+    std::vector<std::pair<float, const DrawItem*>> transparent;
+    for (const DrawItem& item : m_items) {
+        if (!frustum.Intersects(item.bounds)) {
+            ++m_stats.culled;
+            continue;
+        }
+        if (item.material.blend == BlendMode::Transparent) {
+            const glm::vec3 center = (item.bounds.min + item.bounds.max) * 0.5f;
+            const glm::vec3 toCamera = center - m_camera.position;
+            transparent.emplace_back(glm::dot(toCamera, toCamera), &item);
+            continue;
+        }
+        draw(item);
     }
 
     // 4) Céu ao fundo, onde não há nada.
     m_sky->DrawBackground(*m_post);
+
+    // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
+    //    vidro continua aparecendo pelo vidro seguinte). Ordenados pelo centro: do mais longe ao mais perto.
+    if (!transparent.empty()) {
+        std::stable_sort(transparent.begin(), transparent.end(),
+                         [](const auto& a, const auto& b) { return a.first > b.first; });
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        bound = nullptr;  // o céu trocou o shader
+        for (const auto& [distance, item] : transparent) draw(*item);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        m_stats.transparent += static_cast<uint32_t>(transparent.size());
+    }
 }
 
 void Renderer::DrawWireframes() {
