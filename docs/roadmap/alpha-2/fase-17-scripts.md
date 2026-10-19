@@ -72,7 +72,7 @@ README.
 - [x] **Medir o projeto de jogo real** (88 a 124 s do zero no começo da fase; a meta é menos de 30 s). O de
   referência com 50 scripts compila do zero em 11,5 s. *(origem: Pronto quando)* Medido em 18/10/2026 no
   Island (9 arquivos, 6 scripts; cópia na pasta temporária, editor de teste pelo MCP): **9,9 s do zero**
-  (configurar 3,4 s, compilar 5,6 s, ligar 0,8 s). Meta cumprida. (MEDHASH)
+  (configurar 3,4 s, compilar 5,6 s, ligar 0,8 s). Meta cumprida. (5fe1a10)
 
 ## Pronto quando
 
