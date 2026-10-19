@@ -33,6 +33,12 @@ Hoje o editor depende do MSYS2 (GCC 15.2 UCRT64) e do CMake instalados nos camin
   `motor-version.json` diz qual compilador a versão precisa; o `MotorServidor` publica, o Hub e o instalador
   baixam uma vez e as versões que usam o mesmo compilador compartilham. Estimativa: 150 a 200 MB.
 - Sem o pacote, o editor continua usando o MSYS2, como hoje.
+- **Recarga em menos de 1 s do salvar** (veio da [Fase 17](alpha-2/fase-17-scripts.md)): no projeto Island,
+  1,5 a 1,9 s num script simples e 5 a 6,5 s num que usa `<format>` (só incluir custa ~1,8 s por arquivo, usar
+  `std::format` mais ~1 s, e o objeto em Debug quase dobra). Perceber o arquivo e recarregar a DLL somam menos
+  de 0,25 s: o resto é compilar. Caminhos: `<format>` no PCH (medir o `.gch`, hoje ~107 MB), um formatador
+  da engine compilado na `libMotor.dll`, compilador que fica aberto entre as compilações.
+  *(origem: Fase 17, medição de 18/10/2026)*
 
 ## Fase 30 — Distribuição
 
