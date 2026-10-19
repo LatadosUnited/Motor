@@ -14,3 +14,4 @@
 #include "motor/scene/AudioSource.h"
 #include "motor/scene/AudioListener.h"
 #include "motor/scene/EntityRef.h"
+#include "motor/scene/PrefabNested.h"

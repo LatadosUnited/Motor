@@ -290,7 +290,10 @@ mudar a cor de uma peça no prefab muda todas as instâncias.
   e a lista fica no componente Prefab. Posição e rotação da raiz são sempre de cada instância.
 - **Aplicar / Reverter / Desvincular** (componente Prefab ou clique direito na Hierarquia): grava a instância
   no prefab (entidades novas chegam às outras instâncias), descarta as alterações dela, ou a solta do prefab.
-- Prefab dentro de prefab não é suportado: ao criar um prefab, vínculos com outros prefabs viram cópias.
+- **Prefab dentro de prefab:** criar ou aplicar um prefab que tem instâncias de outro (ex.: uma Janela dentro da
+  Casa) deixa a Janela aninhada na Casa. Mudar o prefab Janela muda as janelas de todas as casas, menos o que a
+  Casa mudou nelas; o Inspector mostra "Do prefab aninhado: Janela". Desvincular a casa na cena faz as janelas
+  voltarem a ser instâncias da Janela. Um prefab dentro dele mesmo é recusado ao aplicar.
 - Mudanças nos materiais e prefabs não entram no desfazer (são arquivos, gravados na hora); a cena registra
   as alterações das instâncias normalmente.
 

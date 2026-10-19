@@ -180,3 +180,7 @@ target_include_directories(test_selection PRIVATE ${PROJECT_SOURCE_DIR}/editor/s
 # Busca da Hierarquia (Fase 20): nome e t:componente, sem maiúsculas nem acentos, ordem e caminho do pai.
 motor_add_test(test_hierarchy_search ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
 target_include_directories(test_hierarchy_search PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Prefab dentro de prefab (Fase 20): aninhar ao criar e aplicar, o de fora seguindo o de dentro, gravar e
+# reabrir, recusar ciclos e desvincular voltando a ser instância do de dentro.
+motor_add_test(test_prefab_nested)

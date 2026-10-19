@@ -34,7 +34,7 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
   **Selecionado / Todos / Nenhum** (padrão Selecionado), lembrado entre aberturas. *(origem: teste à mão da
   Fase 19, 19/10/2026, gravidade atrapalha)* (a826ec4)
 - [x] **Janelas Cena e Jogo lado a lado** no Play. (0dbd735) *(origem: Fase 2, limitação)*
-- [ ] **Prefab dentro de prefab.** *(origem: Fase 6, limitação)*
+- [x] **Prefab dentro de prefab.** (COMMIT) *(origem: Fase 6, limitação)*
 - [ ] **Edições de material e de prefab no desfazer**, e editadas no Play voltam ao parar. *(origem: Fase 6,
   limitação)*
 - [ ] **Modelos:** malhas de modelo no combo "Malha"; pré-visualizar animação fora do Play. *(origem: Fase 11,
@@ -92,6 +92,15 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   `editor.json` (`playSideBySide`). MCP: `view_side_by_side` e `viewport_capture` com `view = game`. Conferido
   numa captura no Play (Viewport com a grade e a câmera do editor, Jogo pela câmera do jogo).
   Teclado, mouse e cursor preso na janela Jogo não foram testados (item na seção 8 do roteiro à mão).
+- **Prefab dentro de prefab:** componente novo `PrefabNested` (engine, `scene/PrefabNested`): no conteúdo do
+  prefab de fora, as entidades vindas de outro prefab guardam o vínculo com ele e os overrides relativos a ele; o
+  `PrefabInstance` continua sendo a identidade dentro do de fora. `Prefabs::UpdateNested` (chamado por `NeedsSync`
+  e `SyncInstances`) leva as mudanças do de dentro ao de fora, nível a nível, e o de fora ganha revisão nova (as
+  instâncias da cena seguem como antes). Criar e aplicar aninham as instâncias de outros prefabs em vez de
+  desfazer o vínculo; aplicar recusa um prefab dentro dele mesmo; desvincular faz as entidades voltarem a ser
+  instâncias do de dentro. Editar o de fora no Inspector registra overrides do aninhado
+  (`RecordNestedOverrides`). Teste `test_prefab_nested` (47 verificações); conferido no editor pelo MCP (Inspector
+  e arquivo `.mprefab`). Mexer à mão nos prefabs não foi testado (item na seção 6 do roteiro).
 
 ## Limitações
 
@@ -108,6 +117,10 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 - Lado a lado, a cena é desenhada duas vezes por quadro no Play (as sombras também); fora do Play, a janela Jogo
   só desenha quando está visível. Os botões de Play ficam no Viewport e, com ele estreito, cobrem as
   estatísticas. A janela Jogo usa a proporção dela (não há resoluções fixas como 16:9 ou 1920x1080).
+- Prefab aninhado: a Hierarquia não destaca as entidades aninhadas (só o Inspector diz de onde vieram), e para
+  mudar o prefab de dentro é preciso abri-lo pelo painel Projeto. Variante de prefab (um prefab que é só outro
+  com mudanças) funciona como aninhado na raiz, sem nada específico. Mudanças no conteúdo de um prefab feitas
+  pelo de dentro só são gravadas no arquivo dele quando ele é salvo de novo (ao abrir, ele segue o de dentro).
 - A busca não procura em valores de campos (ex.: entidades que usam um material) nem guarda buscas recentes;
   a dobra de acentos cobre as letras latinas comuns (português, espanhol), não todo o Unicode.
 - A área de transferência de entidades fica na memória do editor: não passa para outro editor aberto nem

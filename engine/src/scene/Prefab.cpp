@@ -31,6 +31,32 @@ PrefabLink* LinkOf(Entity& e) {
     return p ? &p->link : nullptr;
 }
 
+const PrefabLink* NestedOf(const Entity& e) {
+    const PrefabNested* p = e.Get<PrefabNested>();
+    return p ? &p->link : nullptr;
+}
+
+PrefabLink* NestedOf(Entity& e) {
+    PrefabNested* p = e.Get<PrefabNested>();
+    return p ? &p->link : nullptr;
+}
+
+// Qual vínculo liga a entidade ao prefab que a "instancia": na cena, o PrefabInstance; no conteúdo de um prefab,
+// o PrefabNested (as entidades que vieram de outro prefab). O PrefabInstance do conteúdo é a identidade dela
+// dentro do próprio prefab.
+enum class LinkKind { Instance, Nested };
+
+const PrefabLink* LinkOf(const Entity& e, LinkKind kind) { return kind == LinkKind::Instance ? LinkOf(e) : NestedOf(e); }
+PrefabLink* LinkOf(Entity& e, LinkKind kind) { return kind == LinkKind::Instance ? LinkOf(e) : NestedOf(e); }
+
+void SetNested(Entity& e, PrefabLink link) {
+    if (PrefabLink* existing = NestedOf(e)) {
+        *existing = std::move(link);
+        return;
+    }
+    e.Add<PrefabNested>().link = std::move(link);
+}
+
 // Põe o vínculo na entidade. Componente novo vai para o início (aparece no topo do Inspector).
 void SetLink(Entity& e, PrefabLink link) {
     if (PrefabLink* existing = LinkOf(e)) {
@@ -42,9 +68,10 @@ void SetLink(Entity& e, PrefabLink link) {
     static_cast<PrefabInstance*>(e.components.front().Data())->link = std::move(link);
 }
 
-// Componentes que o sync e os overrides ignoram: o próprio vínculo e os de tipo desconhecido.
+// Componentes que o sync e os overrides ignoram: os vínculos e os de tipo desconhecido.
 bool Skipped(const ComponentType& type) {
-    return &type == ComponentRegistry::TypeOf<PrefabInstance>() || &type == &ComponentRegistry::MissingType();
+    return &type == ComponentRegistry::TypeOf<PrefabInstance>() || &type == ComponentRegistry::TypeOf<PrefabNested>() ||
+           &type == &ComponentRegistry::MissingType();
 }
 
 // Pares (original, cópia) de entidades copiadas: referências (EntityRef) que apontam para um original passam a
@@ -120,12 +147,13 @@ void CopyField(const FieldInfo& f, const void* src, void* dst, AssetLibrary& ass
 
 // Entidades da instância cuja raiz é `root`: source -> id. Desce pelos filhos sem entrar noutra instância
 // do mesmo prefab; entidades sem vínculo (adicionadas na instância) não entram.
-std::map<uint32_t, EntityId> Members(const Scene& scene, EntityId root, const Prefab& prefab) {
+std::map<uint32_t, EntityId> Members(const Scene& scene, EntityId root, const Prefab& prefab,
+                                     LinkKind kind = LinkKind::Instance) {
     std::map<uint32_t, EntityId> members;
     std::function<void(EntityId)> visit = [&](EntityId id) {
         const Entity* e = scene.Find(id);
         if (!e) return;
-        const PrefabLink* link = LinkOf(*e);
+        const PrefabLink* link = LinkOf(*e, kind);
         const bool same = link && link->guid == prefab.guid;
         if (id != root && same && link->source == prefab.rootSource) return;  // outra instância
         if (same) members.emplace(link->source, id);  // source repetido (entidade duplicada): fica a primeira
@@ -137,10 +165,10 @@ std::map<uint32_t, EntityId> Members(const Scene& scene, EntityId root, const Pr
 
 // Raízes de instância da cena, com o prefab de cada uma.
 std::vector<std::pair<EntityId, Prefab*>> InstanceRoots(const Scene& scene, PrefabLibrary& library,
-                                                        AssetLibrary& assets) {
+                                                        AssetLibrary& assets, LinkKind kind = LinkKind::Instance) {
     std::vector<std::pair<EntityId, Prefab*>> roots;
     for (const auto& e : scene.Entities()) {
-        const PrefabLink* link = LinkOf(*e);
+        const PrefabLink* link = LinkOf(*e, kind);
         if (!link || link->guid.empty()) continue;
         Prefab* prefab = library.Get(link->guid, assets);
         if (prefab && link->source == prefab->rootSource) roots.emplace_back(e->id, prefab);
@@ -149,8 +177,8 @@ std::vector<std::pair<EntityId, Prefab*>> InstanceRoots(const Scene& scene, Pref
 }
 
 // Valores do prefab nas propriedades sem override.
-void ApplyEntity(Entity& e, const Entity& p, bool isRoot, AssetLibrary& assets) {
-    const std::vector<std::string> overrides = LinkOf(e)->overrides;  // cópia: os componentes vão mudar
+void ApplyEntity(Entity& e, const Entity& p, bool isRoot, AssetLibrary& assets, LinkKind kind = LinkKind::Instance) {
+    const std::vector<std::string> overrides = LinkOf(e, kind)->overrides;  // cópia: os componentes vão mudar
     auto has = [&](const std::string& key) { return std::find(overrides.begin(), overrides.end(), key) != overrides.end(); };
 
     if (!has("name")) e.name = p.name;
@@ -177,19 +205,33 @@ void ApplyEntity(Entity& e, const Entity& p, bool isRoot, AssetLibrary& assets) 
     std::erase_if(e.components, [&](const ComponentPtr& c) {
         return !Skipped(c.Type()) && !p.Get(c.Type()) && !has("+" + c.Type().name);
     });
+    // Na cena, a cópia do vínculo aninhado só informa de onde a entidade veio: acompanha o prefab. (No conteúdo
+    // de um prefab, o PrefabNested é o vínculo com o de dentro e não se copia do de dentro.)
+    if (kind == LinkKind::Instance) {
+        if (const PrefabLink* nested = NestedOf(p)) {
+            SetNested(e, *nested);
+        } else {
+            e.Remove<PrefabNested>();
+        }
+    }
 }
 
-void SyncInstance(Scene& scene, EntityId rootId, const Prefab& prefab, AssetLibrary& assets) {
+// Entidade criada no sync do conteúdo de um prefab (`adopt`): veio do prefab de dentro com o PrefabInstance
+// dele, que vira o PrefabNested; o PrefabInstance passa a ser o do prefab de fora.
+using Adopt = std::function<void(Entity&)>;
+
+void SyncInstance(Scene& scene, EntityId rootId, const Prefab& prefab, AssetLibrary& assets,
+                  LinkKind kind = LinkKind::Instance, const Adopt& adopt = nullptr) {
     // Entidades que o prefab não tem mais.
     std::vector<EntityId> gone;
-    for (const auto& [source, id] : Members(scene, rootId, prefab)) {
+    for (const auto& [source, id] : Members(scene, rootId, prefab, kind)) {
         if (id != rootId && !prefab.FindSource(source)) gone.push_back(id);
     }
     for (EntityId id : gone) scene.DestroyEntity(id);
 
-    std::map<uint32_t, EntityId> members = Members(scene, rootId, prefab);
+    std::map<uint32_t, EntityId> members = Members(scene, rootId, prefab, kind);
     members[prefab.rootSource] = rootId;
-    const PrefabLink rootLink = *LinkOf(*scene.Find(rootId));
+    const PrefabLink rootLink = *LinkOf(*scene.Find(rootId), kind);
 
     // Percorre o prefab dos pais para os filhos: entidade que falta é criada debaixo do pai correspondente.
     std::function<void(EntityId, EntityId)> visit = [&](EntityId prefabId, EntityId instanceParent) {
@@ -198,11 +240,14 @@ void SyncInstance(Scene& scene, EntityId rootId, const Prefab& prefab, AssetLibr
         EntityId target = kNullEntity;
         if (auto it = members.find(source); it != members.end()) {
             target = it->second;
-            ApplyEntity(*scene.Find(target), p, source == prefab.rootSource, assets);
+            ApplyEntity(*scene.Find(target), p, source == prefab.rootSource, assets, kind);
         } else {
             if (rootLink.HasOverride(std::format("-#{}", source)) || instanceParent == kNullEntity) return;
-            target = CopyTree(prefab.scene, prefabId, scene, instanceParent, nullptr);  // filhos vêm junto
-            for (const auto& [s, id] : Members(scene, target, prefab)) members.emplace(s, id);
+            // Filhos vêm junto.
+            target = CopyTree(prefab.scene, prefabId, scene, instanceParent, [&](const Entity&, Entity& copy) {
+                if (adopt) adopt(copy);
+            });
+            for (const auto& [s, id] : Members(scene, target, prefab, kind)) members.emplace(s, id);
             return;
         }
         for (EntityId child : prefab.scene.Children(prefabId)) visit(child, target);
@@ -211,11 +256,11 @@ void SyncInstance(Scene& scene, EntityId rootId, const Prefab& prefab, AssetLibr
 
     // Os valores vieram do prefab: referências entre entidades dele viram as entidades desta instância.
     CopyPairs copies;
-    for (const auto& [source, id] : Members(scene, rootId, prefab)) {
-        LinkOf(*scene.Find(id))->syncedRevision = prefab.revision;
+    for (const auto& [source, id] : Members(scene, rootId, prefab, kind)) {
+        LinkOf(*scene.Find(id), kind)->syncedRevision = prefab.revision;
         if (const Entity* p = prefab.FindSource(source)) copies.emplace_back(p->id, id);
     }
-    for (const auto& [source, id] : Members(scene, rootId, prefab)) {
+    for (const auto& [source, id] : Members(scene, rootId, prefab, kind)) {
         if (const Entity* p = prefab.FindSource(source)) {
             Entity& e = *scene.Find(id);
             // Só os campos que acabaram de vir do prefab (sem override); os outros já são ids da cena.
@@ -223,7 +268,7 @@ void SyncInstance(Scene& scene, EntityId rootId, const Prefab& prefab, AssetLibr
                 void* data = e.Get(pc.Type());
                 if (!data || Skipped(pc.Type())) continue;
                 for (const FieldInfo& f : pc.Type().fields) {
-                    if (!IsEntityRef(f) || LinkOf(e)->HasOverride(pc.Type().name + "." + f.key)) continue;
+                    if (!IsEntityRef(f) || LinkOf(e, kind)->HasOverride(pc.Type().name + "." + f.key)) continue;
                     auto& ref = f.As<EntityRef>(data);
                     if (!ref.IsEmpty() && ref == f.As<EntityRef>(pc.Data())) ref.id = MapCopied(copies, ref.id, true);
                 }
@@ -234,8 +279,9 @@ void SyncInstance(Scene& scene, EntityId rootId, const Prefab& prefab, AssetLibr
 
 // Overrides de uma entidade: o que ficou diferente do prefab.
 // `toPrefab`: id de uma entidade da instância -> id da entidade correspondente no prefab (EntityRef).
-size_t RecordEntity(Entity& e, const Entity& p, bool isRoot, const std::function<EntityId(EntityId)>& toPrefab) {
-    PrefabLink& link = *LinkOf(e);
+size_t RecordEntity(Entity& e, const Entity& p, bool isRoot, const std::function<EntityId(EntityId)>& toPrefab,
+                    LinkKind kind = LinkKind::Instance) {
+    PrefabLink& link = *LinkOf(e, kind);
     size_t added = 0;
     auto mark = [&](std::string key) {
         if (link.AddOverride(std::move(key))) ++added;
@@ -269,20 +315,88 @@ size_t RecordEntity(Entity& e, const Entity& p, bool isRoot, const std::function
 }
 
 // Copia a sub-árvore de `rootId` para uma cena de prefab, dando a cada entidade um source (`sourceOf`).
-// A raiz fica na origem: a posição de cada instância é dela.
-Scene BuildPrefabScene(const Scene& scene, EntityId rootId, const std::function<uint32_t(const Entity&)>& sourceOf,
-                       std::vector<std::pair<EntityId, uint32_t>>& order) {
+// A raiz fica na origem: a posição de cada instância é dela. Entidades de instâncias de outros prefabs (vínculo
+// com um GUID diferente de `targetGuid`) ficam aninhadas: o vínculo vira o PrefabNested. `nested` recebe o
+// vínculo aninhado de cada source, para pôr o mesmo nas entidades da cena.
+Scene BuildPrefabScene(const Scene& scene, EntityId rootId, std::string_view targetGuid,
+                       const std::function<uint32_t(const Entity&)>& sourceOf,
+                       std::vector<std::pair<EntityId, uint32_t>>& order, std::map<uint32_t, PrefabLink>& nested) {
     Scene out;
     CopyPairs copies;
     CopyTree(scene, rootId, out, kNullEntity, [&](const Entity& from, Entity& to) {
         const uint32_t source = sourceOf(from);
+        if (const PrefabLink* outer = LinkOf(from); outer && !outer->guid.empty() && outer->guid != targetGuid) {
+            SetNested(to, *outer);  // o aninhado que ele já tinha é assunto do prefab de dentro
+        }
         to.Remove(*ComponentRegistry::TypeOf<PrefabInstance>());
         SetLink(to, {{}, source, {}, 0});
+        if (const PrefabLink* link = NestedOf(to)) nested[source] = *link;
         order.emplace_back(from.id, source);
         copies.emplace_back(from.id, to.id);
     });
     RemapCopied(out, copies, true);
     return out;
+}
+
+// Prefabs aninhados no conteúdo (direta ou indiretamente). Para recusar um prefab dentro dele mesmo.
+bool ContainsPrefab(const Scene& content, std::string_view guid, PrefabLibrary& library, AssetLibrary& assets,
+                    int depth = 0) {
+    if (depth > 32) return true;  // corrente longa demais: trata como ciclo
+    std::set<std::string> seen;
+    for (const auto& e : content.Entities()) {
+        const PrefabLink* link = NestedOf(*e);
+        if (!link || link->guid.empty() || !seen.insert(link->guid).second) continue;
+        if (link->guid == guid) return true;
+        if (const Prefab* inner = library.Get(link->guid, assets)) {
+            if (ContainsPrefab(inner->scene, guid, library, assets, depth + 1)) return true;
+        }
+    }
+    return false;
+}
+
+// Na cena, depois de criar ou aplicar: cada entidade com o vínculo novo e a cópia do aninhado (se houver).
+void LinkScene(Scene& scene, const std::vector<std::pair<EntityId, uint32_t>>& order,
+               const std::map<uint32_t, PrefabLink>& nested, const Prefab& prefab) {
+    for (const auto& [entity, source] : order) {
+        Entity& e = *scene.Find(entity);
+        SetLink(e, {prefab.guid, source, {}, prefab.revision});
+        if (auto it = nested.find(source); it != nested.end()) {
+            SetNested(e, it->second);
+        } else {
+            e.Remove<PrefabNested>();
+        }
+    }
+}
+
+size_t RecordOverridesOf(Scene& scene, PrefabLibrary& library, AssetLibrary& assets, LinkKind kind,
+                         std::string_view ownGuid = {}) {
+    size_t count = 0;
+    for (const auto& [root, prefab] : InstanceRoots(scene, library, assets, kind)) {
+        if (prefab->guid == ownGuid) continue;
+        Entity& rootEntity = *scene.Find(root);
+        // Instância que ainda não viu a revisão atual: diferenças agora são do prefab, não overrides.
+        if (LinkOf(rootEntity, kind)->syncedRevision != prefab->revision) continue;
+        const std::map<uint32_t, EntityId> members = Members(scene, root, *prefab, kind);
+        CopyPairs toPrefab;  // (id na instância, id no prefab)
+        for (const auto& [source, id] : members) {
+            if (const Entity* p = prefab->FindSource(source)) toPrefab.emplace_back(id, p->id);
+        }
+        // Fora da instância: o id fica (difere do "nenhuma" do prefab e vira override, sem se perder).
+        const auto map = [&](EntityId id) { return MapCopied(toPrefab, id, false); };
+        for (const auto& [source, id] : members) {
+            if (const Entity* p = prefab->FindSource(source)) {
+                count += RecordEntity(*scene.Find(id), *p, source == prefab->rootSource, map, kind);
+            }
+        }
+        // Entidades do prefab apagadas na instância.
+        for (const auto& e : prefab->scene.Entities()) {
+            const uint32_t source = LinkOf(*e)->source;
+            if (source != prefab->rootSource && !members.contains(source)) {
+                if (LinkOf(rootEntity, kind)->AddOverride(std::format("-#{}", source))) ++count;
+            }
+        }
+    }
+    return count;
 }
 } // namespace
 
@@ -450,6 +564,14 @@ void PrefabLibrary::ForEachScene(const std::function<void(Scene&)>& fn) {
     }
 }
 
+void PrefabLibrary::ForEachPrefab(const std::function<void(Prefab&)>& fn) {
+    std::vector<Prefab*> prefabs;  // a visita pode carregar outros (Get) e mexer no mapa
+    for (auto& [guid, cached] : m_cache) {
+        if (cached.prefab) prefabs.push_back(cached.prefab.get());
+    }
+    for (Prefab* prefab : prefabs) fn(*prefab);
+}
+
 // --- Operações ------------------------------------------------------------------------
 
 namespace Prefabs {
@@ -487,18 +609,59 @@ Prefab* CreateFromEntity(Scene& scene, EntityId id, const fs::path& file, Prefab
     }
     uint32_t next = 1;
     std::vector<std::pair<EntityId, uint32_t>> order;
-    Scene content = BuildPrefabScene(scene, id, [&](const Entity&) { return next++; }, order);
+    std::map<uint32_t, PrefabLink> nested;
+    Scene content = BuildPrefabScene(scene, id, {}, [&](const Entity&) { return next++; }, order, nested);
     content.Find(content.Children(kNullEntity).front())->transform.position = glm::vec3(0.0f);
 
     if (!PrefabLibrary::WriteFile(file, content, assets, error)) return nullptr;
     Prefab* prefab = library.GetFile(file, assets, error);
     if (!prefab) return nullptr;
+    // O arquivo não guarda a revisão vista dos aninhados: os valores que acabaram de ser copiados já são os deles.
+    for (const auto& [source, link] : nested) {
+        if (Entity* e = prefab->FindSource(source)) SetNested(*e, link);
+    }
 
-    for (const auto& [entity, source] : order) SetLink(*scene.Find(entity), {prefab->guid, source, {}, prefab->revision});
+    LinkScene(scene, order, nested, *prefab);
     return prefab;
 }
 
+bool UpdateNested(PrefabLibrary& library, AssetLibrary& assets) {
+    bool any = false;
+    for (int pass = 0; pass < 8; ++pass) {  // um passo por nível: C dentro de B dentro de A
+        bool changed = false;
+        library.ForEachPrefab([&](Prefab& outer) {
+            bool outerChanged = false;
+            // Entidade nova vinda do prefab de dentro: ganha um source livre no de fora.
+            uint32_t next = 1;
+            for (const auto& e : outer.scene.Entities()) next = std::max(next, LinkOf(*e)->source + 1);
+            const Adopt adopt = [&](Entity& copy) {
+                if (const PrefabLink* inner = LinkOf(copy)) SetNested(copy, *inner);
+                SetLink(copy, {outer.guid, next++, {}, 0});
+            };
+            for (const auto& [root, inner] : InstanceRoots(outer.scene, library, assets, LinkKind::Nested)) {
+                if (inner == &outer) continue;  // ciclo (arquivo editado à mão): não segue
+                const Entity* e = outer.scene.Find(root);
+                if (!e || NestedOf(*e)->syncedRevision == inner->revision) continue;
+                SyncInstance(outer.scene, root, *inner, assets, LinkKind::Nested, adopt);
+                outerChanged = true;
+            }
+            if (outerChanged) {
+                library.MarkChanged(outer);  // revisão nova: as instâncias na cena seguem
+                changed = true;
+            }
+        });
+        if (!changed) break;
+        any = true;
+    }
+    return any;
+}
+
+size_t RecordNestedOverrides(Prefab& prefab, PrefabLibrary& library, AssetLibrary& assets) {
+    return RecordOverridesOf(prefab.scene, library, assets, LinkKind::Nested, prefab.guid);
+}
+
 size_t SyncInstances(Scene& scene, PrefabLibrary& library, AssetLibrary& assets, bool force) {
+    UpdateNested(library, assets);
     size_t count = 0;
     for (const auto& [root, prefab] : InstanceRoots(scene, library, assets)) {
         const Entity* e = scene.Find(root);
@@ -510,6 +673,7 @@ size_t SyncInstances(Scene& scene, PrefabLibrary& library, AssetLibrary& assets,
 }
 
 bool NeedsSync(const Scene& scene, PrefabLibrary& library, AssetLibrary& assets) {
+    UpdateNested(library, assets);  // um prefab aninhado que mudou muda o de fora
     for (const auto& [root, prefab] : InstanceRoots(scene, library, assets)) {
         if (LinkOf(*scene.Find(root))->syncedRevision != prefab->revision) return true;
     }
@@ -517,32 +681,7 @@ bool NeedsSync(const Scene& scene, PrefabLibrary& library, AssetLibrary& assets)
 }
 
 size_t RecordOverrides(Scene& scene, PrefabLibrary& library, AssetLibrary& assets) {
-    size_t count = 0;
-    for (const auto& [root, prefab] : InstanceRoots(scene, library, assets)) {
-        Entity& rootEntity = *scene.Find(root);
-        // Instância que ainda não viu a revisão atual: diferenças agora são do prefab, não overrides.
-        if (LinkOf(rootEntity)->syncedRevision != prefab->revision) continue;
-        const std::map<uint32_t, EntityId> members = Members(scene, root, *prefab);
-        CopyPairs toPrefab;  // (id na instância, id no prefab)
-        for (const auto& [source, id] : members) {
-            if (const Entity* p = prefab->FindSource(source)) toPrefab.emplace_back(id, p->id);
-        }
-        // Fora da instância: o id fica (difere do "nenhuma" do prefab e vira override, sem se perder).
-        const auto map = [&](EntityId id) { return MapCopied(toPrefab, id, false); };
-        for (const auto& [source, id] : members) {
-            if (const Entity* p = prefab->FindSource(source)) {
-                count += RecordEntity(*scene.Find(id), *p, source == prefab->rootSource, map);
-            }
-        }
-        // Entidades do prefab apagadas na instância.
-        for (const auto& e : prefab->scene.Entities()) {
-            const uint32_t source = LinkOf(*e)->source;
-            if (source != prefab->rootSource && !members.contains(source)) {
-                if (LinkOf(rootEntity)->AddOverride(std::format("-#{}", source))) ++count;
-            }
-        }
-    }
-    return count;
+    return RecordOverridesOf(scene, library, assets, LinkKind::Instance);
 }
 
 bool ApplyInstance(Scene& scene, EntityId id, PrefabLibrary& library, AssetLibrary& assets, std::string* error) {
@@ -558,13 +697,19 @@ bool ApplyInstance(Scene& scene, EntityId id, PrefabLibrary& library, AssetLibra
     for (const auto& e : prefab.scene.Entities()) next = std::max(next, LinkOf(*e)->source + 1);
     std::set<uint32_t> used;
     std::vector<std::pair<EntityId, uint32_t>> order;
-    Scene content = BuildPrefabScene(scene, root, [&](const Entity& from) {
+    std::map<uint32_t, PrefabLink> nested;
+    Scene content = BuildPrefabScene(scene, root, prefab.guid, [&](const Entity& from) {
         const PrefabLink* link = LinkOf(from);
         uint32_t source = link && link->guid == prefab.guid ? link->source : 0;
         if (source == 0 || used.contains(source)) source = next++;
         used.insert(source);
         return source;
-    }, order);
+    }, order, nested);
+    if (ContainsPrefab(content, prefab.guid, library, assets)) {
+        SetError(error, std::format("Não dá para aplicar: o prefab {} ficaria dentro dele mesmo (uma instância "
+                                    "aninhada já o contém).", ToUtf8(assets.Database().PathFor(prefab.guid).stem())));
+        return false;
+    }
     // A raiz guarda a posição e a rotação do prefab: as da instância são dela.
     Entity& contentRoot = *content.Find(content.Children(kNullEntity).front());
     const Transform& oldRoot = prefab.scene.Find(prefab.root)->transform;
@@ -577,11 +722,16 @@ bool ApplyInstance(Scene& scene, EntityId id, PrefabLibrary& library, AssetLibra
     updated.root = contentRoot.id;
     updated.rootSource = LinkOf(contentRoot)->source;
     updated.RebuildIndex();
+    // O que a instância mudou nas entidades aninhadas vira override delas no prefab.
+    RecordNestedOverrides(updated, library, assets);
+    for (const auto& e : updated.scene.Entities()) {
+        if (const PrefabLink* link = NestedOf(*e)) nested[LinkOf(*e)->source] = *link;
+    }
     if (!library.Save(updated, assets, error)) return false;
     prefab = std::move(updated);
     library.MarkChanged(prefab);
 
-    for (const auto& [entity, source] : order) SetLink(*scene.Find(entity), {prefab.guid, source, {}, prefab.revision});
+    LinkScene(scene, order, nested, prefab);
     log::Info("Instância aplicada ao prefab {}", assets.KeyForFile(assets.Database().PathFor(prefab.guid)));
     return true;
 }
@@ -598,7 +748,18 @@ void Unpack(Scene& scene, EntityId id, PrefabLibrary& library, AssetLibrary& ass
     const EntityId root = InstanceRoot(scene, id, library, assets);
     if (root == kNullEntity) return;
     const Prefab& prefab = *library.Get(LinkOf(*scene.Find(root))->guid, assets);
-    for (const auto& [source, entity] : Members(scene, root, prefab)) scene.Find(entity)->Remove<PrefabInstance>();
+    for (const auto& [source, entity] : Members(scene, root, prefab)) {
+        Entity& e = *scene.Find(entity);
+        e.Remove<PrefabInstance>();
+        // Veio de um prefab aninhado: volta a ser instância dele, com o que o prefab de fora mudou como override.
+        if (const PrefabLink* nestedLink = NestedOf(e)) {
+            PrefabLink link = *nestedLink;
+            const Prefab* inner = library.Get(link.guid, assets);
+            link.syncedRevision = inner ? inner->revision : 0;
+            e.Remove<PrefabNested>();
+            SetLink(e, std::move(link));
+        }
+    }
 }
 
 } // namespace Prefabs

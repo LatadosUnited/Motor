@@ -60,6 +60,7 @@ void CopyChangedAxes(const glm::vec3& a, const glm::vec3& b, glm::vec3& target) 
 
 bool Skipped(const motor::ComponentType& type) {
     return &type == motor::ComponentRegistry::TypeOf<motor::PrefabInstance>() ||
+           &type == motor::ComponentRegistry::TypeOf<motor::PrefabNested>() ||
            &type == &motor::ComponentRegistry::MissingType();
 }
 } // namespace

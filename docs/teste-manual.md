@@ -108,6 +108,10 @@ versão nova, marca o que passou e anota o que não passou. Criado na
   → buracos recortados e a sombra também recortada; **Duas faces** mostra o lado de dentro.
 - [ ] Criar prefab de uma entidade, pôr duas cópias na cena, mudar o prefab → as duas mudam; **Aplicar ao
   prefab**, **Reverter** e **Desfazer vínculo** fazem o que dizem.
+- [ ] **Prefab dentro de prefab:** prefab Janela; pôr uma Janela como filha de um cubo Casa e criar o prefab
+  Casa → o Inspector da janela diz "Do prefab aninhado: Janela". Duas casas na cena; abrir o prefab Janela e mudar
+  a cor → as janelas das duas casas mudam. Mudar a escala da janela dentro do prefab Casa e depois a escala no
+  prefab Janela → a da Casa fica. **Desvincular** uma casa → a janela dela volta a ser uma Janela.
 - [ ] Importar um `.glb` animado (ex.: `Robo.glb`) e pôr na cena → aparece com materiais; a animação toca no Play.
 
 ## 7. Scripts

@@ -359,6 +359,7 @@ void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
     OverrideCheck overridden;
     if (instance) overridden = [instance](std::string_view key) { return instance->link.HasOverride(key); };
     const motor::ComponentType* prefabType = motor::ComponentRegistry::TypeOf<motor::PrefabInstance>();
+    const motor::ComponentType* nestedType = motor::ComponentRegistry::TypeOf<motor::PrefabNested>();
 
     ImGui::Checkbox("##active", &e.active);
     ImGui::SetItemTooltip(Has(overridden, "active") ? "Ativa (alterado nesta instância)" : "Ativa");
@@ -376,8 +377,18 @@ void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
 
     // Removido depois do laço, para não invalidar a lista. Pelo índice: pode haver vários desconhecidos.
     std::optional<size_t> toRemove;
+    // Prefab aninhado: só uma linha dizendo de onde a entidade veio (o vínculo é mantido pelo editor).
+    if (const motor::PrefabNested* nested = e.Get<motor::PrefabNested>()) {
+        const std::filesystem::path file = ctx.assets.Database().PathFor(nested->link.guid);
+        ImGui::TextColored(ImVec4(0.6f, 0.78f, 0.95f, 1.0f), "Do prefab aninhado: %s",
+                           file.empty() ? "(não encontrado)" : motor::ToUtf8(file.stem()).c_str());
+        ImGui::SetItemTooltip("Esta entidade veio de uma instância de outro prefab posta dentro deste. Mudanças\n"
+                              "nele chegam aqui, menos o que foi mudado aqui (%zu alteração(ões)).",
+                              nested->link.overrides.size());
+    }
     for (size_t i = 0; i < e.components.size(); ++i) {
         if (prefabAsset && &e.components[i].Type() == prefabType) continue;
+        if (&e.components[i].Type() == nestedType) continue;
         ImGui::PushID(static_cast<int>(i));
         if (!DrawComponent(ctx, e.components[i], e.name, overridden)) toRemove = i;
         ImGui::PopID();
@@ -397,7 +408,7 @@ void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
         for (const bool scripts : {false, true}) {
             if (scripts) ImGui::SeparatorText("Scripts");
             for (const auto& type : motor::ComponentRegistry::Instance().Types()) {
-                if (type->IsScript() != scripts || type.get() == prefabType) continue;
+                if (type->IsScript() != scripts || type.get() == prefabType || type.get() == nestedType) continue;
                 if (ImGui::MenuItem(type->label.c_str(), nullptr, false, !e.Get(*type))) {
                     void* data = e.Add(*type);
                     if (type->onAdd) type->onAdd(data, ctx.assets);
@@ -499,6 +510,8 @@ void DrawPrefabAsset(EditorContext& ctx, const std::filesystem::path& file) {
     }
 
     if (!(prefab->scene == edit.saved)) {
+        // Mudança numa entidade de prefab aninhado vira override dela (senão o aninhado a desfaria).
+        motor::Prefabs::RecordNestedOverrides(*prefab, ctx.prefabs, ctx.assets);
         ctx.prefabs.MarkChanged(*prefab);
         edit.saved = prefab->scene;
         edit.revision = prefab->revision;

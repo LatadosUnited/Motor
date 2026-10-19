@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motor/scene/PrefabInstance.h"
+#include "motor/scene/PrefabNested.h"
 #include "motor/scene/Scene.h"
 
 #include <cstdint>
@@ -26,6 +27,9 @@ class AssetLibrary;
 // valor do prefab. Overrides são registrados comparando a instância com o prefab depois de cada edição
 // (Prefabs::RecordOverrides): o que ficou diferente foi mudado na instância. Por isso a ordem, a cada passo
 // do editor, é: primeiro sincronizar (se o prefab mudou), depois registrar overrides.
+//
+// Prefab dentro de prefab: entidades do prefab que vieram de outro prefab têm também um PrefabNested (ver
+// PrefabNested.h). Prefabs::UpdateNested leva as mudanças do de dentro para o de fora, antes do sync da cena.
 struct Prefab {
     std::string guid;
     Scene scene;                 // as entidades do prefab
@@ -58,6 +62,8 @@ public:
     void Clear();  // troca de projeto
     // Visita a cena de cada prefab em cache (usado na recarga da DLL de scripts).
     void ForEachScene(const std::function<void(Scene&)>& fn);
+    // Visita cada prefab em cache (pode carregar outros durante a visita; esses ficam para a próxima).
+    void ForEachPrefab(const std::function<void(Prefab&)>& fn);
 
     // Grava as entidades num .mprefab (sem guardar o vínculo com o arquivo).
     static bool WriteFile(const std::filesystem::path& file, const Scene& scene, AssetLibrary& assets,
@@ -86,10 +92,18 @@ bool IsInstanceRoot(const Scene& scene, EntityId id, PrefabLibrary& library, Ass
 EntityId Instantiate(const Prefab& prefab, Scene& scene, EntityId parent = kNullEntity);
 
 // Grava a entidade (com os filhos) como um prefab novo em `file` e transforma a entidade numa instância
-// dele. Vínculos com outros prefabs dentro dela são desfeitos (não há prefab dentro de prefab).
-// Devolve o prefab criado (nullptr e `error` se falhar).
+// dele. Instâncias de outros prefabs dentro dela ficam aninhadas no novo (PrefabNested) e continuam seguindo
+// os prefabs delas. Devolve o prefab criado (nullptr e `error` se falhar).
 Prefab* CreateFromEntity(Scene& scene, EntityId id, const std::filesystem::path& file, PrefabLibrary& library,
                          AssetLibrary& assets, std::string* error = nullptr);
+
+// Prefab dentro de prefab: o conteúdo de cada prefab em cache segue os prefabs aninhados nele que mudaram (menos
+// o que ele mudou neles), e quem mudou ganha revisão nova. Repete até nada mudar (B dentro de A dentro de C).
+// Chamado por SyncInstances e NeedsSync. Devolve true se algum prefab mudou.
+bool UpdateNested(PrefabLibrary& library, AssetLibrary& assets);
+// O que foi mudado no conteúdo de `prefab` nas entidades de prefabs aninhados vira override delas (depois de
+// editar o prefab direto; senão o próximo UpdateNested desfaria a edição).
+size_t RecordNestedOverrides(Prefab& prefab, PrefabLibrary& library, AssetLibrary& assets);
 
 // Leva os valores do prefab às instâncias que ainda não viram a revisão atual dele (todas, com `force`).
 // Entidades que o prefab ganhou aparecem; as que ele perdeu somem. Devolve quantas instâncias atualizou.
@@ -100,12 +114,14 @@ bool NeedsSync(const Scene& scene, PrefabLibrary& library, AssetLibrary& assets)
 size_t RecordOverrides(Scene& scene, PrefabLibrary& library, AssetLibrary& assets);
 
 // Grava a instância (a que `id` pertence) no prefab: os overrides viram o novo prefab e a instância fica
-// sem overrides. As outras instâncias seguem no próximo sync.
+// sem overrides. As outras instâncias seguem no próximo sync. Instâncias de outros prefabs postas dentro dela
+// ficam aninhadas; recusa (false e `error`) se isso pusesse o prefab dentro dele mesmo.
 bool ApplyInstance(Scene& scene, EntityId id, PrefabLibrary& library, AssetLibrary& assets,
                    std::string* error = nullptr);
 // Descarta os overrides da instância: no próximo sync ela volta a ser igual ao prefab.
 void RevertInstance(Scene& scene, EntityId id, PrefabLibrary& library, AssetLibrary& assets);
-// Desfaz o vínculo: as entidades ficam como estão, mas não seguem mais o prefab.
+// Desfaz o vínculo: as entidades ficam como estão, mas não seguem mais o prefab. As que vieram de um prefab
+// aninhado voltam a ser instâncias dele.
 void Unpack(Scene& scene, EntityId id, PrefabLibrary& library, AssetLibrary& assets);
 
 } // namespace Prefabs

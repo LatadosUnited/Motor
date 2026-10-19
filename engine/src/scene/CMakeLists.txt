@@ -23,5 +23,6 @@ motor_add_layer(scene
         AudioSource.cpp
         AudioListener.cpp
         EntityRef.cpp
+        PrefabNested.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)
