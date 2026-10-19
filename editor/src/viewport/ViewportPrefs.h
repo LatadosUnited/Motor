@@ -17,7 +17,7 @@ struct ViewportPrefs {
     float snapMove = 0.5f;      // metros: passo do mover e tamanho da célula da grade
     float snapRotate = 15.0f;   // graus
     float snapScale = 0.1f;
-    bool grid = true;           // grade visível no plano horizontal
+    bool grid = false;          // grade visível no plano horizontal (liga no botão Grade)
     bool gridFine = false;      // também as linhas finas (célula = passo do mover); senão só as de 10 em 10
     float gridHeight = 0.0f;    // altura (Y) do plano da grade
 

@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
     {
         const ViewportPrefs v = EditorSettings::Load().viewport;
         CHECK(v.snapMove == 0.01f && v.snapRotate == 180.0f);
-        CHECK(v.grid && !v.snap && !v.gridFine);  // campos ausentes: padrão (sem as linhas finas)
+        CHECK(!v.grid && !v.snap && !v.gridFine);  // campos ausentes: padrão (grade desligada)
     }
 
     SECTION("Mover com encaixe vai para a grade só nos eixos mexidos");

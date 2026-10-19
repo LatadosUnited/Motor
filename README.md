@@ -82,7 +82,7 @@ tests/             testes ctest (projeto, assets, GUIDs, componentes, camadas, d
 | Selecionar vários | Ctrl+clique alterna (viewport e hierarquia); Shift+clique na hierarquia pega o intervalo; arrastar no vazio do viewport faz um retângulo (com Ctrl/Shift, soma); Ctrl+A seleciona tudo. Gizmo, Del, Ctrl+D e arrastar na hierarquia agem em todos; o Inspector mostra o último escolhido e repete nos outros o que mudar nele |
 | Gizmo | Q nenhum / W mover / E rotacionar / R escalar; X alterna eixos Local/Global |
 | Snap | botão "Snap" na barra do viewport, ou segurar Ctrl ao arrastar (padrão 0.5 m / 15° / 0.1). Mover com encaixe põe a posição na grade. A seta ao lado do Snap abre os passos (mover, girar, escalar) e a grade (visível, altura) |
-| Grade | botão "Grade": linhas no chão a cada 10 passos do mover (as finas, de cada passo, ligam em "Linhas finas" na seta do Snap), eixos X (vermelho) e Z (azul); objetos na frente tapam a grade. Encaixe e grade ficam salvos no editor |
+| Grade | botão "Grade" (começa desligada): linhas no chão a cada 10 passos do mover (as finas, de cada passo, ligam em "Linhas finas" na seta do Snap), eixos X (vermelho) e Z (azul); objetos na frente tapam a grade. Encaixe e grade ficam salvos no editor |
 | Reparentar | arrastar na hierarquia (soltar no vazio = raiz) |
 | Buscar na hierarquia | Ctrl+F ou a caixa ao lado do "+ Criar": palavras do nome e `t:componente` (`t:luz`, `t:collider`, `t:Girar`), sem diferença de maiúsculas e acentos; os resultados aparecem numa lista com o caminho do pai, e "Selecionar todas" pega todos. Esc ou "x" limpa |
 | Criar | botão "+ Criar", menu Entidade ou clique direito na hierarquia; as formas (Cubo, Esfera, Plano, Cilindro, Cápsula, Cone) já vêm com o Collider que bate com elas |

@@ -55,7 +55,7 @@ versão nova, marca o que passou e anota o que não passou. Criado na
 - [ ] Do painel Projeto para o viewport: uma textura ou um `.mmat` sobre um objeto → aplica; um `.obj`, `.glb` ou
   `.mprefab` → cria a entidade onde o mouse aponta, apoiada no chão.
 - [ ] Ver > Wireframe liga e desliga.
-- [ ] **Grade e encaixe:** a grade aparece no chão (botão **Grade** liga e desliga) e o cubo tapa as linhas.
+- [ ] **Grade e encaixe:** a grade começa desligada; o botão **Grade** a mostra no chão e o cubo tapa as linhas.
   Seta ao lado do **Snap** → mudar Mover para 1 → as células da grade dobram; **Linhas finas** mostra também
   uma linha por passo. Com Snap ligado, um objeto em
   X = 0,3 arrastado em X para na grade (1, 2...) e o Y/Z não mudam; girar anda de 15 em 15°. Altura da grade 2

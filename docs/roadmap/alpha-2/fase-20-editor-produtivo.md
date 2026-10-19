@@ -78,7 +78,8 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   grade). Grade desenhada pelo renderer como wireframe (`CreateGridMesh`, linhas como triângulos degenerados), então
   respeita a profundidade da cena: uma linha a cada 10 passos do mover, eixos X e Z; de longe sobe de 10 em 10.
   As linhas finas (uma por passo) ficam desligadas por padrão ("Linhas finas" na seta do Snap): perto da câmera
-  enchiam a tela de quadradinhos *(origem: teste à mão do usuário, 19/10/2026)*. Testes no `test_viewport`; conferido em captura (grade, cubo tapando as linhas).
+  enchiam a tela de quadradinhos; a grade inteira começa desligada (botão **Grade**) *(origem: teste à mão do
+  usuário, 19/10/2026)*. Testes no `test_viewport`; conferido em captura (grade, cubo tapando as linhas).
   O popup, o arraste com encaixe e a troca de altura não foram testados (precisam de mouse; item na seção 3).
 - **Busca na hierarquia:** caixa ao lado do "+ Criar" (Ctrl+F, também no menu Editar). Palavras no nome e
   `t:componente` pelo rótulo ou pelo nome no código, todas precisam bater, sem diferença de maiúsculas e acentos
