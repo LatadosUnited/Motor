@@ -168,9 +168,14 @@ void McpController::AddSceneFileTools() {
 
     m_protocol.AddTool({
         .name = "game_settings",
-        .description = "Lê ou muda as configurações do jogo (como Arquivo > Configurações do jogo): opções com que o "
-                       "jogo exportado abre da primeira vez. Sem argumentos, só lê. Grava o .mproject.",
-        .inputSchema = Schema({{"fullscreen", Prop("boolean", "tela cheia")},
+        .description = "Lê ou muda as configurações do jogo (como Arquivo > Configurações do jogo): identidade do jogo "
+                       "exportado (nome do .exe, versão, ícone) e as opções com que ele abre da primeira vez. Sem "
+                       "argumentos, só lê. Grava o .mproject.",
+        .inputSchema = Schema({{"executable", Prop("string", "nome do .exe sem a extensão (vazio = o nome do projeto)")},
+                               {"version", Prop("string", "versão do jogo: números separados por ponto (1.0.0)")},
+                               {"icon", Prop("string", "ícone .png (até 256x256) ou .ico, relativo ao projeto "
+                                                       "(\"Assets/icone.png\"); vazio = sem ícone")},
+                               {"fullscreen", Prop("boolean", "tela cheia")},
                                {"width", Prop("integer", "largura (0 = padrão: 1280 em janela, a da tela em tela cheia)")},
                                {"height", Prop("integer", "altura (0 = padrão)")},
                                {"vsync", Prop("boolean", "sincronizar com a tela")},
@@ -179,6 +184,14 @@ void McpController::AddSceneFileTools() {
         .run = [this](const Json& args) {
             const Project* project = m_host.document.GetProject();
             if (!project) throw ToolError("nenhum projeto aberto");
+            GameIdentity identity = project->Identity();
+            if (args.contains("executable")) identity.executable = args["executable"].get<std::string>();
+            if (args.contains("version")) identity.version = args["version"].get<std::string>();
+            if (args.contains("icon")) identity.icon = args["icon"].get<std::string>();
+            if (!(identity == project->Identity())) {
+                std::string error;
+                if (!m_host.document.SetGameIdentity(identity, error)) throw ToolError(error);
+            }
             GameOptions options = project->DefaultOptions();
             if (args.contains("fullscreen")) options.fullscreen = args["fullscreen"].get<bool>();
             if (args.contains("width")) options.width = args["width"].get<int>();
@@ -201,7 +214,10 @@ void McpController::AddSceneFileTools() {
                 std::string error;
                 if (!m_host.document.SetGameOptions(options, error)) throw ToolError(error);
             }
-            return ToolResult::Data({{"fullscreen", options.fullscreen},
+            return ToolResult::Data({{"executable", project->ExecutableName() + ".exe"},
+                                     {"version", identity.version},
+                                     {"icon", identity.icon},
+                                     {"fullscreen", options.fullscreen},
                                      {"width", options.width},
                                      {"height", options.height},
                                      {"vsync", options.vsync},

@@ -32,17 +32,20 @@ struct HostDeTeste final : GameHost {
         ++applied;
     }
     std::vector<Resolution> Resolutions() const override { return {{1280, 720}, {1920, 1080}}; }
+    std::string GameVersion() const override { return "1.2.0"; }
     void QuitGame() override { quit = true; }
 };
 
 // Menu de opções de mentira: no OnStart lê, troca e aplica; no primeiro OnUpdate pede para sair.
 struct MenuOpcoes : Script {
     bool viuPadrao = false;
+    std::string versao;
     int resolucoes = 0;
     void OnStart() override {
         GameOptions o = GetOptions();
         viuPadrao = !o.fullscreen && o.msaa == 4;
         resolucoes = static_cast<int>(Resolutions().size());
+        versao = GameVersion();
         o.fullscreen = true;
         o.msaa = 3;  // vira 2 ou 4 (Clamp): a API corrige antes de passar adiante
         o.shadows = ShadowSetting::Low;
@@ -187,6 +190,7 @@ int main(int argc, char** argv) {
         CHECK(host.options.fullscreen && host.options.shadows == ShadowSetting::Low);
         CHECK(host.options.msaa == 2 || host.options.msaa == 4);
         CHECK(scene.FindByName("Menu")->Get<MenuOpcoes>()->resolucoes == 2);
+        CHECK(scene.FindByName("Menu")->Get<MenuOpcoes>()->versao == "1.2.0");
         CHECK(!host.quit);
         runtime.Update(0.016f);
         CHECK(host.quit);
@@ -200,11 +204,12 @@ int main(int argc, char** argv) {
         editor::PlayHost host;
         GameOptions defaults;
         defaults.msaa = 8;
-        host.Reset(defaults);
+        host.Reset(defaults, "3.0");
         editor::PlayMode play;
         play.SetHost(&host);
         play.Play(scene, kNullEntity);
         CHECK(host.Options().fullscreen && host.Options().shadows == ShadowSetting::Low);
+        CHECK(scene.FindByName("Menu")->Get<MenuOpcoes>()->versao == "3.0");
         CHECK(!host.TakeQuit());
         play.Update(0.016f);
         CHECK(host.TakeQuit());

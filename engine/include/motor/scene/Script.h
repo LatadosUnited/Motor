@@ -169,6 +169,7 @@ protected:
     void ApplyOptions(const GameOptions& options);
     std::vector<Resolution> Resolutions() const;  // de tela cheia, da menor para a maior
     void QuitGame();  // fecha o jogo depois deste passo (no editor, para o Play)
+    std::string GameVersion() const;  // versão do jogo (Arquivo > Configurações do jogo), ex.: "1.0.0"
 
     // --- Temporizadores (tempo do jogo: não contam na pausa) ---
     // Chama `fn` daqui a `seconds` segundos (After) ou a cada `seconds` segundos (Every), antes do OnUpdate

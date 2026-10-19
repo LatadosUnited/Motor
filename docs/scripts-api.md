@@ -163,6 +163,7 @@ tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas se
 | `void ApplyOptions(const GameOptions& options)` | aplica na hora; valores fora do lugar são corrigidos (MSAA 3 vira 2 ou 4) |
 | `std::vector<Resolution> Resolutions() const` | resoluções de tela cheia do monitor (`width`, `height`), da menor para a maior |
 | `void QuitGame()` | fecha o jogo depois deste passo; no editor, para o Play |
+| `std::string GameVersion() const` | a versão do jogo (Arquivo > Configurações do jogo), ex.: `"1.0.0"`, para mostrar no menu |
 
 No jogo exportado, `ApplyOptions` muda a janela, o vsync, o MSAA e as sombras e grava as opções em
 `%APPDATA%\<Jogo>\opcoes.json`: o jogo abre com elas da próxima vez. Na primeira vez valem as padrão do projeto

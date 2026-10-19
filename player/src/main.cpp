@@ -199,6 +199,7 @@ public:
         for (const VideoMode& mode : Window::MonitorModes()) list.push_back({mode.width, mode.height});
         return list;
     }
+    std::string GameVersion() const override { return m_project.Identity().version; }
     void QuitGame() override {
         log::Info("Jogo: fechado por um script (QuitGame)");
         Quit();
@@ -223,7 +224,8 @@ private:
         if (!SceneSerializer::Load(startup, m_scene, m_assets, &error)) {
             return Fail(std::format("Não foi possível abrir a cena inicial '{}': {}", ToUtf8(startup), error));
         }
-        log::Info("Jogo: {} | cena inicial: {}", m_project.Name(), m_project.ToRelative(startup));
+        log::Info("Jogo: {} {} | cena inicial: {}", m_project.Name(), m_project.Identity().version,
+                  m_project.ToRelative(startup));
         StartRuntime();
     }
 

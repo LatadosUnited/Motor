@@ -1,12 +1,14 @@
-// Documento do editor: configurações do jogo (Arquivo > Configurações do jogo, Fase 21). Opções com que o jogo
-// exportado abre da primeira vez (tela cheia, resolução, vsync, MSAA, sombras), gravadas no .mproject. Depois
-// disso valem as do jogador (%APPDATA%\<Jogo>\opcoes.json), que os scripts mudam com Script::ApplyOptions.
+// Documento do editor: configurações do jogo (Arquivo > Configurações do jogo, Fase 21), gravadas no .mproject.
+// Identidade do jogo exportado (nome do .exe, versão, ícone) e as opções com que ele abre da primeira vez (tela
+// cheia, resolução, vsync, MSAA, sombras). Depois disso valem as do jogador (%APPDATA%\<Jogo>\opcoes.json),
+// que os scripts mudam com Script::ApplyOptions.
 
 #include "document/SceneDocument.h"
 
 #include <motor/core/Window.h>
 
 #include <imgui.h>
+#include <imgui_stdlib.h>
 
 #include <algorithm>
 #include <format>
@@ -33,9 +35,94 @@ bool SceneDocument::SetGameOptions(const GameOptions& options, std::string& erro
     return true;
 }
 
+bool SceneDocument::SetGameIdentity(const GameIdentity& identity, std::string& error) {
+    if (!m_project) {
+        error = "nenhum projeto aberto";
+        return false;
+    }
+    if (!identity.executable.empty()) {
+        if (std::string problem = Project::ValidateName(identity.executable); !problem.empty()) {
+            error = "nome do executável: " + problem;
+            return false;
+        }
+    }
+    int parts[4];
+    if (!ParseGameVersion(identity.version, parts)) {
+        error = "a versão precisa ser números separados por ponto (ex.: 1.0.0)";
+        return false;
+    }
+    if (!identity.icon.empty()) {
+        const std::string ext = ToUtf8(PathFromUtf8(identity.icon).extension());
+        std::error_code ec;
+        if ((ext != ".png" && ext != ".ico") || !std::filesystem::is_regular_file(m_project->ToAbsolute(identity.icon), ec)) {
+            error = "o ícone precisa ser um arquivo .png ou .ico do projeto";
+            return false;
+        }
+    }
+    const GameIdentity before = m_project->Identity();
+    m_project->SetIdentity(identity);
+    if (!m_project->Save(&error)) {
+        m_project->SetIdentity(before);
+        return false;
+    }
+    return true;
+}
+
+void SceneDocument::DrawGameIdentity() {
+    // Os campos de texto editam uma cópia, gravada ao sair do campo (não a cada tecla).
+    if (!m_identityEditing) m_identityDraft = m_project->Identity();
+    GameIdentity& draft = m_identityDraft;
+    bool commit = false;
+
+    ImGui::SeparatorText("Identidade");
+    ImGui::InputTextWithHint("Executável", m_project->Name().c_str(), &draft.executable);
+    bool editing = ImGui::IsItemActive();
+    commit |= ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::SetItemTooltip("Nome do .exe exportado (sem \".exe\"). Vazio = o nome do projeto.");
+    ImGui::InputText("Versão", &draft.version);
+    editing |= ImGui::IsItemActive();
+    commit |= ImGui::IsItemDeactivatedAfterEdit();
+    ImGui::SetItemTooltip("Aparece nas propriedades do .exe e em Script::GameVersion. Ex.: 1.0.0");
+    m_identityEditing = editing;
+
+    // Ícone: um .png (até 256x256) ou .ico de Assets/.
+    const std::string iconLabel = draft.icon.empty() ? std::string("(nenhum)") : draft.icon;
+    if (ImGui::BeginCombo("Ícone", iconLabel.c_str())) {
+        if (ImGui::Selectable("(nenhum)", draft.icon.empty())) {
+            draft.icon.clear();
+            commit = true;
+        }
+        std::vector<std::string> icons;
+        std::error_code ec;
+        for (auto it = std::filesystem::recursive_directory_iterator(m_project->AssetsDir(), ec);
+             !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+            const std::string ext = ToUtf8(it->path().extension());
+            if (it->is_regular_file(ec) && (ext == ".png" || ext == ".ico")) icons.push_back(m_project->ToRelative(it->path()));
+        }
+        std::sort(icons.begin(), icons.end());
+        for (const std::string& icon : icons) {
+            if (ImGui::Selectable(icon.c_str(), icon == draft.icon)) {
+                draft.icon = icon;
+                commit = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("Ícone do .exe, da janela e da barra de tarefas. Use um .ico com vários tamanhos ou um "
+                          ".png de 256x256.");
+
+    if (commit && !(draft == m_project->Identity())) {
+        std::string error;
+        if (!SetGameIdentity(draft, error)) {
+            ShowError("Não foi possível salvar a identidade do jogo: " + error);
+            m_identityDraft = m_project->Identity();
+        }
+    }
+}
+
 void SceneDocument::DrawGameSettingsWindow() {
     if (!m_showGameSettingsWindow) return;
-    ImGui::SetNextWindowSize(ImVec2(460.0f, 320.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(480.0f, 430.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Configurações do jogo", &m_showGameSettingsWindow)) {
         ImGui::End();
         return;
@@ -45,6 +132,8 @@ void SceneDocument::DrawGameSettingsWindow() {
         ImGui::End();
         return;
     }
+
+    DrawGameIdentity();
 
     GameOptions options = m_project->DefaultOptions();
     bool changed = false;

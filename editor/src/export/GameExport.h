@@ -3,7 +3,7 @@
 // Exportar o jogo (Fase 10): monta uma pasta que roda o jogo sem o editor.
 //
 //   <saída>/
-//     <Nome do jogo>.exe     o Player (player/), renomeado
+//     <Nome do jogo>.exe     o Player (player/), com o nome, o ícone e a versão das Configurações do jogo
 //     libMotor.dll ...       a engine e as DLLs de runtime do MinGW
 //     engine/                shaders e fontes da engine (motor/core/EngineAssets.h)
 //     Dados/                 o projeto, só com o que o jogo usa:
@@ -61,6 +61,7 @@ struct Options {
     std::filesystem::path runtimeDir;  // pasta com as kRuntimeDlls
     std::filesystem::path engineAssetsDir;  // engine/assets (shaders/ e fonts/)
     std::filesystem::path scriptsDll;  // vazio = projeto sem scripts
+    bool exeResources = true;          // grava o ícone e a versão no .exe (os testes usam um Player falso)
 };
 
 struct Result {

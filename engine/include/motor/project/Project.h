@@ -10,6 +10,14 @@
 
 namespace motor {
 
+// Identidade do jogo exportado (Configurações do jogo, Fase 21).
+struct GameIdentity {
+    std::string executable;        // nome do .exe sem a extensão; vazio = o nome do projeto
+    std::string version = "1.0.0";  // vai para as propriedades do .exe (números separados por ponto)
+    std::string icon;              // .ico ou .png do projeto, relativo à raiz ("Assets/icone.png"); vazio = sem
+    bool operator==(const GameIdentity&) const = default;
+};
+
 // Um projeto é uma pasta com um arquivo <Nome>.mproject e a pasta Assets/:
 //
 //   MeuJogo/
@@ -54,6 +62,11 @@ public:
     const CollisionLayers& Layers() const { return m_layers; }
     void SetLayers(const CollisionLayers& layers) { m_layers = layers; }
 
+    const GameIdentity& Identity() const { return m_identity; }
+    void SetIdentity(const GameIdentity& identity) { m_identity = identity; }
+    // Nome do .exe exportado (sem ".exe"): o da identidade, ou o do projeto se vazio ou inválido.
+    std::string ExecutableName() const;
+
     // Opções com que o jogo exportado abre da primeira vez (antes de o jogador mudar alguma).
     const GameOptions& DefaultOptions() const { return m_options; }
     void SetDefaultOptions(const GameOptions& options) { m_options = options; }
@@ -68,6 +81,10 @@ private:
     mutable std::string m_engineVersion;  // Save (const) grava a versão atual
     CollisionLayers m_layers;
     GameOptions m_options;
+    GameIdentity m_identity;
 };
+
+// "1.2.3" -> {1, 2, 3, 0}: até quatro números (os que faltam são 0); false se tiver algo além de números e pontos.
+bool ParseGameVersion(std::string_view version, int (&parts)[4]);
 
 } // namespace motor

@@ -121,7 +121,8 @@ motor_add_test(test_render)
 
 # Exportar o jogo (Fase 10): assets referenciados (cenas, prefabs, materiais, glTF, fontes, Recursos, scripts) e a
 # pasta exportada (Player, DLLs, engine/, Dados/), com arquivos falsos no lugar do Player e das DLLs.
-motor_add_test(test_export ${PROJECT_SOURCE_DIR}/editor/src/export/GameExport.cpp)
+motor_add_test(test_export ${PROJECT_SOURCE_DIR}/editor/src/export/GameExport.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/export/ExeResources.cpp)
 target_include_directories(test_export PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_export PRIVATE nlohmann_json::nlohmann_json)
 # Áudio (Fase 8) sem dispositivo de som: clipes como assets com GUID, som 3D (distância e lado), som 2D tocado
@@ -191,3 +192,14 @@ motor_add_test(test_game_options
     ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/play/PlayHost.cpp)
 target_include_directories(test_game_options PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Identidade do jogo exportado (Fase 21): versão e nome do .exe no .mproject, ícones .png/.ico e o ícone e a
+# versão gravados como recursos num .exe de verdade (uma cópia do próprio teste), lidos pelas APIs do Windows.
+motor_add_test(test_exe_identity
+    ${PROJECT_SOURCE_DIR}/editor/src/export/GameExport.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/export/ExeResources.cpp)
+target_include_directories(test_exe_identity PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_exe_identity PRIVATE nlohmann_json::nlohmann_json)
+if(WIN32)
+    target_link_libraries(test_exe_identity PRIVATE version)
+endif()

@@ -42,7 +42,7 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
                 return SceneSerializer::Load(file, out, ctx.assets, &error);
             });
             m_mode.SetAssets(&ctx.assets);
-            m_host.Reset(m_defaultOptions);
+            m_host.Reset(m_defaultOptions, m_gameVersion);
             m_mode.SetHost(&m_host);
             m_mode.Play(ctx.scene, ctx.selected);
             return Event::Started;

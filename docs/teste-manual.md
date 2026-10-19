@@ -174,6 +174,9 @@ versão nova, marca o que passou e anota o que não passou. Criado na
   usados.
 - [ ] Rodar o jogo exportado com o editor fechado → abre na cena inicial, som, cursor e scripts funcionam.
 - [ ] Levar a pasta para outro computador sem o Motor (quando houver) → roda igual.
+- [ ] Arquivo > **Configurações do jogo...** → Executável "Meu Jogo", Versão 1.2.0, Ícone um `.png` de 256x256
+  → exportar: a pasta tem `Meu Jogo.exe` com o ícone no Explorer; Propriedades > Detalhes mostram a versão
+  1.2.0; abrindo o jogo, o ícone aparece na janela e na barra de tarefas. Versão "1.0 beta" → erro, não grava.
 - [ ] Arquivo > **Configurações do jogo...** → marcar Tela cheia, MSAA 2x, Sombras Baixas → o `.mproject`
   ganha o bloco `"player"`; exportar e abrir → o jogo abre em tela cheia, título sem FPS.
 - [ ] Menu de opções (guia, `examples/MenuOpcoes.cpp`) no jogo exportado: Tela cheia alterna janela e tela

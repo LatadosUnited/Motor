@@ -51,6 +51,7 @@ add_executable(MotorEditor
     src/mcp/McpSceneTools.cpp
     src/mcp/McpServer.cpp
     src/export/GameExport.cpp
+    src/export/ExeResources.cpp
     src/export/ExportController.cpp
     src/viewport/ColliderOverlay.cpp
     src/viewport/ViewportPrefs.cpp

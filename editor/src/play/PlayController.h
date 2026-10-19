@@ -35,7 +35,10 @@ public:
     Event ApplyRequest(EditorContext& ctx, UndoHistory& history);
     bool Stop(EditorContext& ctx);  // volta à edição; false se já estava editando
     // Opções do jogador com que o próximo Play começa (as padrão do projeto).
-    void SetDefaultOptions(const motor::GameOptions& options) { m_defaultOptions = options; }
+    void SetDefaultOptions(const motor::GameOptions& options, std::string version = {}) {
+        m_defaultOptions = options;
+        m_gameVersion = std::move(version);
+    }
     // MSAA e sombras: as do jogo no Play (Script::ApplyOptions), as do editor fora dele. Antes de desenhar.
     void ApplyQuality(motor::Renderer& renderer) const;
 
@@ -57,6 +60,7 @@ private:
     PlayMode m_mode;
     PlayHost m_host;
     motor::GameOptions m_defaultOptions;
+    std::string m_gameVersion;
     Request m_request = Request::None;
     bool m_gameView = true;  // no Play: true = câmera do jogo, false = câmera livre do editor
     bool m_externalInput = false;

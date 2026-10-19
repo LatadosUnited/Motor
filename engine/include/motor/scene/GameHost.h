@@ -2,6 +2,7 @@
 
 #include "motor/project/GameOptions.h"
 
+#include <string>
 #include <vector>
 
 namespace motor {
@@ -19,6 +20,8 @@ public:
     virtual void ApplyOptions(const GameOptions& options) = 0;
     // Resoluções de tela cheia do monitor principal, da menor para a maior.
     virtual std::vector<Resolution> Resolutions() const = 0;
+    // Versão do jogo (Configurações do jogo), para mostrar no menu.
+    virtual std::string GameVersion() const = 0;
     // Fecha o jogo depois deste passo (no editor, para o Play).
     virtual void QuitGame() = 0;
 };

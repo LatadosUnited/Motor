@@ -578,6 +578,10 @@ std::vector<Resolution> Script::Resolutions() const {
     GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
     return host ? host->Resolutions() : std::vector<Resolution>{};
 }
+std::string Script::GameVersion() const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->GameVersion() : std::string();
+}
 void Script::QuitGame() {
     if (GameHost* host = m_runtime ? m_runtime->Host() : nullptr) host->QuitGame();
 }

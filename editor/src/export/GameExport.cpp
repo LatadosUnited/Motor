@@ -1,5 +1,7 @@
 #include "export/GameExport.h"
 
+#include "export/ExeResources.h"
+
 #include <motor/assets/AssetLibrary.h>
 #include <motor/assets/AssetLoaders.h>
 #include <motor/core/EngineAssets.h>
@@ -317,13 +319,31 @@ Result Export(const motor::Project& project, const motor::AssetDatabase& db, con
         return result;
     }
 
+    // Ícone do jogo: lido antes de mexer na pasta, para um arquivo errado não deixar a exportação pela metade.
+    std::vector<ExeResources::IconImage> icon;
+    if (const std::string& iconFile = project.Identity().icon; !iconFile.empty()) {
+        std::string iconError;
+        if (!ExeResources::ReadIcon(project.ToAbsolute(iconFile), icon, iconError)) {
+            SetError(result, std::format("Ícone do jogo ({}): {}. Troque em Arquivo > Configurações do jogo.",
+                                         iconFile, iconError));
+            return result;
+        }
+    }
+
     const Collection assets = CollectAssets(project, db);
     if (!PrepareOutput(out, result)) return result;
 
     // --- Cópia ---
     const fs::path data = out / kDataFolder;
-    const std::string exeName = project.Name() + ".exe";
+    const std::string exeName = project.ExecutableName() + ".exe";
     if (!CopyFile(options.playerExe, out / PathFromUtf8(exeName), result)) return result;
+    if (options.exeResources) {
+        std::string resourceError;
+        const ExeResources::VersionInfo version{project.Name(), project.Identity().version, exeName};
+        if (!ExeResources::Apply(out / PathFromUtf8(exeName), icon, version, resourceError)) {
+            result.warnings.push_back("o jogo foi exportado sem o ícone e a versão: " + resourceError);
+        }
+    }
     for (const char* dll : kRuntimeDlls) {
         if (!CopyFile(options.runtimeDir / dll, out / dll, result)) return result;
     }
@@ -362,6 +382,7 @@ Result Export(const motor::Project& project, const motor::AssetDatabase& db, con
     marker["format"] = "motor-export";
     marker["version"] = 1;
     marker["game"] = project.Name();
+    marker["gameVersion"] = project.Identity().version;
     marker["startupScene"] = startup;
     marker["entries"] = std::move(entries);
     std::ofstream(out / kMarkerFile, std::ios::binary) << marker.dump(2, ' ', false, json::error_handler_t::replace) << '\n';
@@ -369,7 +390,7 @@ Result Export(const motor::Project& project, const motor::AssetDatabase& db, con
     result.ok = true;
     result.executable = out / PathFromUtf8(exeName);
     result.assets = assets.files;
-    result.warnings = assets.missing;
+    result.warnings.insert(result.warnings.begin(), assets.missing.begin(), assets.missing.end());
     for (const std::string& w : result.warnings) motor::log::Warn("Exportar: {}", w);
     motor::log::Info("Jogo exportado em {}: {} asset(s), {:.1f} MB", ToUtf8(out), result.assets.size(),
                      static_cast<double>(result.bytes) / (1024.0 * 1024.0));

@@ -7,8 +7,9 @@ namespace editor {
 
 using namespace motor;
 
-void PlayHost::Reset(const GameOptions& defaults) {
+void PlayHost::Reset(const GameOptions& defaults, std::string version) {
     m_options = defaults;
+    m_version = std::move(version);
     m_options.Clamp();
     m_quit = false;
     m_warnedDisplay = false;
