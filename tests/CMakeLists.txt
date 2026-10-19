@@ -121,7 +121,8 @@ motor_add_test(test_render)
 
 # Exportar o jogo (Fase 10): assets referenciados (cenas, prefabs, materiais, glTF, fontes, Recursos, scripts) e a
 # pasta exportada (Player, DLLs, engine/, Dados/), com arquivos falsos no lugar do Player e das DLLs.
-motor_add_test(test_export ${PROJECT_SOURCE_DIR}/editor/src/export/GameExport.cpp)
+motor_add_test(test_export ${PROJECT_SOURCE_DIR}/editor/src/export/GameExport.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/export/ExeResources.cpp)
 target_include_directories(test_export PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_export PRIVATE nlohmann_json::nlohmann_json)
 # Áudio (Fase 8) sem dispositivo de som: clipes como assets com GUID, som 3D (distância e lado), som 2D tocado
@@ -184,3 +185,43 @@ target_include_directories(test_hierarchy_search PRIVATE ${PROJECT_SOURCE_DIR}/e
 # Prefab dentro de prefab (Fase 20): aninhar ao criar e aplicar, o de fora seguindo o de dentro, gravar e
 # reabrir, recusar ciclos e desvincular voltando a ser instância do de dentro.
 motor_add_test(test_prefab_nested)
+
+# Opções do jogador (Fase 21): JSON, opcoes.json, padrão no .mproject, pasta de dados e a API dos scripts com um
+# GameHost (de teste e o do Play do editor).
+motor_add_test(test_game_options
+    ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/play/PlayHost.cpp)
+target_include_directories(test_game_options PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Identidade do jogo exportado (Fase 21): versão e nome do .exe no .mproject, ícones .png/.ico e o ícone e a
+# versão gravados como recursos num .exe de verdade (uma cópia do próprio teste), lidos pelas APIs do Windows.
+motor_add_test(test_exe_identity
+    ${PROJECT_SOURCE_DIR}/editor/src/export/GameExport.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/export/ExeResources.cpp)
+target_include_directories(test_exe_identity PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_exe_identity PRIVATE nlohmann_json::nlohmann_json)
+if(WIN32)
+    target_link_libraries(test_exe_identity PRIVATE version)
+endif()
+
+# Motor em Release para a exportação (Fase 21): qual pasta serve (Player, DLLs e SDK de Release) e as pastas da DLL
+# de scripts de Release. Sem compilar nada.
+motor_add_test(test_release_runtime
+    ${PROJECT_SOURCE_DIR}/editor/src/export/ReleaseRuntime.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/scripts/ScriptProject.cpp)
+target_include_directories(test_release_runtime PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_release_runtime PRIVATE nlohmann_json::nlohmann_json)
+
+# Progresso salvo (Fase 21): SaveData (tipos, arquivo, .corrompido), SaveStore (slots) e a API dos scripts, de um
+# jogo para o seguinte e no Play do editor.
+motor_add_test(test_save_data
+    ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/play/PlayHost.cpp)
+target_include_directories(test_save_data PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Controle e mapa de ações (Fase 21): nomes, mapa padrão, JSON, valores com teclas e controle simulado, .mproject e
+# a API dos scripts. Sem janela (o controle é simulado no estado do motor::Input).
+motor_add_test(test_input_actions)
+
+# Tela de carregamento (Fase 21): a padrão (layout em vários tamanhos de tela) e a cena do projeto no .mproject.
+motor_add_test(test_loading_screen)

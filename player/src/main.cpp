@@ -3,12 +3,19 @@
 //   <Jogo>.exe                    abre a pasta Dados/ ao lado do executável (jogo exportado)
 //   Player.exe "<pasta ou .mproject>"   roda um projeto direto (para testar sem exportar)
 //   --quadros N                   fecha sozinho depois de N quadros (testes automáticos)
+//   --janela                      abre em janela mesmo com tela cheia nas opções
+//   --opcoes "<arquivo>"          opções do jogador neste arquivo, não em %APPDATA%\<Jogo>\opcoes.json
 //
 // Abre o projeto, carrega a DLL de scripts, abre a cena inicial e roda o jogo como o Play do editor: o mesmo
 // SceneRuntime (scripts, física, HUD e os outros sistemas registrados), a câmera principal da cena e a UI
 // por cima. O log vai para "<Jogo>.log" ao lado do executável (ou na pasta temporária).
+//
+// Opções do jogador (tela cheia, resolução, vsync, MSAA, sombras): as padrão do projeto, trocadas pelas do
+// opcoes.json se ele existir; os scripts mudam e gravam com Script::ApplyOptions (GameHost). Saves dos scripts
+// (Script::SaveSlot) em %APPDATA%\<Jogo>\saves\, gravados também ao fechar.
 
 #include <motor/Motor.h>
+#include <motor/app/GameQuality.h>
 #include <motor/scene/ScriptModule.h>
 
 #include <algorithm>
@@ -37,10 +44,15 @@ namespace {
 constexpr const char* kDataFolder = "Dados";
 constexpr const char* kScriptsDll = "GameScripts.dll";
 
-struct Options {
+struct LaunchOptions {
     fs::path project;  // pasta ou .mproject; vazio = <pasta do executável>/Dados
     int frames = 0;    // > 0: fecha depois desse número de quadros
+    bool windowed = false;  // --janela
+    fs::path optionsFile;   // --opcoes; vazio = %APPDATA%\<Jogo>\opcoes.json
 };
+
+constexpr const char* kOptionsFile = "opcoes.json";
+constexpr const char* kSavesFolder = "saves";
 
 std::vector<std::string> Arguments(int argc, char** argv) {
     std::vector<std::string> args;
@@ -158,10 +170,47 @@ private:
     std::vector<const ComponentType*> m_types;
 };
 
-class Player final : public Application {
+class Player final : public Application, public GameHost {
 public:
-    Player(Project project, const Options& options, const ApplicationDesc& desc)
-        : Application(desc), m_project(std::move(project)), m_options(options) {}
+    Player(Project project, const LaunchOptions& options, const GameOptions& gameOptions, const ApplicationDesc& desc)
+        : Application(desc), m_project(std::move(project)), m_options(options), m_gameOptions(gameOptions) {
+        // Saves em %APPDATA%\<Jogo>\saves\ (sem pasta de usuário: só na memória).
+        if (const fs::path data = PlayerDataDir(m_project.Name()); !data.empty()) m_saves = SaveStore(data / kSavesFolder);
+    }
+
+    // GameHost (scripts)
+    GameOptions Options() const override { return m_gameOptions; }
+    void ApplyOptions(const GameOptions& options) override {
+        const GameOptions before = m_gameOptions;
+        m_gameOptions = options;
+        m_gameOptions.Clamp();
+        Window& window = GetWindow();
+        if (m_gameOptions.fullscreen != before.fullscreen || m_gameOptions.width != before.width ||
+            m_gameOptions.height != before.height) {
+            window.SetDisplayMode(m_gameOptions.fullscreen, m_gameOptions.width, m_gameOptions.height);
+        }
+        window.SetVSync(m_gameOptions.vsync);  // trocar de tela cheia pode desfazer o vsync em alguns drivers
+        ApplyGameQuality(GetRenderer(), m_gameOptions);
+        std::string error;
+        if (!m_options.optionsFile.empty() && !SaveGameOptions(m_options.optionsFile, m_gameOptions, &error)) {
+            log::Error("Não foi possível gravar as opções: {}", error);
+        }
+        log::Info("Opções do jogador: {}, {}x{}, vsync {}, MSAA {}x, sombras {}",
+                  m_gameOptions.fullscreen ? "tela cheia" : "janela", m_gameOptions.width, m_gameOptions.height,
+                  m_gameOptions.vsync ? "ligado" : "desligado", m_gameOptions.msaa, ShadowSettingName(m_gameOptions.shadows));
+    }
+    std::vector<Resolution> Resolutions() const override {
+        std::vector<Resolution> list;
+        for (const VideoMode& mode : Window::MonitorModes()) list.push_back({mode.width, mode.height});
+        return list;
+    }
+    std::string GameVersion() const override { return m_project.Identity().version; }
+    SaveStore& Saves() override { return m_saves; }
+    const InputActions& Actions() const override { return m_project.Actions(); }
+    void QuitGame() override {
+        log::Info("Jogo: fechado por um script (QuitGame)");
+        Quit();
+    }
 
     bool Failed() const { return !m_fatal.empty(); }
     const std::string& FatalError() const { return m_fatal; }
@@ -172,8 +221,11 @@ private:
         m_assets.SetRoot(m_project.RootDir());
         PhysicsSettings::Global().layers = m_project.Layers();  // camadas de colisão do projeto
         m_ui = std::make_unique<UiRenderer>();
+        ApplyGameQuality(GetRenderer(), m_gameOptions);
 
         std::string error;
+        PrepareLoadingScreen();
+        ShowLoadingScreen();
         if (!m_scripts.Load(m_project.RootDir(), error)) return Fail(error);
 
         const fs::path startup = m_project.StartupScene();
@@ -181,7 +233,8 @@ private:
         if (!SceneSerializer::Load(startup, m_scene, m_assets, &error)) {
             return Fail(std::format("Não foi possível abrir a cena inicial '{}': {}", ToUtf8(startup), error));
         }
-        log::Info("Jogo: {} | cena inicial: {}", m_project.Name(), m_project.ToRelative(startup));
+        log::Info("Jogo: {} {} | cena inicial: {}", m_project.Name(), m_project.Identity().version,
+                  m_project.ToRelative(startup));
         StartRuntime();
     }
 
@@ -193,6 +246,7 @@ private:
 
     void OnUpdate(float dt) override {
         if (Failed()) return Quit();  // o erro do OnInit (o Run só começa a valer o Quit depois dele)
+        GetWindow().Show();  // se a tela de carregamento não chegou a aparecer
         if (!m_runtime) return;
         // Mouse para os botões da UI do jogo, na tela inteira.
         if (UiSystem* ui = m_runtime->GetSystem<UiSystem>()) {
@@ -212,26 +266,58 @@ private:
 
     void OnRender(Renderer& renderer) override {
         if (!m_runtime) return;
+        DrawScene(renderer, m_scene, true);
+    }
+
+    // A cena pela câmera principal e a UI por cima. Sem câmera: de um ponto fixo olhando a origem (`fallbackCamera`)
+    // ou só a UI (a tela de carregamento pode ser só imagem e texto).
+    void DrawScene(Renderer& renderer, Scene& scene, bool fallbackCamera) {
         const Window& window = GetWindow();
-        // Pela câmera principal da cena; sem ela, de um ponto fixo olhando a origem.
         Camera camera;
-        if (!m_scene.ApplyCamera(m_scene.FindMainCamera(), camera)) {
-            if (!m_warnedCamera) log::Warn("A cena não tem câmera principal: usando uma câmera fixa");
-            m_warnedCamera = true;
-            camera.position = {0.0f, 3.0f, 8.0f};
-            camera.LookAt({0.0f, 0.0f, 0.0f});
+        const bool hasCamera = scene.ApplyCamera(scene.FindMainCamera(), camera);
+        if (hasCamera || fallbackCamera) {
+            if (!hasCamera) {
+                if (!m_warnedCamera) log::Warn("A cena não tem câmera principal: usando uma câmera fixa");
+                m_warnedCamera = true;
+                camera.position = {0.0f, 3.0f, 8.0f};
+                camera.LookAt({0.0f, 0.0f, 0.0f});
+            }
+            camera.aspect = window.AspectRatio();
+            renderer.BeginScene(camera, scene.CollectLights(), scene.environment);
+            scene.SubmitTo(renderer);
+            renderer.EndScene();
         }
-        camera.aspect = window.AspectRatio();
-        renderer.BeginScene(camera, m_scene.CollectLights(), m_scene.environment);
-        m_scene.SubmitTo(renderer);
-        renderer.EndScene();
-        m_ui->Render(m_scene, m_assets, window.Width(), window.Height());
+        m_ui->Render(scene, m_assets, window.Width(), window.Height());
+    }
+
+    // Tela de carregamento: a cena do projeto (Configurações do jogo), ou a padrão se não houver ou não abrir.
+    void PrepareLoadingScreen() {
+        const std::string& file = m_project.Identity().loadingScene;
+        if (!file.empty()) {
+            std::string error;
+            if (SceneSerializer::Load(m_project.ToAbsolute(file), m_loadingScene, m_assets, &error)) return;
+            log::Warn("Tela de carregamento '{}' não abriu ({}): usando a padrão", file, error);
+        }
+        m_loadingScene = DefaultLoadingScene();
+    }
+
+    // Desenha a tela de carregamento e mostra já (o carregamento a seguir trava o loop até terminar).
+    void ShowLoadingScreen() {
+        Window& window = GetWindow();
+        if (window.IsMinimized()) return;
+        Renderer& renderer = GetRenderer();
+        renderer.BeginFrame(window.Width(), window.Height());
+        DrawScene(renderer, m_loadingScene, false);
+        window.SwapBuffers();
+        window.Show();
     }
 
     void OnShutdown() override {
         if (m_runtime) m_runtime->Stop();
         m_runtime.reset();
+        m_saves.SaveAll();  // o que os scripts mudaram e não gravaram (também no OnDestroy)
         m_scene = Scene();  // os componentes dos scripts somem antes de descarregar a DLL
+        m_loadingScene = Scene();
         m_ui.reset();
         m_scripts.Unload();
     }
@@ -239,6 +325,7 @@ private:
     void StartRuntime() {
         m_runtime = std::make_unique<SceneRuntime>(m_scene);
         m_runtime->SetAssets(&m_assets);
+        m_runtime->SetHost(this);
         m_runtime->Start();
     }
 
@@ -247,6 +334,7 @@ private:
         if (!m_runtime || !m_runtime->HasSceneRequest()) return;
         const std::string request = m_runtime->TakeSceneRequest();
         const fs::path file = FindSceneFile(m_assets, request);
+        if (!file.empty()) ShowLoadingScreen();
         Scene next;
         std::string error = "cena não encontrada no jogo";
         if (file.empty() || !SceneSerializer::Load(file, next, m_assets, &error)) {
@@ -265,10 +353,13 @@ private:
     void Fail(std::string message) { m_fatal = std::move(message); }
 
     Project m_project;
-    Options m_options;
+    LaunchOptions m_options;
+    GameOptions m_gameOptions;
+    SaveStore m_saves;
     AssetLibrary m_assets;
     ScriptLibrary m_scripts;  // declarado antes da cena: é destruído depois dela
     Scene m_scene;
+    Scene m_loadingScene;
     std::unique_ptr<SceneRuntime> m_runtime;
     std::unique_ptr<UiRenderer> m_ui;
     std::string m_fatal;
@@ -279,11 +370,15 @@ private:
 } // namespace
 
 int main(int argc, char** argv) {
-    Options options;
+    LaunchOptions options;
     const std::vector<std::string> args = Arguments(argc, argv);
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "--quadros" && i + 1 < args.size()) {
             options.frames = std::atoi(args[++i].c_str());
+        } else if (args[i] == "--janela") {
+            options.windowed = true;
+        } else if (args[i] == "--opcoes" && i + 1 < args.size()) {
+            options.optionsFile = PathFromUtf8(args[++i]);
         } else if (!args[i].starts_with("--")) {
             options.project = PathFromUtf8(args[i]);
         }
@@ -298,10 +393,34 @@ int main(int argc, char** argv) {
     }
     LogFile logFile(project->Name());
 
+    // Opções do jogador: as do arquivo, ou as padrão do projeto na primeira vez.
+    if (options.optionsFile.empty()) {
+        const fs::path dataDir = PlayerDataDir(project->Name());
+        if (!dataDir.empty()) options.optionsFile = dataDir / kOptionsFile;
+    }
+    GameOptions gameOptions = project->DefaultOptions();
+    gameOptions.Clamp();
+    if (!options.optionsFile.empty()) {
+        std::string optionsError;
+        std::error_code ec;
+        if (LoadGameOptions(options.optionsFile, gameOptions, gameOptions, &optionsError)) {
+            log::Info("Opções do jogador: {}", ToUtf8(options.optionsFile));
+        } else if (fs::exists(options.optionsFile, ec)) {
+            log::Warn("Opções do jogador ignoradas ({}): usando as padrão do projeto", optionsError);
+        }
+    }
+    if (options.windowed) gameOptions.fullscreen = false;
+
     try {
         ApplicationDesc desc;
         desc.window.title = project->Name();
-        Player player(std::move(*project), options, desc);
+        desc.window.fullscreen = gameOptions.fullscreen;
+        desc.window.width = gameOptions.width;
+        desc.window.height = gameOptions.height;
+        desc.window.vsync = gameOptions.vsync;
+        desc.window.visible = false;  // aparece já com a tela de carregamento (ShowLoadingScreen)
+        desc.statsInTitle = false;
+        Player player(std::move(*project), options, gameOptions, desc);
         player.Run();
         if (player.Failed()) {
             ShowFatal(player.FatalError());

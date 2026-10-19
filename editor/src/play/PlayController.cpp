@@ -1,6 +1,10 @@
 #include "play/PlayController.h"
 
+#include <motor/app/GameQuality.h>
+#include <motor/core/Log.h>
+
 #include <algorithm>
+#include <format>
 #include <utility>
 
 namespace editor {
@@ -39,6 +43,9 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
                 return SceneSerializer::Load(file, out, ctx.assets, &error);
             });
             m_mode.SetAssets(&ctx.assets);
+            m_host.Reset(m_gameInfo.options, m_gameInfo.version, m_gameInfo.savesFolder);
+            m_host.SetActions(m_gameInfo.actions);
+            m_mode.SetHost(&m_host);
             m_mode.Play(ctx.scene, ctx.selected);
             return Event::Started;
         case Request::Pause: m_mode.SetPaused(!m_mode.IsPaused()); break;
@@ -48,9 +55,14 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
     return Event::None;
 }
 
+void PlayController::ApplyQuality(Renderer& renderer) const {
+    ApplyGameQuality(renderer, m_mode.IsActive() ? m_host.Options() : GameOptions{});
+}
+
 bool PlayController::Stop(EditorContext& ctx) {
     if (!m_mode.IsActive()) return false;
     m_mode.Stop(ctx.scene, ctx.selected);
+    m_host.Saves().SaveAll();  // o que os scripts mudaram e não gravaram (também no OnDestroy)
     ctx.pendingDelete = kNullEntity;
     ctx.ForgetAngles();  // o Inspector recalcula os ângulos da cena restaurada
     return true;
@@ -63,6 +75,10 @@ void PlayController::Update(float dt, bool viewportFocused, bool gameWindowFocus
                     (m_sideBySide ? gameWindowFocused : InGameView() && viewportFocused);
     if (SceneRuntime* runtime = m_mode.Runtime()) runtime->SetInputEnabled(m_externalInput || m_gameFocused);
     m_mode.Update(dt);
+    if (m_host.TakeQuit() && m_mode.IsActive()) {
+        log::Info("QuitGame: o jogo pediu para fechar; parando o Play");
+        m_request = Request::Stop;
+    }
     UpdateCursor(window);
 }
 
@@ -89,6 +105,15 @@ void PlayController::UpdateCursor(motor::Window& window) {
     m_appliedCursor = want;
 }
 
+int PlayController::DeletePlaySaves() {
+    SaveStore store(m_gameInfo.savesFolder);
+    int count = 0;
+    for (const std::string& slot : store.List()) count += store.Delete(slot) ? 1 : 0;
+    if (m_mode.IsActive()) m_host.Saves().Forget();
+    log::Info("Saves do Play apagados: {}", count);
+    return count;
+}
+
 void PlayController::DrawMenu() {
     if (!ImGui::BeginMenu("Jogo")) return;
     const bool active = m_mode.IsActive();
@@ -106,6 +131,14 @@ void PlayController::DrawMenu() {
     if (ImGui::MenuItem("Cena e Jogo lado a lado", nullptr, m_sideBySide)) m_sideBySide = !m_sideBySide;
     ImGui::SetItemTooltip("Janela Jogo ao lado do Viewport: o jogo roda nela (clique para jogar) e o Viewport\n"
                           "continua na câmera do editor, para mexer na cena enquanto joga.");
+    ImGui::Separator();
+    const int saves = m_gameInfo.savesFolder.empty() ? 0 : static_cast<int>(SaveStore(m_gameInfo.savesFolder).List().size());
+    if (ImGui::MenuItem(saves > 0 ? std::format("Apagar saves do Play ({})", saves).c_str() : "Apagar saves do Play",
+                        nullptr, false, saves > 0)) {
+        DeletePlaySaves();
+    }
+    ImGui::SetItemTooltip("Os saves dos scripts (SaveSlot) no Play ficam em <projeto>/.motor/saves, separados dos\n"
+                          "do jogo exportado. Apagar = começar como um jogador novo.");
     ImGui::EndMenu();
 }
 

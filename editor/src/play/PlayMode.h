@@ -35,6 +35,8 @@ public:
     using SceneLoader = std::function<bool(const std::string& request, motor::Scene& out, std::string& error)>;
     void SetSceneLoader(SceneLoader loader) { m_loader = std::move(loader); }
     void SetAssets(motor::AssetLibrary* assets) { m_assets = assets; }
+    // Quem atende os scripts (opções do jogador, sair); passado a cada runtime criado. Opcional.
+    void SetHost(motor::GameHost* host) { m_host = host; }
     int ScenesLoaded() const { return m_scenesLoaded; }  // trocas feitas neste Play
 
     motor::SceneRuntime* Runtime() { return m_runtime.get(); }
@@ -52,6 +54,7 @@ private:
     std::unique_ptr<motor::SceneRuntime> m_runtime;
     motor::Scene* m_scene = nullptr;  // a cena do editor, onde o jogo roda
     motor::AssetLibrary* m_assets = nullptr;
+    motor::GameHost* m_host = nullptr;
     SceneLoader m_loader;
     int m_scenesLoaded = 0;
     bool m_paused = false;

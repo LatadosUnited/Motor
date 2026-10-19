@@ -9,6 +9,7 @@ add_executable(MotorEditor
     src/panels/InspectorPanel.cpp
     src/play/PlayController.cpp
     src/play/PlayMode.cpp
+    src/play/PlayHost.cpp
     src/play/GameView.cpp
     src/panels/ProjectPanel.cpp
     src/panels/ProjectPanelDraw.cpp
@@ -18,6 +19,8 @@ add_executable(MotorEditor
     src/document/SceneDocumentProject.cpp
     src/document/SceneDocumentUi.cpp
     src/document/SceneDocumentLayers.cpp
+    src/document/SceneDocumentGame.cpp
+    src/document/SceneDocumentControls.cpp
     src/panels/ScenePanel.cpp
     src/viewport/SceneViewport.cpp
     src/viewport/SceneViewportOverlay.cpp
@@ -49,6 +52,8 @@ add_executable(MotorEditor
     src/mcp/McpSceneTools.cpp
     src/mcp/McpServer.cpp
     src/export/GameExport.cpp
+    src/export/ExeResources.cpp
+    src/export/ReleaseRuntime.cpp
     src/export/ExportController.cpp
     src/viewport/ColliderOverlay.cpp
     src/viewport/ViewportPrefs.cpp
@@ -82,3 +87,10 @@ add_custom_command(TARGET MotorEditor POST_BUILD
 
 # Arquivo > Exportar jogo copia o Player.exe de build/bin: compilar o editor compila o Player junto.
 add_dependencies(MotorEditor Player)
+
+# Fase 21: Motor em Release para a exportação (src/export/ReleaseRuntime.h). Quem compila o Motor em Debug pode ter
+# um build de Release ao lado (cmake -B build-release -DCMAKE_BUILD_TYPE=Release); o pacote (motor_package) leva
+# uma cópia dele em release/.
+set(MOTOR_RELEASE_BIN_DIR "${PROJECT_SOURCE_DIR}/build-release/bin" CACHE PATH
+    "Pasta bin de um build do Motor em Release, usada ao exportar jogos e pelo motor_package")
+target_compile_definitions(MotorEditor PRIVATE MOTOR_RELEASE_BIN_DIR="${MOTOR_RELEASE_BIN_DIR}")

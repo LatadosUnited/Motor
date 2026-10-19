@@ -165,6 +165,101 @@ void McpController::AddSceneFileTools() {
             return ToolResult::Data({{"layers", std::move(list)}});
         },
     });
+
+    m_protocol.AddTool({
+        .name = "input_actions",
+        .description = "Lê ou muda o mapa de ações do projeto (como Arquivo > Controles): cada ação (\"Pular\", "
+                       "\"Horizontal\") com as entradas (key, mouse, gamepad ou axis, e scale -1 para o lado "
+                       "negativo de um eixo). Os scripts usam IsActionDown/WasActionPressed/GetAxis. Sem argumentos, só "
+                       "lê. actions substitui o mapa inteiro; reset volta ao padrão. Grava o .mproject.",
+        .inputSchema = Schema({{"actions", Prop("array", "[{\"name\": \"Pular\", \"bindings\": [{\"key\": \"Space\"}, "
+                                                         "{\"gamepad\": \"A\"}]}, {\"name\": \"Horizontal\", "
+                                                         "\"bindings\": [{\"key\": \"A\", \"scale\": -1}, "
+                                                         "{\"axis\": \"LeftX\"}]}]")},
+                               {"reset", Prop("boolean", "true = mapa padrão")}}),
+        .run = [this](const Json& args) {
+            const Project* project = m_host.document.GetProject();
+            if (!project) throw ToolError("nenhum projeto aberto");
+            InputActions actions = project->Actions();
+            std::string problems;
+            if (args.value("reset", false)) actions = InputActions::Defaults();
+            if (args.contains("actions")) {
+                if (!actions.FromJson(Json{{"actions", args["actions"]}}.dump(), &problems)) throw ToolError(problems);
+            }
+            if (!(actions == project->Actions())) {
+                std::string error;
+                if (!m_host.document.SetInputActions(actions, error)) throw ToolError(error);
+            }
+            Json result = Json::parse(actions.ToJson());
+            if (!problems.empty()) result["warnings"] = problems;
+            result["gamepad"] = Input::IsGamepadConnected() ? Input::GamepadName() : std::string();
+            return ToolResult::Data(result);
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "game_settings",
+        .description = "Lê ou muda as configurações do jogo (como Arquivo > Configurações do jogo): identidade do jogo "
+                       "exportado (nome do .exe, versão, ícone) e as opções com que ele abre da primeira vez. Sem "
+                       "argumentos, só lê. Grava o .mproject.",
+        .inputSchema = Schema({{"executable", Prop("string", "nome do .exe sem a extensão (vazio = o nome do projeto)")},
+                               {"version", Prop("string", "versão do jogo: números separados por ponto (1.0.0)")},
+                               {"icon", Prop("string", "ícone .png (até 256x256) ou .ico, relativo ao projeto "
+                                                       "(\"Assets/icone.png\"); vazio = sem ícone")},
+                               {"loading_scene", Prop("string", "cena da tela de carregamento, relativa ao projeto; "
+                                                                "vazio = a padrão (\"Carregando...\")")},
+                               {"fullscreen", Prop("boolean", "tela cheia")},
+                               {"width", Prop("integer", "largura (0 = padrão: 1280 em janela, a da tela em tela cheia)")},
+                               {"height", Prop("integer", "altura (0 = padrão)")},
+                               {"vsync", Prop("boolean", "sincronizar com a tela")},
+                               {"msaa", Prop("integer", "amostras de MSAA: 1 (sem), 2, 4 ou 8")},
+                               {"shadows", Prop("string", "desligadas, baixas, medias ou altas")}}),
+        .run = [this](const Json& args) {
+            const Project* project = m_host.document.GetProject();
+            if (!project) throw ToolError("nenhum projeto aberto");
+            GameIdentity identity = project->Identity();
+            if (args.contains("executable")) identity.executable = args["executable"].get<std::string>();
+            if (args.contains("version")) identity.version = args["version"].get<std::string>();
+            if (args.contains("icon")) identity.icon = args["icon"].get<std::string>();
+            if (args.contains("loading_scene")) identity.loadingScene = args["loading_scene"].get<std::string>();
+            if (!(identity == project->Identity())) {
+                std::string error;
+                if (!m_host.document.SetGameIdentity(identity, error)) throw ToolError(error);
+            }
+            GameOptions options = project->DefaultOptions();
+            if (args.contains("fullscreen")) options.fullscreen = args["fullscreen"].get<bool>();
+            if (args.contains("width")) options.width = args["width"].get<int>();
+            if (args.contains("height")) options.height = args["height"].get<int>();
+            if (args.contains("vsync")) options.vsync = args["vsync"].get<bool>();
+            if (args.contains("msaa")) options.msaa = args["msaa"].get<int>();
+            if (args.contains("shadows")) {
+                const std::string name = args["shadows"].get<std::string>();
+                bool found = false;
+                for (ShadowSetting s : {ShadowSetting::Off, ShadowSetting::Low, ShadowSetting::Medium, ShadowSetting::High}) {
+                    if (name == ShadowSettingName(s)) {
+                        options.shadows = s;
+                        found = true;
+                    }
+                }
+                if (!found) throw ToolError("shadows: use desligadas, baixas, medias ou altas");
+            }
+            options.Clamp();
+            if (!(options == project->DefaultOptions())) {
+                std::string error;
+                if (!m_host.document.SetGameOptions(options, error)) throw ToolError(error);
+            }
+            return ToolResult::Data({{"executable", project->ExecutableName() + ".exe"},
+                                     {"version", identity.version},
+                                     {"icon", identity.icon},
+                                     {"loading_scene", identity.loadingScene},
+                                     {"fullscreen", options.fullscreen},
+                                     {"width", options.width},
+                                     {"height", options.height},
+                                     {"vsync", options.vsync},
+                                     {"msaa", options.msaa},
+                                     {"shadows", ShadowSettingName(options.shadows)}});
+        },
+    });
 }
 
 // --- Arquivos: assets, prefabs, modelos, materiais ---------------------------------------------------

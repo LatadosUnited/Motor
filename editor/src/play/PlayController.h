@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorContext.h"
+#include "play/PlayHost.h"
 #include "play/PlayMode.h"
 #include "UndoHistory.h"
 
@@ -33,6 +34,21 @@ public:
     void SetExternalInput(bool enabled) { m_externalInput = enabled; }
     Event ApplyRequest(EditorContext& ctx, UndoHistory& history);
     bool Stop(EditorContext& ctx);  // volta à edição; false se já estava editando
+    // Do projeto aberto, para o próximo Play: opções padrão do jogador, versão do jogo e a pasta dos saves do Play
+    // (<projeto>/.motor/saves; vazia sem projeto).
+    struct GameInfo {
+        motor::GameOptions options;
+        std::string version;
+        std::filesystem::path savesFolder;
+        motor::InputActions actions = motor::InputActions::Defaults();
+    };
+    void SetGameInfo(GameInfo info) { m_gameInfo = std::move(info); }
+    // Jogo > Apagar saves do Play: apaga os .json da pasta dos saves. Devolve quantos apagou.
+    int DeletePlaySaves();
+    const std::filesystem::path& PlaySavesFolder() const { return m_gameInfo.savesFolder; }
+    motor::SaveStore* PlaySaves() { return m_mode.IsActive() ? &m_host.Saves() : nullptr; }
+    // MSAA e sombras: as do jogo no Play (Script::ApplyOptions), as do editor fora dele. Antes de desenhar.
+    void ApplyQuality(motor::Renderer& renderer) const;
 
     // `viewportFocused` e `gameWindowFocused`: o jogo só lê teclado/mouse com a janela que o mostra em foco (o
     // Viewport pela câmera do jogo, ou a janela Jogo no modo lado a lado). O cursor pedido pelo jogo
@@ -50,6 +66,8 @@ public:
 private:
     void UpdateCursor(motor::Window& window);
     PlayMode m_mode;
+    PlayHost m_host;
+    GameInfo m_gameInfo;
     Request m_request = Request::None;
     bool m_gameView = true;  // no Play: true = câmera do jogo, false = câmera livre do editor
     bool m_externalInput = false;

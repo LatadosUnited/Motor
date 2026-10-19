@@ -191,6 +191,7 @@ void EditorApp::OnUpdate(float dt) {
 }
 
 void EditorApp::OnRender(Renderer& renderer) {
+    m_play.ApplyQuality(renderer);
     m_viewport.Render(renderer, m_ctx, m_play.InGameView());
     if (m_play.SideBySide()) m_gameView.Render(renderer, m_ctx);
 }
@@ -291,6 +292,13 @@ void EditorApp::OnShutdown() {
 }
 
 void EditorApp::ApplyPlayRequest() {
+    const motor::Project* project = m_document.GetProject();
+    if (project) {
+        m_play.SetGameInfo({project->DefaultOptions(), project->Identity().version,
+                            project->RootDir() / ".motor" / "saves", project->Actions()});
+    } else {
+        m_play.SetGameInfo({});
+    }
     switch (m_play.ApplyRequest(m_ctx, m_history)) {
         case PlayController::Event::None: break;
         case PlayController::Event::Started:

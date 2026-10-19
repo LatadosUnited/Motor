@@ -437,7 +437,7 @@ MOTOR_SCRIPT(Girar) {
 
 - Menu **Scripts**: Novo script (modelos Vazio, Comportamento, Que segue, Coletável e Gerador; também em
   **+ Criar** no painel Projeto e pela ferramenta MCP `script_create`), Adicionar exemplo (Girar, Jogador,
-  Mover com WASD, Seguir, de `editor/templates/Scripts/`), Recompilar (F7), Abrir no VS Code, Abrir pasta. O
+  Mover (WASD ou controle), Seguir, de `editor/templates/Scripts/`), Recompilar (F7), Abrir no VS Code, Abrir pasta. O
   painel **Scripts** mostra erros e avisos; clicar num erro abre o arquivo na linha.
 - **VS Code configurado**: ao abrir o projeto o editor gera `.vscode/` (IntelliSense pelo `compile_commands.json`
   da compilação dos scripts, tarefa de compilar e "anexar ao editor" com o gdb). Só reescreve os arquivos que
@@ -631,14 +631,54 @@ Exportado/
   um `{guid, path}`); a pasta **`Assets/Recursos/`** inteira (para arquivos que o jogo abre por conta própria);
   e caminhos `"Assets/..."` escritos entre aspas nos fontes de `Scripts/`. O resto fica de fora. Referências
   quebradas (GUID sem arquivo) aparecem como aviso e o jogo é exportado mesmo assim.
-- **Scripts:** precisam estar compilados (a exportação recusa durante a compilação ou com erros). Os fontes
-  não vão, só a `GameScripts.dll`.
+- **Sempre em Release** (Fase 21): o jogo leva o `Player.exe` e a `libMotor.dll` de Release e a DLL de
+  scripts é **recompilada em Release** ao exportar (em `.motor/scripts/build-release`, separada da do editor; a
+  janela mostra "Compilando os scripts em Release..."). O Motor em Release vem da pasta do editor (versão
+  instalada de Release), de `release/` ao lado dela (o `motor_package` de uma versão de Debug copia um para lá)
+  ou de `build-release/bin` no código-fonte (`MOTOR_RELEASE_BIN_DIR` no CMake). Sem nenhum, o jogo sai com o
+  Motor do editor e um aviso explica como ter o de Release:
+
+  ```bash
+  cmake -S . -B build-release -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release -DMOTOR_BUILD_TESTS=OFF
+  cmake --build build-release -j8 --target Player
+  ```
+- **Scripts:** um erro de compilação em Release aparece na janela (e no log) e cancela a exportação. Sem Motor
+  em Release, a DLL do editor precisa estar compilada (a exportação recusa durante a compilação ou com erros).
+  Os fontes não vão, só a `GameScripts.dll`.
 - **Exportar de novo** na mesma pasta substitui a exportação anterior (só o que ela tinha criado, listado na
   marca); uma pasta que não esteja vazia nem seja uma exportação é recusada.
 - **Player** (`build/bin/Player.exe`, pasta `player/`): o executável do jogo, compilado junto com o editor.
   Abre `Dados/` ao lado dele, carrega a DLL de scripts e roda a cena inicial como o Play do editor (mesmo
   `SceneRuntime`, física, HUD e câmera principal). Para testar um projeto sem exportar:
-  `Player.exe "C:/caminho/MeuJogo"`. `--quadros N` fecha sozinho depois de N quadros (testes automáticos).
+  `Player.exe "C:/caminho/MeuJogo"`. `--quadros N` fecha sozinho depois de N quadros (testes automáticos);
+  `--janela` abre em janela mesmo com tela cheia nas opções; `--opcoes "<arquivo>"` usa outro arquivo de opções.
+  O título da janela é só o nome do jogo (sem FPS).
+- **Identidade do jogo** (Fase 21, **Arquivo > Configurações do jogo** ou MCP `game_settings`): nome do `.exe`
+  (vazio = o do projeto), versão (`1.0.0`, vai para as propriedades do `.exe` e para `Script::GameVersion`) e
+  ícone (`.ico` com vários tamanhos ou `.png` de até 256x256, de `Assets/`). A exportação grava o ícone e a versão
+  como recursos do Windows no `.exe` copiado; o ícone aparece no Explorer, na janela e na barra de tarefas (a
+  GLFW usa o recurso `GLFW_ICON`). Ícone que não serve faz a exportação ser recusada antes de mexer na pasta.
+- **Tela de carregamento** (Fase 21): o jogo exportado desenha uma cena parada enquanto abre e a cada
+  `LoadScene` (o carregamento trava o jogo até terminar). Sem configurar, fundo escuro e "Carregando..."; com
+  **Configurações do jogo > Tela de carregamento** (MCP `game_settings`, `loading_scene`), uma cena do projeto
+  feita no editor com UI (imagem, texto) e, se quiser, câmera e objetos. Ela é só desenhada: scripts e física
+  não rodam nela. No Play do editor a troca de cena não mostra a tela.
+- **Controle e ações** (Fase 21): os scripts perguntam por ações (`GetAxis("Horizontal")`,
+  `WasActionPressed("Pular")`) do mapa do projeto (**Arquivo > Controles**, `.mproject` em `"input"`, MCP
+  `input_actions`), que liga teclas, mouse e o controle (gamepad, padrão Xbox, pela GLFW). O padrão traz
+  Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa. Controle direto: `IsGamepadButtonDown`,
+  `GamepadAxisValue`. Os modelos Jogador e MoverWASD andam com o teclado ou o analógico. O MCP `game_gamepad`
+  simula um controle no Play.
+- **Progresso salvo** (Fase 21): os scripts guardam chave/valor em "slots" com `SaveSlot()` (`motor::SaveData`:
+  `GetInt`/`SetInt`, `GetString`, `GetVec3`... e `Save()`), `HasSave`, `DeleteSave` e `SaveFolder`. No jogo
+  exportado ficam em `%APPDATA%\<Jogo>\saves\<slot>.json`; no Play do editor, em `<projeto>/.motor/saves/`
+  (**Jogo > Apagar saves do Play**, MCP `game_saves`). O que não foi gravado é gravado ao fechar o jogo e ao
+  parar o Play; arquivo estragado vira `.corrompido` e o jogo segue sem save.
+- **Opções do jogador** (Fase 21): tela cheia, resolução, vsync, MSAA e sombras. As iniciais ficam no projeto
+  (**Arquivo > Configurações do jogo**, `.mproject` formato 4, ou a ferramenta MCP `game_settings`); depois valem
+  as do jogador, gravadas em `%APPDATA%\<Jogo>\opcoes.json`. Os scripts montam o menu com `GetOptions`,
+  `ApplyOptions`, `Resolutions` e `QuitGame` (guia, seção "Interface do jogo"). No Play do editor só o MSAA e as
+  sombras valem, e nada é gravado.
   Os shaders são procurados em `engine/` ao lado do executável e, se não houver, na pasta do código-fonte.
 - Pelo servidor MCP: ferramenta `game_export` (cena, pasta, `set_startup`). Testes: `tests/test_export.cpp`.
 
@@ -739,7 +779,9 @@ cmake --build build --target motor_package     # build/package/Motor-0.2.0/
 A pasta é autossuficiente: `MotorEditor.exe`, `Player.exe`, `libMotor.dll` e o runtime do GCC, `engine/`
 (shaders e fontes), `templates/`, `sdk/` (headers e biblioteca de importação para compilar os scripts dos
 projetos, com caminhos relativos) e `motor-version.json` (`{"version": "0.2.0", "scriptApiVersion": 10, ...}`),
-que o hub lê. Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure.
+que o hub lê. Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure. Montada de um build que não é de
+Release, ela leva também `release/` (Player, DLLs e SDK de um build de Release, de `MOTOR_RELEASE_BIN_DIR`) para
+os jogos exportados saírem em Release; sem esse build, o `motor_package` avisa.
 **O editor instalado continua precisando do MSYS2 (UCRT64) e do CMake** nos mesmos caminhos do build que montou
 a pasta (estão em `sdk/MotorSDK.json`) para compilar os scripts dos projetos; o jogo exportado não precisa.
 

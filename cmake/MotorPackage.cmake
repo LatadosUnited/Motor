@@ -11,10 +11,11 @@
 #       MotorSDK.json, MotorSDK.cmake   toolchain (o mesmo do build: MSYS2 UCRT64) e alvo importado Motor::Motor
 #       include/, lib/libMotor.dll.a    headers da engine, GLM e ImGui; biblioteca de importação
 #     motor-version.json              {version, scriptApiVersion}: o que o Hub lê para saber qual versão é
+#     release/                        Player, libMotor.dll e SDK em Release para exportar jogos (versão de Debug)
 #
 # A pasta de saída é apagada antes, mas só se for uma montagem anterior (tem motor-version.json) ou estiver vazia.
 #
-# Variáveis (-D): OUT BIN SRC VERSION BUILD_TYPE IMPLIB IMGUI_DIR GLM_DIR GEN_DIR
+# Variáveis (-D): OUT BIN SRC VERSION BUILD_TYPE IMPLIB IMGUI_DIR GLM_DIR GEN_DIR RELEASE_BIN
 #                 CMAKE_EXE GENERATOR MAKE_PROGRAM C_COMPILER CXX_COMPILER
 
 cmake_minimum_required(VERSION 3.24)
@@ -99,7 +100,8 @@ endif()
 ")
 
 # O toolchain continua o do MSYS2 que compilou esta versão (o editor chama o cmake e o g++ de lá).
-file(WRITE "${sdk}/MotorSDK.json"
+function(write_sdk_json file build_type)
+    file(WRITE "${file}"
 "{
   \"format\": \"motor-sdk\",
   \"version\": 1,
@@ -108,10 +110,60 @@ file(WRITE "${sdk}/MotorSDK.json"
   \"makeProgram\": \"${MAKE_PROGRAM}\",
   \"cCompiler\": \"${C_COMPILER}\",
   \"cxxCompiler\": \"${CXX_COMPILER}\",
-  \"buildType\": \"${BUILD_TYPE}\",
+  \"buildType\": \"${build_type}\",
   \"sdkCMake\": \"MotorSDK.cmake\"
 }
 ")
+endfunction()
+write_sdk_json("${sdk}/MotorSDK.json" "${BUILD_TYPE}")
+
+# --- Motor em Release para exportar jogos (Fase 21) ---
+# Os jogos exportados levam o Player e a libMotor.dll de Release, e a DLL de scripts é recompilada contra eles
+# (editor/src/export/ReleaseRuntime.h). Uma versão que não é de Release leva em release/ uma cópia de um build de
+# Release (-DRELEASE_BIN, a pasta bin dele), com um SDK que usa os headers de sdk/include.
+if(NOT BUILD_TYPE STREQUAL "Release")
+    if(DEFINED RELEASE_BIN AND EXISTS "${RELEASE_BIN}/Player.exe" AND EXISTS "${RELEASE_BIN}/sdk/MotorSDK.cmake")
+        set(rel "${OUT}/release")
+        foreach(file Player.exe ${runtime_dlls})
+            if(NOT EXISTS "${RELEASE_BIN}/${file}")
+                message(FATAL_ERROR "'${file}' não encontrado no build de Release '${RELEASE_BIN}'.")
+            endif()
+            file(COPY "${RELEASE_BIN}/${file}" DESTINATION "${rel}")
+        endforeach()
+        file(READ "${RELEASE_BIN}/sdk/MotorSDK.cmake" rel_sdk)
+        string(REGEX MATCH "IMPORTED_IMPLIB \"([^\"]+)\"" _ "${rel_sdk}")
+        set(rel_implib "${CMAKE_MATCH_1}")
+        if(rel_implib STREQUAL "" OR NOT EXISTS "${rel_implib}")
+            message(FATAL_ERROR "Biblioteca de importação do build de Release não encontrada ('${rel_implib}').")
+        endif()
+        file(COPY "${rel_implib}" DESTINATION "${rel}/sdk/lib")
+        get_filename_component(rel_implib_name "${rel_implib}" NAME)
+        foreach(pch MotorScriptPch.h MotorScriptPch.h.gch)
+            if(EXISTS "${RELEASE_BIN}/sdk/${pch}")
+                file(COPY "${RELEASE_BIN}/sdk/${pch}" DESTINATION "${rel}/sdk")
+            endif()
+        endforeach()
+        file(WRITE "${rel}/sdk/MotorSDK.cmake"
+"# Gerado pelo alvo motor_package (Motor ${VERSION} em Release, para exportar jogos). Não edite.
+set(MOTOR_SDK_PCH \"\${CMAKE_CURRENT_LIST_DIR}/MotorScriptPch.h\")
+if(NOT TARGET Motor::Motor)
+    add_library(Motor::Motor SHARED IMPORTED)
+    set_target_properties(Motor::Motor PROPERTIES
+        IMPORTED_LOCATION \"\${CMAKE_CURRENT_LIST_DIR}/../libMotor.dll\"
+        IMPORTED_IMPLIB \"\${CMAKE_CURRENT_LIST_DIR}/lib/${rel_implib_name}\"
+        INTERFACE_INCLUDE_DIRECTORIES \"\${CMAKE_CURRENT_LIST_DIR}/../../sdk/include\"
+        INTERFACE_COMPILE_DEFINITIONS \"GLM_FORCE_RADIANS\"
+        INTERFACE_COMPILE_FEATURES \"cxx_std_20\")
+endif()
+")
+        write_sdk_json("${rel}/sdk/MotorSDK.json" "Release")
+        message(STATUS "Motor em Release para exportar jogos copiado de ${RELEASE_BIN}")
+    else()
+        message(WARNING "Sem um build do Motor em Release em '${RELEASE_BIN}': os jogos exportados por esta versão "
+                        "saem em ${BUILD_TYPE}. Compile antes: cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release "
+                        "e cmake --build build-release")
+    endif()
+endif()
 
 # --- Marca da versão (lida pelo Hub) ---
 string(TIMESTAMP built "%Y-%m-%dT%H:%M:%S")

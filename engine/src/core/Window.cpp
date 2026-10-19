@@ -6,6 +6,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
 #include <utility>
@@ -30,11 +31,24 @@ Window::Window(const WindowDesc& desc) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, desc.msaaSamples);
+    glfwWindowHint(GLFW_VISIBLE, desc.visible ? GLFW_TRUE : GLFW_FALSE);
 #ifndef NDEBUG
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
 
-    m_window = glfwCreateWindow(desc.width, desc.height, desc.title.c_str(), nullptr, nullptr);
+    GLFWmonitor* monitor = desc.fullscreen ? glfwGetPrimaryMonitor() : nullptr;
+    int width = desc.width;
+    int height = desc.height;
+    if (monitor && (width <= 0 || height <= 0)) {
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        width = mode ? mode->width : 1280;
+        height = mode ? mode->height : 720;
+    }
+    if (width <= 0 || height <= 0) {
+        width = 1280;
+        height = 720;
+    }
+    m_window = glfwCreateWindow(width, height, desc.title.c_str(), monitor, nullptr);
     if (!m_window) {
         if (g_windowCount == 0) glfwTerminate();
         throw std::runtime_error("Falha ao criar a janela (OpenGL 4.5 é suportado pela sua GPU/driver?)");
@@ -80,11 +94,16 @@ void Window::CancelClose() {
 
 void Window::PollEvents() {
     glfwPollEvents();
+    Input::PollGamepads();
     glfwGetFramebufferSize(m_window, &m_width, &m_height);
 }
 
 void Window::SwapBuffers() {
     glfwSwapBuffers(m_window);
+}
+
+void Window::Show() {
+    if (!glfwGetWindowAttrib(m_window, GLFW_VISIBLE)) glfwShowWindow(m_window);
 }
 
 void Window::SetTitle(const std::string& title) {
@@ -93,6 +112,60 @@ void Window::SetTitle(const std::string& title) {
 
 void Window::SetVSync(bool enabled) {
     glfwSwapInterval(enabled ? 1 : 0);
+}
+
+void Window::SetDisplayMode(bool fullscreen, int width, int height) {
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* desktop = monitor ? glfwGetVideoMode(monitor) : nullptr;
+    if (fullscreen && monitor) {
+        if (width <= 0 || height <= 0) {
+            width = desktop ? desktop->width : 1280;
+            height = desktop ? desktop->height : 720;
+        }
+        glfwSetWindowMonitor(m_window, monitor, 0, 0, width, height, GLFW_DONT_CARE);
+    } else {
+        if (width <= 0 || height <= 0) {
+            width = 1280;
+            height = 720;
+        }
+        int x = 100;
+        int y = 100;
+        if (desktop) {
+            int mx = 0;
+            int my = 0;
+            glfwGetMonitorPos(monitor, &mx, &my);
+            x = mx + std::max(0, (desktop->width - width) / 2);
+            y = my + std::max(0, (desktop->height - height) / 2);
+        }
+        glfwSetWindowMonitor(m_window, nullptr, x, y, width, height, GLFW_DONT_CARE);
+    }
+    glfwGetFramebufferSize(m_window, &m_width, &m_height);
+    log::Info("Tela: {} {}x{}", fullscreen ? "cheia" : "janela", m_width, m_height);
+}
+
+bool Window::IsFullscreen() const {
+    return glfwGetWindowMonitor(m_window) != nullptr;
+}
+
+std::vector<VideoMode> Window::MonitorModes() {
+    std::vector<VideoMode> modes;
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    int count = 0;
+    const GLFWvidmode* list = monitor ? glfwGetVideoModes(monitor, &count) : nullptr;
+    for (int i = 0; i < count; ++i) {
+        const VideoMode mode{list[i].width, list[i].height};
+        if (std::find(modes.begin(), modes.end(), mode) == modes.end()) modes.push_back(mode);
+    }
+    std::sort(modes.begin(), modes.end(), [](const VideoMode& a, const VideoMode& b) {
+        return a.width != b.width ? a.width < b.width : a.height < b.height;
+    });
+    return modes;
+}
+
+VideoMode Window::DesktopMode() {
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
+    return mode ? VideoMode{mode->width, mode->height} : VideoMode{};
 }
 
 void Window::SetCursorMode(CursorMode mode) {

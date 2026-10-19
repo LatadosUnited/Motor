@@ -55,6 +55,12 @@ public:
     bool IsWireframe() const { return m_wireframe; }
     // Amostras de MSAA da cena (1 = sem). Padrão: 4.
     void SetSamples(int samples) { m_samples = samples < 1 ? 1 : samples; }
+    int Samples() const { return m_samples; }
+    // Sombras (opções do jogador): desligadas em todas as luzes, ou a qualidade de cada luz limitada a `maxQuality`.
+    void SetShadows(bool enabled, ShadowQuality maxQuality = ShadowQuality::High) {
+        m_shadowsEnabled = enabled;
+        m_maxShadowQuality = maxQuality;
+    }
 
     // target == nullptr desenha na janela. Até kMaxLights luzes (as demais são ignoradas, com aviso no log);
     // nenhuma = só a luz do céu e a ambiente.
@@ -116,6 +122,8 @@ private:
     int m_windowWidth = 0;
     int m_windowHeight = 0;
     int m_samples = 4;
+    bool m_shadowsEnabled = true;
+    ShadowQuality m_maxShadowQuality = ShadowQuality::High;
     const Framebuffer* m_target = nullptr;
     bool m_wireframe = false;
     bool m_inScene = false;

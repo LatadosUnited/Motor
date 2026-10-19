@@ -42,6 +42,12 @@ public:
     // Grava as camadas de colisão no projeto e as passa para a física (próximo Play). false sem projeto ou se
     // não conseguiu gravar (`error`).
     bool SetCollisionLayers(const motor::CollisionLayers& layers, std::string& error);
+    // Grava as opções iniciais do jogador no projeto (Configurações do jogo). false sem projeto ou se não gravou.
+    bool SetGameOptions(const motor::GameOptions& options, std::string& error);
+    // Grava a identidade (nome do .exe, versão, ícone) depois de conferir os valores. false com `error` se não serve.
+    bool SetGameIdentity(const motor::GameIdentity& identity, std::string& error);
+    // Grava o mapa de ações (Arquivo > Controles). false sem projeto ou se não gravou.
+    bool SetInputActions(const motor::InputActions& actions, std::string& error);
     const std::filesystem::path& ScenePath() const { return m_scenePath; }
 
     // Pergunta antes se houver alterações não salvas. `path` é usado pelas ações *Path.
@@ -86,6 +92,9 @@ private:
     void UpdateWindowTitle();
     void DrawNewProjectPopup();
     void DrawCollisionLayersWindow();  // Arquivo > Camadas de colisão
+    void DrawGameSettingsWindow();     // Arquivo > Configurações do jogo
+    void DrawGameIdentity();
+    void DrawControlsWindow();         // Arquivo > Controles
     void DrawUnsavedPopup();
     void DrawNewerVersionPopup();
     void DrawRecoveryPopup();
@@ -124,6 +133,11 @@ private:
     std::string m_errorMessage;
     bool m_openErrorPopup = false;
     bool m_showLayersWindow = false;
+    bool m_showGameSettingsWindow = false;
+    motor::GameIdentity m_identityDraft;
+    bool m_identityEditing = false;
+    bool m_showControlsWindow = false;
+    int m_listeningAction = -1;  // ação esperando "aperte uma tecla"
 };
 
 } // namespace editor

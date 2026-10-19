@@ -14,6 +14,7 @@ struct ApplicationDesc {
     WindowDesc window;
     double fixedTimestep = 1.0 / 60.0;  // passo da simulação (física, lógica determinística)
     bool enableImGui = false;
+    bool statsInTitle = true;  // FPS e estatísticas no título da janela (o jogo exportado mostra só o nome)
 };
 
 // Ciclo de vida:
@@ -29,7 +30,7 @@ public:
     void Run();
     void Quit();  // encerra sem passar por OnCloseRequested
 
-    // Título base da janela; a Application acrescenta FPS e estatísticas.
+    // Título base da janela; a Application acrescenta FPS e estatísticas (com statsInTitle).
     void SetWindowTitle(const std::string& title);
 
     Window& GetWindow() { return *m_window; }

@@ -157,6 +157,10 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
         log::Warn("Renderer: {} luzes na cena; só as primeiras {} são usadas", lights.size(), kMaxLights);
     }
     m_lights.assign(lights.begin(), lights.begin() + static_cast<std::ptrdiff_t>(std::min(lights.size(), kMaxLights)));
+    for (Light& light : m_lights) {
+        light.castShadows = light.castShadows && m_shadowsEnabled;
+        light.shadowQuality = std::min(light.shadowQuality, m_maxShadowQuality);
+    }
     m_items.clear();
     m_joints.clear();
     m_wires.clear();

@@ -94,9 +94,11 @@ void Application::Run() {
         if (fpsTimer >= 1.0) {
             m_fps = static_cast<float>(fpsFrames / fpsTimer);
             const auto& s = m_renderer->GetStats();
-            m_window->SetTitle(std::format("{} | {:.0f} FPS ({:.2f} ms) | {} draws, {} tris",
-                                           m_desc.window.title, m_fps, 1000.0 / m_fps,
-                                           s.drawCalls, s.triangles));
+            if (m_desc.statsInTitle) {
+                m_window->SetTitle(std::format("{} | {:.0f} FPS ({:.2f} ms) | {} draws, {} tris",
+                                               m_desc.window.title, m_fps, 1000.0 / m_fps,
+                                               s.drawCalls, s.triangles));
+            }
             fpsFrames = 0;
             fpsTimer = 0.0;
         }

@@ -174,6 +174,29 @@ versão nova, marca o que passou e anota o que não passou. Criado na
   usados.
 - [ ] Rodar o jogo exportado com o editor fechado → abre na cena inicial, som, cursor e scripts funcionam.
 - [ ] Levar a pasta para outro computador sem o Motor (quando houver) → roda igual.
+- [ ] Arquivo > **Exportar jogo...** com scripts → a janela mostra "Compilando os scripts em Release..." e
+  depois o resultado; a pasta tem ~12 MB (não ~120 MB) e o jogo roda. Com um erro num script → a exportação
+  mostra o erro e não copia nada.
+- [ ] Arquivo > **Configurações do jogo...** → Executável "Meu Jogo", Versão 1.2.0, Ícone um `.png` de 256x256
+  → exportar: a pasta tem `Meu Jogo.exe` com o ícone no Explorer; Propriedades > Detalhes mostram a versão
+  1.2.0; abrindo o jogo, o ícone aparece na janela e na barra de tarefas. Versão "1.0 beta" → erro, não grava.
+- [ ] Arquivo > **Configurações do jogo...** → marcar Tela cheia, MSAA 2x, Sombras Baixas → o `.mproject`
+  ganha o bloco `"player"`; exportar e abrir → o jogo abre em tela cheia, título sem FPS.
+- [ ] Menu de opções (guia, `examples/MenuOpcoes.cpp`) no jogo exportado: Tela cheia alterna janela e tela
+  cheia, Resolução troca, Sombras some com as sombras, Sair fecha. Fechar e abrir de novo → volta com as
+  opções escolhidas (`%APPDATA%\<Jogo>\opcoes.json`).
+- [ ] Configurações do jogo > **Tela de carregamento** = uma cena com uma Imagem e um Texto → no jogo exportado
+  ela aparece ao abrir e a cada troca de cena (`LoadScene`), no lugar da janela branca. Sem escolher: fundo
+  escuro com "Carregando..." embaixo à direita.
+- [ ] Arquivo > **Controles...** → com um controle ligado aparece o nome dele; mexer o analógico e apertar
+  Espaço/A move as barras de Horizontal e Pular; **Adicionar (aperte)** + apertar uma tecla liga a tecla.
+  No Play com o modelo Jogador: anda com o analógico (meio inclinado anda devagar), pula com A, corre
+  apertando o analógico; no jogo exportado também.
+- [ ] Menu com Continuar (guia, `examples/MenuContinuar.cpp`) no jogo exportado: na primeira vez só "Novo
+  jogo"; jogar, andar, fechar no X e abrir de novo → "Continuar" volta para a fase e perto de onde parou
+  (`%APPDATA%\<Jogo>\saves\progresso.json`). "Novo jogo" apaga. No editor, Jogo > **Apagar saves do Play**.
+- [ ] O mesmo menu no Play do editor → Sombras muda no viewport; Tela cheia não muda nada (só o log); Sair para
+  o Play; Parar e dar Play de novo → volta às opções do projeto.
 
 ## 13. Gerais
 

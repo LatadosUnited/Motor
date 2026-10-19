@@ -116,13 +116,23 @@ void McpController::ApplyGameInput() {
     });
     for (const auto& [key, down] : m_pendingKeys) Input::SetKeyState(key, down);
     m_pendingKeys.clear();
-    m_host.play.SetExternalInput(!m_heldKeys.empty() || m_clickStage != 0);
+    std::erase_if(m_heldPad, [&](const HeldPadButton& h) {
+        if (now < h.releaseAt) return false;
+        Input::SetGamepadButtonState(h.button, false);
+        return true;
+    });
+    for (const auto& [button, down] : m_pendingPad) Input::SetGamepadButtonState(button, down);
+    m_pendingPad.clear();
+    m_host.play.SetExternalInput(!m_heldKeys.empty() || m_clickStage != 0 || Input::IsGamepadSimulated());
 }
 
 void McpController::OnPlayStopped() {
     for (const HeldKey& h : m_heldKeys) Input::SetKeyState(h.key, false);
     m_heldKeys.clear();
     m_pendingKeys.clear();
+    m_heldPad.clear();
+    m_pendingPad.clear();
+    Input::SetGamepadSimulated(false);  // volta o controle de verdade
     m_clickStage = 0;
     m_host.play.SetExternalInput(false);
 }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "motor/project/CollisionLayers.h"
+#include "motor/project/GameOptions.h"
+#include "motor/project/InputActions.h"
 
 #include <filesystem>
 #include <optional>
@@ -8,6 +10,15 @@
 #include <string_view>
 
 namespace motor {
+
+// Identidade do jogo exportado (Configurações do jogo, Fase 21).
+struct GameIdentity {
+    std::string executable;        // nome do .exe sem a extensão; vazio = o nome do projeto
+    std::string version = "1.0.0";  // vai para as propriedades do .exe (números separados por ponto)
+    std::string icon;              // .ico ou .png do projeto, relativo à raiz ("Assets/icone.png"); vazio = sem
+    std::string loadingScene;      // cena da tela de carregamento, relativa à raiz; vazio = a padrão
+    bool operator==(const GameIdentity&) const = default;
+};
 
 // Um projeto é uma pasta com um arquivo <Nome>.mproject e a pasta Assets/:
 //
@@ -53,6 +64,19 @@ public:
     const CollisionLayers& Layers() const { return m_layers; }
     void SetLayers(const CollisionLayers& layers) { m_layers = layers; }
 
+    // Mapa de ações (Arquivo > Controles); projeto sem mapa gravado = InputActions::Defaults().
+    const InputActions& Actions() const { return m_actions; }
+    void SetActions(const InputActions& actions) { m_actions = actions; }
+
+    const GameIdentity& Identity() const { return m_identity; }
+    void SetIdentity(const GameIdentity& identity) { m_identity = identity; }
+    // Nome do .exe exportado (sem ".exe"): o da identidade, ou o do projeto se vazio ou inválido.
+    std::string ExecutableName() const;
+
+    // Opções com que o jogo exportado abre da primeira vez (antes de o jogador mudar alguma).
+    const GameOptions& DefaultOptions() const { return m_options; }
+    void SetDefaultOptions(const GameOptions& options) { m_options = options; }
+
     std::filesystem::path ToAbsolute(std::string_view relative) const;
     std::string ToRelative(const std::filesystem::path& absolute) const;  // vazio se estiver fora do projeto
 
@@ -62,6 +86,12 @@ private:
     std::string m_startupScene;  // relativo à raiz
     mutable std::string m_engineVersion;  // Save (const) grava a versão atual
     CollisionLayers m_layers;
+    GameOptions m_options;
+    GameIdentity m_identity;
+    InputActions m_actions = InputActions::Defaults();
 };
+
+// "1.2.3" -> {1, 2, 3, 0}: até quatro números (os que faltam são 0); false se tiver algo além de números e pontos.
+bool ParseGameVersion(std::string_view version, int (&parts)[4]);
 
 } // namespace motor

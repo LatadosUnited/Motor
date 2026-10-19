@@ -4,6 +4,7 @@
 #include "motor/assets/AssetLoaders.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
+#include "motor/scene/GameHost.h"
 #include "motor/scene/Prefab.h"
 #include "motor/scene/Scene.h"
 
@@ -563,6 +564,70 @@ void Script::SetCursorMode(CursorMode mode) {
     if (m_runtime) m_runtime->SetCursorMode(mode);
 }
 CursorMode Script::GetCursorMode() const { return m_runtime ? m_runtime->GetCursorMode() : CursorMode::Normal; }
+
+GameOptions Script::GetOptions() const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->Options() : GameOptions{};
+}
+void Script::ApplyOptions(const GameOptions& options) {
+    GameOptions clamped = options;
+    clamped.Clamp();
+    if (GameHost* host = m_runtime ? m_runtime->Host() : nullptr) host->ApplyOptions(clamped);
+}
+std::vector<Resolution> Script::Resolutions() const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->Resolutions() : std::vector<Resolution>{};
+}
+namespace {
+// Sem quem rode o jogo (testes): saves só na memória.
+SaveStore& FallbackSaves() {
+    static SaveStore store;
+    return store;
+}
+} // namespace
+
+const InputActions& Script::Actions() const {
+    static const InputActions defaults = InputActions::Defaults();  // sem quem rode o jogo (testes)
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->Actions() : defaults;
+}
+bool Script::IsActionDown(std::string_view action) const { return InputEnabled() && Actions().IsDown(action); }
+bool Script::WasActionPressed(std::string_view action) const { return InputEnabled() && Actions().WasPressed(action); }
+bool Script::WasActionReleased(std::string_view action) const { return InputEnabled() && Actions().WasReleased(action); }
+float Script::GetAxis(std::string_view action) const { return InputEnabled() ? Actions().Value(action) : 0.0f; }
+bool Script::IsGamepadConnected() const { return Input::IsGamepadConnected(); }
+bool Script::IsGamepadButtonDown(GamepadButton button) const {
+    return InputEnabled() && Input::IsGamepadButtonDown(button);
+}
+bool Script::WasGamepadButtonPressed(GamepadButton button) const {
+    return InputEnabled() && Input::WasGamepadButtonPressed(button);
+}
+float Script::GamepadAxisValue(GamepadAxis axis) const { return InputEnabled() ? Input::GamepadAxisValue(axis) : 0.0f; }
+
+SaveData& Script::SaveSlot(std::string_view slot) {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return (host ? host->Saves() : FallbackSaves()).Slot(slot);
+}
+bool Script::HasSave(std::string_view slot) const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return (host ? host->Saves() : FallbackSaves()).Exists(slot);
+}
+void Script::DeleteSave(std::string_view slot) {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    (host ? host->Saves() : FallbackSaves()).Delete(slot);
+}
+std::filesystem::path Script::SaveFolder() const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->Saves().Folder() : std::filesystem::path();
+}
+
+std::string Script::GameVersion() const {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    return host ? host->GameVersion() : std::string();
+}
+void Script::QuitGame() {
+    if (GameHost* host = m_runtime ? m_runtime->Host() : nullptr) host->QuitGame();
+}
 
 } // namespace motor
 

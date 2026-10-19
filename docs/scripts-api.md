@@ -12,11 +12,12 @@ primeiro o [guia](scripts.md). Fontes, se quiser ir além: `engine/include/motor
 
 O teste `test_script_docs` confere que esta página cita todos os métodos públicos de `motor::Script`, de
 `motor::PhysicsSystem`, de `motor::UiSystem` e de `motor::AudioSystem`, todas as opções de campo e os campos de
-`GameTime`, `Collision`, `UiPointer`, `AudioSettings` e `AudioVoiceInfo`. `Message` e `EntityRef` também
+`GameTime`, `Collision`, `UiPointer`, `AudioSettings`, `AudioVoiceInfo` e `GameOptions`, e os métodos de
+`motor::SaveData`. `Message` e `EntityRef` também
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 13 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 14 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -143,7 +144,22 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 | `glm::vec2 MouseDelta() const` | movimento do mouse neste frame, em pixels |
 | `void SetCursorMode(CursorMode mode)`, `CursorMode GetCursorMode() const` | cursor do jogo: `motor::CursorMode::Locked` (preso e escondido, para olhar com `MouseDelta`), `Hidden` ou `Normal`; no editor vale com o jogo em foco (Esc solta, clique prende de novo) e volta ao normal ao parar; continua ao trocar de cena |
 
-As quatro de entrada devolvem falso/zero quando o jogo não tem o foco. `motor::Input` (`motor/core/Input.h`)
+Ações do projeto (Arquivo > Controles; mapa em `motor::InputActions`, `motor/project/InputActions.h`) e o
+controle:
+
+| Método | Devolve |
+|---|---|
+| `float GetAxis(std::string_view action) const` | valor da ação, -1 a 1: soma das entradas (tecla/botão = `scale`, eixo = valor x `scale`) |
+| `bool IsActionDown(std::string_view action) const` | valor acima de 0,5 |
+| `bool WasActionPressed(std::string_view action) const`, `bool WasActionReleased(std::string_view action) const` | passou de 0,5 neste frame / voltou |
+| `bool IsGamepadConnected() const` | há um controle reconhecido como gamepad |
+| `bool IsGamepadButtonDown(GamepadButton button) const`, `bool WasGamepadButtonPressed(GamepadButton button) const` | botão do controle: `motor::GamepadButton::A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft` |
+| `float GamepadAxisValue(GamepadAxis axis) const` | `motor::GamepadAxis::LeftX`, `LeftY`, `RightX`, `RightY` (-1 a 1, Y para cima +, zona morta de 0,2) e `LeftTrigger`, `RightTrigger` (0 a 1) |
+
+Ação desconhecida devolve 0/falso e avisa uma vez no log. O controle é o primeiro conectado, no padrão do
+Xbox (a GLFW traduz PlayStation, Switch e outros: o `A` é o botão de baixo).
+
+As de entrada (teclado, mouse, ações e controle) devolvem falso/zero quando o jogo não tem o foco. `motor::Input` (`motor/core/Input.h`)
 tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas sem esse filtro de foco.
 
 `motor::GameTime`:
@@ -154,6 +170,68 @@ tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas se
 | `fixedDelta` | `float` | passo do `OnFixedUpdate` |
 | `elapsed` | `double` | segundos desde o Play (sem as pausas) |
 | `frame` | `uint64_t` | quantos `OnUpdate` já rodaram |
+
+### Opções do jogador e sair
+
+| Método | Efeito |
+|---|---|
+| `GameOptions GetOptions() const` | as opções atuais do jogador (abaixo) |
+| `void ApplyOptions(const GameOptions& options)` | aplica na hora; valores fora do lugar são corrigidos (MSAA 3 vira 2 ou 4) |
+| `std::vector<Resolution> Resolutions() const` | resoluções de tela cheia do monitor (`width`, `height`), da menor para a maior |
+| `void QuitGame()` | fecha o jogo depois deste passo; no editor, para o Play |
+| `std::string GameVersion() const` | a versão do jogo (Arquivo > Configurações do jogo), ex.: `"1.0.0"`, para mostrar no menu |
+
+No jogo exportado, `ApplyOptions` muda a janela, o vsync, o MSAA e as sombras e grava as opções em
+`%APPDATA%\<Jogo>\opcoes.json`: o jogo abre com elas da próxima vez. Na primeira vez valem as padrão do projeto
+(Arquivo > Configurações do jogo). No Play do editor, cada Play começa nas padrão do projeto, nada é gravado e
+só o MSAA e as sombras mudam de verdade; tela cheia, resolução e vsync ficam guardados para `GetOptions`.
+
+`motor::GameOptions` (`motor/project/GameOptions.h`):
+
+| Campo | Tipo | Significado |
+|---|---|---|
+| `fullscreen` | `bool` | tela cheia no monitor principal |
+| `width`, `height` | `int` | tamanho da janela ou resolução da tela cheia; 0 = padrão (1280x720 em janela, a da tela em tela cheia) |
+| `vsync` | `bool` | sincroniza com a tela |
+| `msaa` | `int` | amostras de MSAA: 1 (sem), 2, 4 ou 8 (`GameOptions::kMsaaChoices`) |
+| `shadows` | `ShadowSetting` | `Off` (sem sombras), `Low`, `Medium` ou `High` (limite da qualidade de cada luz) |
+
+```cpp
+// Botão "Tela cheia" de um menu de opções.
+motor::GameOptions o = GetOptions();
+o.fullscreen = !o.fullscreen;
+ApplyOptions(o);
+```
+
+### Progresso salvo
+
+| Método | Efeito |
+|---|---|
+| `SaveData& SaveSlot(std::string_view slot = "progresso")` | o slot de save com esse nome (um arquivo `<slot>.json`), lido do disco na primeira vez |
+| `bool HasSave(std::string_view slot = "progresso") const` | há save (arquivo, ou valores ainda não gravados): para mostrar "Continuar" |
+| `void DeleteSave(std::string_view slot = "progresso")` | apaga o arquivo e esvazia o slot ("Novo jogo") |
+| `std::filesystem::path SaveFolder() const` | a pasta dos saves, para arquivos próprios do jogo (vazio se não houver) |
+
+No jogo exportado os saves ficam em `%APPDATA%\<Jogo>\saves\`; no Play do editor, em `<projeto>/.motor/saves/`
+(**Jogo > Apagar saves do Play** apaga; a ferramenta MCP `game_saves` lista e apaga). `Save()` grava na hora;
+o que mudou e não foi gravado é gravado ao fechar o jogo e ao parar o Play (também o que o `OnDestroy` mudar).
+Gravar troca o arquivo inteiro de uma vez: um jogo fechado no meio não deixa o save pela metade.
+
+`motor::SaveData` (`motor/project/SaveData.h`), chave/valor:
+
+| Método | Efeito |
+|---|---|
+| `bool Has(std::string_view key) const` | a chave existe |
+| `int GetInt(key, int fallback = 0) const`, `float GetFloat(key, float fallback = 0)` | número (inteiro e decimal se convertem); `fallback` se não existe ou é de outro tipo |
+| `bool GetBool(key, bool fallback = false) const`, `std::string GetString(key, fallback = "") const` | verdadeiro/falso e texto |
+| `glm::vec3 GetVec3(key, const glm::vec3& fallback = {}) const` | vetor (posição, cor) |
+| `void SetInt(key, int)`, `void SetFloat(key, float)`, `void SetBool(key, bool)`, `void SetString(key, text)`, `void SetVec3(key, glm::vec3)` | muda o valor (na memória, até gravar) |
+| `void Remove(std::string_view key)`, `void Clear()` | tira uma chave, ou todas |
+| `std::vector<std::string> Keys() const`, `bool Empty() const` | as chaves (em ordem alfabética); se está vazio |
+| `bool Save(std::string* error = nullptr)` | grava agora; `false` se não deu (o erro vai para `error`) |
+| `bool Load(std::string* error = nullptr)` | relê do disco (descarta o que não foi gravado). Arquivo estragado: fica vazio e uma cópia `.corrompido` é guardada |
+| `bool IsDirty() const`, `const std::filesystem::path& File() const` | mudou desde o último `Save`/`Load`; o arquivo |
+| `std::string ToJson() const`, `bool FromJson(std::string_view text, std::string* error = nullptr)` | o conteúdo como texto (o formato do arquivo) |
 
 ### Temporizadores
 

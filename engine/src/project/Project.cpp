@@ -4,9 +4,11 @@
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/core/Version.h"
+#include "motor/project/GameOptions.h"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -17,7 +19,9 @@ using json = nlohmann::ordered_json;
 
 namespace {
 constexpr const char* kFormatName = "motor-project";
-constexpr int kFormatVersion = 3;  // 2: engineVersion (Fase 14). 3: camadas de colisão em "physics" (Fase 18)
+constexpr int kFormatVersion = 4;  // 2: engineVersion (Fase 14). 3: camadas de colisão em "physics" (Fase 18).
+                                   // 4: opções padrão do jogador em "player", identidade em "game" e mapa de
+                                   //    ações em "input" (Fase 21)
 
 void SetError(std::string* error, std::string message) {
     if (error) *error = std::move(message);
@@ -167,6 +171,21 @@ std::optional<Project> Project::Open(const std::filesystem::path& fileOrDir, std
         if (const auto physics = root.find("physics"); physics != root.end() && physics->is_object()) {
             project.m_layers = LayersFromJson(*physics);  // formatos 1 e 2: camadas padrão
         }
+        if (const auto player = root.find("player"); player != root.end() && player->is_object()) {
+            GameOptionsFromJson(player->dump(), project.m_options);  // formatos 1 a 3: opções padrão
+        }
+        if (const auto input = root.find("input"); input != root.end() && input->is_object()) {
+            std::string problem;
+            if (!project.m_actions.FromJson(input->dump(), &problem) || !problem.empty()) {
+                log::Warn("Projeto: mapa de ações: {}", problem);
+            }
+        }
+        if (const auto game = root.find("game"); game != root.end() && game->is_object()) {
+            project.m_identity.executable = game->value("executable", std::string());
+            project.m_identity.version = game->value("version", project.m_identity.version);
+            project.m_identity.icon = game->value("icon", std::string());
+            project.m_identity.loadingScene = game->value("loadingScene", std::string());
+        }
 
         std::filesystem::create_directories(project.AssetsDir(), ec);  // projeto copiado sem Assets/ ainda abre
         log::Info("Projeto aberto: {} ({})", project.m_name, ToUtf8(project.m_root));
@@ -185,12 +204,43 @@ bool Project::Save(std::string* error) const {
     root["engineVersion"] = kVersion;
     root["startupScene"] = m_startupScene;
     root["physics"] = LayersToJson(m_layers);
+    json player = json::parse(GameOptionsToJson(m_options));
+    player.erase("format");
+    player.erase("version");
+    root["player"] = std::move(player);
+    root["input"] = json::parse(m_actions.ToJson());
+    root["game"] = {{"executable", m_identity.executable}, {"version", m_identity.version}, {"icon", m_identity.icon},
+                    {"loadingScene", m_identity.loadingScene}};
 
     // Grava ao lado e troca: uma falha no meio não estraga o projeto.
     const std::string text = root.dump(2, ' ', false, json::error_handler_t::replace) + '\n';
     if (!WriteFileAtomic(ProjectFile(), text, error)) return false;
     m_engineVersion = kVersion;
     return true;
+}
+
+std::string Project::ExecutableName() const {
+    if (!m_identity.executable.empty() && ValidateName(m_identity.executable).empty()) return m_identity.executable;
+    return m_name;
+}
+
+bool ParseGameVersion(std::string_view version, int (&parts)[4]) {
+    for (int& p : parts) p = 0;
+    int index = 0;
+    bool digit = false;
+    for (char c : version) {
+        if (c >= '0' && c <= '9') {
+            if (index >= 4) return false;
+            parts[index] = std::min(parts[index] * 10 + (c - '0'), 65535);
+            digit = true;
+        } else if (c == '.' && digit) {
+            ++index;
+            digit = false;
+        } else {
+            return false;
+        }
+    }
+    return digit;
 }
 
 std::filesystem::path Project::ProjectFile() const {

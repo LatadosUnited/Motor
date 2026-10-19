@@ -167,6 +167,7 @@ int main(int argc, char** argv) {
     options.runtimeDir = fake / "bin";
     options.engineAssetsDir = fake / "engine";
     options.scriptsDll = fake / "GameScripts.dll";
+    options.exeResources = false;  // Player falso: sem recursos para gravar (test_exe_identity grava num .exe de verdade)
 
     SECTION("Exportar");
     GameExport::Result r = GameExport::Export(*project, db, options);

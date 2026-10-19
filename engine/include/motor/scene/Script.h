@@ -11,6 +11,9 @@
 //   registry.Register<Girar>("Girar", "Girar").Field("velocidade", "Velocidade", &Girar::velocidade);
 
 #include "motor/core/Input.h"
+#include "motor/project/GameOptions.h"
+#include "motor/project/InputActions.h"
+#include "motor/project/SaveData.h"
 #include "motor/scene/RuntimeSystem.h"
 
 #include <glm/vec2.hpp>
@@ -18,11 +21,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <typeinfo>
+#include <vector>
 
 namespace motor {
 
@@ -152,10 +157,45 @@ protected:
     bool WasKeyPressed(Key key) const;
     bool IsMouseDown(MouseButton button) const;
     glm::vec2 MouseDelta() const;
+    // Ações do projeto (Arquivo > Controles): o mesmo código no teclado e no controle.
+    //   GetAxis("Horizontal")  -1 a 1 (A/D, setas, analógico esquerdo, direcional)
+    //   if (WasActionPressed("Pular")) ...   (Espaço ou botão A)
+    bool IsActionDown(std::string_view action) const;
+    bool WasActionPressed(std::string_view action) const;
+    bool WasActionReleased(std::string_view action) const;
+    float GetAxis(std::string_view action) const;
+    // Controle direto (o primeiro conectado; padrão Xbox): botões, analógicos (-1 a 1, Y para cima +) e gatilhos (0 a 1).
+    bool IsGamepadConnected() const;
+    bool IsGamepadButtonDown(GamepadButton button) const;
+    bool WasGamepadButtonPressed(GamepadButton button) const;
+    float GamepadAxisValue(GamepadAxis axis) const;
     // Cursor do jogo: Locked (preso e escondido, para olhar com MouseDelta), Hidden ou Normal (menus). No editor
     // vale com o jogo em foco e Esc solta o cursor; ao parar o Play ele volta ao normal.
     void SetCursorMode(CursorMode mode);
     CursorMode GetCursorMode() const;
+
+    // --- Opções do jogador (menu de opções) e sair ---
+    // Tela cheia, resolução, vsync, MSAA e sombras. No jogo exportado, ApplyOptions muda na hora e grava em
+    // %APPDATA%\<Jogo>\opcoes.json (o jogo abre com elas da próxima vez); no editor só a qualidade vale no Play.
+    //   motor::GameOptions o = GetOptions();
+    //   o.fullscreen = !o.fullscreen;
+    //   ApplyOptions(o);
+    GameOptions GetOptions() const;
+    void ApplyOptions(const GameOptions& options);
+    std::vector<Resolution> Resolutions() const;  // de tela cheia, da menor para a maior
+    void QuitGame();  // fecha o jogo depois deste passo (no editor, para o Play)
+    std::string GameVersion() const;  // versão do jogo (Arquivo > Configurações do jogo), ex.: "1.0.0"
+
+    // --- Progresso salvo (chave/valor em arquivos de "slot") ---
+    // No jogo exportado ficam em %APPDATA%\<Jogo>\saves\<slot>.json; no Play do editor, em
+    // <projeto>/.motor/saves/ (Jogo > Apagar saves do Play). Save() grava na hora; o que mudou também é gravado
+    // ao fechar o jogo e ao parar o Play.
+    //   SaveSlot().SetInt("fase", 2);  SaveSlot().Save();
+    //   const int fase = SaveSlot().GetInt("fase", 1);
+    SaveData& SaveSlot(std::string_view slot = SaveStore::kDefaultSlot);
+    bool HasSave(std::string_view slot = SaveStore::kDefaultSlot) const;  // para o botão "Continuar"
+    void DeleteSave(std::string_view slot = SaveStore::kDefaultSlot);     // "Novo jogo"
+    std::filesystem::path SaveFolder() const;  // para arquivos próprios (vazio se o jogo não tem pasta)
 
     // --- Temporizadores (tempo do jogo: não contam na pausa) ---
     // Chama `fn` daqui a `seconds` segundos (After) ou a cada `seconds` segundos (Every), antes do OnUpdate
@@ -204,6 +244,7 @@ private:
     friend class SceneRuntime;
     void WriteLog(std::string_view fmt, const detail::LogArg* args, size_t count);
     bool InputEnabled() const;
+    const InputActions& Actions() const;
     RuntimeSystem* FindSystem(const std::type_info& type);
 
     SceneRuntime* m_runtime = nullptr;

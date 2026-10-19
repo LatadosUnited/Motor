@@ -16,6 +16,17 @@ struct WindowDesc {
     int height = 720;
     bool vsync = true;
     int msaaSamples = 4;
+    bool fullscreen = false;  // no monitor principal, com width x height (0 = a resolução atual do monitor)
+    // false: a janela nasce escondida e aparece no Show() (o jogo exportado mostra quando já tem o que desenhar,
+    // em vez de uma janela branca enquanto o renderer inicia).
+    bool visible = true;
+};
+
+// Resolução que o monitor principal aceita em tela cheia.
+struct VideoMode {
+    int width = 0;
+    int height = 0;
+    bool operator==(const VideoMode&) const = default;
 };
 
 class Window {
@@ -33,7 +44,16 @@ public:
     void SwapBuffers();
 
     void SetTitle(const std::string& title);
+    void Show();  // mostra a janela criada com visible = false (sem efeito se já está visível)
     void SetVSync(bool enabled);
+
+    // Tela cheia no monitor principal (width/height 0 = a resolução atual dele) ou janela com esse tamanho
+    // (0 = 1280x720), centrada. Volta para janela no tamanho pedido, não no de antes.
+    void SetDisplayMode(bool fullscreen, int width, int height);
+    bool IsFullscreen() const;
+    // Resoluções do monitor principal (sem repetir as que só mudam a taxa), da menor para a maior.
+    static std::vector<VideoMode> MonitorModes();
+    static VideoMode DesktopMode();  // resolução atual do monitor principal
 
     void SetCursorMode(CursorMode mode);
     CursorMode GetCursorMode() const { return m_cursorMode; }

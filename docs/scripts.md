@@ -297,6 +297,8 @@ Dentro do script:
 
 | Chamada | Devolve |
 |---|---|
+| `GetAxis("Horizontal")` | a ação do projeto de -1 a 1: A/D, setas, analógico esquerdo ou direcional (veja abaixo) |
+| `IsActionDown("Correr")`, `WasActionPressed("Pular")` | a ação apertada (Shift ou o analógico apertado; Espaço ou o botão A) |
 | `IsKeyDown(motor::Key::W)` | `true` enquanto a tecla está apertada |
 | `WasKeyPressed(motor::Key::Space)` | `true` só no frame em que a tecla desceu |
 | `IsMouseDown(motor::MouseButton::Left)` | `true` enquanto o botão está apertado (`Left`, `Right`, `Middle`) |
@@ -306,6 +308,24 @@ Dentro do script:
 | `Time().fixedDelta` | o passo do `OnFixedUpdate` (1/60 s) |
 | `Time().elapsed` | segundos de jogo desde o Play (sem as pausas), em `double` |
 | `Time().frame` | quantos `OnUpdate` já rodaram |
+
+**Ações e controle.** Em vez de perguntar por uma tecla, pergunte pela ação: o mesmo script funciona no
+teclado e no controle (gamepad), e quem joga pode trocar as teclas. As ações ficam no projeto, em **Arquivo >
+Controles** (o padrão já traz `Horizontal`, `Vertical`, `Olhar X`, `Olhar Y`, `Pular`, `Correr`, `Interagir` e
+`Pausa`, com teclado e controle). Na janela, **Adicionar (aperte)** liga a próxima tecla ou botão apertado, e
+uma barra mostra o valor de cada ação na hora, para conferir sem dar Play. Uma entrada marcada como
+**Negativo** empurra o eixo para o outro lado (a tecla A em `Horizontal`).
+
+| Chamada | Devolve |
+|---|---|
+| `GetAxis("Vertical")` | -1 a 1: a soma das entradas (W = +1, S = -1, analógico para a frente = até +1) |
+| `IsActionDown("Pular")`, `WasActionPressed`, `WasActionReleased` | apertada (valor acima de 0,5), apertou ou soltou neste frame |
+| `IsGamepadConnected()` | há um controle (o primeiro conectado; Xbox, PlayStation e outros, no padrão Xbox) |
+| `IsGamepadButtonDown(motor::GamepadButton::A)`, `WasGamepadButtonPressed` | um botão do controle direto: `A`, `B`, `X`, `Y`, `LeftBumper`, `Start`, `DpadUp`... |
+| `GamepadAxisValue(motor::GamepadAxis::LeftX)` | analógico de -1 a 1 (Y para cima é positivo), com zona morta; gatilhos (`LeftTrigger`, `RightTrigger`) de 0 a 1 |
+
+Ação com nome errado devolve zero e avisa uma vez no log. No editor, a ferramenta MCP `game_gamepad` simula um
+controle (para testar sem ter um).
 
 Teclas: `motor::Key::A` a `Z`, `D0` a `D9` (números), `Space`, `Enter`, `Escape`, `Tab`, `Backspace`,
 `Up`/`Down`/`Left`/`Right` (setas), `LeftShift`, `LeftControl`, `LeftAlt` (e os `Right...`), `F1` a `F12`
@@ -664,8 +684,9 @@ vêm no editor: **Scripts > Adicionar exemplo**.
 
 ### Jogador
 
-[editor/templates/Scripts/Jogador.cpp](../editor/templates/Scripts/Jogador.cpp): anda com WASD (Shift corre),
-pula com Espaço e vira para onde anda. Na entidade: **Controlador de personagem** + **Jogador (física)**. O
+[editor/templates/Scripts/Jogador.cpp](../editor/templates/Scripts/Jogador.cpp): anda com WASD ou o analógico
+(Shift ou o analógico apertado corre), pula com Espaço ou o botão A e vira para onde anda (ações Horizontal,
+Vertical, Pular e Correr). Na entidade: **Controlador de personagem** + **Jogador (física)**. O
 chão precisa de Collider. W anda para -Z (a "frente" do mundo; a câmera do Seguir fica atrás, em +Z). Com um
 modelo animado como filho, troca entre parado, andando e pulando ([Animação](#9-animação)).
 
@@ -675,16 +696,13 @@ modelo animado como filho, troca entre parado, andando e pulando ([Animação](#
         auto* fisica = GetSystem<motor::PhysicsSystem>();
         if (!fisica) return;
 
-        using motor::Key;
-        glm::vec3 dir{0.0f};
-        if (IsKeyDown(Key::W)) dir.z -= 1.0f;
-        if (IsKeyDown(Key::S)) dir.z += 1.0f;
-        if (IsKeyDown(Key::A)) dir.x -= 1.0f;
-        if (IsKeyDown(Key::D)) dir.x += 1.0f;
-        const bool moving = glm::length(dir) > 1e-6f;
-        if (moving) dir = glm::normalize(dir);  // na diagonal não anda mais rápido
+        // Vertical para cima (W, analógico para a frente) = -Z.
+        glm::vec3 dir{GetAxis("Horizontal"), 0.0f, -GetAxis("Vertical")};
+        const bool moving = glm::length(dir) > 1e-3f;
+        // Na diagonal do teclado não anda mais rápido; o analógico meio inclinado anda mais devagar.
+        if (glm::length(dir) > 1.0f) dir = glm::normalize(dir);
 
-        const bool running = IsKeyDown(Key::LeftShift) || IsKeyDown(Key::RightShift);
+        const bool running = IsActionDown("Correr");
         // MoveCharacter vale até a próxima chamada: chamar a cada passo (com zero, para).
         fisica->MoveCharacter(GetId(), dir * velocidade * (running ? corrida : 1.0f));
 ```
@@ -862,6 +880,34 @@ E um menu com o botão **Jogar** troca de cena ([examples/MenuPrincipal.cpp](exa
   leia no `OnUpdate`. O elemento de cima ganha o clique; texto sozinho não bloqueia.
 - `LoadScene("Fase1")` acha a cena pelo nome (ou pelo caminho, `"Assets/Cenas/Fase1.mscene"`). A cena atual
   para (`OnDestroy` de todos) e a nova começa do zero. No editor, **Parar** volta à cena de antes do Play.
+  No jogo exportado, enquanto a cena nova carrega aparece a **tela de carregamento** (Arquivo > Configurações
+  do jogo: uma cena sua com UI, ou a padrão "Carregando..."). Ela é desenhada parada: scripts não rodam nela.
+
+**Menu de opções** (tela cheia, resolução, vsync, sombras e sair): `GetOptions()` devolve as opções atuais do
+jogador (`motor::GameOptions`), `ApplyOptions(o)` aplica na hora e `QuitGame()` fecha o jogo
+([examples/MenuOpcoes.cpp](examples/MenuOpcoes.cpp)):
+
+```cpp
+        } else if (ui->WasClicked("Vsync")) {
+            o.vsync = !o.vsync;
+        } else if (ui->WasClicked("Sombras")) {
+            o.shadows = static_cast<motor::ShadowSetting>((static_cast<int>(o.shadows) + 1) % 4);  // desligadas..altas
+        } else if (ui->WasClicked("Sair")) {
+            QuitGame();
+            mudou = false;
+        } else {
+            mudou = false;
+        }
+        if (mudou) {
+            ApplyOptions(o);
+            Mostrar();
+        }
+```
+
+- No jogo exportado as opções ficam gravadas em `%APPDATA%\<Jogo>\opcoes.json` e o jogo abre com elas da
+  próxima vez. Na primeira vez valem as de **Arquivo > Configurações do jogo**.
+- No Play do editor, cada Play começa nas opções do projeto e nada é gravado; só o MSAA e as sombras mudam de
+  verdade (tela cheia, resolução e vsync são do jogo exportado). `QuitGame` para o Play.
 
 Para pôr o HUD no mini jogo da seção anterior: copie `Hud.cpp` para `Scripts/`; crie **Entidade > Interface
 (UI) > Texto** com o nome `Vida` (Âncora em cima à esquerda, Posição `40 40`) e outro, `Pontos` (em cima à
@@ -869,6 +915,41 @@ direita, Posição `-40 40`); um **Painel** chamado `FimDeJogo` com um Texto fil
 vazia `HUD` com **Scripts > HUD (vida e pontos)**. Para o menu: uma cena `Menu` com dois **Botões** chamados
 `Jogar` e `Creditos`, um Painel `PainelCreditos` e uma entidade `Menu` com **Scripts > Menu principal**
 (Cena do jogo = o nome da cena do mini jogo). Abra a cena `Menu` e aperte **Play**.
+
+### Salvar o progresso
+
+`SaveSlot()` é um arquivo de chave/valor (o slot "progresso"; dê outro nome para ter vários, como
+`SaveSlot("slot2")` ou `SaveSlot("config")`). Leia com `GetInt`, `GetFloat`, `GetBool`, `GetString` e `GetVec3`
+(com o valor de quando ainda não existe), mude com os `Set...` e grave com `Save()`. Um menu com **Continuar**
+(só aparece se houver save) e **Novo jogo** ([examples/MenuContinuar.cpp](examples/MenuContinuar.cpp)):
+
+```cpp
+        if (ui->WasClicked("Continuar")) {
+            LoadScene(SaveSlot().GetString("fase", primeiraFase));
+        } else if (ui->WasClicked("NovoJogo")) {
+            DeleteSave();  // começa do zero
+            LoadScene(primeiraFase);
+        }
+```
+
+E na cena de cada fase, o jogador grava onde está e volta para lá ao continuar:
+
+```cpp
+        motor::SaveData& save = SaveSlot();
+        if (save.GetString("fase") == fase && save.Has("posicao")) {
+            GetTransform().position = save.GetVec3("posicao");  // continuar: de onde parou
+        }
+        save.SetString("fase", fase);
+        save.SetInt("vezes", save.GetInt("vezes", 0) + 1);
+        save.Save();
+```
+
+- No jogo exportado os saves ficam em `%APPDATA%\<Jogo>\saves\` (um `.json` por slot); no Play do editor,
+  em `<projeto>/.motor/saves/`, separados: **Jogo > Apagar saves do Play** volta a ser um jogador novo.
+- O que mudou e não foi gravado com `Save()` é gravado ao fechar o jogo e ao parar o Play. Gravar a cada
+  mudança pequena (posição todo frame) é desperdício: grave em momentos certos (fase, checkpoint, a cada
+  alguns segundos).
+- Para arquivos próprios (uma foto, um replay), `SaveFolder()` é a pasta dos saves.
 
 ## 14. Som
 

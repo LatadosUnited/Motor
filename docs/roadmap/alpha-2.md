@@ -39,7 +39,7 @@ servidor de versões. Main sem pendências de merge.
 | 3 | [Fase 18 — Funcionalidades de jogo](alpha-2/fase-18-funcionalidades-de-jogo.md) | pronta | física, áudio, cursor, formas e transparência que jogos comuns pedem | 17 |
 | 4 | [Fase 19 — Validação de uso real](alpha-2/fase-19-validacao.md) | em andamento | o editor quase só foi testado por agentes; a lista de defeitos decide o resto | — |
 | 5 | [Fase 20 — Editor produtivo](alpha-2/fase-20-editor-produtivo.md) | pronta | multi-seleção, copiar/colar, snapping, Cena e Jogo lado a lado, prefab dentro de prefab | 21 |
-| 6 | [Fase 21 — Jogo entregue](alpha-2/fase-21-jogo-entregue.md) | planejada | opções do jogador, ícone, salvar progresso, controle, exportação Release | 20 |
+| 6 | [Fase 21 — Jogo entregue](alpha-2/fase-21-jogo-entregue.md) | pronta | opções do jogador, ícone, salvar progresso, controle, exportação Release | 20 |
 
 A 16 vem primeiro porque quem começa a programar agora perde trabalho a cada erro de script. A 17 e a 18
 vêm antes da validação porque a validação é fazer um jogo, e é nelas que esse jogo vai esbarrar.
