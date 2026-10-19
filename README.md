@@ -528,10 +528,14 @@ struct Jogador : motor::Script {
 - Colisão: `OnCollisionEnter(const Collision&)` (outra entidade, ponto, normal apontando do outro para este,
   velocidade de aproximação) e `OnCollisionExit(EntityId)`. Trigger: `OnTriggerEnter/Exit(EntityId)`. Os dois
   lados recebem. Um par de entidades entra uma vez e sai quando não sobra nenhum contato entre elas.
-- `Raycast(origem, direção, distância, ignorar)`: primeiro corpo atingido (entidade, ponto, normal,
-  distância); triggers não contam. Rigidbody: `AddForce`, `AddImpulse`, `SetVelocity`, `GetVelocity`.
+- `Raycast(origem, direção, distância, ignorar, máscara)`: primeiro corpo atingido (entidade, ponto, normal,
+  distância); triggers não contam; `máscara` = camadas que o raio vê (`LayerMask({"Parede"})`). Rigidbody: `AddForce`, `AddImpulse`, `SetVelocity`, `GetVelocity`.
   Personagem: `MoveCharacter`, `Jump`, `IsGrounded`, `GetCharacterVelocity`. Entidade criada neste passo só
   ganha corpo no próximo `FixedUpdate`.
+- **Camadas de colisão** (Fase 18): até 16 camadas com nome e a tabela de quem se choca com quem, no projeto
+  (`.mproject`, formato 3; **Arquivo > Camadas de colisão** ou a ferramenta MCP `physics_layers`). Collider e
+  Controlador de personagem escolhem a camada no campo **Camada**. O editor e o Player copiam a tabela para
+  `PhysicsSettings::Global().layers` ao abrir o projeto; corpos parados nunca se chocam entre si.
 - O personagem gera eventos com corpos dinâmicos e triggers (não com o chão estático: para saber se está no
   chão, `IsGrounded`). O modelo **Scripts > Adicionar exemplo > Jogador** anda com WASD e pula com Espaço.
 - Configuração global (`motor::PhysicsSettings::Global()`, lida a cada Play): `workerThreads` (threads do job

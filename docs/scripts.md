@@ -397,9 +397,9 @@ Os componentes da engine:
 | Mesh Renderer | `motor::MeshRenderer` | `mesh`, `sharedMaterial` (asset `.mmat`) e `material` (o próprio): `color` (vec4), `albedo` (textura), `metallic`, `roughness`, `specular`, `emissive`... (PBR, ver a referência) |
 | Câmera | `motor::CameraComponent` | `fov` (graus), `nearPlane`, `farPlane`, `main` |
 | Luz | `motor::LightComponent` | `type` (`motor::LightType::Directional`/`Point`/`Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `castShadows` |
-| Collider | `motor::ColliderComponent` | `shape` (`motor::ColliderShape::Box`/`Sphere`/`Capsule`/`Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution` |
+| Collider | `motor::ColliderComponent` | `shape` (`motor::ColliderShape::Box`/`Sphere`/`Capsule`/`Mesh`), `size`, `radius`, `height`, `center`, `isTrigger`, `friction`, `restitution`, `layer` |
 | Rigidbody | `motor::RigidbodyComponent` | `mass`, `useGravity`, `isKinematic`, `linearDamping`, `angularDamping` |
-| Controlador de personagem | `motor::CharacterControllerComponent` | `height`, `radius`, `maxSlope`, `stepHeight`, `mass` |
+| Controlador de personagem | `motor::CharacterControllerComponent` | `height`, `radius`, `maxSlope`, `stepHeight`, `mass`, `layer` |
 
 Exemplo: trocar a cor do próprio objeto (do [examples/ExemploCampos.cpp](examples/ExemploCampos.cpp)):
 
@@ -518,7 +518,7 @@ inclua `<motor/physics/PhysicsSystem.h>`) e chame, de preferência no `OnFixedUp
 | Personagem: andar | `MoveCharacter(id, velocidade)` (m/s; vale até a próxima chamada; zero para parar) |
 | Personagem: pular | `Jump(id, velocidadeParaCima)` (só se estiver no chão) |
 | Personagem: estado | `IsGrounded(id)`, `GetCharacterVelocity(id)` |
-| Raio | `Raycast(origem, direção, distânciaMáxima, idIgnorado)`: o primeiro corpo atingido (triggers não contam) |
+| Raio | `Raycast(origem, direção, distânciaMáxima, idIgnorado, máscara)`: o primeiro corpo atingido (triggers não contam; `máscara` = camadas que o raio vê, `LayerMask({"Parede"})`) |
 
 A bola do [examples/BolaFisica.cpp](examples/BolaFisica.cpp) usa força, raio e impulso:
 
@@ -537,6 +537,12 @@ A bola do [examples/BolaFisica.cpp](examples/BolaFisica.cpp) usa força, raio e 
 
 O `Raycast` devolve um `std::optional<motor::PhysicsRaycastHit>`: teste com `if (hit)` e leia
 `hit->entity`, `hit->point`, `hit->normal` e `hit->distance`.
+
+**Camadas de colisão.** Em **Arquivo > Camadas de colisão** o projeto dá nome a até 16 camadas e marca quem
+se choca com quem (vale para todas as cenas, a partir do próximo Play). Cada Collider e Controlador de
+personagem escolhe a sua no campo **Camada** do Inspector. Num raio, a máscara diz o que ele vê: a câmera
+orbital que não deve bater no próprio jogador olha só as paredes, com
+`fisica->Raycast(alvo, paraTras, distancia, GetId(), fisica->LayerMask({"Parede"}))`.
 
 - Mudar o Transform de um corpo pelo script **teleporta** o corpo (inclusive o personagem). Para mover um
   objeto que deve empurrar os outros (porta, plataforma), use Rigidbody **Cinemático**.

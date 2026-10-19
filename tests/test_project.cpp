@@ -57,6 +57,39 @@ int main(int argc, char** argv) {
     }
     CHECK(Project::Open(p->RootDir(), &error).has_value());
 
+    SECTION("Camadas de colisão: padrão, salvar e abrir, formato antigo e tabela assimétrica");
+    {
+        const CollisionLayers defaults;
+        CHECK(p->Layers() == defaults && defaults.Label(0) == "Padrão" && defaults.Label(5) == "Camada 5");
+        CHECK(defaults.Collide(3, 7) && defaults.Find("Padrão") == 0 && defaults.Find("Nada") == -1);
+        CollisionLayers layers;
+        layers.names[1] = "Jogador";
+        layers.names[3] = "Coleta";
+        layers.SetCollide(1, 3, false);
+        layers.SetCollide(3, 3, false);
+        CHECK(!layers.Collide(3, 1) && layers.Collide(1, 1));  // simétrica
+        p->SetLayers(layers);
+        CHECK(p->Save(&error));
+        auto reopened = Project::Open(p->ProjectFile(), &error);
+        CHECK(reopened && reopened->Layers() == layers);
+
+        // Formato 2 (sem "physics"): camadas padrão.
+        const fs::path old = base / "Antigo";
+        fs::create_directories(old);
+        { std::ofstream(old / "Antigo.mproject") << R"({"format": "motor-project", "version": 2, "name": "Antigo"})"; }
+        auto antigo = Project::Open(old, &error);
+        CHECK(antigo && antigo->Layers() == defaults);
+        // Arquivo editado à mão com só um lado dizendo que não: o par não se choca; índice ruim é ignorado.
+        { std::ofstream(old / "Antigo.mproject") << R"({"format": "motor-project", "version": 3, "name": "Antigo",
+            "physics": {"layers": [{"index": 2, "name": "Água", "collidesWith": [0, 1]}, {"index": 40, "name": "x"}]}})"; }
+        antigo = Project::Open(old, &error);
+        CHECK(antigo && antigo->Layers().names[2] == "Água" && antigo->Layers().Collide(0, 2));
+        CHECK(antigo && !antigo->Layers().Collide(2, 5) && !antigo->Layers().Collide(5, 2) && antigo->Layers().Collide(5, 6));
+        // Versão mais nova que a deste editor é recusada.
+        { std::ofstream(old / "Antigo.mproject") << R"({"format": "motor-project", "version": 4, "name": "Antigo"})"; }
+        CHECK(!Project::Open(old, &error).has_value());
+    }
+
     SECTION("Open inválido");
     std::ofstream(base / "lixo.mproject") << "{ isto não é json";
     CHECK(!Project::Open(base / "lixo.mproject", &error).has_value());

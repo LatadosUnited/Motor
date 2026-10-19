@@ -13,6 +13,7 @@ motor_add_layer(scene
         SceneSerializerFields.cpp
         SceneRecovery.cpp
         ColliderComponent.cpp
+        CollisionLayerField.cpp
         RigidbodyComponent.cpp
         CharacterControllerComponent.cpp
         PrefabInstance.cpp

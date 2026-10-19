@@ -81,7 +81,9 @@ MOTOR_COMPONENT_MODULE(Collider) {
                {.slider = true, .min = 0.0f, .max = 1.0f, .format = "%.2f"})
         .Field("restitution", "Elasticidade", &ColliderComponent::restitution,
                {.slider = true, .min = 0.0f, .max = 1.0f, .format = "%.2f",
-                .tooltip = "0 = não quica, 1 = quica sem perder energia"});
+                .tooltip = "0 = não quica, 1 = quica sem perder energia"})
+        .Field("layer", "Camada", &ColliderComponent::layer,
+               {.tooltip = "Camada de colisão: quem se choca com quem fica em Projeto > Camadas de colisão"});
 }
 
 } // namespace motor

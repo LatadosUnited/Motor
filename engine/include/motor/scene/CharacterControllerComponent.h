@@ -1,5 +1,6 @@
 #pragma once
 
+#include "motor/scene/CollisionLayerField.h"
 #include "motor/scene/Component.h"
 
 namespace motor {
@@ -13,6 +14,7 @@ struct CharacterControllerComponent {
     float maxSlope = 45.0f;   // graus: rampa mais íngreme que ainda dá para subir
     float stepHeight = 0.3f;  // degrau mais alto que sobe sozinho
     float mass = 70.0f;       // kg: quanto empurra caixas
+    CollisionLayer layer;     // camada de colisão do projeto
 
     bool operator==(const CharacterControllerComponent&) const = default;
 };

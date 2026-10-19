@@ -170,6 +170,7 @@ private:
     void OnInit() override {
         AddBuiltinAssets(m_assets);
         m_assets.SetRoot(m_project.RootDir());
+        PhysicsSettings::Global().layers = m_project.Layers();  // camadas de colisão do projeto
         m_ui = std::make_unique<UiRenderer>();
 
         std::string error;

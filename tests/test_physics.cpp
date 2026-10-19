@@ -333,6 +333,43 @@ int main() {
         runtime.Stop();
     }
 
+    SECTION("Camadas de colisão: quem não se choca atravessa; raio só vê as camadas da máscara");
+    {
+        PhysicsSettings& settings = PhysicsSettings::Global();
+        const CollisionLayers before = settings.layers;
+        settings.layers.names[1] = "Fantasma";
+        settings.layers.names[2] = "Parede";
+        settings.layers.SetCollide(1, 0, false);  // Fantasma atravessa o Padrão (o chão)
+        CHECK(!settings.layers.Collide(0, 1) && settings.layers.Collide(1, 1) && settings.layers.Collide(0, 2));
+
+        Scene scene;
+        const EntityId floor = AddFloor(scene).id;
+        Entity& ghost = AddBox(scene, {0.0f, 3.0f, 0.0f}, "Fantasma");
+        ghost.Get<ColliderComponent>()->layer.index = 1;
+        const EntityId ghostId = ghost.id;
+        const EntityId solid = AddBox(scene, {3.0f, 3.0f, 0.0f}, "Solida").id;
+        Entity& player = scene.CreateEntity("Jogador");
+        player.transform.position = {-3.0f, 3.0f, 0.0f};
+        player.Add<CharacterControllerComponent>().layer.index = 1;
+        player.Add<Jogador>().velocidade = 0.0f;
+        const EntityId playerId = player.id;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        auto* fisica = runtime.GetSystem<PhysicsSystem>();
+        CHECK(fisica->LayerMask({"Parede", "Fantasma", "NaoExiste"}) == ((1u << 2) | (1u << 1)));
+        // Raio só com a camada Parede: o chão (Padrão) não conta; com o Padrão, conta.
+        CHECK(!fisica->Raycast({-6.0f, 5.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 100.0f, kNullEntity, fisica->LayerMask({"Parede"})));
+        const auto hit = fisica->Raycast({-6.0f, 5.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 100.0f, kNullEntity, 1u);
+        CHECK(hit && hit->entity == floor);
+        Run(runtime, 2.0f);
+        CHECK(scene.Find(ghostId)->transform.position.y < -2.0f);                   // caiu através do chão
+        CHECK(Near(scene.Find(solid)->transform.position.y, 0.5f, 0.05f));          // a do Padrão para no chão
+        CHECK(scene.Find(playerId)->transform.position.y < -2.0f);                  // personagem Fantasma também
+        runtime.Stop();
+        settings.layers = before;
+    }
+
     SECTION("Personagem anda, pula, não atravessa o chão e empurra caixas");
     {
         Scene scene;

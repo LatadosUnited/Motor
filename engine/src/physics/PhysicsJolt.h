@@ -4,6 +4,7 @@
 // conversões glm <-> Jolt, inicialização, pose de uma matriz, coletor de contatos e filtro dos raios.
 
 #include "motor/core/Log.h"
+#include "motor/project/CollisionLayers.h"
 #include "motor/scene/Scene.h"
 #include "motor/scene/Transform.h"
 
@@ -43,20 +44,26 @@
 
 namespace motor::physics_jolt {
 
-// --- Camadas: estáticos não colidem entre si (chão com parede não gera trabalho). ---
-constexpr JPH::ObjectLayer kLayerStatic = 0;
-constexpr JPH::ObjectLayer kLayerMoving = 1;
-constexpr JPH::uint kNumLayers = 2;
+// --- Camadas. ObjectLayer do Jolt = (móvel ? 16 : 0) + camada de colisão do projeto (CollisionLayers). Os
+// estáticos não colidem entre si (chão com parede não gera trabalho); o resto segue a tabela do projeto. ---
+constexpr JPH::uint kNumBroadPhaseLayers = 2;  // 0: estáticos, 1: móveis
+constexpr JPH::ObjectLayer kMovingOffset = CollisionLayers::kCount;
+
+inline JPH::ObjectLayer MakeLayer(bool moving, int collisionLayer) {
+    return static_cast<JPH::ObjectLayer>((moving ? kMovingOffset : 0) + collisionLayer);
+}
+inline bool IsMoving(JPH::ObjectLayer layer) { return layer >= kMovingOffset; }
+inline int CollisionLayerOf(JPH::ObjectLayer layer) { return layer % CollisionLayers::kCount; }
 
 class BroadPhaseLayers final : public JPH::BroadPhaseLayerInterface {
 public:
-    JPH::uint GetNumBroadPhaseLayers() const override { return kNumLayers; }
+    JPH::uint GetNumBroadPhaseLayers() const override { return kNumBroadPhaseLayers; }
     JPH::BroadPhaseLayer GetBroadPhaseLayer(JPH::ObjectLayer layer) const override {
-        return JPH::BroadPhaseLayer(static_cast<JPH::BroadPhaseLayer::Type>(layer));
+        return JPH::BroadPhaseLayer(IsMoving(layer) ? 1 : 0);
     }
 #if defined(JPH_EXTERNAL_PROFILE) || defined(JPH_PROFILE_ENABLED)
     const char* GetBroadPhaseLayerName(JPH::BroadPhaseLayer layer) const override {
-        return layer.GetValue() == kLayerStatic ? "Estaticos" : "Moveis";
+        return layer.GetValue() == 0 ? "Estaticos" : "Moveis";
     }
 #endif
 };
@@ -64,15 +71,29 @@ public:
 class ObjectVsBroadPhase final : public JPH::ObjectVsBroadPhaseLayerFilter {
 public:
     bool ShouldCollide(JPH::ObjectLayer layer, JPH::BroadPhaseLayer broadPhase) const override {
-        return layer == kLayerMoving || broadPhase.GetValue() == kLayerMoving;
+        return IsMoving(layer) || broadPhase.GetValue() == 1;
     }
 };
 
 class ObjectPairs final : public JPH::ObjectLayerPairFilter {
 public:
+    explicit ObjectPairs(const CollisionLayers& layers) : m_layers(layers) {}
     bool ShouldCollide(JPH::ObjectLayer a, JPH::ObjectLayer b) const override {
-        return a == kLayerMoving || b == kLayerMoving;
+        return (IsMoving(a) || IsMoving(b)) && m_layers.Collide(CollisionLayerOf(a), CollisionLayerOf(b));
     }
+
+private:
+    CollisionLayers m_layers;
+};
+
+// Raios e consultas: só as camadas da máscara (bit N = camada N).
+class LayerMaskFilter final : public JPH::ObjectLayerFilter {
+public:
+    explicit LayerMaskFilter(uint32_t mask) : m_mask(mask) {}
+    bool ShouldCollide(JPH::ObjectLayer layer) const override { return (m_mask >> CollisionLayerOf(layer)) & 1u; }
+
+private:
+    uint32_t m_mask;
 };
 
 inline JPH::Vec3 ToJolt(const glm::vec3& v) { return JPH::Vec3(v.x, v.y, v.z); }

@@ -118,7 +118,7 @@ struct PhysicsSystem::World {
     std::unique_ptr<JPH::JobSystemThreadPool> jobs;
     physics_jolt::BroadPhaseLayers broadPhaseLayers;
     physics_jolt::ObjectVsBroadPhase objectVsBroadPhase;
-    physics_jolt::ObjectPairs objectPairs;
+    physics_jolt::ObjectPairs objectPairs{settings.layers};  // tabela de camadas do projeto
     physics_jolt::ContactCollector contacts;
     JPH::PhysicsSystem physics;  // depois do coletor de contatos e das camadas, que ele usa
 

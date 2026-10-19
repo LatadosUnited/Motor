@@ -96,7 +96,7 @@ JPH::Ref<JPH::CharacterVirtual> PhysicsSystem::World::CreateCharacter(const Char
     JPH::Ref<JPH::CharacterVirtualSettings> s = new JPH::CharacterVirtualSettings();
     s->mShape = new JPH::CapsuleShape(halfCylinder, radius);  // centrada na origem da entidade
     s->mInnerBodyShape = s->mShape;
-    s->mInnerBodyLayer = kLayerMoving;
+    s->mInnerBodyLayer = MakeLayer(true, c.layer.index);
     s->mMaxSlopeAngle = JPH::DegreesToRadians(std::clamp(c.maxSlope, 0.0f, 89.0f));
     s->mMass = std::max(c.mass, 0.1f);
     // O que toca abaixo do centro da esfera de baixo apoia o personagem; acima, só empurra.
@@ -131,8 +131,9 @@ void PhysicsSystem::World::UpdateCharacter(CharacterRecord& r, float dt) {
     JPH::CharacterVirtual::ExtendedUpdateSettings update;
     update.mWalkStairsStepUp = JPH::Vec3(0.0f, std::max(r.settings.stepHeight, 0.0f), 0.0f);
     if (r.settings.stepHeight <= 0.0f) update.mStickToFloorStepDown = JPH::Vec3::sZero();
-    ch.ExtendedUpdate(dt, gravity, update, physics.GetDefaultBroadPhaseLayerFilter(kLayerMoving),
-                      physics.GetDefaultLayerFilter(kLayerMoving), {}, {}, *temp);
+    const JPH::ObjectLayer layer = MakeLayer(true, r.settings.layer.index);
+    ch.ExtendedUpdate(dt, gravity, update, physics.GetDefaultBroadPhaseLayerFilter(layer),
+                      physics.GetDefaultLayerFilter(layer), {}, {}, *temp);
 }
 
 void PhysicsSystem::World::WriteBack(Scene& scene) {
@@ -183,8 +184,8 @@ void PhysicsSystem::World::WakeAround(JPH::BodyID id) {
         bounds = lock.GetBody().GetWorldSpaceBounds();
     }
     bounds.ExpandBy(JPH::Vec3::sReplicate(0.05f));
-    Bodies().ActivateBodiesInAABox(bounds, physics.GetDefaultBroadPhaseLayerFilter(kLayerMoving),
-                                   physics.GetDefaultLayerFilter(kLayerMoving));
+    // Acorda todos os vizinhos, de qualquer camada (os filtros padrão do Jolt aceitam tudo).
+    Bodies().ActivateBodiesInAABox(bounds, JPH::BroadPhaseLayerFilter(), JPH::ObjectLayerFilter());
 }
 
 void PhysicsSystem::World::DropPairsOf(JPH::BodyID body) {

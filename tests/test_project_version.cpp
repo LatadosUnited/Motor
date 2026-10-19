@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     }
     CHECK(created->EngineVersion() == kVersion);
     const nlohmann::json saved = ReadJson(created->ProjectFile());
-    CHECK(saved.value("version", 0) == 2);
+    CHECK(saved.value("version", 0) == 3);
     CHECK(saved.value("engineVersion", std::string()) == kVersion);
     CHECK(!fs::exists(fs::path(created->ProjectFile()) += ".tmp"));  // gravou o .tmp e renomeou
 
@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
         CHECK(v1->Save(&error));
         CHECK(v1->EngineVersion() == kVersion);
         const nlohmann::json upgraded = ReadJson(v1->ProjectFile());
-        CHECK(upgraded.value("version", 0) == 2);
+        CHECK(upgraded.value("version", 0) == 3);
         CHECK(upgraded.value("engineVersion", std::string()) == kVersion);
         CHECK(upgraded.value("startupScene", std::string()) == "Assets/a.mscene");
     }
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
     CHECK(CompareVersions("0.1.9", "0.2.0") < 0);
 
     SECTION("Formato futuro é recusado");
-    WriteText(other / "Outro.mproject", R"({"format": "motor-project", "version": 3, "name": "Outro"})");
+    WriteText(other / "Outro.mproject", R"({"format": "motor-project", "version": 4, "name": "Outro"})");
     CHECK(!Project::Open(other, &error).has_value());
 
     return TestResult();

@@ -130,13 +130,14 @@ void PhysicsSystem::EnsureWorldAndBodies() {
 }
 
 std::optional<PhysicsRaycastHit> PhysicsSystem::Raycast(const glm::vec3& origin, const glm::vec3& direction,
-                                                        float maxDistance, EntityId ignore) const {
+                                                        float maxDistance, EntityId ignore, uint32_t layerMask) const {
     if (!m_world || glm::length(direction) < 1e-8f || maxDistance <= 0.0f) return std::nullopt;
     const glm::vec3 dir = glm::normalize(direction);
     const JPH::RRayCast ray(ToJolt(origin), ToJolt(dir * maxDistance));
     JPH::RayCastResult hit;
     const RayBodyFilter filter(ignore);
-    if (!m_world->physics.GetNarrowPhaseQueryNoLock().CastRay(ray, hit, {}, {}, filter)) return std::nullopt;
+    const LayerMaskFilter layers(layerMask);
+    if (!m_world->physics.GetNarrowPhaseQueryNoLock().CastRay(ray, hit, {}, layers, filter)) return std::nullopt;
 
     PhysicsRaycastHit result;
     const JPH::RVec3 point = ray.GetPointOnRay(hit.mFraction);

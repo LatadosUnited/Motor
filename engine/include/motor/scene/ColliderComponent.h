@@ -1,5 +1,6 @@
 #pragma once
 
+#include "motor/scene/CollisionLayerField.h"
 #include "motor/scene/Component.h"
 
 #include <glm/vec3.hpp>
@@ -21,6 +22,7 @@ struct ColliderComponent {
     bool isTrigger = false;            // só detecta (OnTriggerEnter/Exit), não empurra
     float friction = 0.5f;
     float restitution = 0.0f;  // 0 = não quica, 1 = quica sem perder energia
+    CollisionLayer layer;      // camada de colisão do projeto (quem se choca com quem: CollisionLayers)
 
     bool operator==(const ColliderComponent&) const = default;
 };

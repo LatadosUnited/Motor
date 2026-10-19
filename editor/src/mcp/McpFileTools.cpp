@@ -107,6 +107,64 @@ void McpController::AddSceneFileTools() {
                                                 ToUtf8(m_host.document.ScenePath())));
         },
     });
+
+    m_protocol.AddTool({
+        .name = "physics_layers",
+        .description = "Lê ou muda as camadas de colisão do projeto (como Arquivo > Camadas de colisão): nomes das 16 "
+                       "camadas e quem se choca com quem. Sem argumentos, só lê. Collider e CharacterController "
+                       "escolhem a camada pelo campo 'layer' (número). Grava o .mproject; vale no próximo Play.",
+        .inputSchema = Schema({{"names", Prop("object", "{\"1\": \"Jogador\", \"2\": \"Inimigo\"} (texto vazio tira o nome)")},
+                               {"collide", Prop("array", "[{\"a\": \"Jogador\", \"b\": \"Inimigo\", \"value\": false}] "
+                                                         "(camada pelo nome ou pelo número)")}}),
+        .run = [this](const Json& args) {
+            const Project* project = m_host.document.GetProject();
+            if (!project) throw ToolError("nenhum projeto aberto");
+            CollisionLayers layers = project->Layers();
+            if (args.contains("names")) {
+                if (!args["names"].is_object()) throw ToolError("'names' deve ser um objeto {\"número\": \"nome\"}");
+                for (const auto& [key, value] : args["names"].items()) {
+                    int index = -1;
+                    try {
+                        index = std::stoi(key);
+                    } catch (...) {
+                    }
+                    if (index < 0 || index >= CollisionLayers::kCount || !value.is_string()) {
+                        throw ToolError(std::format("names: use \"0\" a \"{}\" com um texto", CollisionLayers::kCount - 1));
+                    }
+                    layers.names[static_cast<size_t>(index)] = value.get<std::string>();
+                }
+            }
+            auto layerArg = [&layers](const Json& v) {
+                if (v.is_number_integer() && v.get<int>() >= 0 && v.get<int>() < CollisionLayers::kCount) return v.get<int>();
+                if (v.is_string() && layers.Find(v.get<std::string>()) >= 0) return layers.Find(v.get<std::string>());
+                throw ToolError("camada desconhecida: " + v.dump());
+            };
+            if (args.contains("collide")) {
+                if (!args["collide"].is_array()) throw ToolError("'collide' deve ser uma lista de {a, b, value}");
+                for (const Json& pair : args["collide"]) {
+                    if (!pair.is_object() || !pair.contains("a") || !pair.contains("b") || !pair.contains("value") ||
+                        !pair["value"].is_boolean()) {
+                        throw ToolError("cada item de 'collide' precisa de a, b e value (true ou false)");
+                    }
+                    layers.SetCollide(layerArg(pair["a"]), layerArg(pair["b"]), pair["value"].get<bool>());
+                }
+            }
+            if (!(layers == project->Layers())) {
+                std::string error;
+                if (!m_host.document.SetCollisionLayers(layers, error)) throw ToolError(error);
+            }
+            Json list = Json::array();
+            for (int i = 0; i < CollisionLayers::kCount; ++i) {
+                if (layers.names[static_cast<size_t>(i)].empty() && i != 0) continue;
+                Json with = Json::array();
+                for (int j = 0; j < CollisionLayers::kCount; ++j) {
+                    if (layers.Collide(i, j) && (j == 0 || !layers.names[static_cast<size_t>(j)].empty())) with.push_back(j);
+                }
+                list.push_back({{"index", i}, {"name", layers.Label(i)}, {"collides_with", std::move(with)}});
+            }
+            return ToolResult::Data({{"layers", std::move(list)}});
+        },
+    });
 }
 
 // --- Arquivos: assets, prefabs, modelos, materiais ---------------------------------------------------

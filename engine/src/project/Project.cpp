@@ -16,10 +16,58 @@ using json = nlohmann::ordered_json;
 
 namespace {
 constexpr const char* kFormatName = "motor-project";
-constexpr int kFormatVersion = 2;  // 2: engineVersion (Fase 14)
+constexpr int kFormatVersion = 3;  // 2: engineVersion (Fase 14). 3: camadas de colisão em "physics" (Fase 18)
 
 void SetError(std::string* error, std::string message) {
     if (error) *error = std::move(message);
+}
+
+// "physics": {"layers": [{"index": 1, "name": "Jogador", "collidesWith": [0, 1, 3]}, ...]}. Só vão para o
+// arquivo as camadas com nome ou que não se chocam com alguma outra; as demais ficam no padrão.
+json LayersToJson(const CollisionLayers& layers) {
+    json list = json::array();
+    for (int i = 0; i < CollisionLayers::kCount; ++i) {
+        const auto row = static_cast<size_t>(i);
+        if (layers.names[row].empty() && layers.masks[row] == CollisionLayers::kAll) continue;
+        json with = json::array();
+        for (int j = 0; j < CollisionLayers::kCount; ++j) {
+            if (layers.Collide(i, j)) with.push_back(j);
+        }
+        list.push_back({{"index", i}, {"name", layers.names[row]}, {"collidesWith", std::move(with)}});
+    }
+    return json{{"layers", std::move(list)}};
+}
+
+// Leitura tolerante: entradas com índice fora de 0..15 ou campos de outro tipo são ignoradas. Tabela
+// assimétrica (arquivo editado à mão): o par só se choca se os dois lados disserem que sim.
+CollisionLayers LayersFromJson(const json& physics) {
+    CollisionLayers layers;
+    const auto list = physics.find("layers");
+    if (list == physics.end() || !list->is_array()) return layers;
+    for (const json& entry : *list) {
+        if (!entry.is_object() || !entry.contains("index") || !entry["index"].is_number_integer()) continue;
+        const int i = entry["index"].get<int>();
+        if (i < 0 || i >= CollisionLayers::kCount) continue;
+        const auto row = static_cast<size_t>(i);
+        if (entry.contains("name") && entry["name"].is_string()) layers.names[row] = entry["name"].get<std::string>();
+        if (const auto with = entry.find("collidesWith"); with != entry.end() && with->is_array()) {
+            uint16_t mask = 0;
+            for (const json& j : *with) {
+                if (j.is_number_integer() && j.get<int>() >= 0 && j.get<int>() < CollisionLayers::kCount) {
+                    mask = static_cast<uint16_t>(mask | (1u << j.get<int>()));
+                }
+            }
+            layers.masks[row] = mask;
+        }
+    }
+    for (int a = 0; a < CollisionLayers::kCount; ++a) {
+        for (int b = a; b < CollisionLayers::kCount; ++b) {
+            const bool both = ((layers.masks[static_cast<size_t>(a)] >> b) & 1u) &&
+                              ((layers.masks[static_cast<size_t>(b)] >> a) & 1u);
+            layers.SetCollide(a, b, both);
+        }
+    }
+    return layers;
 }
 } // namespace
 
@@ -115,6 +163,9 @@ std::optional<Project> Project::Open(const std::filesystem::path& fileOrDir, std
         project.m_name = root.value("name", ToUtf8(file.stem()));
         project.m_startupScene = root.value("startupScene", std::string());
         project.m_engineVersion = root.value("engineVersion", std::string());  // formato 1: desconhecida
+        if (const auto physics = root.find("physics"); physics != root.end() && physics->is_object()) {
+            project.m_layers = LayersFromJson(*physics);  // formatos 1 e 2: camadas padrão
+        }
 
         std::filesystem::create_directories(project.AssetsDir(), ec);  // projeto copiado sem Assets/ ainda abre
         log::Info("Projeto aberto: {} ({})", project.m_name, ToUtf8(project.m_root));
@@ -132,6 +183,7 @@ bool Project::Save(std::string* error) const {
     root["name"] = m_name;
     root["engineVersion"] = kVersion;
     root["startupScene"] = m_startupScene;
+    root["physics"] = LayersToJson(m_layers);
 
     // Grava ao lado e renomeia: uma falha no meio não estraga o projeto.
     const std::filesystem::path file = ProjectFile();

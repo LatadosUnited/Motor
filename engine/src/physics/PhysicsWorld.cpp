@@ -272,7 +272,7 @@ PhysicsSystem::World::BodyRecord* PhysicsSystem::World::CreateBody(
                                     : rigidbody->isKinematic ? JPH::EMotionType::Kinematic
                                                              : JPH::EMotionType::Dynamic;
     const JPH::ShapeRefC shape = BuildShape(collider, pose.scale, mesh, motion, entity.id);
-    const JPH::ObjectLayer layer = motion == JPH::EMotionType::Static ? kLayerStatic : kLayerMoving;
+    const JPH::ObjectLayer layer = MakeLayer(motion != JPH::EMotionType::Static, collider.layer.index);
 
     JPH::BodyCreationSettings settingsBody(shape, ToJolt(pose.position), ToJolt(pose.rotation), motion, layer);
     settingsBody.mUserData = entity.id;

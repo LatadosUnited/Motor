@@ -67,6 +67,7 @@ void SceneDocument::DrawFileMenu() {
     if (ImGui::MenuItem("Salvar cena", "Ctrl+S")) SaveScene(false);
     if (ImGui::MenuItem("Salvar cena como...", "Ctrl+Shift+S")) SaveScene(true);
     ImGui::Separator();
+    if (ImGui::MenuItem("Camadas de colisão...", nullptr, false, m_project.has_value())) m_showLayersWindow = true;
     if (m_host.exportGame && ImGui::MenuItem("Exportar jogo...", nullptr, false, m_project.has_value())) m_host.exportGame();
     ImGui::Separator();
     if (ImGui::MenuItem("Sair", "Alt+F4")) m_host.requestClose();  // passa por OnCloseRequested
@@ -97,6 +98,7 @@ void SceneDocument::DrawPopups() {
     DrawRecoveryPopup();
     DrawNewProjectPopup();
     DrawErrorPopup();
+    DrawCollisionLayersWindow();
 }
 
 // Cena com alterações não salvas antes de abrir, criar ou sair: salvar, não salvar ou cancelar.
