@@ -194,7 +194,7 @@ CustomFieldType FieldTraits<std::shared_ptr<Model>>::Describe() {
 // Nome do módulo: depois dos outros no menu "Adicionar componente" (ordem alfabética dos módulos).
 MOTOR_COMPONENT_MODULE(SkeletalAnimation) {
     registry.Register<Animator>("Animator", "Animator")
-        .Field("model", "Modelo", &Animator::model, {.tooltip = "Modelo glTF (.gltf/.glb) com o esqueleto e os clipes"})
+        .Field("model", "Modelo", &Animator::model, {.tooltip = "Modelo glTF (.gltf/.glb) ou FBX (.fbx) com o esqueleto e os clipes"})
         .Field("clip", "Clipe inicial", &Animator::clip, {.tooltip = "Nome do clipe que começa tocando no Play"})
         .Field("playOnStart", "Tocar ao iniciar", &Animator::playOnStart)
         .Field("loop", "Repetir", &Animator::loop, {.tooltip = "O clipe inicial repete"})

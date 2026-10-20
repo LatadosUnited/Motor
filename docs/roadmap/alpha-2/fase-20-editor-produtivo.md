@@ -64,8 +64,8 @@ por números, sem nunca ver o personagem animado. *(origem: pedido do usuário, 
   era a cena inicial dos projetos novos (Chão e Cubo), agora com Collider. (aeafe4e)
 - [x] **Rotação devolvida como foi dada:** `Transform::EulerDegrees` escolhe a leitura que menos gira em X e Z
   (`[0, 180, 0]` volta `[0, 180, 0]`); usada no `entity_get`, no Inspector e na edição de vários. (500a4f6)
-- [ ] **Importar FBX:** hoje só glTF, então personagens do Character Creator 5 ou do Mixamo passam pelo Blender
-  antes. Precisa de biblioteca nova (aprovação do usuário) ou de conversão automática na importação.
+- [x] **Importar FBX:** com a ufbx (MIT, um `.c` só; aprovada pelo usuário em 20/10/2026). O `.fbx` vira o mesmo
+  modelo do glTF (prefab, Animator, clipes), sem passar pelo Blender. (c2ae5ba)
 
 ## Pronto quando
 
@@ -154,6 +154,16 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   do momento; "Só sombra" nas malhas do robô o tirou da imagem e deixou a sombra no chão. Testes novos no
   `test_mcp` (rotação, collider, estado do jogo, sombra e a resposta com espera pelo HTTP).
 
+- **Importar FBX:** `engine/src/assets/FbxLoader.cpp` converte a cena da ufbx no mesmo `ModelData` do glTF, e o
+  resto (BuildModel, prefab, Animator, exportação) não muda. A ufbx entrega em Y para cima e metros, sem pivôs.
+  Malha com pele vai para o espaço do modelo na pose de bind, com o nó neutro: o Blender grava a malha num nó a
+  -90° e escala 100, e o Motor aplicaria esse nó duas vezes. Clipes vazios (a "Take 001" do Mixamo) saem, e o
+  único clipe com nome genérico ganha o nome do arquivo depois do `@`. A exportação leva as texturas externas.
+  Teste `test_fbx`: o `tests/data/Robo.fbx` (exportado pelo Blender 5.2 do Robo.glb) dá a mesma malha deformada
+  que o glTF nas três animações (diferença menor que 1 cm), e um FBX ASCII mínimo confere centímetros -> metros e
+  o nome do clipe. No editor, pelo MCP: o `X Bot@Walking.fbx` do Mixamo foi importado sozinho, com o clipe
+  "Walking" tocando no Play (capturas). O Character Creator 5 não foi testado (falta um arquivo).
+
 ## Limitações
 
 - Fechada e juntada ao main sem o teste à mão dos itens novos (decisão do usuário, 19/10/2026): ficam no roteiro
@@ -186,3 +196,5 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   editor nem o gizmo; para ver a interface, a captura da janela (PrintWindow) continua valendo.
 - O estado do jogo no `entity_get` mostra o Animator mais próximo (a entidade ou o primeiro filho com um), não
   todos, e não diz qual entidade é a dele.
+- FBX: sem blend shapes (morph), câmeras e luzes; só a primeira pele de cada malha; texturas fora de `Assets/` não
+  vão para o jogo exportado. O contorno de seleção de um modelo animado fica na pose de repouso (glTF também).

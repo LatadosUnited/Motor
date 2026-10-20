@@ -205,7 +205,7 @@ std::shared_ptr<Model> AssetLibrary::GetModelByGuid(std::string_view guid, std::
     }
     ModelData data;
     std::string problem;
-    if (!LoadGltf(file, data, &problem)) {
+    if (!LoadModelFile(file, data, &problem)) {
         SetError(error, std::move(problem));
         return nullptr;
     }

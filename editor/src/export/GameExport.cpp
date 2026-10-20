@@ -4,6 +4,7 @@
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/assets/AssetLoaders.h>
+#include <motor/assets/Model.h>
 #include <motor/core/EngineAssets.h>
 #include <motor/core/Log.h>
 #include <motor/core/Paths.h>
@@ -95,6 +96,8 @@ private:
                 GltfUris(json::parse(ReadFile(file)), file);
             } else if (ext == ".glb") {
                 if (const std::string chunk = GlbJsonChunk(ReadFile(file)); !chunk.empty()) GltfUris(json::parse(chunk), file);
+            } else if (ext == ".fbx") {
+                FbxTextures(file);
             }
         } catch (const json::exception& e) {
             m_missing.insert(std::format("{}: arquivo inválido ({})", rel, e.what()));
@@ -138,6 +141,19 @@ private:
                     m_missing.insert(std::format("{}: arquivo citado não existe ({})", m_project.ToRelative(file), uri));
                 }
             }
+        }
+    }
+
+    // FBX: texturas externas (as embutidas vão dentro do .fbx). As que o leitor não achou já não aparecem no jogo.
+    void FbxTextures(const fs::path& file) {
+        motor::ModelData data;
+        std::string error;
+        if (!motor::LoadFbx(file, data, &error)) {
+            m_missing.insert(std::format("{}: {}", m_project.ToRelative(file), error));
+            return;
+        }
+        for (const motor::ModelImage& image : data.images) {
+            if (!image.file.empty()) Add(image.file);
         }
     }
 

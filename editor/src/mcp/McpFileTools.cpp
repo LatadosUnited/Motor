@@ -302,7 +302,7 @@ void McpController::AddAssetTools() {
 
     m_protocol.AddTool({
         .name = "prefab_instantiate",
-        .description = "Cria na cena uma instância de um prefab (.mprefab) ou de um modelo glTF (.gltf/.glb; "
+        .description = "Cria na cena uma instância de um prefab (.mprefab) ou de um modelo (.gltf/.glb/.fbx; "
                        "importado se preciso). Fica selecionada. Devolve a raiz criada.",
         .inputSchema = Schema({{"path", Prop("string", "arquivo, relativo ao projeto")}, {"parent", entityProp}},
                               {"path"}),

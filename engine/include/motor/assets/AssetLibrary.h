@@ -84,7 +84,7 @@ public:
     bool WriteMaterialFile(const std::filesystem::path& file, const Material& material,
                            const MaterialTextureRefs& textures, std::string* error = nullptr);
 
-    // Modelos glTF (.gltf/.glb, motor/assets/Model.h). As malhas e os clipes do modelo também são achados por
+    // Modelos glTF (.gltf/.glb) e FBX (.fbx), motor/assets/Model.h. As malhas e os clipes do modelo também são achados por
     // GetMesh/GetMeshByGuid e GetClip/GetClipByGuid com "#<nome>" no fim da chave ou do GUID.
     std::shared_ptr<Model> GetModel(std::string_view key, std::string* error = nullptr);
     // Relê o arquivo se ele mudou desde a última leitura (malhas e clipes novos; os antigos seguem vivos com quem os usa).

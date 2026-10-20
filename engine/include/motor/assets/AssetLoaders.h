@@ -13,7 +13,7 @@
 namespace motor {
 
 // Tipos de arquivo que a engine sabe usar, reconhecidos pela extensão (sem diferenciar maiúsculas).
-// Model: glTF 2.0 (.gltf/.glb), motor/assets/Model.h. Font: .ttf/.otf da UI do jogo (motor/ui/Font.h).
+// Model: glTF 2.0 (.gltf/.glb) e FBX (.fbx), motor/assets/Model.h. Font: .ttf/.otf da UI do jogo (motor/ui/Font.h).
 // EnvironmentMap: céu em HDR equirretangular (.hdr), usado no ambiente da cena (Fase 7).
 enum class AssetType { Unknown, Scene, Texture, Mesh, Material, Prefab, Font, Model, EnvironmentMap, Audio };
 
