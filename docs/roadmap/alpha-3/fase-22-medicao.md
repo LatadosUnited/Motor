@@ -36,13 +36,26 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
   Sistemas como zonas "transientes", para as estatísticas saírem uma linha por sistema.
 - [ ] Zonas nos scripts do jogo (a DLL de scripts hoje compila sem `MOTOR_TRACY`) e nomes nas threads da Jolt.
 
+### Achados do profiler
+
+- [x] **Sombras com 20 ms de CPU no Sandbox.** O driver da Intel (HD 530) varria o buffer de índices na CPU a
+  cada `glDrawElements`, para achar o intervalo de vértices, lendo a memória de vídeo: ~310 µs por draw de esfera
+  (2300 triângulos) e 5 µs por cubo. Não era espera pela GPU: com a sombra Baixa, a GPU das sombras caía de 9,2
+  para 2,0 ms e a CPU continuava em 15,5 ms. A correção é o `glDrawRangeElements` com o intervalo conhecido, em
+  `Mesh::Draw` e no `Renderer2D`. Por draw: de ~310 µs para 2 µs. Sandbox, vsync desligado, CPU por quadro:
+  Sombras de 19,9 para 3,6 ms, Cena HDR de 4,9 para 1,6 ms, Render de 31 para 15 ms (o resto do tempo agora é
+  espera pela GPU no `SwapBuffers`, como deve). O FPS do Sandbox não muda na HD 530 (a GPU é o limite, ~28 ms),
+  mas a CPU fica livre: deve pesar nas cenas limitadas pela CPU e com malhas grandes. *(origem: Tracy,
+  20/10/2026)*
+- [ ] Refazer a comparação com a Unity (`bench/`) com essa correção.
+
 ### Contadores e medição
 
 - [ ] Contadores por quadro: tempo de CPU por sistema, tempo de GPU por passada (timer queries), draws,
   triângulos e memória de vídeo por recurso. Visíveis no viewport, no MCP (`editor_status`) e no Player
   (`--perf` grava um CSV). *(origem: alpha-3.md)*
-- [ ] `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor. *(origem:
-  alpha-3.md)*
+- [x] `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor. *(origem:
+  alpha-3.md)* Já existia, feito junto com a comparação com a Unity (e957199).
 - [ ] Cena de referência no repositório: ~5000 entidades (estáticas e com física), 1 luz direcional com sombra
   e 8 pontuais, 50 scripts simples, UI e som. *(origem: alpha-3.md)*
 - [ ] Teste de desempenho no `ctest` (fora do conjunto rápido) que falha se um número piorar além da margem.
