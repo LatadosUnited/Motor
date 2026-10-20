@@ -76,8 +76,16 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
   Release (`cubos1000sombra` e `scripts1000`, 600 quadros) e no editor pelo MCP, editando e em Play. O custo das
   consultas de GPU não apareceu num A/B com `MOTOR_GPU_TIMERS`, mas a máquina estava ruidosa (a Unity também
   dobrou de tempo): repetir com a máquina calma.
-- [ ] Contadores visíveis no **viewport** do editor (sobreposição ligável) e **memória de vídeo por recurso**
-  (texturas, malhas, framebuffers, mapas de sombra). *(origem: alpha-3.md; o resto do item acima)*
+- [x] **Memória de vídeo por tipo de recurso** (`motor/renderer/GpuMemory.h`): cada textura, buffer e renderbuffer
+  do renderer é registrado ao criar e ao apagar, com o tamanho estimado pelo formato (mips, camadas, MSAA); os
+  contadores ganham `vram <tipo> MB` e `vram total MB` (texturas, malhas, framebuffers, pós-processamento, sombras,
+  céu, buffers), também no CSV do `--perf` e no `editor_status`. Teste em `test_frame_stats`. *(origem: alpha-3.md)*
+  (430deb0) No editor, projeto novo: 105 MB, dos quais 64 MB são as 4 cascatas de sombra de 2048² (alvo da Fase 23).
+- [x] **Contadores no viewport do editor:** botão **Estatísticas** na barra do viewport, lembrado no `editor.json`
+  (`viewportStats`); painel no canto direito com quadro, CPU por parte (sistemas e scripts abaixo de 0,05 ms somem),
+  GPU por passada, draws e memória por tipo, suavizado por média móvel (`viewport/FrameStatsPanel`). *(origem:
+  alpha-3.md)* (639ccc6) Visto em captura da janela (`PrintWindow`), editando e em Play: o painel fica abaixo da
+  barra e dos botões de Play e se limita à altura do viewport. Não testado à mão: clicar no botão.
 - [ ] `bench/medir.ps1` lendo o `--perf` no lugar do título da janela (o título quebrou uma vez, na Fase 21).
 - [x] `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor. *(origem:
   alpha-3.md)* Já existia, feito junto com a comparação com a Unity (e957199).
