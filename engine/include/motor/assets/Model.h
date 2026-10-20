@@ -1,8 +1,8 @@
 #pragma once
 
-// Modelos 3D glTF 2.0 (.gltf/.glb), Fase 11.
+// Modelos 3D glTF 2.0 (.gltf/.glb), Fase 11, e FBX (.fbx, com a ufbx).
 //
-// LoadGltf lê o arquivo para ModelData (só CPU, testável sem janela): nós, malhas, materiais, imagens, peles e
+// LoadGltf e LoadFbx leem o arquivo para ModelData (só CPU, testável sem janela): nós, malhas, materiais, imagens, peles e
 // clipes. BuildModel transforma isso no asset Model que a cena usa: uma Mesh por primitiva (sub-asset do
 // arquivo, referenciada como "<guid do arquivo>#<nome>"), o esqueleto (todos os nós) e os clipes.
 // O prefab do modelo (o que vai para a cena) é gerado por ImportModel (motor/scene/ModelImport.h).
@@ -91,6 +91,15 @@ bool LoadGltf(const std::filesystem::path& file, ModelData& out, std::string* er
 // Mesmo, a partir dos bytes do arquivo; `baseDir` resolve os arquivos externos.
 bool ParseGltf(std::span<const uint8_t> bytes, const std::filesystem::path& baseDir, ModelData& out,
                std::string* error = nullptr);
+
+// FBX (binário ou ASCII): Mixamo, Character Creator, Blender, Maya, 3ds Max. Convertido para Y para cima e
+// metros. Clipe com nome genérico ("mixamo.com") num arquivo "Modelo@Clipe.fbx" ganha o nome depois do "@".
+bool LoadFbx(const std::filesystem::path& file, ModelData& out, std::string* error = nullptr);
+// Mesmo, a partir dos bytes; `baseDir` acha as texturas externas e `fileStem` dá nome aos clipes genéricos.
+bool ParseFbx(std::span<const uint8_t> bytes, const std::filesystem::path& baseDir, ModelData& out,
+              std::string* error = nullptr, std::string_view fileStem = {});
+// LoadGltf ou LoadFbx, pela extensão do arquivo.
+bool LoadModelFile(const std::filesystem::path& file, ModelData& out, std::string* error = nullptr);
 
 // Asset de modelo: o que fica em cache no AssetLibrary.
 struct Model {

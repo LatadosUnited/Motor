@@ -86,7 +86,7 @@ private:
     std::vector<glm::mat4> m_globals;
 };
 
-// Campo "model" do Animator: referência ao arquivo .gltf/.glb pelo GUID (com o caminho junto, como plano B).
+// Campo "model" do Animator: referência ao arquivo .gltf/.glb/.fbx pelo GUID (com o caminho junto, como plano B).
 template <> struct FieldTraits<std::shared_ptr<Model>> {
     static CustomFieldType Describe();
 };

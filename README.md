@@ -3,7 +3,7 @@
 Engine 3D em C++20 + OpenGL 4.5, escrita do zero. Dependências externas mínimas:
 **GLFW** (janela/input), **GLM** (matemática), **Dear ImGui** (UI do editor, branch docking),
 **ImGuizmo** (gizmos de transform), **nlohmann/json** (cenas e projetos), **stb_image** (PNG/JPG),
-**cgltf** (modelos glTF), **Jolt Physics** (física), **miniaudio** (som) e **cpp-httplib** (servidor MCP do
+**cgltf** (modelos glTF), **ufbx** (modelos FBX), **Jolt Physics** (física), **miniaudio** (som) e **cpp-httplib** (servidor MCP do
 editor e servidor de versões), baixadas
 automaticamente pelo CMake. O leitor de OBJ é próprio; as fontes da UI do jogo usam o `imstb_truetype.h` que já
 vem com o Dear ImGui.
@@ -199,7 +199,7 @@ Arquivos dentro do projeto podem ser usados direto nas cenas:
 |---|---|---|
 | Textura | `.png` `.jpg` `.jpeg` `.bmp` `.tga` | via stb_image; tratada como cor sRGB, com mipmaps |
 | Malha | `.obj` | `v`, `vt`, `vn`, `f` (polígonos viram triângulos). Sem normais no arquivo, são calculadas. Materiais `.mtl` são ignorados |
-| Modelo | `.gltf` `.glb` | glTF 2.0 (via cgltf): nós, malhas, materiais, texturas, esqueleto e animações. Vira prefab (abaixo) |
+| Modelo | `.gltf` `.glb` `.fbx` | glTF 2.0 (via cgltf) e FBX (via ufbx): nós, malhas, materiais, texturas, esqueleto e animações. Vira prefab (abaixo) |
 | Material | `.mmat` | do Motor: cor, textura, especular e brilho (abaixo) |
 | Prefab | `.mprefab` | do Motor: entidade com filhos (abaixo) |
 | Fonte | `.ttf` `.otf` | fonte dos textos da UI do jogo (ver "Interface do jogo") |
@@ -297,9 +297,9 @@ mudar a cor de uma peça no prefab muda todas as instâncias.
 - Editar um material ou um prefab no Inspector entra no desfazer (o arquivo volta junto); "Aplicar ao prefab" e
   criar prefab ou material, não. A cena registra as alterações das instâncias normalmente.
 
-### Modelos 3D (glTF) e animação
+### Modelos 3D (glTF e FBX) e animação
 
-Copie um `.gltf` (com o `.bin` e as imagens ao lado) ou `.glb` para `Assets/`. O editor importa sozinho
+Copie um `.gltf` (com o `.bin` e as imagens ao lado), `.glb` ou `.fbx` para `Assets/`. O editor importa sozinho
 (e de novo quando o arquivo muda; clique direito > "Importar de novo" força):
 
 ```
@@ -323,7 +323,19 @@ Assets/Personagens/Robo_materiais/       um .mmat por material do glTF e as text
 - Exemplo: `engine/assets/models/Robo.glb` (1,93 m, olha para -Z, clipes Parado, Andando e Pulando). Com o
   modelo Jogador: entidade com Controlador de personagem + Jogador, o robô como filho na posição `0 -0.9 0`.
 
-Limitações: sem morph targets, câmeras e luzes do glTF; animação só de juntas (nós sem pele não se movem);
+**FBX** (Mixamo, Character Creator, Blender, Maya, 3ds Max), lido com a ufbx e importado igual ao glTF:
+
+- Convertido na importação para Y para cima e metros (o Mixamo grava em centímetros), sem pivôs nem
+  "transformações de geometria". Polígonos viram triângulos; cada material de uma malha vira uma malha.
+- Texturas embutidas no `.fbx` ou ao lado dele (o caminho relativo, o absoluto gravado, ou o nome do arquivo na
+  pasta do `.fbx` ou em `textures/`). Texturas fora da pasta `Assets/` não vão para o jogo exportado.
+- Animações: cada pilha do arquivo vira um clipe (amostrada em quadros); pilhas vazias saem. Sem o "Armature|"
+  do Blender no nome. Arquivos do Mixamo trazem a animação como "mixamo.com": o único clipe do arquivo ganha o
+  nome do arquivo depois do `@`, como na Unity (`X Bot@Walking.fbx` -> clipe `Walking`).
+- Clipes de outro arquivo com o mesmo esqueleto (as animações do Mixamo "Without Skin") servem no Animator pelas
+  versões de `Play`/`CrossFade` que recebem um `AnimationClip`: as juntas são achadas pelo nome.
+
+Limitações: sem morph targets, câmeras e luzes do glTF (nem do FBX); animação só de juntas (nós sem pele não se movem);
 as malhas do modelo também aparecem no combo "Malha" do Inspector, em "Modelos" (abra o modelo na lista); o modelo alterado no disco é
 relido, mas cenas abertas só pegam as malhas novas ao reabrir.
 

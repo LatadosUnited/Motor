@@ -225,3 +225,8 @@ motor_add_test(test_input_actions)
 
 # Tela de carregamento (Fase 21): a padrão (layout em vários tamanhos de tela) e a cena do projeto no .mproject.
 motor_add_test(test_loading_screen)
+
+# Importação de FBX (ufbx): o robô de exemplo em FBX tem de dar o mesmo modelo que o Robo.glb.
+motor_add_test(test_fbx)
+target_compile_definitions(test_fbx PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_SOURCE_DIR}/engine/assets"
+                                            MOTOR_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")

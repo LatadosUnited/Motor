@@ -1,6 +1,6 @@
 #pragma once
 
-// Importação de modelos glTF (Fase 11): o arquivo .gltf/.glb do projeto vira um prefab que dá para arrastar
+// Importação de modelos glTF (Fase 11) e FBX: o arquivo .gltf/.glb/.fbx do projeto vira um prefab que dá para arrastar
 // para a cena, com os materiais do glTF como materiais do Motor (.mmat) e as texturas como arquivos do projeto.
 //
 // Para "Assets/Personagens/Robo.glb" são gerados:

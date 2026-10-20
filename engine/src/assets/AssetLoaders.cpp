@@ -139,7 +139,7 @@ AssetType AssetTypeFromPath(const fs::path& path) {
     if (ext == kMaterialFileExtension) return AssetType::Material;
     if (ext == kPrefabFileExtension) return AssetType::Prefab;
     if (ext == ".ttf" || ext == ".otf") return AssetType::Font;  // fontes da UI do jogo (motor/ui/Font.h)
-    if (ext == ".gltf" || ext == ".glb") return AssetType::Model;
+    if (ext == ".gltf" || ext == ".glb" || ext == ".fbx") return AssetType::Model;
     if (ext == ".hdr") return AssetType::EnvironmentMap;  // céu equirretangular (Fase 7)
     if (ext == ".wav" || ext == ".ogg" || ext == ".mp3") return AssetType::Audio;  // clipes de som (Fase 8)
     return AssetType::Unknown;
