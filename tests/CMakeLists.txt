@@ -35,6 +35,7 @@ target_compile_definitions(test_layers PRIVATE
 motor_add_test(test_scripts)
 motor_add_test(test_runtime_systems)
 motor_add_test(test_script_list)  # Fase 22: lista de scripts do SceneRuntime
+motor_add_test(test_frame_stats)  # Fase 22: contadores por quadro e CSV do --perf
 
 # O histórico de desfazer e o modo Play são do editor; compilamos só eles junto com os testes.
 motor_add_test(test_undo ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)

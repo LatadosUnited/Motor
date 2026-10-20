@@ -19,6 +19,7 @@
 namespace motor {
 
 class Framebuffer;
+class GpuTimers;
 class PostProcess;
 class ShadowRenderer;
 class SkyRenderer;
@@ -104,6 +105,7 @@ private:
     std::unique_ptr<PostProcess> m_post;
     std::unique_ptr<ShadowRenderer> m_shadows;
     std::unique_ptr<SkyRenderer> m_sky;
+    std::unique_ptr<GpuTimers> m_gpuTimers;  // tempo de GPU por passada (contadores, Fase 22)
     unsigned int m_frameUbo = 0;
     unsigned int m_lightsUbo = 0;
     unsigned int m_shadowsUbo = 0;

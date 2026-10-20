@@ -6,6 +6,7 @@ motor_add_layer(core
         Window.cpp
         Input.cpp
         ImGuiLayer.cpp
+        FrameStats.cpp
     PRIVATE_LIBS glfw)
 
 # ImGui: os objetos entram na libMotor.dll pelo alvo Motor; aqui só os headers (públicos: o editor e os scripts

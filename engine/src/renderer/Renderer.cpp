@@ -110,6 +110,8 @@ Renderer::Renderer() {
     }
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);  // reflexos sem costura entre as faces do cubo
     MOTOR_PROFILE_GPU_CONTEXT();
+    m_gpuTimers = std::make_unique<GpuTimers>();
+    GpuTimers::SetCurrent(m_gpuTimers.get());
 
     const std::filesystem::path dir = EngineAssetsDir() / "shaders";
     m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
@@ -139,6 +141,7 @@ Renderer::~Renderer() {
 
 void Renderer::BeginFrame(int width, int height) {
     MOTOR_PROFILE_GPU_COLLECT();  // as zonas de GPU do quadro anterior
+    m_gpuTimers->BeginFrame();    // e as dos contadores, de alguns quadros atrás
     m_stats = {};
     m_windowWidth = width;
     m_windowHeight = height;

@@ -7,8 +7,12 @@
 //   MOTOR_PROFILE_GPU_COLLECT();   uma vez por quadro: lê as consultas que a GPU já terminou
 //   MOTOR_PROFILE_GPU("Sombras");  zona de CPU e de GPU até o fim do bloco
 
+//
+// Fora do Tracy, MOTOR_PROFILE_GPU também mede a passada para os contadores (GpuTimers -> FrameStats), sempre ligado.
+
 #include "motor/core/Profile.h"
 #include "renderer/GL.h"
+#include "renderer/GpuTimers.h"
 
 #if defined(MOTOR_TRACY)
 
@@ -18,14 +22,15 @@
     TracyGpuContext;                \
     TracyGpuContextName("OpenGL", 6)
 #define MOTOR_PROFILE_GPU_COLLECT() TracyGpuCollect
-#define MOTOR_PROFILE_GPU(name) \
-    ZoneScopedN(name);          \
+#define MOTOR_PROFILE_GPU(name)                          \
+    const ::motor::GpuTimerScope motorGpuTimer_(name);   \
+    ZoneScopedN(name);                                   \
     TracyGpuZone(name)
 
 #else
 
 #define MOTOR_PROFILE_GPU_CONTEXT() ((void)0)
 #define MOTOR_PROFILE_GPU_COLLECT() ((void)0)
-#define MOTOR_PROFILE_GPU(name) ((void)0)
+#define MOTOR_PROFILE_GPU(name) const ::motor::GpuTimerScope motorGpuTimer_(name)
 
 #endif

@@ -99,6 +99,7 @@
     X(PFNGLCOLORMASKPROC, glColorMask)                                \
     /* Fase 22: timer queries das zonas de GPU do profiler (TracyOpenGL.hpp) */ \
     X(PFNGLGENQUERIESPROC, glGenQueries)                              \
+    X(PFNGLDELETEQUERIESPROC, glDeleteQueries)                        \
     X(PFNGLGETQUERYIVPROC, glGetQueryiv)                              \
     X(PFNGLGETQUERYOBJECTIVPROC, glGetQueryObjectiv)                  \
     X(PFNGLGETQUERYOBJECTUI64VPROC, glGetQueryObjectui64v)            \
