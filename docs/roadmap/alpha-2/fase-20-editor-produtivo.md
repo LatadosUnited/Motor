@@ -56,7 +56,8 @@ por números, sem nunca ver o personagem animado. *(origem: pedido do usuário, 
 - [x] **Documentação da API de scripts certa:** a cópia velha (API 13) estava dentro da pasta do jogo, posta à
   mão; a do Motor 0.2.650 já dizia 14 e o `test_script_docs` confere a versão. Ferramenta nova `docs_read` (a
   documentação da versão que está rodando, por seção) e `script_api` no `editor_status`; as instruções do
-  servidor mandam ler por ela. (c21dfb8)
+  servidor mandam ler por ela. (c21dfb8) O `editor_status` mostra em `script_reference` os caminhos da
+  documentação e dos headers do SDK desta versão, para o agente ler com as próprias ferramentas.
 - [x] **Esconder só a malha:** campo **Sombra** no Mesh Renderer: Com sombra, Sem sombra ou **Só sombra** (some da
   imagem e continua fazendo sombra; o Animator segue). `kScriptApiVersion` = 15. (5ca1280)
 - [x] **Primitivas com collider:** as do `entity_create` já vinham com Collider desde a Fase 18; o que vinha sem
