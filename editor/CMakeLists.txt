@@ -60,6 +60,7 @@ add_executable(MotorEditor
     src/panels/MultiEdit.cpp
     src/panels/HierarchyFilter.cpp
     src/EntityClipboard.cpp
+    src/drawers/ShadowCastingDrawer.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 # Includes do editor a partir de src/ ("scripts/ScriptHost.h"); as peças comuns ficam na raiz de src/.

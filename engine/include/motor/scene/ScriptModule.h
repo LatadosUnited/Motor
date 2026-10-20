@@ -46,7 +46,8 @@ namespace motor {
 // 14: Fase 21: opções do jogador (GetOptions/ApplyOptions/Resolutions), QuitGame, GameVersion e saves
 //     (SaveSlot/HasSave/DeleteSave/SaveFolder, motor::SaveData), ações de entrada (IsActionDown, GetAxis...) e
 //     controle (GamepadButton/GamepadAxis).
-inline constexpr int kScriptApiVersion = 14;
+// 15: campo shadows (ShadowCasting: com sombra, sem sombra, só sombra) no MeshRenderer.
+inline constexpr int kScriptApiVersion = 15;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

@@ -289,10 +289,10 @@ void Scene::SubmitTo(Renderer& renderer) const {
                 }
             }
             skin.JointMatrices(globals, joints);
-            renderer.SubmitSkinned(*mr->mesh, mr->Resolved(), WorldMatrix(e->id), joints);
+            renderer.SubmitSkinned(*mr->mesh, mr->Resolved(), WorldMatrix(e->id), joints, mr->shadows);
             continue;
         }
-        renderer.Submit(*mr->mesh, mr->Resolved(), WorldMatrix(e->id));
+        renderer.Submit(*mr->mesh, mr->Resolved(), WorldMatrix(e->id), mr->shadows);
     }
 }
 

@@ -86,6 +86,29 @@ CustomFieldType FieldTraits<BlendMode>::Describe() {
             }};
 }
 
+CustomFieldType FieldTraits<ShadowCasting>::Describe() {
+    return {"ShadowCasting",
+            [](const void* a, const void* b) {
+                return *static_cast<const ShadowCasting*>(a) == *static_cast<const ShadowCasting*>(b);
+            },
+            [](const void* v, const AssetLibrary&) {
+                return nlohmann::json(ShadowCastingName(*static_cast<const ShadowCasting*>(v))).dump();
+            },
+            [](std::string_view text, void* v, AssetLibrary&, std::string* error) {
+                const auto json = nlohmann::json::parse(text, nullptr, false);
+                constexpr ShadowCasting kModes[] = {ShadowCasting::On, ShadowCasting::Off, ShadowCasting::ShadowsOnly};
+                for (int i = 0; i < 3; ++i) {
+                    if ((json.is_string() && json.get<std::string>() == ShadowCastingName(kModes[i])) ||
+                        (json.is_number_integer() && json.get<int>() == i)) {
+                        *static_cast<ShadowCasting*>(v) = kModes[i];
+                        return true;
+                    }
+                }
+                if (error) *error = "esperado \"On\", \"Off\" ou \"ShadowsOnly\"";
+                return false;
+            }};
+}
+
 MOTOR_COMPONENT_MODULE(MeshRenderer) {
     // A ordem dos campos é a do Inspector e a do arquivo. Os campos depois de "material" são o material
     // próprio do componente (usado quando não há asset de material). Cenas até a versão 5 tinham "shininess"
@@ -125,6 +148,10 @@ MOTOR_COMPONENT_MODULE(MeshRenderer) {
                   [](MeshRenderer& m) -> auto& { return m.material.emissiveIntensity; },
                   {.speed = 0.05f, .min = 0.0f, .max = 100.0f, .format = "%.2f"})
         .FieldRef("emissiveMap", "Mapa de emissão", [](MeshRenderer& m) -> auto& { return m.material.emissiveMap; })
+        // Depois do material (não é dele): os índices dos campos acima não mudam.
+        .Field("shadows", "Sombra", &MeshRenderer::shadows,
+               {.tooltip = "Com sombra; Sem sombra; Só sombra (o objeto some da imagem e continua fazendo sombra, "
+                           "com a animação rodando: o corpo do personagem em primeira pessoa)"})
         .OnAdd([](MeshRenderer& m, AssetLibrary& assets) { m.mesh = assets.FindMesh("Cubo"); });
 }
 

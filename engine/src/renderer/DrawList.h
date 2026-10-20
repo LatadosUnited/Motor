@@ -22,6 +22,7 @@ struct DrawItem {
     uint32_t jointOffset = 0; // em Renderer::m_joints
     uint32_t jointCount = 0;
     bool skinned = false;
+    ShadowCasting shadows = ShadowCasting::On;  // Off: fora dos mapas de sombra; ShadowsOnly: só neles
 };
 
 // Envia as juntas de um item com pele para o bloco Joints (binding 2) antes de desenhar.

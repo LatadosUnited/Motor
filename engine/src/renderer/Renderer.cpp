@@ -166,12 +166,13 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_wires.clear();
 }
 
-void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat4& model) {
+void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows) {
     MOTOR_ASSERT(m_inScene, "Submit fora de BeginScene/EndScene");
     DrawItem& item = m_items.emplace_back();
     item.mesh = &mesh;
     item.material = material;
     item.model = model;
+    item.shadows = shadows;
     item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
 }
 
@@ -181,7 +182,7 @@ void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const g
 }
 
 void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const glm::mat4& model,
-                             std::span<const glm::mat4> joints) {
+                             std::span<const glm::mat4> joints, ShadowCasting shadows) {
     MOTOR_ASSERT(m_inScene, "SubmitSkinned fora de BeginScene/EndScene");
     if (joints.size() > kMaxJoints && !std::exchange(m_warnedTooManyJoints, true)) {
         log::Warn("Renderer: malha com {} juntas; só as primeiras {} se movem", joints.size(), kMaxJoints);
@@ -192,6 +193,7 @@ void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const g
     item.material = material;
     item.model = model;
     item.skinned = true;
+    item.shadows = shadows;
     item.jointOffset = static_cast<uint32_t>(m_joints.size());
     item.jointCount = static_cast<uint32_t>(count);
     m_joints.insert(m_joints.end(), joints.begin(), joints.begin() + static_cast<std::ptrdiff_t>(count));
@@ -331,6 +333,7 @@ void Renderer::DrawScene() {
     // Opacos e recortes primeiro; os transparentes ficam para depois do céu, de trás para frente.
     std::vector<std::pair<float, const DrawItem*>> transparent;
     for (const DrawItem& item : m_items) {
+        if (item.shadows == ShadowCasting::ShadowsOnly) continue;  // só nos mapas de sombra
         if (!frustum.Intersects(item.bounds)) {
             ++m_stats.culled;
             continue;

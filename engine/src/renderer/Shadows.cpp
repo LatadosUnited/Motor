@@ -85,6 +85,7 @@ void ShadowRenderer::DrawItems(std::span<const DrawItem> items, const glm::mat4&
     const Shader* bound = nullptr;
     for (const DrawItem& item : items) {
         if (item.material.blend == BlendMode::Transparent) continue;  // vidro e água não fazem sombra
+        if (item.shadows == ShadowCasting::Off) continue;
         if (!frustum.Intersects(item.bounds)) continue;
         Shader& shader = item.skinned ? skinned : base;
         if (bound != &shader) {
