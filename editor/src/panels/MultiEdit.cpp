@@ -73,9 +73,9 @@ void PropagateEdits(const motor::Entity& before, const motor::Entity& after, mot
     CopyChangedAxes(before.transform.position, after.transform.position, t.position);
     CopyChangedAxes(before.transform.scale, after.transform.scale, t.scale);
     if (before.transform.rotation != after.transform.rotation) {
-        const glm::vec3 a = glm::degrees(glm::eulerAngles(before.transform.rotation));
-        const glm::vec3 b = glm::degrees(glm::eulerAngles(after.transform.rotation));
-        glm::vec3 degrees = glm::degrees(glm::eulerAngles(t.rotation));
+        const glm::vec3 a = before.transform.EulerDegrees();
+        const glm::vec3 b = after.transform.EulerDegrees();
+        glm::vec3 degrees = t.EulerDegrees();
         // Tolerância: a ida e volta quat -> euler muda os outros eixos em frações de grau.
         for (int i = 0; i < 3; ++i) {
             if (std::abs(a[i] - b[i]) > 1e-3f) degrees[i] = b[i];
