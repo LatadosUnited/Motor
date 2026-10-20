@@ -47,7 +47,15 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
   espera pela GPU no `SwapBuffers`, como deve). O FPS do Sandbox não muda na HD 530 (a GPU é o limite, ~28 ms),
   mas a CPU fica livre: deve pesar nas cenas limitadas pela CPU e com malhas grandes. *(origem: Tracy,
   20/10/2026)*
-- [ ] Refazer a comparação com a Unity (`bench/`) com essa correção.
+- [x] Refazer a comparação com a Unity (`bench/`) com essa correção. Neutra ou melhor em todas as cenas
+  (`fisica1000` de 24,2 para 22,5 ms, `cubos1000sombra` de 18,6 para 17,4). Tabela em `bench/README.md` e em
+  [alpha-3.md](../alpha-3.md). O `medir.ps1` estava quebrado desde a Fase 21 (FPS fora do título): o Player ganhou
+  `--stats`. *(origem: pedido do usuário, 20/10/2026)*
+- [ ] **`cubos10000` caiu de 68–69% para 37–53% da Unity desde 18/10.** Sem a correção, 110 ms contra 54. O Tracy
+  mostra ~19 ms por quadro no `SceneRuntime` percorrendo 10 000 entidades sem script nenhum (`ForEachScript` e
+  `StartPending`, cada um ~1,3 a 1,6 ms, em todo `Update` e em todo passo fixo), e a bola de neve dos passos fixos
+  (quadro lento = mais passos). Achar a mudança desde a 0.2.0 e manter uma lista dos scripts no lugar de percorrer
+  a cena (antecipa um item da Fase 25). *(origem: comparação com a Unity, 20/10/2026)*
 
 ### Contadores e medição
 

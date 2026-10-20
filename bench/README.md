@@ -41,6 +41,41 @@ powershell -File bench/comparar.ps1 -Projeto "C:/temp/bench/Motor Bench"
 
 ## Resultados
 
+### 20/10/2026 — Fase 22, com o `glDrawRangeElements`
+
+Mesma máquina e mesma build da Unity de 18/10; Motor 0.2.650 Release (branch `fase-22-medicao`). Quatro medições por
+cena: as duas rodadas do `comparar.ps1` e duas da medição alternada abaixo. A tabela mostra a faixa; a porcentagem é
+de cada par Motor/Unity medido em seguida.
+
+| Cena | Motor | Unity | Motor em % da Unity | 18/10 |
+|---|---|---|---|---|
+| vazia | 12,2 a 12,6 ms | 13,6 a 15,2 ms | 108 a 124% | 110 a 113% |
+| cubos1000 | 14,3 a 14,5 ms | 16,9 a 17,7 ms | 117 a 124% | 121 a 125% |
+| cubos1000sombra | 17,3 a 17,5 ms | 20,9 a 22,8 ms | 121 a 131% | 124 a 126% |
+| **cubos10000** | 84 a 113 ms | 37,1 a 59,6 ms | **37 a 53%** | 68 a 69% |
+| **fisica1000** | 22,3 a 23,2 ms | 17,7 a 17,9 ms | **77 a 80%** | 76 a 81% |
+| scripts1000 | 14,3 a 14,4 ms | 16,9 a 17,0 ms | 118 a 119% | 121% |
+| spawn200 | 13,3 a 14,9 ms | 14,8 a 15,6 ms | 105 a 114% | 114 a 122% |
+
+**Efeito do `glDrawRangeElements`** (medição alternada: o mesmo Player Release com e sem a correção, um depois do
+outro, duas vezes por cena): neutro ou melhor em todas. `cubos1000sombra` de 18,6 para 17,4 ms; `fisica1000` de 24,2
+para 22,5 ms; `cubos10000` de 110 a 111 para 84 a 101 ms; nas outras, até 0,5 ms (dentro do ruído).
+
+Leitura:
+
+- **`cubos10000` piorou desde 18/10, e não por causa da correção:** sem ela o Motor mede 110 ms (contra 54 ms em
+  18/10). O Tracy mostra o porquê nessa cena, que não tem script nenhum: além dos ~30 ms de CPU dos 10 000 draws
+  (Fase 24), o `SceneRuntime` gasta ~19 ms por quadro percorrendo as 10 000 entidades atrás de scripts
+  (`ForEachScript` e `StartPending`, ~1,3 a 1,6 ms cada, 2 vezes por `Update` e 2 por passo fixo). E, como o passo
+  fixo é de 60 Hz, quadro lento = mais passos por quadro = mais voltas pela cena: a cena oscila entre ~60 ms e
+  ~110 ms de uma rodada para outra. Que mudança desde a 0.2.0 dobrou esse custo não foi isolada (sem bisect).
+- `fisica1000` igual (77 a 80%); as cenas dominadas pela GPU continuam acima da Unity.
+- A Unity também variou: `cubos10000` mediu 59,6 ms numa das quatro rodadas (37 nas outras).
+
+Mudança no processo: a Fase 21 tirou o FPS do título do Player, e o `medir.ps1` deixou de ler. O Player ganhou
+`--stats` (FPS no título) e o `comparar.ps1` o usa, com `--opcoes` num arquivo que não existe (opções padrão:
+1280×720 em janela, MSAA 4x).
+
 ### 18/10/2026 — antes da alpha 3
 
 i5 de 4 núcleos, Intel HD 530; Motor 0.2.0 Release (OpenGL 4.5) contra Unity 6000.3.24f1 (URP 17.3, Direct3D 11,
