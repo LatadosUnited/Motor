@@ -681,7 +681,7 @@ Exportado/
   `SceneRuntime`, física, HUD e câmera principal). Para testar um projeto sem exportar:
   `Player.exe "C:/caminho/MeuJogo"`. `--quadros N` fecha sozinho depois de N quadros (testes automáticos);
   `--janela` abre em janela mesmo com tela cheia nas opções; `--opcoes "<arquivo>"` usa outro arquivo de opções.
-  O título da janela é só o nome do jogo (sem FPS).
+  O título da janela é só o nome do jogo (sem FPS); `--stats` acrescenta FPS, ms e draws (medição, `bench/`).
 - **Identidade do jogo** (Fase 21, **Arquivo > Configurações do jogo** ou MCP `game_settings`): nome do `.exe`
   (vazio = o do projeto), versão (`1.0.0`, vai para as propriedades do `.exe` e para `Script::GameVersion`) e
   ícone (`.ico` com vários tamanhos ou `.png` de até 256x256, de `Assets/`). A exportação grava o ícone e a versão

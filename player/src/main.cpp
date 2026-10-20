@@ -5,6 +5,7 @@
 //   --quadros N                   fecha sozinho depois de N quadros (testes automáticos)
 //   --janela                      abre em janela mesmo com tela cheia nas opções
 //   --opcoes "<arquivo>"          opções do jogador neste arquivo, não em %APPDATA%\<Jogo>\opcoes.json
+//   --stats                       FPS, ms e draws no título da janela (medição: bench/medir.ps1)
 //
 // Abre o projeto, carrega a DLL de scripts, abre a cena inicial e roda o jogo como o Play do editor: o mesmo
 // SceneRuntime (scripts, física, HUD e os outros sistemas registrados), a câmera principal da cena e a UI
@@ -49,6 +50,7 @@ struct LaunchOptions {
     int frames = 0;    // > 0: fecha depois desse número de quadros
     bool windowed = false;  // --janela
     fs::path optionsFile;   // --opcoes; vazio = %APPDATA%\<Jogo>\opcoes.json
+    bool stats = false;     // --stats
 };
 
 constexpr const char* kOptionsFile = "opcoes.json";
@@ -379,6 +381,8 @@ int main(int argc, char** argv) {
             options.windowed = true;
         } else if (args[i] == "--opcoes" && i + 1 < args.size()) {
             options.optionsFile = PathFromUtf8(args[++i]);
+        } else if (args[i] == "--stats") {
+            options.stats = true;
         } else if (!args[i].starts_with("--")) {
             options.project = PathFromUtf8(args[i]);
         }
@@ -419,7 +423,7 @@ int main(int argc, char** argv) {
         desc.window.height = gameOptions.height;
         desc.window.vsync = gameOptions.vsync;
         desc.window.visible = false;  // aparece já com a tela de carregamento (ShowLoadingScreen)
-        desc.statsInTitle = false;
+        desc.statsInTitle = options.stats;
         Player player(std::move(*project), options, gameOptions, desc);
         player.Run();
         if (player.Failed()) {
