@@ -96,7 +96,16 @@
     X(PFNGLNAMEDFRAMEBUFFERDRAWBUFFERPROC, glNamedFramebufferDrawBuffer) \
     X(PFNGLNAMEDFRAMEBUFFERREADBUFFERPROC, glNamedFramebufferReadBuffer) \
     X(PFNGLCLEARNAMEDFRAMEBUFFERFVPROC, glClearNamedFramebufferfv)    \
-    X(PFNGLCOLORMASKPROC, glColorMask)
+    X(PFNGLCOLORMASKPROC, glColorMask)                                \
+    /* Fase 22: timer queries das zonas de GPU do profiler (TracyOpenGL.hpp) */ \
+    X(PFNGLGENQUERIESPROC, glGenQueries)                              \
+    X(PFNGLGETQUERYIVPROC, glGetQueryiv)                              \
+    X(PFNGLGETQUERYOBJECTIVPROC, glGetQueryObjectiv)                  \
+    X(PFNGLGETQUERYOBJECTUI64VPROC, glGetQueryObjectui64v)            \
+    X(PFNGLGETINTEGER64VPROC, glGetInteger64v)                        \
+    X(PFNGLQUERYCOUNTERPROC, glQueryCounter)                          \
+    X(PFNGLGETERRORPROC, glGetError)                                  \
+    X(PFNGLGETSTRINGIPROC, glGetStringi)
 
 // Os ponteiros vivem num namespace próprio para não colidir com os símbolos
 // exportados pela opengl32.dll; o using-directive abaixo permite chamá-los como glXxx().

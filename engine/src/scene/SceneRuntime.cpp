@@ -4,6 +4,7 @@
 #include "motor/assets/AssetLoaders.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
+#include "motor/core/Profile.h"
 #include "motor/scene/GameHost.h"
 #include "motor/scene/Prefab.h"
 #include "motor/scene/Scene.h"
@@ -151,6 +152,7 @@ void SceneRuntime::RunSystems(bool beforeScripts, void (RuntimeSystem::*hook)(Sc
     const std::string_view hookName = (hook == &RuntimeSystem::OnFixedUpdate) ? "OnFixedUpdate" : "OnUpdate";
     for (SystemSlot& slot : m_systems) {
         if (slot.faulted || (slot.info.order < 0) != beforeScripts) continue;
+        MOTOR_PROFILE_SCOPE_NAMED(slot.info.name);
         InvokeSystem(slot, hookName, [&]() { (slot.system.get()->*hook)(*this, dt); });
     }
 }
@@ -198,13 +200,17 @@ void SceneRuntime::Update(float dt) {
     StartPending();
     RunSystems(true, &RuntimeSystem::OnUpdate, dt);
     RunTimers();
-    ForEachScript([this, dt](Script& s, EntityId id, std::string_view scriptName) {
-        if (!s.m_started) return;
-        Bind(s, id);
-        InvokeScript(s, id, scriptName, "OnUpdate", [&]() { s.OnUpdate(dt); });
-    });
+    {
+        MOTOR_PROFILE_SCOPE("Scripts OnUpdate");
+        ForEachScript([this, dt](Script& s, EntityId id, std::string_view scriptName) {
+            if (!s.m_started) return;
+            Bind(s, id);
+            InvokeScript(s, id, scriptName, "OnUpdate", [&]() { s.OnUpdate(dt); });
+        });
+    }
     RunSystems(false, &RuntimeSystem::OnUpdate, dt);
     ++m_time.frame;
+    MOTOR_PROFILE_SCOPE("Destruir entidades");
     FlushDestroyed();
 }
 
@@ -213,12 +219,16 @@ void SceneRuntime::FixedUpdate(float dt) {
     m_time.fixedDelta = dt;
     StartPending();
     RunSystems(true, &RuntimeSystem::OnFixedUpdate, dt);
-    ForEachScript([this, dt](Script& s, EntityId id, std::string_view scriptName) {
-        if (!s.m_started) return;
-        Bind(s, id);
-        InvokeScript(s, id, scriptName, "OnFixedUpdate", [&]() { s.OnFixedUpdate(dt); });
-    });
+    {
+        MOTOR_PROFILE_SCOPE("Scripts OnFixedUpdate");
+        ForEachScript([this, dt](Script& s, EntityId id, std::string_view scriptName) {
+            if (!s.m_started) return;
+            Bind(s, id);
+            InvokeScript(s, id, scriptName, "OnFixedUpdate", [&]() { s.OnFixedUpdate(dt); });
+        });
+    }
     RunSystems(false, &RuntimeSystem::OnFixedUpdate, dt);
+    MOTOR_PROFILE_SCOPE("Destruir entidades");
     FlushDestroyed();
 }
 

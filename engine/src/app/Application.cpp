@@ -3,6 +3,7 @@
 #include "motor/core/ImGuiLayer.h"
 #include "motor/core/Input.h"
 #include "motor/core/Log.h"
+#include "motor/core/Profile.h"
 #include "motor/renderer/Renderer.h"
 
 #include <algorithm>
@@ -54,8 +55,11 @@ void Application::Run() {
             m_window->CancelClose();
         }
 
-        Input::BeginFrame();
-        m_window->PollEvents();
+        {
+            MOTOR_PROFILE_SCOPE("Eventos");
+            Input::BeginFrame();
+            m_window->PollEvents();
+        }
 
         const auto now = Clock::now();
         // Limita o dt para evitar a "espiral da morte" após travamentos/breakpoints.
@@ -65,21 +69,34 @@ void Application::Run() {
 
         accumulator += dt;
         while (accumulator >= fixedDt) {
+            MOTOR_PROFILE_SCOPE("FixedUpdate");
             OnFixedUpdate(static_cast<float>(fixedDt));
             accumulator -= fixedDt;
         }
 
-        OnUpdate(static_cast<float>(dt));
+        {
+            MOTOR_PROFILE_SCOPE("Update");
+            OnUpdate(static_cast<float>(dt));
+        }
 
         if (!m_window->IsMinimized()) {
-            m_renderer->BeginFrame(m_window->Width(), m_window->Height());
-            OnRender(*m_renderer);
+            {
+                MOTOR_PROFILE_SCOPE("Render");
+                m_renderer->BeginFrame(m_window->Width(), m_window->Height());
+                OnRender(*m_renderer);
+            }
             if (m_imgui) {
+                MOTOR_PROFILE_SCOPE("ImGui");
                 m_imgui->BeginFrame();
                 OnImGui();
                 m_imgui->EndFrame();
             }
-            m_window->SwapBuffers();
+            {
+                MOTOR_PROFILE_SCOPE("SwapBuffers");  // inclui a espera do vsync
+                m_window->SwapBuffers();
+            }
+            MOTOR_PROFILE_PLOT("Draws", m_renderer->GetStats().drawCalls);
+            MOTOR_PROFILE_PLOT("Triângulos", m_renderer->GetStats().triangles);
         } else {
             // Minimizada não há SwapBuffers para esperar o vsync: sem esta pausa o loop gira a milhares de FPS.
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -88,6 +105,7 @@ void Application::Run() {
             std::this_thread::sleep_until(frameStart + std::chrono::duration_cast<Clock::duration>(
                                                           std::chrono::duration<double>(1.0 / m_frameLimit)));
         }
+        MOTOR_PROFILE_FRAME();
 
         ++fpsFrames;
         fpsTimer += dt;

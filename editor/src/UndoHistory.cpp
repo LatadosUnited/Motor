@@ -1,5 +1,7 @@
 #include "UndoHistory.h"
 
+#include <motor/core/Profile.h>
+
 #include <algorithm>
 #include <utility>
 
@@ -19,6 +21,7 @@ void UndoHistory::Reset(const motor::Scene& scene, motor::EntityId selected) {
 void UndoHistory::Track(const motor::Scene& scene, motor::EntityId selected, bool idle,
                         const std::vector<motor::EntityId>* selection) {
     if (!idle) return;
+    MOTOR_PROFILE_SCOPE("Desfazer: comparar cena");  // custo que cresce com a cena (alpha 3, Fase 26)
     if (scene == m_current.scene) {
         // Só a seleção mudou: não é um passo, mas a foto guarda a seleção atual para o próximo passo.
         m_current.selected = selected;
