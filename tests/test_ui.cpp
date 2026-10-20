@@ -156,6 +156,23 @@ int main(int argc, char** argv) {
         CHECK(Near(half.min, {960 - 20 - 100, 15}) && Near(half.Size(), {100, 30}));
     }
 
+    SECTION("Layout numa cena grande: só a UI e o que está acima dela (Fase 22)");
+    {
+        Scene scene;
+        for (int i = 0; i < 2000; ++i) scene.CreateEntity("Cubo");
+        CHECK(ComputeUiLayout(scene, kScreen).empty());  // sem UI nenhuma: nada a montar
+        const EntityId raiz = scene.CreateEntity("Raiz comum").id;
+        const EntityId meio = scene.CreateEntity("Meio comum", raiz).id;
+        Entity& botao = AddElement(scene, "Botão", UiAnchor::TopLeft, {10, 20}, {100, 40}, meio);
+        for (int i = 0; i < 2000; ++i) scene.CreateEntity("Cubo filho", raiz);  // irmãos sem UI do "Meio"
+        const std::vector<UiNode> layout = ComputeUiLayout(scene, kScreen);
+        CHECK(layout.size() == 1);
+        const UiNode* b = NodeOf(layout, botao.id);
+        CHECK(b && Near(b->box.min, glm::vec2(10, 20) * UiScale(kScreen)) && b->depth == 0);
+        scene.Find(raiz)->active = false;  // ancestral comum inativo esconde a UI de baixo
+        CHECK(ComputeUiLayout(scene, kScreen).empty());
+    }
+
     SECTION("Layout: filhos dentro do pai, ordem, esconder e entidades comuns no meio");
     {
         Scene scene;
