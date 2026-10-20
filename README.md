@@ -50,8 +50,12 @@ passadas do renderer na CPU e na GPU, e os gráficos de draws e triângulos. Zon
 
 Sempre ligados, em qualquer build: ms de CPU de cada parte do quadro (eventos, update, render, ImGui, swap, cada
 sistema do jogo, os scripts), ms de GPU de cada passada do renderer (timer queries lidas ~4 quadros depois, sem a CPU
-esperar) e números (draws, draws de sombra, triângulos, recortados, transparentes). Onde ver:
+esperar), números (draws, draws de sombra, triângulos, recortados, transparentes) e a memória de vídeo por tipo de
+recurso em MB (texturas, malhas, framebuffers do editor, pós-processamento, sombras, céu, buffers; estimativa pelo
+formato e tamanho de cada objeto, registrado em `motor/renderer/GpuMemory.h`). Onde ver:
 
+- **Viewport do editor:** botão **Estatísticas** na barra do viewport (lembrado entre aberturas): painel no canto
+  com os mesmos números, suavizados para não piscarem.
 - **Player:** `Player.exe "C:/caminho/MeuJogo" --perf medicao.csv` grava um quadro por linha ao fechar (com
   `--quadros N`, fecha sozinho). Colunas `quadro`, `tempo_s`, `quadro_ms`, `cpu <parte>`, `gpu <passada>` e os
   números; vírgula e ponto decimal. O log mostra o quadro mediano depois de 4 s.
