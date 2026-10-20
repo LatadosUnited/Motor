@@ -69,7 +69,7 @@ void DrawTransform(EditorContext& ctx, motor::Entity& e, const OverrideCheck& ov
 
     const bool forgotten = ctx.TakeForgottenAngles(e.id);
     if (forgotten || g_euler.entity != e.id || g_euler.source != t.rotation) {
-        g_euler.degrees = glm::degrees(glm::eulerAngles(t.rotation)) + 0.0f;  // + 0 elimina o "-0.0"
+        g_euler.degrees = t.EulerDegrees();
         g_euler.entity = e.id;
         g_euler.source = t.rotation;
     }

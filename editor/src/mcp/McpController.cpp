@@ -13,10 +13,12 @@
 #include "ImageEncode.h"
 #include "McpSceneTools.h"
 
+#include <motor/core/EngineAssets.h>
 #include <motor/core/Paths.h>
 #include <motor/core/Version.h>
 #include <motor/renderer/Framebuffer.h>
 #include <motor/audio/AudioSystem.h>
+#include <motor/scene/ScriptModule.h>
 #include <motor/ui/UiSystem.h>
 
 #include <imgui.h>
@@ -24,6 +26,8 @@
 #include <algorithm>
 #include <cctype>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <utility>
 
 namespace editor {
@@ -46,7 +50,48 @@ constexpr const char* kInstructions =
     "(undo/redo). Durante o Play (play) a cena é a do jogo: o que mudar é descartado ao parar. Para ver o "
     "resultado use viewport_capture (view_camera move a câmera); para testar o jogo use play, game_key e "
     "ui_click e leia log_read. events_read conta o que mudou no editor desde a última leitura. Scripts "
-    "ficam na pasta Scripts/ do projeto (edite os arquivos e chame scripts_build). Textos em português.";
+    "ficam na pasta Scripts/ do projeto (edite os arquivos e chame scripts_build com wait = true). Antes de "
+    "escrever scripts, leia a API desta versão com docs_read (cópias da documentação em outras pastas podem ser "
+    "de outra versão). Textos em português.";
+
+// Seções de um Markdown cujo título contém `query` (sem diferença de maiúsculas), cada uma até o próximo
+// título do mesmo nível ou acima; com `query` vazio, a lista de títulos.
+std::string DocSections(const std::string& text, const std::string& query) {
+    auto lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+        return s;
+    };
+    std::vector<std::string> lines;
+    for (size_t start = 0; start <= text.size();) {
+        const size_t end = text.find('\n', start);
+        lines.push_back(text.substr(start, end == std::string::npos ? std::string::npos : end - start));
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    auto level = [](const std::string& line) {
+        size_t n = 0;
+        while (n < line.size() && line[n] == '#') ++n;
+        return n > 0 && n < line.size() && line[n] == ' ' ? int(n) : 0;
+    };
+    std::string out;
+    bool inCode = false;
+    int open = 0;  // nível da seção sendo copiada (0 = nenhuma)
+    const std::string wanted = lower(query);
+    for (const std::string& line : lines) {
+        if (line.starts_with("```")) inCode = !inCode;
+        const int l = inCode ? 0 : level(line);
+        if (query.empty()) {
+            if (l > 0) out += line + "\n";
+            continue;
+        }
+        if (l > 0 && open > 0 && l <= open) open = 0;
+        if (l > 0 && open == 0 && lower(line).find(wanted) != std::string::npos) open = l;
+        if (open > 0) out += line + "\n";
+    }
+    if (query.empty()) return "Títulos (peça um com section):\n" + out;
+    if (out.empty()) return "nenhuma seção com \"" + query + "\" no título (sem section, a lista de títulos)";
+    return out;
+}
 
 const char* LevelName(log::Level level) {
     switch (level) {
@@ -71,7 +116,7 @@ McpController::McpController(Host host)
         m_log.push_back({++m_logCount, level, std::string(message)});
         if (m_log.size() > kMaxLogLines) m_log.pop_front();
     });
-    mcp::AddSceneTools(m_protocol, m_host.ctx);
+    mcp::AddSceneTools(m_protocol, m_host.ctx, [this] { return m_host.play.Runtime(); });
     AddEditorTools();
     AddSceneFileTools();
     AddAssetTools();
@@ -244,6 +289,7 @@ void McpController::AddEditorTools() {
                 j["project"] = nullptr;
             }
             j["editor_version"] = kVersion;
+            j["script_api"] = kScriptApiVersion;  // a mesma de docs_read
             const fs::path& scene = m_host.document.ScenePath();
             j["scene"] = {{"path", scene.empty() ? Json(nullptr) : Json(ToUtf8(scene))},
                           {"unsaved_changes", m_host.document.HasUnsavedChanges()},
@@ -302,6 +348,32 @@ void McpController::AddEditorTools() {
     });
 
     m_protocol.AddTool({
+        .name = "docs_read",
+        .description = "Documentação de scripts DESTA versão do editor (a mesma API que o compilador usa): "
+                       "doc = api (referência: todas as funções, campos e componentes) ou guide (guia com "
+                       "exemplos). section devolve só as seções cujo título contém o texto (ex.: \"Entrada\", "
+                       "\"Animação\", \"Saves\"); sem section, a lista de títulos. all = true devolve o arquivo "
+                       "inteiro.",
+        .inputSchema = Schema({{"doc", {{"type", "string"}, {"enum", {"api", "guide"}},
+                                        {"description", "api (padrão): scripts-api.md; guide: scripts.md"}}},
+                               {"section", Prop("string", "parte do título da seção (sem diferença de maiúsculas)")},
+                               {"all", Prop("boolean", "o arquivo inteiro (padrão: false)")}}),
+        .readOnly = true,
+        .run = [](const Json& args) {
+            const std::string doc = args.value("doc", std::string("api"));
+            if (doc != "api" && doc != "guide") throw ToolError("doc: use api ou guide");
+            const fs::path file = EngineDocsDir() / (doc == "api" ? "scripts-api.md" : "scripts.md");
+            std::ifstream in(file, std::ios::binary);
+            if (!in) throw ToolError("documentação não encontrada: " + ToUtf8(file));
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            const std::string header = std::format("{} (Motor {}, API de scripts {})\n\n", ToUtf8(file.filename()),
+                                                   kVersion, kScriptApiVersion);
+            if (args.value("all", false)) return ToolResult::Text(header + text);
+            return ToolResult::Text(header + DocSections(text, args.value("section", std::string())));
+        },
+    });
+
+    m_protocol.AddTool({
         .name = "log_read",
         .description = "Últimas linhas do log do editor (o mesmo do console): erros de cena, mensagens dos "
                        "scripts (Log), compilação. Use 'since' com o número da última linha lida para ver só as "
@@ -342,30 +414,43 @@ void McpController::AddEditorTools() {
 void McpController::AddViewTools() {
     m_protocol.AddTool({
         .name = "viewport_capture",
-        .description = "Imagem (PNG) do viewport no último quadro: a cena com o HUD do jogo, pela câmera do editor "
-                       "ou, no Play, pela câmera do jogo. Sem os botões e gizmos do editor. Com Cena e Jogo lado "
-                       "a lado (view_side_by_side), view = \"game\" captura a janela Jogo.",
+        .description = "Imagem (PNG) da cena desenhada na hora, mesmo com o editor sem foco, minimizado ou com a "
+                       "janela escondida: a cena com o HUD do jogo, sem os botões e gizmos do editor. view = scene "
+                       "(padrão): como o Viewport mostra (câmera do editor; no Play, a do jogo). view = game: pela "
+                       "câmera principal da cena, como o jogo vê (no Play ou fora dele; não precisa da janela Jogo). "
+                       "view = editor: sempre pela câmera do editor (no Play também).",
         .inputSchema = Schema({{"max_width", Prop("integer", "largura máxima em pixels (padrão 800)")},
                                {"max_height", Prop("integer", "altura máxima em pixels (padrão 600)")},
-                               {"view", {{"type", "string"}, {"enum", {"scene", "game"}},
-                                         {"description", "scene (padrão): o Viewport; game: a janela Jogo"}}}}),
+                               {"view", {{"type", "string"}, {"enum", {"scene", "game", "editor"}},
+                                         {"description", "scene (padrão), game ou editor"}}}}),
         .readOnly = true,
         .run = [this](const Json& args) {
-            const bool game = args.value("view", std::string("scene")) == "game";
-            if (game && !m_host.play.SideBySide()) {
-                throw ToolError("a janela Jogo só existe com Cena e Jogo lado a lado (view_side_by_side)");
-            }
-            const Framebuffer* fb = game ? m_host.gameView.Target() : m_host.viewport.Target();
-            if (!fb || fb->Width() < 2 || fb->Height() < 2) {
-                throw ToolError(game ? "a janela Jogo ainda não foi desenhada (ou está numa aba escondida)"
-                                     : "o viewport ainda não foi desenhado");
-            }
-            mcp::Image image{fb->Width(), fb->Height(), fb->ReadPixels()};
+            const std::string view = args.value("view", std::string("scene"));
+            if (view != "scene" && view != "game" && view != "editor") throw ToolError("view: use scene, game ou editor");
             const int maxW = std::clamp<int>(args.value("max_width", 800), 64, 2048);
             const int maxH = std::clamp<int>(args.value("max_height", 600), 64, 2048);
-            image = mcp::Downscale(image, maxW, maxH);
-            ToolResult r = ToolResult::Text(std::format("viewport {}x{} (imagem {}x{}), {}", fb->Width(), fb->Height(),
-                                                        image.width, image.height, PlayState(m_host.play)));
+            // Tamanho da janela que mostra essa vista (a proporção da imagem é a dela), reduzido ao máximo pedido.
+            glm::vec2 size = view == "game" ? m_host.gameView.Size() : glm::vec2(0.0f);
+            if (size.x < 2.0f || size.y < 2.0f) size = m_host.viewport.Size();
+            if (size.x < 2.0f || size.y < 2.0f) size = {1280.0f, 720.0f};  // o Viewport nunca foi desenhado
+            const float scale = std::min({1.0f, maxW / size.x, maxH / size.y});
+            const int width = std::max(2, static_cast<int>(size.x * scale));
+            const int height = std::max(2, static_cast<int>(size.y * scale));
+
+            if (!m_capture) m_capture = std::make_unique<Framebuffer>(width, height, 4);
+            m_capture->Resize(width, height);
+            Renderer& renderer = m_host.renderer();
+            bool hasCamera = true;
+            if (view == "game") {
+                hasCamera = m_host.gameView.RenderTo(renderer, m_host.ctx, *m_capture);
+            } else {
+                hasCamera = m_host.viewport.RenderTo(renderer, m_host.ctx, view == "scene" && m_host.play.InGameView(),
+                                                     *m_capture);
+            }
+            if (!hasCamera) throw ToolError("a cena não tem câmera ativa (adicione o componente Câmera) para a vista do jogo");
+            mcp::Image image{m_capture->Width(), m_capture->Height(), m_capture->ReadPixels()};
+            ToolResult r = ToolResult::Text(std::format("{} {}x{}, desenhada agora, {}", view, image.width, image.height,
+                                                        PlayState(m_host.play)));
             r.AddImage(mcp::Base64(mcp::EncodePng(image)), "image/png");
             return r;
         },

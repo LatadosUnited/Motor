@@ -2,6 +2,11 @@
 
 #include "panels/HierarchyFilter.h"
 
+#include <motor/physics/PhysicsSystem.h>
+#include <motor/scene/Animator.h>
+#include <motor/scene/CharacterControllerComponent.h>
+#include <motor/scene/RigidbodyComponent.h>
+#include <motor/scene/SceneRuntime.h>
 #include <motor/scene/SceneSerializer.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -9,6 +14,7 @@
 #include <algorithm>
 #include <cctype>
 #include <format>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -156,7 +162,7 @@ Json EntityToJson(const EditorContext& ctx, const Entity& e) {
         {"active", e.active},
         {"parent", e.parent},
         {"transform", {{"position", Vec3Json(t.position)},
-                       {"rotation", Vec3Json(glm::degrees(glm::eulerAngles(t.rotation)) + 0.0f)},
+                       {"rotation", Vec3Json(t.EulerDegrees())},
                        {"scale", Vec3Json(t.scale)}}},
     };
     const glm::vec3 world = glm::vec3(ctx.scene.WorldMatrix(e.id)[3]);
@@ -183,6 +189,35 @@ Json EntityToJson(const EditorContext& ctx, const Entity& e) {
     Json children = Json::array();
     for (EntityId child : ctx.scene.Children(e.id)) children.push_back(child);
     if (!children.empty()) j["children"] = std::move(children);
+    return j;
+}
+
+Json EntityRuntimeJson(SceneRuntime& runtime, const Entity& e) {
+    Json j = {{"frame", runtime.Time().frame}, {"time", runtime.Time().elapsed}};
+    // Animator da entidade ou do modelo dentro dela (o personagem costuma ter o controlador na raiz e o
+    // Animator no filho importado do glTF).
+    if (const Animator* anim = FindAnimator(runtime.GetScene(), e.id)) {
+        j["animator"] = {{"clip", anim->CurrentClip()},
+                         {"time", anim->ClipTime()},
+                         {"length", anim->ClipLength()},
+                         {"playing", anim->IsPlaying()},
+                         {"finished", anim->IsFinished()},
+                         {"speed", anim->speed}};
+    }
+    if (const PhysicsSystem* physics = runtime.GetSystem<PhysicsSystem>()) {
+        std::optional<glm::vec3> velocity;
+        if (e.Get<CharacterControllerComponent>()) {
+            j["grounded"] = physics->IsGrounded(e.id);
+            velocity = physics->GetCharacterVelocity(e.id);
+        } else if (e.Get<RigidbodyComponent>()) {
+            velocity = physics->GetVelocity(e.id);
+        }
+        if (velocity) {
+            j["velocity"] = Vec3Json(*velocity);
+            j["speed"] = glm::length(*velocity);
+            j["horizontal_speed"] = glm::length(glm::vec2(velocity->x, velocity->z));
+        }
+    }
     return j;
 }
 
@@ -216,7 +251,7 @@ static Json EnvironmentJson(const EditorContext& ctx) {
 
 namespace {
 // Hierarquia, ler, criar e mudar entidades.
-void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
+void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter& runtime) {
     protocol.AddTool({
         .name = "scene_tree",
         .description = "Hierarquia da cena aberta: entidades (id, nome) com os filhos aninhados e os tipos de "
@@ -238,10 +273,18 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx) {
     protocol.AddTool({
         .name = "entity_get",
         .description = "Tudo de uma entidade: transform (posição, rotação em graus, escala), posição no mundo, "
-                       "filhos e cada componente com os valores dos campos (no formato aceito por component_set).",
+                       "filhos e cada componente com os valores dos campos (no formato aceito por component_set). "
+                       "Durante o Play, também \"runtime\": quadro do jogo, animação tocando (animator.clip, "
+                       "animator.time, de um Animator na entidade ou num filho), grounded (no chão, com Character "
+                       "Controller) e velocity/speed/horizontal_speed (Character Controller ou Rigidbody).",
         .inputSchema = Schema({{"entity", kEntityProp}}, {"entity"}),
         .readOnly = true,
-        .run = [&ctx](const Json& args) { return ToolResult::Data(EntityToJson(ctx, ResolveEntity(ctx, args))); },
+        .run = [&ctx, runtime](const Json& args) {
+            const Entity& e = ResolveEntity(ctx, args);
+            Json j = EntityToJson(ctx, e);
+            if (SceneRuntime* rt = runtime ? runtime() : nullptr) j["runtime"] = EntityRuntimeJson(*rt, e);
+            return ToolResult::Data(j);
+        },
     });
 
     protocol.AddTool({
@@ -601,8 +644,8 @@ void AddEnvironmentTools(Protocol& protocol, EditorContext& ctx) {
 
 } // namespace
 
-void AddSceneTools(Protocol& protocol, EditorContext& ctx) {
-    AddEntityTools(protocol, ctx);
+void AddSceneTools(Protocol& protocol, EditorContext& ctx, RuntimeGetter runtime) {
+    AddEntityTools(protocol, ctx, runtime);
     AddEntityEditTools(protocol, ctx);
     AddComponentTools(protocol, ctx);
     AddEnvironmentTools(protocol, ctx);

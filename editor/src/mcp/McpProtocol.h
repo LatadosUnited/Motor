@@ -25,6 +25,10 @@ struct ToolError : std::runtime_error {
 struct ToolResult {
     Json content = Json::array();
     bool isError = false;
+    // Resposta que só fica pronta em quadros seguintes (play e scripts_build com wait = true). O servidor HTTP
+    // chama `later` uma vez por quadro, na thread principal, até ela devolver true com o resultado final em `out`
+    // (ToolError vira erro). Sem quem espere (testes, lote de pedidos), vale o conteúdo de agora.
+    std::function<bool(ToolResult& out)> later;
 
     static ToolResult Text(std::string text);
     static ToolResult Error(std::string text);
@@ -45,6 +49,16 @@ struct Tool {
 Json Prop(const char* type, const char* description);
 Json Schema(Json properties = Json::object(), std::vector<std::string> required = {});
 
+// Pedido cuja resposta ficou para depois (ToolResult::later): o id do JSON-RPC e a verificação.
+struct Deferred {
+    Json id;
+    std::function<bool(ToolResult& out)> check;
+
+    // Chama a verificação; quando pronta, o texto da resposta JSON-RPC (senão, vazio).
+    std::optional<std::string> Poll() const;
+    std::string Finish(const ToolResult& result) const;
+};
+
 class Protocol {
 public:
     static constexpr const char* kLatestVersion = "2025-06-18";
@@ -56,8 +70,10 @@ public:
 
     // Uma mensagem JSON-RPC -> resposta; nullopt para notificações (sem "id").
     std::optional<Json> Handle(const Json& message);
-    // Corpo de um POST: texto -> texto da resposta ("" = nada a responder, HTTP 202).
-    std::string HandleText(std::string_view body);
+    // Corpo de um POST: texto -> texto da resposta ("" = nada a responder, HTTP 202). Com `deferred`, uma
+    // ferramenta que responde depois (ToolResult::later) preenche *deferred e o texto volta vazio: quem chamou
+    // espera com Deferred::Poll.
+    std::string HandleText(std::string_view body, std::optional<Deferred>* deferred = nullptr);
 
 private:
     Json Initialize(const Json& params) const;
@@ -68,6 +84,7 @@ private:
     std::string m_version;
     std::string m_instructions;
     std::vector<Tool> m_tools;
+    std::function<bool(ToolResult&)> m_later;  // `later` da última tools/call (Handle decide se espera)
 };
 
 } // namespace editor::mcp

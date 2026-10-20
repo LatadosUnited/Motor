@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace httplib {
 class Server;
@@ -36,10 +37,11 @@ public:
     int Port() const { return m_port; }
     std::string Url() const;
 
-    void Pump();  // thread principal: atende as mensagens que chegaram
+    void Pump();  // thread principal: atende as mensagens que chegaram e confere as que esperam (wait)
 
 private:
     struct Job;
+    struct Parked;  // pedido com resposta para depois (ToolResult::later)
 
     std::string Submit(std::string body);  // thread do HTTP: espera a thread principal responder
 
@@ -50,6 +52,7 @@ private:
 
     std::mutex m_mutex;
     std::deque<std::shared_ptr<Job>> m_jobs;
+    std::vector<Parked> m_parked;  // só na thread principal
 };
 
 } // namespace editor::mcp

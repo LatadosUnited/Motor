@@ -129,6 +129,8 @@ ScriptController::Status ScriptController::GetStatus() const {
     s.loadedTypes = m_host.Types();
     s.diagnostics = m_diagnostics;
     s.log = m_log;
+    s.builds = m_builds;
+    s.queued = m_buildQueued;
     return s;
 }
 
@@ -196,6 +198,7 @@ void ScriptController::Update(float dt) {
             log::Error("Scripts: a compilação falhou ({} erro(s)); veja o painel Scripts", CountErrors(m_diagnostics));
             m_focusPanel = true;
         }
+        ++m_builds;
         if (m_buildQueued) RequestBuild();
     }
 

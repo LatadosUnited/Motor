@@ -36,6 +36,30 @@ inline const char* BlendModeLabel(BlendMode mode) {  // no editor
     return "?";
 }
 
+// Sombra de um objeto desenhado (Mesh Renderer):
+//   On           aparece e faz sombra (o normal);
+//   Off          aparece, mas não faz sombra;
+//   ShadowsOnly  não aparece, só faz sombra (corpo do personagem em primeira pessoa).
+enum class ShadowCasting { On, Off, ShadowsOnly };
+
+inline const char* ShadowCastingName(ShadowCasting mode) {  // gravado na cena
+    switch (mode) {
+        case ShadowCasting::On: return "On";
+        case ShadowCasting::Off: return "Off";
+        case ShadowCasting::ShadowsOnly: return "ShadowsOnly";
+    }
+    return "On";
+}
+
+inline const char* ShadowCastingLabel(ShadowCasting mode) {  // no editor
+    switch (mode) {
+        case ShadowCasting::On: return "Com sombra";
+        case ShadowCasting::Off: return "Sem sombra";
+        case ShadowCasting::ShadowsOnly: return "Só sombra";
+    }
+    return "?";
+}
+
 // Material PBR de metal/rugosidade (o mesmo modelo do glTF). Mapas nulos = valor constante do campo.
 struct Material {
     glm::vec4 color{1.0f};                // multiplicado pelo albedo (espaço sRGB)

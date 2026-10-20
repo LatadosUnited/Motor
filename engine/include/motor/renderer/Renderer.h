@@ -67,13 +67,14 @@ public:
     void BeginScene(const Camera& camera, std::span<const Light> lights, const Environment& environment = {},
                     const Framebuffer* target = nullptr);
     // O material é copiado; a malha precisa continuar viva até o EndScene.
-    void Submit(const Mesh& mesh, const Material& material, const glm::mat4& model);
+    void Submit(const Mesh& mesh, const Material& material, const glm::mat4& model,
+                ShadowCasting shadows = ShadowCasting::On);
     // Linhas sem iluminação por cima da imagem final (só aparecem onde não há nada na frente).
     void SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color);
     // Malha com pele (animação): `joints` são as matrizes das juntas da pele (Skin::JointMatrices), no espaço
     // de `model`. Até kMaxJoints (as demais ficam paradas, com aviso no log).
     void SubmitSkinned(const Mesh& mesh, const Material& material, const glm::mat4& model,
-                       std::span<const glm::mat4> joints);
+                       std::span<const glm::mat4> joints, ShadowCasting shadows = ShadowCasting::On);
     void EndScene();
 
     const RenderStats& GetStats() const { return m_stats; }

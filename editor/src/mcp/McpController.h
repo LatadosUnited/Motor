@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -42,6 +43,7 @@ public:
         GameView& gameView;  // janela Jogo (Cena e Jogo lado a lado)
         std::function<void(int)> requestHistory;  // -1 desfazer, +1 refazer (no início do próximo quadro)
         ExportController& exporter;               // game_export (Fase 10)
+        std::function<motor::Renderer&()> renderer;  // viewport_capture desenha na hora (criado depois do editor)
     };
 
     explicit McpController(Host host);
@@ -128,6 +130,8 @@ private:
     // Controle simulado (game_gamepad): botões a apertar/soltar no próximo quadro e os presos.
     std::vector<std::pair<motor::GamepadButton, bool>> m_pendingPad;
     std::vector<HeldPadButton> m_heldPad;
+    // Imagem do viewport_capture, desenhada na hora (com MSAA, como o Viewport).
+    std::unique_ptr<motor::Framebuffer> m_capture;
     // Clique num botão da UI do jogo: posição na tela do jogo e etapa (1 = apertar, 2 = soltar, 0 = nada).
     int m_clickStage = 0;
     glm::vec2 m_clickPos{0.0f};

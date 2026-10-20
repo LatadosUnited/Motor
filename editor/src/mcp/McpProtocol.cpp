@@ -26,7 +26,29 @@ struct RpcError {
 Json ErrorResponse(const Json& id, int code, std::string message) {
     return Json{{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", code}, {"message", std::move(message)}}}};
 }
+
+Json CallResult(const ToolResult& result) {
+    return Json{{"content", result.content}, {"isError", result.isError}};
+}
+
+std::string Dump(const Json& message) {
+    return message.dump(-1, ' ', false, Json::error_handler_t::replace);
+}
 } // namespace
+
+std::optional<std::string> Deferred::Poll() const {
+    ToolResult result;
+    try {
+        if (!check(result)) return std::nullopt;
+    } catch (const std::exception& e) {
+        result = ToolResult::Error(e.what());
+    }
+    return Finish(result);
+}
+
+std::string Deferred::Finish(const ToolResult& result) const {
+    return Dump(Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", CallResult(result)}});
+}
 
 ToolResult ToolResult::Text(std::string text) {
     ToolResult r;
@@ -77,6 +99,7 @@ void Protocol::AddTool(Tool tool) {
 }
 
 std::optional<Json> Protocol::Handle(const Json& message) {
+    m_later = {};  // só vale o da tools/call desta mensagem
     const Json nullId = nullptr;
     if (!message.is_object() || message.value("jsonrpc", "") != "2.0" || !message.contains("method") ||
         !message["method"].is_string()) {
@@ -117,7 +140,7 @@ std::optional<Json> Protocol::Handle(const Json& message) {
     }
 }
 
-std::string Protocol::HandleText(std::string_view body) {
+std::string Protocol::HandleText(std::string_view body, std::optional<Deferred>* deferred) {
     const Json message = Json::parse(body, nullptr, false);
     if (message.is_discarded()) return ErrorResponse(nullptr, kParseError, "JSON inválido").dump();
     if (message.is_array()) {
@@ -126,10 +149,16 @@ std::string Protocol::HandleText(std::string_view body) {
         for (const Json& m : message) {
             if (auto r = Handle(m)) responses.push_back(std::move(*r));
         }
-        return responses.empty() ? std::string{} : responses.dump(-1, ' ', false, Json::error_handler_t::replace);
+        m_later = {};  // em lote não se espera: valem as respostas de agora
+        return responses.empty() ? std::string{} : Dump(responses);
     }
     const auto response = Handle(message);
-    return response ? response->dump(-1, ' ', false, Json::error_handler_t::replace) : std::string{};
+    // Ferramenta que responde depois: em vez da resposta de agora, quem chamou espera (só pedido com id).
+    if (auto later = std::exchange(m_later, {}); later && deferred && response && response->contains("result")) {
+        *deferred = Deferred{(*response)["id"], std::move(later)};
+        return {};
+    }
+    return response ? Dump(*response) : std::string{};
 }
 
 Json Protocol::Initialize(const Json& params) const {
@@ -175,6 +204,7 @@ Json Protocol::CallTool(const Json& params) {
         }
     }
     ToolResult result;
+    m_later = {};
     try {
         result = it->run(args);
     } catch (const ToolError& e) {
@@ -184,7 +214,8 @@ Json Protocol::CallTool(const Json& params) {
     } catch (const std::exception& e) {
         result = ToolResult::Error(std::string("erro: ") + e.what());
     }
-    return Json{{"content", std::move(result.content)}, {"isError", result.isError}};
+    if (!result.isError) m_later = std::move(result.later);
+    return CallResult(result);
 }
 
 } // namespace editor::mcp

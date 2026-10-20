@@ -31,12 +31,17 @@ void BuildStarterScene(Scene& scene, const AssetLibrary& assets, bool withScript
     floorRenderer.mesh = assets.FindMesh("Plano");
     floorRenderer.material.albedo = assets.FindTexture("Xadrez");
     floorRenderer.material.specular = 0.1f;
+    // Com Collider, como as formas do menu Entidade: um personagem ou um Rigidbody param em cima.
+    ColliderComponent& floorCollider = floor.Add<ColliderComponent>();
+    floorCollider.size = {1.0f, 0.02f, 1.0f};  // plano sem espessura: caixa fina logo abaixo da superfície
+    floorCollider.center = {0.0f, -0.01f, 0.0f};
 
     Entity& cube = scene.CreateEntity("Cubo");
     cube.transform.position = {0.0f, 0.5f, 0.0f};
     MeshRenderer& cubeRenderer = cube.Add<MeshRenderer>();
     cubeRenderer.mesh = assets.FindMesh("Cubo");
     cubeRenderer.material.color = {0.30f, 0.60f, 0.95f, 1.0f};
+    cube.Add<ColliderComponent>();  // a caixa 1 x 1 x 1 do cubo
     if (withScript) {
         // O script ainda não foi compilado: entra como componente desconhecido (só o JSON) e é ligado ao
         // tipo Girar quando a DLL de scripts do projeto carregar.

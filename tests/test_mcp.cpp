@@ -18,7 +18,11 @@
 #include <mcp/McpSceneTools.h>
 #include <mcp/McpServer.h>
 
+#include <motor/scene/SceneRuntime.h>
+
 #include <atomic>
+#include <cmath>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -206,6 +210,151 @@ int main() {
         CHECK(copy["isError"] == false && ctx.scene.Entities().size() == 4);
         CHECK(Call(protocol, "entity_delete", {{"entity", torreId}})["isError"] == false);
         CHECK(ctx.scene.Entities().size() == 2 && ctx.scene.Find(torreId) == nullptr);
+    }
+
+    SECTION("Retorno de uso (19/10/2026): rotação, collider, estado do jogo, sombra");
+    {
+        EditorContext ctx;
+        motor::SceneRuntime* running = nullptr;
+        Protocol protocol("teste", "1.0");
+        AddSceneTools(protocol, ctx, [&running] { return running; });
+
+        // Rotação devolvida como foi dada: [0, 180, 0], não [180, 0, 180] (o mesmo giro).
+        const Json virado = Call(protocol, "entity_create", {{"kind", "empty"}, {"name", "Virado"}, {"rotation", {0, 180, 0}}});
+        CHECK(virado["data"]["transform"]["rotation"] == Json::array({0.0, 180.0, 0.0}));
+        const Json torto = Call(protocol, "entity_update", {{"entity", "Virado"}, {"rotation", {10, 135, -20}}});
+        const Json r = torto["data"]["transform"]["rotation"];
+        CHECK(std::abs(r[0].get<float>() - 10.0f) < 0.01f && std::abs(r[1].get<float>() - 135.0f) < 0.01f &&
+              std::abs(r[2].get<float>() + 20.0f) < 0.01f);
+        // Qualquer rotação: os ângulos devolvidos refazem a mesma rotação.
+        bool same = true;
+        for (int i = 0; i < 200; ++i) {
+            motor::Transform t;
+            t.SetEulerDegrees({float((i * 37) % 360 - 180), float((i * 53) % 180 - 90), float((i * 71) % 360 - 180)});
+            motor::Transform back;
+            back.SetEulerDegrees(t.EulerDegrees());
+            same &= std::abs(glm::dot(t.rotation, back.rotation)) > 0.9999f;
+        }
+        CHECK(same);
+
+        // Formas criadas pelo MCP vêm com o Collider, como no menu Entidade.
+        const Json cubo = Call(protocol, "entity_create", {{"kind", "cube"}, {"name", "Chão"}, {"scale", {20, 1, 20}}});
+        bool hasCollider = false;
+        for (const Json& c : cubo["data"]["components"]) hasCollider |= c["type"] == "Collider";
+        CHECK(hasCollider);
+        ctx.scene.FindByName("Chão")->transform.position = {0.0f, -0.5f, 0.0f};
+
+        // Sombra do Mesh Renderer: "só sombra" pelo campo da cena.
+        CHECK(Call(protocol, "component_set", {{"entity", "Chão"}, {"type", "MeshRenderer"},
+                                               {"values", {{"shadows", "ShadowsOnly"}}}})["isError"] == false);
+        CHECK(ctx.scene.FindByName("Chão")->Get<motor::MeshRenderer>()->shadows == motor::ShadowCasting::ShadowsOnly);
+        CHECK(Call(protocol, "component_set", {{"entity", "Chão"}, {"type", "MeshRenderer"},
+                                               {"values", {{"shadows", "Talvez"}}}})["isError"] == true);
+
+        // Estado do jogo no entity_get: só no Play; no chão e velocidade do personagem.
+        Call(protocol, "entity_create", {{"kind", "empty"}, {"name", "Herói"}, {"position", {0, 1.0, 0}}});
+        Call(protocol, "component_add", {{"entity", "Herói"}, {"type", "CharacterController"}});
+        CHECK(!Call(protocol, "entity_get", {{"entity", "Herói"}})["data"].contains("runtime"));
+        {
+            motor::SceneRuntime runtime(ctx.scene);
+            runtime.Start();
+            for (int i = 0; i < 60; ++i) {
+                runtime.FixedUpdate(1.0f / 60.0f);
+                runtime.Update(1.0f / 60.0f);
+            }
+            running = &runtime;
+            const Json heroi = Call(protocol, "entity_get", {{"entity", "Herói"}})["data"];
+            CHECK(heroi.contains("runtime") && heroi["runtime"]["frame"] == 60);
+            CHECK(heroi["runtime"]["grounded"] == true);
+            CHECK(heroi["runtime"]["velocity"].size() == 3 && heroi["runtime"].contains("horizontal_speed"));
+            CHECK(!heroi["runtime"].contains("animator"));  // sem Animator
+            running = nullptr;
+            runtime.Stop();
+        }
+    }
+
+    SECTION("Resposta para depois (wait): o servidor confere a cada quadro");
+    {
+        Protocol protocol("teste", "1.0");
+        bool ready = false;
+        int checks = 0;
+        protocol.AddTool({.name = "espera", .description = "responde quando ready", .inputSchema = Schema(),
+                          .run = [&](const Json&) {
+                              ToolResult now = ToolResult::Text("pedido");
+                              now.later = [&](ToolResult& out) {
+                                  ++checks;
+                                  if (!ready) return false;
+                                  out = ToolResult::Text("pronto");
+                                  return true;
+                              };
+                              return now;
+                          }});
+        protocol.AddTool({.name = "falha", .description = "erro na espera", .inputSchema = Schema(),
+                          .run = [](const Json&) {
+                              ToolResult now = ToolResult::Text("pedido");
+                              now.later = [](ToolResult&) -> bool { throw ToolError("não valeu a tempo"); };
+                              return now;
+                          }});
+        // Sem quem espere (testes, Handle direto): vale a resposta de agora.
+        CHECK(Call(protocol, "espera", Json::object())["text"] == "pedido");
+        const std::string body = Request(9, "tools/call", {{"name", "espera"}, {"arguments", Json::object()}}).dump();
+        std::optional<Deferred> deferred;
+        CHECK(protocol.HandleText(body, &deferred).empty() && deferred.has_value());
+        CHECK(!deferred->Poll().has_value());
+        // Um ping depois não herda a espera da chamada anterior.
+        std::optional<Deferred> none;
+        CHECK(!protocol.HandleText(Request(10, "ping").dump(), &none).empty() && !none);
+        ready = true;
+        const auto reply = deferred->Poll();
+        CHECK(reply && Json::parse(*reply)["id"] == 9 &&
+              Json::parse(*reply)["result"]["content"][0]["text"] == "pronto");
+        std::optional<Deferred> failing;
+        protocol.HandleText(Request(11, "tools/call", {{"name", "falha"}, {"arguments", Json::object()}}).dump(), &failing);
+        const auto failed = failing ? failing->Poll() : std::nullopt;
+        CHECK(failed && Json::parse(*failed)["result"]["isError"] == true);
+
+        // Pelo HTTP: a resposta só sai depois de alguns quadros, e outros pedidos são atendidos no meio.
+        ready = false;
+        checks = 0;
+        Server server(protocol);
+        std::string error;
+        int port = 0;
+        for (int candidate = 47880; candidate < 47890 && !server.IsRunning(); ++candidate) {
+            if (server.Start(candidate, error)) port = candidate;
+        }
+        CHECK(server.IsRunning());
+        std::atomic<bool> waited = false;
+        std::string waitBody;
+        std::thread slow([&] {
+            httplib::Client http("127.0.0.1", port);
+            http.set_read_timeout(10, 0);
+            if (auto r = http.Post("/mcp", body, "application/json")) waitBody = r->body;
+            waited = true;
+        });
+        std::atomic<int> pingStatus = 0;
+        std::thread pinger;
+        for (int i = 0; i < 2000 && !waited; ++i) {
+            server.Pump();
+            if (i == 40) {  // ainda esperando: um ping de outro cliente é respondido normalmente
+                pinger = std::thread([&] {
+                    httplib::Client http("127.0.0.1", port);
+                    http.set_read_timeout(10, 0);
+                    if (auto r = http.Post("/mcp", Request(12, "ping").dump(), "application/json")) pingStatus = r->status;
+                });
+            }
+            if (i == 80) ready = true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        slow.join();
+        for (int i = 0; i < 400 && pingStatus == 0; ++i) {
+            server.Pump();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        if (pinger.joinable()) pinger.join();
+        CHECK(waited && Json::parse(waitBody)["result"]["content"][0]["text"] == "pronto");
+        CHECK(checks > 10);  // conferido a cada quadro, não de uma vez
+        CHECK(pingStatus == 200);
+        server.Stop();
     }
 
     SECTION("Imagem: base64, PNG e redução");

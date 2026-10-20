@@ -18,12 +18,20 @@ struct MeshRenderer {
     std::shared_ptr<Mesh> mesh;
     std::shared_ptr<Material> sharedMaterial;  // nulo = usa `material`
     Material material;
+    // Sombra: Com sombra (padrão), Sem sombra, ou Só sombra (some da imagem e continua fazendo sombra: o corpo
+    // em primeira pessoa; o Animator e os scripts seguem rodando, ao contrário de desativar a entidade).
+    ShadowCasting shadows = ShadowCasting::On;
 
     const Material& Resolved() const { return sharedMaterial ? *sharedMaterial : material; }
 };
 
 // Campo "material" do Mesh Renderer: referência a um .mmat pelo GUID (com o caminho junto, como plano B).
 template <> struct FieldTraits<std::shared_ptr<Material>> {
+    static CustomFieldType Describe();
+};
+
+// Sombra do Mesh Renderer: na cena, o nome ("On", "Off", "ShadowsOnly").
+template <> struct FieldTraits<ShadowCasting> {
     static CustomFieldType Describe();
 };
 

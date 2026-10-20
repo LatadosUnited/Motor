@@ -42,6 +42,30 @@ na hierarquia, e prefabs e materiais que se comportam como o resto.
 - [x] **MCP acompanha:** seleção múltipla, copiar/colar, mover a câmera do editor para um ponto, eventos para o
   agente. *(origem: Fase 13, pendências)* (3cf71a1)
 
+### MCP e agentes (retorno de uso, 19/10/2026)
+
+Um agente fez um personagem em primeira pessoa (Parado → Andar → Correr → Pular) só pelo MCP e validou tudo
+por números, sem nunca ver o personagem animado. *(origem: pedido do usuário, relato de uso do MCP)*
+
+- [x] **Captura com o editor sem foco:** `viewport_capture` desenha a cena na hora num framebuffer próprio
+  (vale minimizado, sem foco ou com a janela escondida); `view = game` não precisa mais da janela Jogo, e
+  `view = editor` mostra pela câmera do editor no Play. (c21dfb8)
+- [x] **Estado do jogo no `entity_get` durante o Play:** `runtime` com o quadro, o Animator (clipe, tempo,
+  duração; na entidade ou num filho), `grounded` e `velocity`/`speed`/`horizontal_speed`. (c21dfb8)
+- [x] **Esperar o fim das ações assíncronas:** `wait: true` (com `timeout`) no `play` e no `scripts_build`. (c21dfb8)
+- [x] **Documentação da API de scripts certa:** a cópia velha (API 13) estava dentro da pasta do jogo, posta à
+  mão; a do Motor 0.2.650 já dizia 14 e o `test_script_docs` confere a versão. Ferramenta nova `docs_read` (a
+  documentação da versão que está rodando, por seção) e `script_api` no `editor_status`; as instruções do
+  servidor mandam ler por ela. (c21dfb8)
+- [x] **Esconder só a malha:** campo **Sombra** no Mesh Renderer: Com sombra, Sem sombra ou **Só sombra** (some da
+  imagem e continua fazendo sombra; o Animator segue). `kScriptApiVersion` = 15. (5ca1280)
+- [x] **Primitivas com collider:** as do `entity_create` já vinham com Collider desde a Fase 18; o que vinha sem
+  era a cena inicial dos projetos novos (Chão e Cubo), agora com Collider. (aeafe4e)
+- [x] **Rotação devolvida como foi dada:** `Transform::EulerDegrees` escolhe a leitura que menos gira em X e Z
+  (`[0, 180, 0]` volta `[0, 180, 0]`); usada no `entity_get`, no Inspector e na edição de vários. (500a4f6)
+- [ ] **Importar FBX:** hoje só glTF, então personagens do Character Creator 5 ou do Mixamo passam pelo Blender
+  antes. Precisa de biblioteca nova (aprovação do usuário) ou de conversão automática na importação.
+
 ## Pronto quando
 
 Montar uma cena com 50 objetos alinhados na grade, duplicados em grupo e reorganizados por busca é rápido só
@@ -123,6 +147,12 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
   (`RecordNestedOverrides`). Teste `test_prefab_nested` (47 verificações); conferido no editor pelo MCP (Inspector
   e arquivo `.mprefab`). Mexer à mão nos prefabs não foi testado (item na seção 6 do roteiro).
 
+- **MCP e agentes (retorno de uso):** conferido pelo MCP num projeto com o Robo.glb e o modelo Jogador: `play`
+  com `wait` respondeu já no quadro 1; `entity_get` mostrou Parado → Andando → Pulando → Parado com `grounded`
+  e a velocidade (4 m/s andando, 8 correndo); `viewport_capture` com a janela minimizada trouxe o robô na pose
+  do momento; "Só sombra" nas malhas do robô o tirou da imagem e deixou a sombra no chão. Testes novos no
+  `test_mcp` (rotação, collider, estado do jogo, sombra e a resposta com espera pelo HTTP).
+
 ## Limitações
 
 - Fechada e juntada ao main sem o teste à mão dos itens novos (decisão do usuário, 19/10/2026): ficam no roteiro
@@ -151,3 +181,7 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 - A área de transferência de entidades fica na memória do editor: não passa para outro editor aberto nem
   sobrevive a fechá-lo, e não usa a do Windows. Colar entre projetos diferentes não foi pensado (materiais e
   prefabs são do projeto de origem).
+- `viewport_capture` desenha de novo a cena a cada pedido (custa um quadro a mais) e não mostra as janelas do
+  editor nem o gizmo; para ver a interface, a captura da janela (PrintWindow) continua valendo.
+- O estado do jogo no `entity_get` mostra o Animator mais próximo (a entidade ou o primeiro filho com um), não
+  todos, e não diz qual entidade é a dele.

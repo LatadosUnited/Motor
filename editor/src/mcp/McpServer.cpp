@@ -13,6 +13,7 @@
 
 #include <motor/core/Log.h>
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <utility>
@@ -22,6 +23,13 @@ namespace editor::mcp {
 namespace {
 // Tempo máximo esperando a thread principal (um quadro dura ~16 ms; compilar ou carregar algo pode demorar).
 constexpr auto kMainThreadTimeout = std::chrono::seconds(60);
+// Pedido que a ferramenta mandou esperar (wait = true): ela mesma tem um tempo limite; este é só a rede de
+// segurança para o cliente não ficar preso para sempre.
+constexpr auto kParkedTimeout = std::chrono::minutes(10);
+
+int64_t Ticks(std::chrono::steady_clock::time_point t) {
+    return t.time_since_epoch().count();
+}
 
 std::string BusyError() {
     return R"json({"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"o editor não respondeu a tempo (ocupado ou fechando)"}})json";
@@ -46,6 +54,13 @@ bool IsLocalHost(const std::string& host) {
 struct Server::Job {
     std::string body;
     std::promise<std::string> done;
+    // Até quando a thread do HTTP espera (steady_clock); cresce quando a resposta fica para depois.
+    std::atomic<int64_t> deadline{0};
+};
+
+struct Server::Parked {
+    std::shared_ptr<Job> job;
+    Deferred deferred;
 };
 
 Server::Server(Protocol& protocol) : m_protocol(protocol) {}
@@ -99,6 +114,8 @@ void Server::Stop() {
         for (auto& job : m_jobs) job->done.set_value(BusyError());
         m_jobs.clear();
     }
+    for (Parked& p : m_parked) p.job->done.set_value(BusyError());
+    m_parked.clear();
     if (m_thread.joinable()) m_thread.join();
     m_http.reset();
     motor::log::Info("Servidor MCP desligado");
@@ -113,8 +130,11 @@ std::string Server::Submit(std::string body) {
         if (!m_http || !m_http->is_running()) return BusyError();
         m_jobs.push_back(job);
     }
-    if (reply.wait_for(kMainThreadTimeout) != std::future_status::ready) {
+    job->deadline = Ticks(std::chrono::steady_clock::now() + kMainThreadTimeout);
+    while (reply.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready) {
+        if (Ticks(std::chrono::steady_clock::now()) < job->deadline) continue;
         std::lock_guard lock(m_mutex);
+        if (reply.wait_for(std::chrono::seconds(0)) == std::future_status::ready) break;  // respondeu agora
         std::erase(m_jobs, job);  // se ainda não começou, não roda mais
         return BusyError();
     }
@@ -122,12 +142,30 @@ std::string Server::Submit(std::string body) {
 }
 
 void Server::Pump() {
+    // Primeiro os que esperam (Play começar, compilação acabar): um quadro já passou desde a última conferência.
+    std::erase_if(m_parked, [](Parked& p) {
+        std::optional<std::string> reply = p.deferred.Poll();
+        if (!reply) return false;
+        p.job->done.set_value(std::move(*reply));
+        return true;
+    });
+
     std::deque<std::shared_ptr<Job>> jobs;
     {
         std::lock_guard lock(m_mutex);
         jobs.swap(m_jobs);
     }
-    for (auto& job : jobs) job->done.set_value(m_protocol.HandleText(job->body));
+    for (auto& job : jobs) {
+        std::optional<Deferred> deferred;
+        std::string reply = m_protocol.HandleText(job->body, &deferred);
+        if (deferred) {
+            // Antes de a thread do HTTP desistir (kMainThreadTimeout), ela passa a esperar mais.
+            job->deadline = Ticks(std::chrono::steady_clock::now() + kParkedTimeout);
+            m_parked.push_back({job, std::move(*deferred)});
+            continue;
+        }
+        job->done.set_value(std::move(reply));
+    }
 }
 
 } // namespace editor::mcp

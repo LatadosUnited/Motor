@@ -55,6 +55,36 @@ Key ParseKey(std::string name) {
     throw ToolError("tecla desconhecida: " + name + " (use letras, dígitos, space, enter, escape, tab, up, down, "
                     "left, right, shift, ctrl, alt, f1..f12)");
 }
+// Momento em que a espera de uma ferramenta com wait desiste.
+std::chrono::steady_clock::time_point Deadline(double seconds) {
+    return std::chrono::steady_clock::now() +
+           std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(seconds));
+}
+
+// Situação dos scripts como scripts_status devolve (também a resposta de scripts_build com wait).
+Json ScriptStatusJson(const ScriptController::Status& s, bool withLog) {
+    Json diagnostics = Json::array();
+    for (const auto& d : s.diagnostics) {
+        diagnostics.push_back({{"kind", d.kind == ScriptProject::Diagnostic::Kind::Error ? "erro" : "aviso"},
+                               {"file", d.file}, {"line", d.line}, {"column", d.column}, {"message", d.message}});
+    }
+    Json files = Json::array();
+    for (const auto& ft : s.timings.files) {
+        files.push_back({{"file", ft.file}, {"seconds", ft.seconds}});
+    }
+    Json timings = {{"configure", s.timings.configure},
+                    {"compile", s.timings.compile},
+                    {"link", s.timings.link},
+                    {"reload", s.reloadSeconds},
+                    {"total", s.seconds},
+                    {"files", std::move(files)}};
+    Json j = {{"state", s.state}, {"seconds", s.seconds}, {"timings", std::move(timings)},
+              {"loaded", s.loadedTypes}, {"reload_pending", s.reloadPending},
+              {"diagnostics", std::move(diagnostics)}};
+    if (!s.toolchainError.empty()) j["toolchain_error"] = s.toolchainError;
+    if (withLog) j["log"] = s.log;
+    return j;
+}
 } // namespace
 // --- Jogo: Play, teclas, cliques na UI, scripts --------------------------------------------------------
 
@@ -62,28 +92,56 @@ void McpController::AddPlayTools() {
     m_protocol.AddTool({
         .name = "play",
         .description = "Controla o modo Play: play (começa ou continua), pause, resume, step (um quadro, em "
-                       "pausa) ou stop (volta à cena de antes do Play). Aplicado no próximo quadro; confira com "
-                       "editor_status.",
-        .inputSchema = Schema({{"action", {{"type", "string"}, {"enum", {"play", "pause", "resume", "step", "stop"}}}}},
+                       "pausa) ou stop (volta à cena de antes do Play). O pedido vale no próximo quadro: com "
+                       "wait = true a resposta só vem quando ele valeu (o jogo já rodou o primeiro quadro, pausou, "
+                       "deu o passo ou parou), com o estado e o quadro do jogo. Sem wait, confira com editor_status.",
+        .inputSchema = Schema({{"action", {{"type", "string"}, {"enum", {"play", "pause", "resume", "step", "stop"}}}},
+                               {"wait", Prop("boolean", "responder só quando o pedido valer (padrão: false)")},
+                               {"timeout", Prop("number", "segundos de espera com wait (padrão 30, máx. 300)")}},
                               {"action"}),
         .run = [this](const Json& args) {
             using Request = PlayController::Request;
             PlayController& play = m_host.play;
             const std::string action = args.value("action", "");
+            // Quadro do jogo agora (o step confere que andou um).
+            auto frame = [&play]() -> uint64_t {
+                SceneRuntime* runtime = play.Runtime();
+                return runtime ? runtime->Time().frame : 0;
+            };
+            const uint64_t frameBefore = frame();
+            std::function<bool()> applied;  // o pedido já valeu?
             if (action == "play" || action == "resume") {
                 play.Queue(Request::Play);
+                applied = [&play, frame] { return play.IsActive() && !play.IsPaused() && frame() >= 1; };
             } else if (action == "pause") {
                 if (!play.IsActive()) throw ToolError("o jogo não está rodando");
                 if (!play.IsPaused()) play.Queue(Request::Pause);
+                applied = [&play] { return play.IsPaused(); };
             } else if (action == "step") {
                 if (!play.IsPaused()) throw ToolError("step só em pausa (use pause antes)");
                 play.Queue(Request::Step);
+                applied = [frame, frameBefore] { return frame() > frameBefore; };
             } else if (action == "stop") {
                 play.Queue(Request::Stop);
+                applied = [&play] { return !play.IsActive(); };
             } else {
                 throw ToolError("ação inválida: " + action);
             }
-            return ToolResult::Text(std::format("pedido '{}' enviado (estado agora: {})", action, PlayState(play)));
+            ToolResult now = ToolResult::Text(std::format("pedido '{}' enviado (estado agora: {})", action, PlayState(play)));
+            if (!args.value("wait", false)) return now;
+
+            const auto deadline = Deadline(std::clamp(args.value("timeout", 30.0), 0.1, 300.0));
+            now.later = [this, action, applied, frame, deadline](ToolResult& out) {
+                PlayController& play = m_host.play;
+                if (play.Pending() == PlayController::Request::None && applied()) {
+                    out = ToolResult::Data({{"action", action}, {"state", PlayState(play)}, {"frame", frame()}});
+                    return true;
+                }
+                if (std::chrono::steady_clock::now() < deadline) return false;
+                throw ToolError(std::format("o pedido '{}' não valeu a tempo (estado: {}, quadro {}); veja log_read",
+                                            action, PlayState(play), frame()));
+            };
+            return now;
         },
     });
 
@@ -262,12 +320,34 @@ void McpController::AddScriptTools() {
         .name = "scripts_build",
         .description = "Compila os scripts do projeto (pasta Scripts/) e recarrega sem fechar o editor (durante o "
                        "Play também: os scripts recomeçam com OnStart, mantendo os campos registrados). A "
-                       "compilação roda em segundo plano: acompanhe com scripts_status.",
-        .inputSchema = Schema(),
-        .run = [this](const Json&) {
+                       "compilação roda em segundo plano: com wait = true a resposta só vem quando ela termina (e a "
+                       "DLL foi recarregada), já com o resultado de scripts_status; sem wait, acompanhe com "
+                       "scripts_status.",
+        .inputSchema = Schema({{"wait", Prop("boolean", "responder só quando a compilação terminar (padrão: false)")},
+                               {"timeout", Prop("number", "segundos de espera com wait (padrão 300, máx. 600)")}}),
+        .run = [this](const Json& args) {
             if (!m_host.document.GetProject()) throw ToolError("nenhum projeto aberto");
+            const ScriptController::Status before = m_host.scripts.GetStatus();
+            const bool wasBuilding = m_host.scripts.IsBuilding();
             m_host.scripts.RequestBuild();
-            return ToolResult::Text("compilação pedida; veja scripts_status");
+            ToolResult now = ToolResult::Text("compilação pedida; veja scripts_status");
+            if (!args.value("wait", false)) return now;
+            if (before.state == "sem toolchain") throw ToolError("sem compilador: " + before.toolchainError);
+
+            // Com outra compilação em andamento, a pedida agora entra na fila: espera as duas.
+            const uint64_t target = before.builds + (wasBuilding ? 2 : 1);
+            const auto deadline = Deadline(std::clamp(args.value("timeout", 300.0), 1.0, 600.0));
+            now.later = [this, target, deadline](ToolResult& out) {
+                const ScriptController::Status s = m_host.scripts.GetStatus();
+                if (s.builds >= target && !m_host.scripts.IsBuilding()) {
+                    out = ToolResult::Data(ScriptStatusJson(s, false));
+                    out.isError = s.state != "ok";
+                    return true;
+                }
+                if (std::chrono::steady_clock::now() < deadline) return false;
+                throw ToolError("a compilação não terminou a tempo (continua em segundo plano; veja scripts_status)");
+            };
+            return now;
         },
     });
 
@@ -312,28 +392,7 @@ void McpController::AddScriptTools() {
         .inputSchema = Schema({{"log", Prop("boolean", "incluir a saída completa (padrão: false)")}}),
         .readOnly = true,
         .run = [this](const Json& args) {
-            const ScriptController::Status s = m_host.scripts.GetStatus();
-            Json diagnostics = Json::array();
-            for (const auto& d : s.diagnostics) {
-                diagnostics.push_back({{"kind", d.kind == ScriptProject::Diagnostic::Kind::Error ? "erro" : "aviso"},
-                                       {"file", d.file}, {"line", d.line}, {"column", d.column}, {"message", d.message}});
-            }
-            Json files = Json::array();
-            for (const auto& ft : s.timings.files) {
-                files.push_back({{"file", ft.file}, {"seconds", ft.seconds}});
-            }
-            Json timings = {{"configure", s.timings.configure},
-                            {"compile", s.timings.compile},
-                            {"link", s.timings.link},
-                            {"reload", s.reloadSeconds},
-                            {"total", s.seconds},
-                            {"files", std::move(files)}};
-            Json j = {{"state", s.state}, {"seconds", s.seconds}, {"timings", std::move(timings)},
-                      {"loaded", s.loadedTypes}, {"reload_pending", s.reloadPending},
-                      {"diagnostics", std::move(diagnostics)}};
-            if (!s.toolchainError.empty()) j["toolchain_error"] = s.toolchainError;
-            if (args.value("log", false)) j["log"] = s.log;
-            return ToolResult::Data(j);
+            return ToolResult::Data(ScriptStatusJson(m_host.scripts.GetStatus(), args.value("log", false)));
         },
     });
 

@@ -605,6 +605,10 @@ programas exportam) com esqueleto e clipes de animação. A engine traz um de ex
 3. Jogador animado: na entidade com **Controlador de personagem** e **Jogador (física)**, arraste o modelo
    para dentro dela na Hierarquia (vira filho) e ponha a posição do modelo em `0 -0.9 0` (a origem do
    controlador é o meio da cápsula; a do robô, os pés). Tire o Mesh Renderer da entidade do jogador.
+4. Primeira pessoa: para a câmera não ver o corpo por dentro, mude a **Sombra** dos Mesh Renderers do modelo
+   para **Só sombra**. O corpo some da imagem e continua fazendo sombra, e o Animator segue tocando. Desativar a
+   entidade também esconde o corpo, mas tira a sombra e para a animação. No script:
+   `mr->shadows = motor::ShadowCasting::ShadowsOnly`.
 
 No script, `GetAnimator()` acha o Animator da própria entidade ou do primeiro filho que tiver um. O modelo
 Jogador troca de animação conforme anda ou pula:

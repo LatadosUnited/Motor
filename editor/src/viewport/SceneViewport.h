@@ -31,6 +31,11 @@ public:
     void UpdateCamera(float dt, motor::Window& window);
     // Desenha a cena no framebuffer do viewport. `gameView`: pela câmera principal da cena.
     void Render(motor::Renderer& renderer, const EditorContext& ctx, bool gameView);
+    // O mesmo desenho num framebuffer qualquer, na hora (captura do MCP: vale com o editor sem foco, minimizado
+    // ou com o Viewport numa aba escondida). false se, pela câmera do jogo, a cena não tiver câmera.
+    bool RenderTo(motor::Renderer& renderer, const EditorContext& ctx, bool gameView, const motor::Framebuffer& target);
+    // Tamanho do Viewport na tela (o da última vez que ele foi desenhado).
+    glm::vec2 Size() const { return m_size; }
     void Draw(EditorContext& ctx, PlayController& play, const motor::RenderStats& stats, float fps);
 
     void FocusSelected(const EditorContext& ctx);
