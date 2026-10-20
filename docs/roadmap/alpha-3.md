@@ -1,14 +1,14 @@
 ---
 tipo: alpha
 alpha: 3
-status: planejada
+status: em andamento
 foco: Desempenho
 ---
 
-# Roteiro da Alpha 3 — Desempenho (rascunho)
+# Roteiro da Alpha 3 — Desempenho
 
-> **Rascunho.** Começa depois da alpha 2 ([alpha-2.md](alpha-2.md)). Os números das fases e a ordem
-> podem mudar com o que a validação de uso real (Fase 19) encontrar.
+> **Começou em 20/10/2026**, depois da alpha 2 ([alpha-2.md](alpha-2.md)). Cada fase ganha a sua nota em
+> `alpha-3/` quando começa; as seções abaixo das fases que ainda não começaram continuam sendo rascunho.
 
 Foco: o Motor rodar bem em máquinas modestas (referência: i5 de 4 núcleos com Intel HD 530, 1 GB de vídeo
 compartilhado) com cenas de milhares de objetos. Só depois disso vêm os cenários abertos e a renderização 2,
@@ -26,6 +26,9 @@ Unity** com configurações equivalentes; nenhuma cena abaixo de 50%. *(origem: 
 cena de 5000 entidades sem travar; e uma ilha com terreno, água, vegetação e partículas roda a 60 FPS.
 
 ## Fase 22 — Medição
+
+**Em andamento:** nota da fase em [alpha-3/fase-22-medicao.md](alpha-3/fase-22-medicao.md) (as tarefas abaixo
+foram para lá). Profiler escolhido: [Tracy](../decisoes/2026-10-20-profiler-tracy.md).
 
 - Cena de referência no repositório: ~5000 entidades (estáticas e com física), 1 luz direcional com sombra e
   8 pontuais, 50 scripts simples, UI e som.

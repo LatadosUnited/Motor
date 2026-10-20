@@ -29,6 +29,23 @@ Executáveis e DLLs ficam juntos em `build/bin`: a engine é a `libMotor.dll` (c
 o runtime do C++ (`libstdc++-6.dll`, `libgcc_s_seh-1.dll`, `libwinpthread-1.dll`) é copiado do toolchain
 para lá. `build/bin/sdk/` tem o que o editor usa para compilar os scripts dos projetos (ver "Scripts").
 
+### Medir com o Tracy (profiler por quadro)
+
+Um build à parte, em Release, com a opção `MOTOR_TRACY`:
+
+```bash
+cmake -S . -B build-tracy -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release -DMOTOR_TRACY=ON -DMOTOR_BUILD_TESTS=OFF
+cmake --build build-tracy -j8
+./build-tracy/bin/MotorEditor.exe "C:/caminho/MeuJogo"   # ou Player.exe, Sandbox.exe
+```
+
+Abra o visualizador do Tracy **0.14.1** (`windows-0.14.1.zip` nos releases do Tracy; tem de ser a mesma versão do
+cliente) e conecte em `127.0.0.1`. Ele só grava com o visualizador conectado, e só aceita conexões da própria
+máquina. Aparecem o quadro dividido (eventos, update, render, ImGui, swap), cada sistema do jogo, os scripts, as
+passadas do renderer na CPU e na GPU, e os gráficos de draws e triângulos. Zona nova no código:
+`MOTOR_PROFILE_SCOPE("Nome")` de `motor/core/Profile.h` (sem o Tracy, não gera código). Decisão:
+`docs/decisoes/2026-10-20-profiler-tracy.md`.
+
 ## Estrutura
 
 ```
