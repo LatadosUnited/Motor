@@ -17,17 +17,18 @@
 
 #include <tracy/Tracy.hpp>
 
+#include <cstring>
 #include <string_view>
 
 #define MOTOR_PROFILE_FRAME() FrameMark
 #define MOTOR_PROFILE_SCOPE(name) ZoneScopedN(name)
 #define MOTOR_PROFILE_FUNCTION() ZoneScoped
-#define MOTOR_PROFILE_SCOPE_NAMED(name)                                         \
-    ZoneScoped;                                                                 \
-    do {                                                                        \
-        const std::string_view motorProfileName_ = (name);                      \
-        ZoneName(motorProfileName_.data(), motorProfileName_.size());           \
-    } while (0)
+// Zona "transiente": o Tracy agrupa as estatísticas pelo nome (uma linha por sistema), e não pelo lugar no código.
+#define MOTOR_PROFILE_SCOPE_NAMED(name)                                                                  \
+    const std::string_view motorProfileName_ = (name);                                                   \
+    tracy::ScopedZone motorProfileZone_(TracyLine, TracyFile, strlen(TracyFile), TracyFunction,          \
+                                        strlen(TracyFunction), motorProfileName_.data(),                 \
+                                        motorProfileName_.size(), -1, true)
 #define MOTOR_PROFILE_PLOT(name, value) TracyPlot(name, static_cast<int64_t>(value))
 #define MOTOR_PROFILE_THREAD(name) tracy::SetThreadName(name)
 

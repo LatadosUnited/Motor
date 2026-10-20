@@ -24,14 +24,16 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
 
 ### Profiler
 
-- [ ] **Tracy como profiler por quadro**, atrás dos macros `MOTOR_PROFILE_*` (`motor/core/Profile.h`) e das zonas
+- [x] **Tracy como profiler por quadro**, atrás dos macros `MOTOR_PROFILE_*` (`motor/core/Profile.h`) e das zonas
   de GPU (`renderer/GpuProfile.h`). Opção `MOTOR_TRACY` no CMake, desligada por padrão. Zonas: o loop
   (`Eventos`, `FixedUpdate`, `Update`, `Render`, `ImGui`, `SwapBuffers`), cada sistema do `SceneRuntime` pelo
   nome, os scripts, as passadas do renderer na CPU e na GPU (`Sombras`, `Céu`, `Cena HDR`, `Transparentes`,
   `Pós-processamento`), e no editor o desfazer e a checagem de "não salvo"; gráficos de draws e triângulos.
   Decisão: [Profiler por quadro: Tracy](../../decisoes/2026-10-20-profiler-tracy.md). *(origem: conversa de
-  18/10/2026; escolha do usuário em 20/10/2026)* Código feito (f25b061, c389a08): compila sem avisos no MSYS2 e
-  escuta só em `127.0.0.1:8086`. Falta conferir as zonas no visualizador 0.14.1 para marcar.
+  18/10/2026; escolha do usuário em 20/10/2026)* (f25b061, c389a08) Compila sem avisos no MSYS2 e
+  escuta só em `127.0.0.1:8086`. Conferido em 20/10/2026 com o `tracy-capture` e o `tracy-csvexport` 0.14.1
+  no Sandbox e no editor (edição e Play): todas as zonas de CPU, os sistemas um a um pelo nome e as zonas de GPU.
+  Sistemas como zonas "transientes", para as estatísticas saírem uma linha por sistema.
 - [ ] Zonas nos scripts do jogo (a DLL de scripts hoje compila sem `MOTOR_TRACY`) e nomes nas threads da Jolt.
 
 ### Contadores e medição
