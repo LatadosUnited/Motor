@@ -15,6 +15,7 @@
 #include "McpSceneTools.h"
 
 #include <motor/core/EngineAssets.h>
+#include <motor/core/FrameStats.h>
 #include <motor/core/Paths.h>
 #include <motor/core/Version.h>
 #include <motor/renderer/Framebuffer.h>
@@ -26,6 +27,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -55,6 +57,18 @@ constexpr const char* kInstructions =
     "escrever scripts, leia a API desta versão com docs_read ou nas pastas que editor_status mostra em "
     "script_reference (documentação e headers do SDK desta versão; cópias em outras pastas, como a do projeto, "
     "podem ser de outra versão). Textos em português.";
+
+// Contadores do último quadro (Fase 22) para o editor_status. Arredondados: é para ler, não para somar.
+Json PerfJson(const FrameStats::Frame& frame) {
+    auto round = [](double v) { return std::round(v * 1000.0) / 1000.0; };
+    auto entries = [&](const std::vector<FrameStats::Entry>& list) {
+        Json o = Json::object();
+        for (const auto& e : list) o[e.name] = round(e.value);
+        return o;
+    };
+    return {{"frame", frame.index}, {"frame_ms", round(frame.frameMs)}, {"cpu_ms", entries(frame.cpu)},
+            {"gpu_ms", entries(frame.gpu)}, {"values", entries(frame.values)}};
+}
 
 // Headers que os scripts incluem, da versão que está rodando: os do SDK instalado (sdk/include ao lado do
 // editor) ou, num build do código-fonte, engine/include.
@@ -287,7 +301,9 @@ void McpController::AddEditorTools() {
     m_protocol.AddTool({
         .name = "editor_status",
         .description = "Situação do editor: projeto e cena abertos, alterações não salvas, estado do Play, "
-                       "entidade selecionada e situação dos scripts. Bom primeiro passo.",
+                       "entidade selecionada e situação dos scripts. Bom primeiro passo. Em perf, os contadores do "
+                       "último quadro: duração, ms de CPU por parte (loop, sistemas, scripts), ms de GPU por passada "
+                       "do renderer e números (draws, triângulos).",
         .inputSchema = Schema(),
         .readOnly = true,
         .run = [this](const Json&) {
@@ -322,6 +338,7 @@ void McpController::AddEditorTools() {
             for (const auto& d : s.diagnostics) errors += d.kind == ScriptProject::Diagnostic::Kind::Error;
             j["scripts"] = {{"state", s.state}, {"errors", errors}, {"loaded", s.loadedTypes}};
             if (const Framebuffer* fb = m_host.viewport.Target()) j["viewport"] = {fb->Width(), fb->Height()};
+            j["perf"] = PerfJson(FrameStats::Instance().Last());
             return ToolResult::Data(j);
         },
     });

@@ -6,6 +6,7 @@
 //   --janela                      abre em janela mesmo com tela cheia nas opções
 //   --opcoes "<arquivo>"          opções do jogador neste arquivo, não em %APPDATA%\<Jogo>\opcoes.json
 //   --stats                       FPS, ms e draws no título da janela (medição: bench/medir.ps1)
+//   --perf "<arquivo.csv>"        grava os contadores de cada quadro (CPU, GPU, draws) num CSV ao fechar (Fase 22)
 //
 // Abre o projeto, carrega a DLL de scripts, abre a cena inicial e roda o jogo como o Play do editor: o mesmo
 // SceneRuntime (scripts, física, HUD e os outros sistemas registrados), a câmera principal da cena e a UI
@@ -17,6 +18,7 @@
 
 #include <motor/Motor.h>
 #include <motor/app/GameQuality.h>
+#include <motor/core/FrameStats.h>
 #include <motor/scene/ScriptModule.h>
 
 #include <algorithm>
@@ -51,6 +53,7 @@ struct LaunchOptions {
     bool windowed = false;  // --janela
     fs::path optionsFile;   // --opcoes; vazio = %APPDATA%\<Jogo>\opcoes.json
     bool stats = false;     // --stats
+    fs::path perfFile;      // --perf; vazio = não grava
 };
 
 constexpr const char* kOptionsFile = "opcoes.json";
@@ -249,6 +252,10 @@ private:
     void OnUpdate(float dt) override {
         if (Failed()) return Quit();  // o erro do OnInit (o Run só começa a valer o Quit depois dele)
         GetWindow().Show();  // se a tela de carregamento não chegou a aparecer
+        if (!m_options.perfFile.empty()) {
+            const FrameStats::Frame& last = FrameStats::Instance().Last();  // o quadro anterior, já fechado
+            if (last.index != 0) m_perf.Record(last);
+        }
         if (!m_runtime) return;
         // Mouse para os botões da UI do jogo, na tela inteira.
         if (UiSystem* ui = m_runtime->GetSystem<UiSystem>()) {
@@ -322,6 +329,15 @@ private:
         m_loadingScene = Scene();
         m_ui.reset();
         m_scripts.Unload();
+        if (!m_options.perfFile.empty()) {
+            std::string error;
+            if (m_perf.Save(m_options.perfFile, &error)) {
+                log::Info("Contadores: {} quadros em {} (quadro mediano depois de 4 s: {:.2f} ms)", m_perf.FrameCount(),
+                          ToUtf8(m_options.perfFile), m_perf.MedianFrameMs(4.0));
+            } else {
+                log::Error("--perf: não foi possível gravar os contadores: {}", error);
+            }
+        }
     }
 
     void StartRuntime() {
@@ -367,6 +383,7 @@ private:
     std::string m_fatal;
     int m_frame = 0;
     bool m_warnedCamera = false;
+    PerfRecorder m_perf;  // --perf
 };
 
 } // namespace
@@ -383,6 +400,8 @@ int main(int argc, char** argv) {
             options.optionsFile = PathFromUtf8(args[++i]);
         } else if (args[i] == "--stats") {
             options.stats = true;
+        } else if (args[i] == "--perf" && i + 1 < args.size()) {
+            options.perfFile = PathFromUtf8(args[++i]);
         } else if (!args[i].starts_with("--")) {
             options.project = PathFromUtf8(args[i]);
         }
