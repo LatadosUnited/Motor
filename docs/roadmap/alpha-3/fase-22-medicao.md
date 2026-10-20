@@ -51,11 +51,19 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
   (`fisica1000` de 24,2 para 22,5 ms, `cubos1000sombra` de 18,6 para 17,4). Tabela em `bench/README.md` e em
   [alpha-3.md](../alpha-3.md). O `medir.ps1` estava quebrado desde a Fase 21 (FPS fora do título): o Player ganhou
   `--stats`. *(origem: pedido do usuário, 20/10/2026)*
-- [ ] **`cubos10000` caiu de 68–69% para 37–53% da Unity desde 18/10.** Sem a correção, 110 ms contra 54. O Tracy
-  mostra ~19 ms por quadro no `SceneRuntime` percorrendo 10 000 entidades sem script nenhum (`ForEachScript` e
-  `StartPending`, cada um ~1,3 a 1,6 ms, em todo `Update` e em todo passo fixo), e a bola de neve dos passos fixos
-  (quadro lento = mais passos). Achar a mudança desde a 0.2.0 e manter uma lista dos scripts no lugar de percorrer
-  a cena (antecipa um item da Fase 25). *(origem: comparação com a Unity, 20/10/2026)*
+- [x] **`cubos10000` com 37–53% da Unity (era 68–69% em 18/10).** *(origem: comparação com a Unity, 20/10/2026)*
+  Não era regressão. Bisect contra a94da94 (commit da medição de 18/10), com o projeto gerado por ele e medido por
+  `--quadros`: Player da época 63–67 ms, o de hoje sem as mudanças 67–77 ms. Os 37–53% vinham da medição: o
+  `comparar.ps1` estragava o `.mproject` formato 4 com `ConvertTo-Json` sem `-Depth` (b26eeda), e a cena oscilava de
+  ~45 a ~140 ms entre rodadas iguais. Mesmo assim, o Tracy mostrou duas varreduras da cena inteira a cada quadro,
+  corrigidas sem mudar o comportamento:
+  - **Lista de scripts no `SceneRuntime`** (390ac72): as entidades com script, refeita quando
+    `SceneStructureVersion()` muda (entidade criada ou destruída, `Entity::Add`, cena copiada). `FixedUpdate` de
+    3,75 para 0,2 ms por passo. Teste: `test_script_list`. Antecipa um item da Fase 25.
+  - **Layout da UI só com a UI** (29998ee): `UiSystem` e `UiRenderer` montavam e ordenavam a árvore da cena inteira
+    (~7,7 ms cada). `Update` de 8,7 para 0,8 ms. Teste novo em `test_ui`.
+  Resultado: `cubos10000` com 98–100% da Unity (33,5 ms, estável), `fisica1000` com 84–85%, e todas as cenas acima
+  de 70% (tabela em `bench/README.md` e em [alpha-3.md](../alpha-3.md)).
 
 ### Contadores e medição
 

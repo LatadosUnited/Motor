@@ -73,16 +73,16 @@ desligado. Motor em % da Unity:
 | Data | vazia | cubos1000 | cubos1000sombra | cubos10000 | fisica1000 | scripts1000 | spawn200 |
 |---|---|---|---|---|---|---|---|
 | 18/10/2026 (0.2.0) | 110–113% | 121–125% | 124–126% | **68–69%** | **76–81%** | 121% | 114–122% |
-| 20/10/2026 (0.2.650, Fase 22) | 108–124% | 117–124% | 121–131% | **37–53%** | **77–80%** | 118–119% | 105–114% |
+| 20/10/2026 (0.2.650, Fase 22) | 100–102% | 107–112% | 110–112% | **98–100%** | **84–85%** | 112% | 101% |
 
-Em 20/10, com o `glDrawRangeElements` (achado da [Fase 22](alpha-3/fase-22-medicao.md)): neutro ou melhor em todas as
-cenas. Mas `cubos10000` piorou desde 18/10 (sem a correção, 110 ms contra 54): o `SceneRuntime` gasta ~19 ms por
-quadro percorrendo as 10 000 entidades atrás de scripts, várias vezes por quadro, e o custo cresce com o número de
-passos fixos. Detalhes em `bench/README.md`.
+Em 20/10, depois de três achados do Tracy na [Fase 22](alpha-3/fase-22-medicao.md) (`glDrawRangeElements`, lista de
+scripts no `SceneRuntime`, layout da UI só com a UI), **todas as cenas passam da meta de 70%**: `cubos10000` foi de
+68–69% para 98–100% (de 54 para 33,5 ms) e `fisica1000` de 76–81% para 84–85%. A máquina estava mais rápida nesta
+sessão, a Unity também; vale a razão. Detalhes em `bench/README.md`.
 
-Só `cubos10000` está abaixo da meta (custo por desenho na CPU: Fase 24), e `fisica1000` está perto do limite
-(sincronização cena–física: Fase 25). Nas cenas dominadas pela GPU o Motor ganha, mas na HD 530 elas medem mais
-o desenho que os scripts; repetir numa máquina com GPU dedicada para separar CPU e GPU.
+O que falta para a meta ser folgada: `fisica1000` (sincronização cena–física: Fase 25) e, em `cubos10000`, os ~22 ms
+de CPU dos 10 000 draws e os ~8 ms de montar a lista deles (Fases 24 e 25). Nas cenas dominadas pela GPU o Motor
+ganha, mas na HD 530 elas medem mais o desenho que os scripts; repetir numa máquina com GPU dedicada.
 
 ### Linha de base (18/10/2026)
 
