@@ -106,12 +106,14 @@ void SceneRuntime::InvokeSystem(SystemSlot& slot, std::string_view callback,
 
 void SceneRuntime::ForEachScript(const std::function<void(Script&, EntityId, std::string_view)>& fn) {
     // Por id e por índice: os scripts podem criar entidades (o vetor da cena cresce) ou adicionar
-    // componentes durante o laço. As entidades criadas aqui só entram no próximo passo.
-    std::vector<EntityId> ids;
-    ids.reserve(m_scene.Entities().size());
-    for (const auto& e : m_scene.Entities()) ids.push_back(e->id);
+    // componentes durante o laço. As entidades criadas aqui só entram no próximo passo. Cópia da lista: ela é
+    // refeita se um script mexer na estrutura da cena durante o laço.
+    RefreshScriptHolders();
+    const std::vector<EntityId> ids = m_scriptHolders;
+    const uint64_t version = SceneStructureVersion();
+    const EntityId lastExisting = m_holdersMaxId;  // ids crescem: maiores que este nasceram durante o laço
 
-    for (EntityId id : ids) {
+    auto visit = [&](EntityId id) {
         for (size_t i = 0;; ++i) {
             Entity* e = m_scene.Find(id);
             if (!e || i >= e->components.size() || !m_scene.IsActiveInHierarchy(id)) break;
@@ -121,7 +123,42 @@ void SceneRuntime::ForEachScript(const std::function<void(Script&, EntityId, std
             if (m_faultedScripts.contains(&s)) continue;
             fn(s, id, c.Type().name);
         }
+    };
+    for (EntityId id : ids) visit(id);
+
+    // Script adicionado durante o laço a uma entidade que já existia e não tinha script: entra ainda nesta passada,
+    // como quando o laço percorria a cena inteira (ex.: um OnStart que põe um script em outra entidade).
+    if (SceneStructureVersion() == version) return;
+    RefreshScriptHolders();
+    const std::vector<EntityId> now = m_scriptHolders;
+    const std::unordered_set<EntityId> visited(ids.begin(), ids.end());
+    for (EntityId id : now) {
+        if (id <= lastExisting && !visited.contains(id)) visit(id);
     }
+}
+
+void SceneRuntime::RefreshScriptHolders() {
+    const auto& entities = m_scene.Entities();
+    const uint64_t version = SceneStructureVersion();
+    if (version == m_holdersVersion && entities.size() == m_holdersEntityCount &&
+        entities.data() == m_holdersEntityData) {
+        return;
+    }
+    MOTOR_PROFILE_SCOPE("Refazer lista de scripts");
+    m_scriptHolders.clear();
+    m_holdersMaxId = kNullEntity;
+    for (const auto& e : entities) {
+        m_holdersMaxId = std::max(m_holdersMaxId, e->id);
+        for (const ComponentPtr& c : e->components) {
+            if (c.Type().IsScript()) {
+                m_scriptHolders.push_back(e->id);
+                break;
+            }
+        }
+    }
+    m_holdersVersion = version;
+    m_holdersEntityCount = entities.size();
+    m_holdersEntityData = entities.data();
 }
 
 void SceneRuntime::CallEntityScripts(EntityId id, std::string_view callback,
@@ -378,9 +415,8 @@ void SceneRuntime::Send(EntityId target, const Message& message) {
 }
 
 void SceneRuntime::Broadcast(const Message& message) {
-    std::vector<EntityId> ids;
-    ids.reserve(m_scene.Entities().size());
-    for (const auto& e : m_scene.Entities()) ids.push_back(e->id);
+    RefreshScriptHolders();
+    const std::vector<EntityId> ids = m_scriptHolders;  // só quem tem script recebe; cópia: OnMessage pode mexer na cena
     for (EntityId id : ids) Send(id, message);
 }
 

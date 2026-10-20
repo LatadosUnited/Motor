@@ -127,6 +127,8 @@ private:
     // Chama fn(script, id, scriptName) para cada script não falho de entidade ativa na hierarquia.
     // Entidades criadas durante o laço ficam para o próximo frame.
     void ForEachScript(const std::function<void(Script&, EntityId, std::string_view)>& fn);
+    // Refaz m_scriptHolders se a estrutura da cena mudou (SceneStructureVersion, número e buffer das entidades).
+    void RefreshScriptHolders();
     void InvokeScript(Script& script, EntityId id, std::string_view scriptName, std::string_view callback,
                       const std::function<void()>& fn);
     void InvokeSystem(SystemSlot& slot, std::string_view callback, const std::function<void()>& fn);
@@ -169,6 +171,15 @@ private:
     std::vector<Timer> m_timers;
     TimerId m_nextTimer = 1;
     std::mt19937 m_random;
+
+    // Entidades com pelo menos um script, na ordem da cena: os laços dos scripts não percorrem a cena inteira
+    // (10 000 entidades sem script custavam ~1,5 ms por laço, várias vezes por quadro). No fim da classe: os
+    // membros de cima não mudam de lugar para quem já usa os acessores inline.
+    std::vector<EntityId> m_scriptHolders;
+    EntityId m_holdersMaxId = 0;  // maior id da cena quando a lista foi feita
+    uint64_t m_holdersVersion = ~uint64_t{0};
+    size_t m_holdersEntityCount = 0;
+    const void* m_holdersEntityData = nullptr;
 };
 
 // Arquivo de cena de um pedido de LoadScene: caminho relativo ao projeto ("Assets/Cenas/Fase1.mscene", a

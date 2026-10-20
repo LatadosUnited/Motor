@@ -20,6 +20,8 @@
 namespace motor {
 
 namespace {
+uint64_t g_structureVersion = 0;  // SceneStructureVersion(); a cena só é mexida na thread principal
+
 bool SameEntity(const Entity& a, const Entity& b) {
     if (a.id != b.id || a.name != b.name || a.active != b.active || a.parent != b.parent) return false;
     const Transform &ta = a.transform, &tb = b.transform;
@@ -32,6 +34,10 @@ bool SameEntity(const Entity& a, const Entity& b) {
     return true;
 }
 } // namespace
+
+uint64_t SceneStructureVersion() {
+    return g_structureVersion;
+}
 
 // --- Entity -----------------------------------------------------------------------
 
@@ -48,6 +54,7 @@ const void* Entity::Get(const ComponentType& type) const {
 
 void* Entity::Add(const ComponentType& type) {
     if (void* existing = Get(type)) return existing;
+    ++g_structureVersion;
     return components.emplace_back(type).Data();
 }
 
@@ -58,6 +65,7 @@ void Entity::Remove(const ComponentType& type) {
 // --- Scene ------------------------------------------------------------------------
 
 Scene::Scene(const Scene& other) : environment(other.environment), m_nextId(other.m_nextId) {
+    ++g_structureVersion;
     m_entities.reserve(other.m_entities.size());
     for (const auto& e : other.m_entities) {
         m_entities.push_back(std::make_unique<Entity>(*e));
@@ -80,6 +88,7 @@ bool Scene::operator==(const Scene& other) const {
 }
 
 Entity& Scene::CreateEntity(std::string name, EntityId parent) {
+    ++g_structureVersion;
     auto entity = std::make_unique<Entity>();
     entity->id = m_nextId++;
     entity->name = std::move(name);
@@ -93,6 +102,7 @@ Entity& Scene::CreateEntity(std::string name, EntityId parent) {
 
 void Scene::DestroyEntity(EntityId id) {
     if (!Find(id)) return;
+    ++g_structureVersion;
 
     std::unordered_set<EntityId> doomed{id};
     for (const auto& e : m_entities) {
