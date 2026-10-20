@@ -115,6 +115,19 @@ FetchContent_Declare(cgltf
     DOWNLOAD_NO_EXTRACT TRUE)
 FetchContent_MakeAvailable(cgltf)
 
+# ufbx (MIT ou domínio público): leitor de FBX (binário e ASCII, 6100 a 7700) num único .c, sem dependências,
+# para importar personagens do Mixamo, Character Creator e afins sem passar pelo Blender. Fixado na tag v0.23.1;
+# compilado só no FbxLoader.cpp da camada de assets.
+FetchContent_Declare(ufbx_h
+    URL      https://raw.githubusercontent.com/ufbx/ufbx/v0.23.1/ufbx.h
+    URL_HASH SHA256=f787be529af577efc04f3e3e735844a08556718dbb613d1211c2b313d72895dc
+    DOWNLOAD_NO_EXTRACT TRUE)
+FetchContent_Declare(ufbx_c
+    URL      https://raw.githubusercontent.com/ufbx/ufbx/v0.23.1/ufbx.c
+    URL_HASH SHA256=4a956c26a708e40d82ecb0aeaee54da709d5ba7c144c9642174970059bda7e1d
+    DOWNLOAD_NO_EXTRACT TRUE)
+FetchContent_MakeAvailable(ufbx_h ufbx_c)
+
 # cpp-httplib (MIT): servidor HTTP num único header, para o servidor MCP do editor (Fase 13; só o editor usa,
 # escutando em 127.0.0.1). Fixado na tag v0.58.0, sem SSL.
 FetchContent_Declare(httplib
