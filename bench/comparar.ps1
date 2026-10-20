@@ -15,7 +15,8 @@ $linhas = @()
 foreach ($cena in "vazia", "cubos1000", "cubos1000sombra", "cubos10000", "fisica1000", "scripts1000", "spawn200") {
     $j = Get-Content $mproj.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
     $j.startupScene = "Assets/Scenes/$cena.mscene"
-    [IO.File]::WriteAllText($mproj.FullName, ($j | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+    # -Depth: o padrão (2) achata os objetos aninhados do .mproject (camadas de física, ações de entrada) em texto.
+    [IO.File]::WriteAllText($mproj.FullName, ($j | ConvertTo-Json -Depth 32), (New-Object Text.UTF8Encoding $false))
     # --stats: FPS no título (o Player normal mostra só o nome do jogo). --opcoes num arquivo que não existe: as opções
     # padrão (1280x720 em janela, MSAA 4x), nunca as que um teste anterior salvou em %APPDATA%.
     $extra = @("--stats", "--janela", "--opcoes", "`"$env:TEMP\motor-bench-sem-opcoes.json`"")
