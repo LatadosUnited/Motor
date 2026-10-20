@@ -89,10 +89,18 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
 - [ ] `bench/medir.ps1` lendo o `--perf` no lugar do título da janela (o título quebrou uma vez, na Fase 21).
 - [x] `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor. *(origem:
   alpha-3.md)* Já existia, feito junto com a comparação com a Unity (e957199).
-- [ ] Cena de referência no repositório: ~5000 entidades (estáticas e com física), 1 luz direcional com sombra
-  e 8 pontuais, 50 scripts simples, UI e som. *(origem: alpha-3.md)*
-- [ ] Teste de desempenho no `ctest` (fora do conjunto rápido) que falha se um número piorar além da margem.
-  *(origem: alpha-3.md)*
+- [x] **Cena de referência no repositório** (`bench/referencia/CenaReferencia.cpp`): 4975 entidades, com 4000
+  estáticas (500 com collider), 900 caixas com corpo rígido, 50 com o script `Bobber`, 1 luz direcional com sombra
+  Média e 8 pontuais, câmera com ouvinte, 10 fontes de som e UI (painel, título, botão). Fonte única: o teste a monta
+  e `test_desempenho --gerar <projeto>` grava o `.mscene` para o Player e o editor. *(origem: alpha-3.md)* (8c8d595)
+  Linha de base no Player (HD 530, 1280×720): 58 ms por quadro, GPU 56 ms (Cena HDR 34, sombras 15), CPU do render
+  33 ms com 7927 draws, 130 MB de vídeo. Tabela em `bench/README.md`.
+- [x] **Teste de desempenho no `ctest`** (`test_desempenho`, rótulo `desempenho`): mede a CPU na cena de referência
+  (passo do jogo; montar, copiar, comparar, gravar e ler a cena), fica com a menor de 3 repetições e falha acima de
+  +30% de `bench/referencia/base.txt` (`MOTOR_DESEMPENHO_GRAVAR=1` regrava). Só mede em Release; no Debug sai com 77 e
+  o ctest mostra "pulado", sem atrasar o conjunto rápido. *(origem: alpha-3.md)* (8c8d595) Conferido: 4 execuções
+  dentro da margem (a maior variação, +19%) e uma piora simulada na base reprovada. Achado: gravar a cena em JSON leva
+  337 ms e ler 314 ms; o editor serializa a cena a cada 0,5 s para checar "não salvo" (Fase 26).
 - [ ] Medir também numa máquina com GPU dedicada, para separar CPU de GPU. *(origem: alpha-3.md)*
 
 ## Pronto quando

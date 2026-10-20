@@ -113,6 +113,9 @@ ctest --test-dir build --output-on-failure
 - Cada `tests/test_*.cpp` usa `TestUtil.h` (`CHECK`, `SECTION`, `TestDir`, `TestResult`) e é registrado em
   `tests/CMakeLists.txt` com `motor_add_test`. Testes não criam janela nem contexto OpenGL.
 - Funcionalidade nova com lógica testável sem GPU ganha teste aqui.
+- `test_desempenho` (alpha 3, rótulo `desempenho`) só mede em Release: `ctest --test-dir build-release -L desempenho`.
+  No Debug aparece como pulado. Mudou o desempenho de propósito (melhora medida)? Regrave a base com
+  `MOTOR_DESEMPENHO_GRAVAR=1` e diga no commit. Detalhes em `bench/README.md`.
 
 ## Verificar a interface — regras importantes
 

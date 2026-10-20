@@ -8,6 +8,47 @@ Meta da alpha 3: o Motor com **pelo menos 70% do desempenho da Unity** nas mesma
   código e mede; `Bobber.cs` e `Spawner.cs` são os scripts equivalentes; `Editor/BenchBuild.cs` configura o URP
   igual ao Motor e gera o player.
 - `medir.ps1` (mede o Motor pelo título da janela) e `comparar.ps1` (roda as 7 cenas nos dois, alternando).
+- `referencia/`: a **cena de referência** do Motor (abaixo) e a linha de base do teste de desempenho.
+
+## Cena de referência e teste de desempenho
+
+`referencia/CenaReferencia.cpp` monta ~5000 entidades: chão e 4000 objetos estáticos (500 com collider), 900 caixas
+com corpo rígido em colunas, 50 cubos com o script `Bobber`, 1 luz direcional com sombra Média e 8 pontuais, câmera
+com ouvinte, 10 fontes de som e uma interface pequena. É a única definição da cena:
+
+- **`test_desempenho`** (ctest, rótulo `desempenho`) monta a cena sem janela e mede a CPU: o passo do jogo (1
+  FixedUpdate + 1 Update, com física, scripts, áudio e UI) e o que o editor faz com a cena (montar, copiar, comparar,
+  gravar e ler o JSON). De cada número fica a menor de 3 repetições, comparada com `referencia/base.txt`: mais de
+  30% acima falha. Só mede em Release; no build Debug aparece como pulado.
+- **`--gerar`** grava a mesma cena num projeto, para medir com GPU no Player (`--perf`) ou no editor (Estatísticas).
+
+```bash
+ctest --test-dir build-release -L desempenho --output-on-failure        # compara com a base
+MOTOR_DESEMPENHO_GRAVAR=1 ctest --test-dir build-release -L desempenho  # grava a base (outra máquina, melhora medida)
+build-release/bin/test_desempenho.exe tmp --gerar "C:/temp/bench/Motor Bench"   # Assets/Scenes/referencia.mscene
+build-release/bin/Player.exe "C:/temp/bench/Motor Bench" --quadros 900 --perf referencia.csv  # com startupScene nela
+```
+
+O projeto precisa do script `Bobber` compilado (o "Motor Bench" do `gerar_motor.py` já tem).
+
+### Linha de base (20/10/2026)
+
+Máquina de referência (i5 de 4 núcleos, Intel HD 530), Release.
+
+| `test_desempenho` (CPU, ms) | jogo_passo | cena_montar | cena_copiar | cena_comparar | cena_json | cena_ler |
+|---|---|---|---|---|---|---|
+| base.txt | 3,1 | 5,4 | 4,7 | 1,8 | **337** | **314** |
+
+Player 1280×720, vsync desligado, 900 quadros com `--perf`, medianas depois de 4 s:
+
+| Quadro | CPU | GPU | Números |
+|---|---|---|---|
+| **58,2 ms (17 FPS)** | Render 33,0; FixedUpdate 19,6 (Física 19,3); Update 1,0; Swap 3,4 | Renderer 56,3: Cena HDR 34,3, Sombras 15,3, Pós 6,9 | 7927 draws (3372 de sombra), 2,1 mi triângulos, 130 MB de vídeo (64 de sombras, 57 de pós) |
+
+Leitura: a GPU é o limite (56 ms; as 1000 esferas de 2300 triângulos pesam na Cena HDR: LOD e instancing, Fases 24 e
+27), as sombras custam 15 ms (Fase 23) e a CPU do render gasta 33 ms montando 7927 draws (Fase 24). A física mede 19 ms
+por quadro porque o quadro lento pede 3 a 4 passos fixos (no `test_desempenho`, com 1 passo, o quadro inteiro do jogo
+custa 3,1 ms). No editor, gravar a cena em JSON leva 337 ms, e a checagem de "não salvo" faz isso a cada 0,5 s (Fase 26).
 
 ## Cenas
 
