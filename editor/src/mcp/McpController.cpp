@@ -10,6 +10,7 @@
 #include "document/SceneDocument.h"
 #include "viewport/SceneViewport.h"
 #include "scripts/ScriptController.h"
+#include "scripts/ScriptProject.h"
 #include "ImageEncode.h"
 #include "McpSceneTools.h"
 
@@ -51,8 +52,18 @@ constexpr const char* kInstructions =
     "resultado use viewport_capture (view_camera move a câmera); para testar o jogo use play, game_key e "
     "ui_click e leia log_read. events_read conta o que mudou no editor desde a última leitura. Scripts "
     "ficam na pasta Scripts/ do projeto (edite os arquivos e chame scripts_build com wait = true). Antes de "
-    "escrever scripts, leia a API desta versão com docs_read (cópias da documentação em outras pastas podem ser "
-    "de outra versão). Textos em português.";
+    "escrever scripts, leia a API desta versão com docs_read ou nas pastas que editor_status mostra em "
+    "script_reference (documentação e headers do SDK desta versão; cópias em outras pastas, como a do projeto, "
+    "podem ser de outra versão). Textos em português.";
+
+// Headers que os scripts incluem, da versão que está rodando: os do SDK instalado (sdk/include ao lado do
+// editor) ou, num build do código-fonte, engine/include.
+fs::path ScriptHeadersDir() {
+    const fs::path sdk = ScriptProject::DefaultSdkJson().parent_path() / "include";
+    std::error_code ec;
+    if (fs::is_regular_file(sdk / "motor" / "scene" / "Script.h", ec)) return sdk;
+    return SourceEngineAssetsDir().parent_path() / "include";
+}
 
 // Seções de um Markdown cujo título contém `query` (sem diferença de maiúsculas), cada uma até o próximo
 // título do mesmo nível ou acima; com `query` vazio, a lista de títulos.
@@ -290,6 +301,15 @@ void McpController::AddEditorTools() {
             }
             j["editor_version"] = kVersion;
             j["script_api"] = kScriptApiVersion;  // a mesma de docs_read
+            // Onde ler a API desta versão com as ferramentas do próprio agente (a fonte final são os headers).
+            auto path = [](const fs::path& p) { return ToUtf8(p.lexically_normal().make_preferred()); };
+            const fs::path docs = EngineDocsDir();
+            const fs::path headers = ScriptHeadersDir();
+            j["script_reference"] = {{"docs", path(docs)},
+                                     {"api", path(docs / "scripts-api.md")},
+                                     {"guide", path(docs / "scripts.md")},
+                                     {"headers", path(headers)},
+                                     {"script_h", path(headers / "motor" / "scene" / "Script.h")}};
             const fs::path& scene = m_host.document.ScenePath();
             j["scene"] = {{"path", scene.empty() ? Json(nullptr) : Json(ToUtf8(scene))},
                           {"unsaved_changes", m_host.document.HasUnsavedChanges()},
@@ -349,7 +369,8 @@ void McpController::AddEditorTools() {
 
     m_protocol.AddTool({
         .name = "docs_read",
-        .description = "Documentação de scripts DESTA versão do editor (a mesma API que o compilador usa): "
+        .description = "Documentação de scripts DESTA versão do editor (a mesma API que o compilador usa; os "
+                       "arquivos e os headers do SDK estão nas pastas de editor_status, em script_reference): "
                        "doc = api (referência: todas as funções, campos e componentes) ou guide (guia com "
                        "exemplos). section devolve só as seções cujo título contém o texto (ex.: \"Entrada\", "
                        "\"Animação\", \"Saves\"); sem section, a lista de títulos. all = true devolve o arquivo "
