@@ -67,9 +67,18 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
 
 ### Contadores e medição
 
-- [ ] Contadores por quadro: tempo de CPU por sistema, tempo de GPU por passada (timer queries), draws,
-  triângulos e memória de vídeo por recurso. Visíveis no viewport, no MCP (`editor_status`) e no Player
-  (`--perf` grava um CSV). *(origem: alpha-3.md)*
+- [x] **Contadores por quadro** (`FrameStats`, `motor/core/FrameStats.h`), sempre ligados: ms de CPU de cada parte
+  do quadro, de cada sistema e dos scripts (`MOTOR_PROFILE_STAT`, que também é zona do Tracy); ms de GPU por passada
+  (`GpuTimers`: carimbos `GL_TIMESTAMP` lidos ~4 quadros depois, sem a CPU esperar; `MOTOR_GPU_TIMERS=0` desliga);
+  draws, draws de sombra, triângulos, recortados e transparentes. No Player, `--perf <arquivo.csv>` grava um quadro
+  por linha ao fechar (`PerfRecorder`) e o log mostra o quadro mediano depois de 4 s; no editor, o bloco `perf` do
+  `editor_status` (MCP). Teste: `test_frame_stats`. *(origem: alpha-3.md)* (440e10e, db8af42) Conferido no Player
+  Release (`cubos1000sombra` e `scripts1000`, 600 quadros) e no editor pelo MCP, editando e em Play. O custo das
+  consultas de GPU não apareceu num A/B com `MOTOR_GPU_TIMERS`, mas a máquina estava ruidosa (a Unity também
+  dobrou de tempo): repetir com a máquina calma.
+- [ ] Contadores visíveis no **viewport** do editor (sobreposição ligável) e **memória de vídeo por recurso**
+  (texturas, malhas, framebuffers, mapas de sombra). *(origem: alpha-3.md; o resto do item acima)*
+- [ ] `bench/medir.ps1` lendo o `--perf` no lugar do título da janela (o título quebrou uma vez, na Fase 21).
 - [x] `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor. *(origem:
   alpha-3.md)* Já existia, feito junto com a comparação com a Unity (e957199).
 - [ ] Cena de referência no repositório: ~5000 entidades (estáticas e com física), 1 luz direcional com sombra
