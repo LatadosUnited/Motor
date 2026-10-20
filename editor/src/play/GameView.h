@@ -24,6 +24,10 @@ public:
     // direita (se o imgui.ini ainda não tem um lugar para ele).
     void PrepareDock(const PlayController& play);
     void Render(motor::Renderer& renderer, const EditorContext& ctx);  // só com a janela visível
+    // A cena pela câmera principal, com o HUD, num framebuffer qualquer, na hora (captura do MCP, mesmo sem a
+    // janela Jogo aberta). false se a cena não tiver câmera ativa.
+    bool RenderTo(motor::Renderer& renderer, const EditorContext& ctx, const motor::Framebuffer& target);
+    glm::vec2 Size() const { return m_visible ? m_size : glm::vec2(0.0f); }  // na tela, se visível
     void Draw(PlayController& play);
 
     bool IsFocused() const { return m_focused; }

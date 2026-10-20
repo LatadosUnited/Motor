@@ -46,16 +46,20 @@ void GameView::PrepareDock(const PlayController& play) {
 void GameView::Render(Renderer& renderer, const EditorContext& ctx) {
     if (!m_visible) return;
     m_framebuffer->Resize(static_cast<int>(m_size.x), static_cast<int>(m_size.y));
+    m_missingCamera = !RenderTo(renderer, ctx, *m_framebuffer);
+}
+
+bool GameView::RenderTo(Renderer& renderer, const EditorContext& ctx, const Framebuffer& target) {
+    if (!m_ui) m_ui = std::make_unique<UiRenderer>();
     const Scene& scene = ctx.scene;
     Camera camera;
-    camera.aspect = m_framebuffer->AspectRatio();
-    m_missingCamera = !scene.ApplyCamera(scene.FindMainCamera(), camera);
-    renderer.BeginScene(camera, scene.CollectLights(), scene.environment, m_framebuffer.get());
-    if (!m_missingCamera) scene.SubmitTo(renderer);
+    camera.aspect = target.AspectRatio();
+    const bool missingCamera = !scene.ApplyCamera(scene.FindMainCamera(), camera);
+    renderer.BeginScene(camera, scene.CollectLights(), scene.environment, &target);
+    if (!missingCamera) scene.SubmitTo(renderer);
     renderer.EndScene();
-    if (!m_missingCamera) {
-        m_ui->Render(scene, ctx.assets, m_framebuffer->Width(), m_framebuffer->Height(), m_framebuffer.get());
-    }
+    if (!missingCamera) m_ui->Render(scene, ctx.assets, target.Width(), target.Height(), &target);
+    return !missingCamera;
 }
 
 void GameView::Draw(PlayController& play) {

@@ -6,6 +6,7 @@
 #include "scripts/ScriptProject.h"
 #include "UndoHistory.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -49,6 +50,8 @@ public:
         std::vector<std::string> loadedTypes;
         std::vector<ScriptProject::Diagnostic> diagnostics;
         std::string log;          // saída completa da última compilação
+        uint64_t builds = 0;      // compilações terminadas desde que o projeto abriu (o MCP espera a próxima)
+        bool queued = false;      // pedida durante outra: começa quando a atual terminar
     };
     Status GetStatus() const;
 
@@ -76,6 +79,7 @@ private:
     ScriptProject::FolderWatch m_watch;  // aviso imediato de arquivo salvo; o timer fica de reserva
     float m_reloadSeconds = 0.0f;
     bool m_buildQueued = false;          // a pasta mudou durante a compilação: compila de novo ao terminar
+    uint64_t m_builds = 0;               // compilações terminadas (Status::builds)
     std::vector<std::string> m_reloadWarnings;  // valores perdidos na última recarga
     std::string m_log;                   // cópia da saída da compilação para o painel
     std::vector<ScriptProject::Diagnostic> m_diagnostics;

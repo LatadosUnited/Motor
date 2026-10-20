@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 14 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 15 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -362,6 +362,7 @@ os da cena: eles avisam o loop do jogo.
 | `glm::vec3 scale` | escala |
 | `void Rotate(const glm::vec3& axis, float radians)` | gira em torno de um eixo do mundo |
 | `void SetEulerDegrees(const glm::vec3& degrees)` | define a rotação por ângulos (graus) |
+| `glm::vec3 EulerDegrees() const` | os ângulos (graus, de -180 a 180) da rotação, na leitura que menos gira em X e Z: `SetEulerDegrees({0, 180, 0})` volta `[0, 180, 0]` |
 | `glm::mat4 Matrix() const` | matriz local |
 
 Convenções: Y para cima, metros, a "frente" de entidades, câmeras e luzes é o **-Z** local. Para virar para
@@ -373,7 +374,7 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 
 | Tipo | No editor | Campos |
 |---|---|---|
-| `motor::MeshRenderer` | Mesh Renderer | `std::shared_ptr<Mesh> mesh`; `std::shared_ptr<Material> sharedMaterial` (asset `.mmat`, compartilhado; nulo = sem asset); `Material material` (o próprio, usado só sem asset) com `glm::vec4 color`, `std::shared_ptr<Texture2D> albedo`, `float metallic`, `float roughness`, `float specular` (reflexo dos não metais, 0.5 = 4%), mapas `normalMap`, `metallicRoughnessMap`, `occlusionMap`, `emissiveMap`, `glm::vec3 emissive` com `emissiveIntensity`, `BlendMode blend` (`Opaque`, `Cutout`, `Transparent`), `float alphaCutoff` e `bool doubleSided`; `Resolved()` devolve o material que está valendo |
+| `motor::MeshRenderer` | Mesh Renderer | `std::shared_ptr<Mesh> mesh`; `std::shared_ptr<Material> sharedMaterial` (asset `.mmat`, compartilhado; nulo = sem asset); `Material material` (o próprio, usado só sem asset) com `glm::vec4 color`, `std::shared_ptr<Texture2D> albedo`, `float metallic`, `float roughness`, `float specular` (reflexo dos não metais, 0.5 = 4%), mapas `normalMap`, `metallicRoughnessMap`, `occlusionMap`, `emissiveMap`, `glm::vec3 emissive` com `emissiveIntensity`, `BlendMode blend` (`Opaque`, `Cutout`, `Transparent`), `float alphaCutoff` e `bool doubleSided`; `ShadowCasting shadows` (`On`, `Off` = não faz sombra, `ShadowsOnly` = some da imagem e só faz sombra); `Resolved()` devolve o material que está valendo |
 | `motor::PrefabInstance` | Prefab | `PrefabLink link` (`guid` do `.mprefab`, `source`, `overrides`); posto pelo editor em cada entidade de uma instância de prefab, não precisa mexer |
 | `motor::CameraComponent` | Câmera | `fov` (graus, vertical), `nearPlane`, `farPlane`, `bool main` |
 | `motor::LightComponent` | Luz | `LightType type` (`Directional`, `Point`, `Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `bool castShadows`, `ShadowQuality shadowQuality` (`Low`, `Medium`, `High`) |

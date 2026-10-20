@@ -104,12 +104,16 @@ void SceneViewport::UpdateCamera(float dt, Window& window) {
 void SceneViewport::Render(Renderer& renderer, const EditorContext& ctx, bool gameView) {
     m_framebuffer->Resize(static_cast<int>(m_size.x), static_cast<int>(m_size.y));
     m_camera.aspect = m_framebuffer->AspectRatio();
+    m_missingGameCamera = !RenderTo(renderer, ctx, gameView, *m_framebuffer);
+}
 
+bool SceneViewport::RenderTo(Renderer& renderer, const EditorContext& ctx, bool gameView, const Framebuffer& target) {
     const Scene& scene = ctx.scene;
     // No Play, pela câmera principal da cena; sem ela, pela câmera do editor (com aviso no viewport).
     Camera camera = m_camera;
-    m_missingGameCamera = gameView && !scene.ApplyCamera(scene.FindMainCamera(), camera);
-    renderer.BeginScene(camera, scene.CollectLights(), scene.environment, m_framebuffer.get());
+    camera.aspect = target.AspectRatio();
+    const bool missingGameCamera = gameView && !scene.ApplyCamera(scene.FindMainCamera(), camera);
+    renderer.BeginScene(camera, scene.CollectLights(), scene.environment, &target);
     scene.SubmitTo(renderer);
 
     // Contorno em wireframe da seleção (e de seus descendentes). A visão do jogo fica limpa.
@@ -128,7 +132,8 @@ void SceneViewport::Render(Renderer& renderer, const EditorContext& ctx, bool ga
     renderer.EndScene();
 
     // UI do jogo por cima, no mesmo framebuffer (no Play e na edição, para ver o HUD no lugar).
-    if (m_showUi) m_ui->Render(scene, ctx.assets, m_framebuffer->Width(), m_framebuffer->Height(), m_framebuffer.get());
+    if (m_showUi) m_ui->Render(scene, ctx.assets, target.Width(), target.Height(), &target);
+    return !missingGameCamera;
 }
 
 void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderStats& stats, float fps) {

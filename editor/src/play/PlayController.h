@@ -30,6 +30,7 @@ public:
 
     // Pedidos de menus, botões e atalhos são aplicados no início do próximo frame, como o desfazer.
     void Queue(Request request) { m_request = request; }
+    Request Pending() const { return m_request; }  // pedido ainda não aplicado (None = já valeu)
     // O jogo recebe a entrada mesmo sem o viewport em foco (teclas simuladas pelo servidor MCP).
     void SetExternalInput(bool enabled) { m_externalInput = enabled; }
     Event ApplyRequest(EditorContext& ctx, UndoHistory& history);
