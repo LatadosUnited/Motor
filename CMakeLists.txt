@@ -145,6 +145,31 @@ FetchContent_Declare(miniaudio
     SOURCE_SUBDIR nenhum)
 FetchContent_MakeAvailable(miniaudio)
 
+# Tracy (BSD-3): profiler por quadro, com zonas de CPU e de GPU vistas ao vivo no visualizador do Tracy (Fase 22).
+# Desligado por padrão: com -DMOTOR_TRACY=ON o cliente entra na libMotor.dll e os MOTOR_PROFILE_* de
+# motor/core/Profile.h viram zonas. Sob demanda (TRACY_ON_DEMAND): só grava com o visualizador conectado.
+# O visualizador tem de ser da mesma versão (0.14.1): o protocolo muda entre versões.
+option(MOTOR_TRACY "Liga o profiler Tracy (Fase 22)" OFF)
+if(MOTOR_TRACY)
+    FetchContent_Declare(tracy
+        URL           https://github.com/wolfpld/tracy/archive/refs/tags/v0.14.1.tar.gz
+        URL_HASH      SHA256=bf4af567e9c7524d07f3caa745fad02fb33bd5694f11910750382d1efbb251c1
+        SOURCE_SUBDIR nenhum)
+    FetchContent_MakeAvailable(tracy)
+
+    # Os objetos entram na libMotor.dll (engine/CMakeLists.txt), como os do ImGui.
+    add_library(tracy_client OBJECT ${tracy_SOURCE_DIR}/public/TracyClient.cpp)
+    set_target_properties(tracy_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(tracy_client SYSTEM PUBLIC ${tracy_SOURCE_DIR}/public)
+    target_compile_definitions(tracy_client
+        PUBLIC  MOTOR_TRACY TRACY_ENABLE TRACY_ON_DEMAND
+        PRIVATE TRACY_EXPORTS WINVER=0x0A00 _WIN32_WINNT=0x0A00
+                TRACY_ONLY_LOCALHOST)  # visualizador na mesma máquina; sem porta aberta na rede (nem aviso do firewall)
+    if(WIN32)
+        target_link_libraries(tracy_client PUBLIC ws2_32 dbghelp secur32)
+    endif()
+endif()
+
 # Objetos do ImGui (e o GLFW) entram na libMotor.dll: o editor e a DLL de scripts usam a mesma cópia (um
 # único contexto do ImGui e uma única janela do GLFW no processo).
 add_library(imgui OBJECT
