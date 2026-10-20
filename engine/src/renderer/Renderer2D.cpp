@@ -135,8 +135,11 @@ void Renderer2D::Render(const DrawList2D& list, int width, int height, const Fra
         const Texture2D* texture = batch.texture ? batch.texture : m_white.get();
         texture->Bind(0);
         m_shader->SetInt("uSrgbTexture", texture->ColorSpace() == TextureColorSpace::Srgb ? 1 : 0);
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.quadCount * 6), GL_UNSIGNED_INT,
-                       reinterpret_cast<const void*>(static_cast<uintptr_t>(batch.firstQuad) * 6 * sizeof(uint32_t)));
+        // Com o intervalo de vértices (4 por quad): o driver não varre os índices na CPU (ver Mesh::Draw).
+        const auto firstVertex = static_cast<GLuint>(batch.firstQuad * 4);
+        glDrawRangeElements(GL_TRIANGLES, firstVertex, firstVertex + static_cast<GLuint>(batch.quadCount * 4) - 1,
+                            static_cast<GLsizei>(batch.quadCount * 6), GL_UNSIGNED_INT,
+                            reinterpret_cast<const void*>(static_cast<uintptr_t>(batch.firstQuad) * 6 * sizeof(uint32_t)));
         ++m_drawCalls;
     }
 

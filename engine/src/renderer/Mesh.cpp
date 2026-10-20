@@ -74,9 +74,13 @@ void Mesh::Upload() const {
 }
 
 void Mesh::Draw() const {
+    if (m_indices.empty() || m_positions.empty()) return;
     if (m_vao == 0) Upload();
     glBindVertexArray(m_vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
+    // Com o intervalo de vértices: sem ele, o driver da Intel (HD 530) varre os índices na CPU a cada draw, lendo
+    // a memória de vídeo (~300 µs para uma esfera de 2300 triângulos; medido com o Tracy na Fase 22).
+    glDrawRangeElements(GL_TRIANGLES, 0, static_cast<GLuint>(m_positions.size() - 1),
+                        static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
 }
 
 std::shared_ptr<Mesh> Mesh::CreateCube() {

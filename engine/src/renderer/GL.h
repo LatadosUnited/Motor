@@ -105,7 +105,9 @@
     X(PFNGLGETINTEGER64VPROC, glGetInteger64v)                        \
     X(PFNGLQUERYCOUNTERPROC, glQueryCounter)                          \
     X(PFNGLGETERRORPROC, glGetError)                                  \
-    X(PFNGLGETSTRINGIPROC, glGetStringi)
+    X(PFNGLGETSTRINGIPROC, glGetStringi)                              \
+    /* Draw com o intervalo de vértices: o driver da Intel não varre os índices na CPU (Mesh::Draw) */ \
+    X(PFNGLDRAWRANGEELEMENTSPROC, glDrawRangeElements)
 
 // Os ponteiros vivem num namespace próprio para não colidir com os símbolos
 // exportados pela opengl32.dll; o using-directive abaixo permite chamá-los como glXxx().
