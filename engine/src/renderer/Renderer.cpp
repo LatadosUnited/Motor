@@ -3,6 +3,7 @@
 #include "motor/core/EngineAssets.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Framebuffer.h"
+#include "motor/renderer/GpuMemory.h"
 #include "motor/renderer/Pbr.h"
 #include "renderer/DrawList.h"
 #include "renderer/GL.h"
@@ -130,9 +131,14 @@ Renderer::Renderer() {
     glNamedBufferStorage(m_shadowsUbo, sizeof(ShadowRenderer::Data), nullptr, GL_DYNAMIC_STORAGE_BIT);
     glCreateBuffers(1, &m_jointsUbo);
     glNamedBufferStorage(m_jointsUbo, sizeof(glm::mat4) * kMaxJoints, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    TrackGpuMemory(GpuObject::Buffer, m_frameUbo, GpuMemoryKind::Buffers, sizeof(FrameData));
+    TrackGpuMemory(GpuObject::Buffer, m_lightsUbo, GpuMemoryKind::Buffers, sizeof(LightsData));
+    TrackGpuMemory(GpuObject::Buffer, m_shadowsUbo, GpuMemoryKind::Buffers, sizeof(ShadowRenderer::Data));
+    TrackGpuMemory(GpuObject::Buffer, m_jointsUbo, GpuMemoryKind::Buffers, sizeof(glm::mat4) * kMaxJoints);
 }
 
 Renderer::~Renderer() {
+    for (unsigned int ubo : {m_jointsUbo, m_shadowsUbo, m_lightsUbo, m_frameUbo}) UntrackGpuMemory(GpuObject::Buffer, ubo);
     glDeleteBuffers(1, &m_jointsUbo);
     glDeleteBuffers(1, &m_shadowsUbo);
     glDeleteBuffers(1, &m_lightsUbo);

@@ -4,6 +4,7 @@
 #include "motor/core/Input.h"
 #include "motor/core/Log.h"
 #include "motor/core/FrameStats.h"
+#include "motor/renderer/GpuMemory.h"
 #include "motor/renderer/Renderer.h"
 
 #include <algorithm>
@@ -12,6 +13,20 @@
 #include <thread>
 
 namespace motor {
+
+namespace {
+// Memória de vídeo por tipo de recurso nos contadores do quadro (Fase 22), em MB. Todo quadro, mesmo minimizada.
+void PublishGpuMemory() {
+    const GpuMemoryUsage usage = CurrentGpuMemory();
+    FrameStats& stats = FrameStats::Instance();
+    constexpr double kMb = 1024.0 * 1024.0;
+    for (int k = 0; k < kGpuMemoryKinds; ++k) {
+        const std::string name = std::string("vram ") + GpuMemoryKindName(static_cast<GpuMemoryKind>(k)) + " MB";
+        stats.SetValue(name, static_cast<double>(usage.bytes[k]) / kMb);
+    }
+    stats.SetValue("vram total MB", static_cast<double>(usage.Total()) / kMb);
+}
+} // namespace
 
 Application::Application(const ApplicationDesc& desc) : m_desc(desc) {
     m_window = std::make_unique<Window>(desc.window);
@@ -114,6 +129,7 @@ void Application::Run() {
                                                           std::chrono::duration<double>(1.0 / m_frameLimit)));
         }
         MOTOR_PROFILE_FRAME();
+        PublishGpuMemory();
         // Período do quadro: de um fim de volta ao outro (tudo entra, até a espera do vsync).
         const auto frameEnd = Clock::now();
         FrameStats::Instance().EndFrame(std::chrono::duration<double, std::milli>(frameEnd - lastFrameEnd).count());

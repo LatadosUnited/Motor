@@ -1,6 +1,7 @@
 #include "renderer/Shadows.h"
 
 #include "motor/renderer/Renderer.h"
+#include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
 
 #include <glm/common.hpp>
@@ -18,6 +19,8 @@ GLuint CreateShadowTexture(GLenum target, int resolution, int layers) {
     GLuint texture = 0;
     glCreateTextures(target, 1, &texture);
     glTextureStorage3D(texture, 1, GL_DEPTH_COMPONENT32F, resolution, resolution, layers);
+    TrackGpuMemory(GpuObject::Texture, texture, GpuMemoryKind::Shadows,
+                   GpuTextureBytes(GL_DEPTH_COMPONENT32F, resolution, resolution, layers));
     // Comparação no hardware (sampler...Shadow): com LINEAR, cada leitura já é um PCF 2x2.
     glTextureParameteri(texture, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
     glTextureParameteri(texture, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
@@ -53,12 +56,15 @@ ShadowRenderer::ShadowRenderer(const std::filesystem::path& dir) {
 
 ShadowRenderer::~ShadowRenderer() {
     glDeleteFramebuffers(1, &m_fbo);
+    UntrackGpuMemory(GpuObject::Texture, m_cascades);
+    UntrackGpuMemory(GpuObject::Texture, m_cubes);
     glDeleteTextures(1, &m_cascades);
     glDeleteTextures(1, &m_cubes);
 }
 
 void ShadowRenderer::EnsureCascades(int resolution) {
     if (resolution == m_cascadeResolution) return;
+    UntrackGpuMemory(GpuObject::Texture, m_cascades);
     if (m_cascades) glDeleteTextures(1, &m_cascades);
     m_cascades = CreateShadowTexture(GL_TEXTURE_2D_ARRAY, resolution, kCascades);
     m_cascadeResolution = resolution;
@@ -66,6 +72,7 @@ void ShadowRenderer::EnsureCascades(int resolution) {
 
 void ShadowRenderer::EnsureCubes(int resolution) {
     if (resolution == m_cubeResolution) return;
+    UntrackGpuMemory(GpuObject::Texture, m_cubes);
     if (m_cubes) glDeleteTextures(1, &m_cubes);
     m_cubes = CreateShadowTexture(GL_TEXTURE_CUBE_MAP_ARRAY, resolution, static_cast<int>(6 * kMaxPointShadows));
     m_cubeResolution = resolution;
