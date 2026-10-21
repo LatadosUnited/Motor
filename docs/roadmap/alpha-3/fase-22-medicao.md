@@ -3,12 +3,12 @@ tipo: fase
 alpha: 3
 fase: 22
 titulo: Medição
-status: em andamento
+status: pronta
 prioridade: 1
 areas: [core, renderer, app, player, docs]
 branch: fase-22-medicao
 inicio: 2026-10-20
-fim: 
+fim: 2026-10-20
 ---
 
 # Fase 22 — Medição
@@ -34,7 +34,8 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
   escuta só em `127.0.0.1:8086`. Conferido em 20/10/2026 com o `tracy-capture` e o `tracy-csvexport` 0.14.1
   no Sandbox e no editor (edição e Play): todas as zonas de CPU, os sistemas um a um pelo nome e as zonas de GPU.
   Sistemas como zonas "transientes", para as estatísticas saírem uma linha por sistema.
-- [ ] Zonas nos scripts do jogo (a DLL de scripts hoje compila sem `MOTOR_TRACY`) e nomes nas threads da Jolt.
+- [ ] ~~Zonas nos scripts do jogo (a DLL de scripts hoje compila sem `MOTOR_TRACY`) e nomes nas threads da Jolt.~~
+  Foi para a Fase 25 (trabalho em várias threads), onde a linha do tempo por thread passa a importar.
 
 ### Achados do profiler
 
@@ -86,7 +87,10 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
   GPU por passada, draws e memória por tipo, suavizado por média móvel (`viewport/FrameStatsPanel`). *(origem:
   alpha-3.md)* (639ccc6) Visto em captura da janela (`PrintWindow`), editando e em Play: o painel fica abaixo da
   barra e dos botões de Play e se limita à altura do viewport. Não testado à mão: clicar no botão.
-- [ ] `bench/medir.ps1` lendo o `--perf` no lugar do título da janela (o título quebrou uma vez, na Fase 21).
+- [x] `bench/medir.ps1` lendo o `--perf` no lugar do título da janela (o título quebrou uma vez, na Fase 21). O
+  Player ganhou `--segundos S` (fecha sozinho e grava o CSV); o medidor calcula a mesma estatística de antes (mediana
+  das médias de 1 s depois de 4 s, como o `BenchRunner.cs` da Unity) e `-Csv` guarda o CSV completo. (b79fa00)
+  Conferido com o `comparar.ps1` inteiro: todas as cenas lidas, de 92% a 134% da Unity.
 - [x] `MOTOR_VSYNC=0` (variável de ambiente) desliga o vsync para medir acima da taxa do monitor. *(origem:
   alpha-3.md)* Já existia, feito junto com a comparação com a Unity (e957199).
 - [x] **Cena de referência no repositório** (`bench/referencia/CenaReferencia.cpp`): 4975 entidades, com 4000
@@ -101,7 +105,11 @@ milissegundo. Rascunho e linha de base em [alpha-3.md](../alpha-3.md).
   o ctest mostra "pulado", sem atrasar o conjunto rápido. *(origem: alpha-3.md)* (8c8d595) Conferido: 4 execuções
   dentro da margem (a maior variação, +19%) e uma piora simulada na base reprovada. Achado: gravar a cena em JSON leva
   337 ms e ler 314 ms; o editor serializa a cena a cada 0,5 s para checar "não salvo" (Fase 26).
-- [ ] Medir também numa máquina com GPU dedicada, para separar CPU de GPU. *(origem: alpha-3.md)*
+- [ ] ~~Medir também numa máquina com GPU dedicada, para separar CPU de GPU.~~ *(origem: alpha-3.md)* Depende de
+  outra máquina: foi para o começo da Fase 23 (antes de mexer nas sombras), com os mesmos `medir.ps1` e
+  `test_desempenho`.
+- [x] **Linha de base refeita com os contadores** no [alpha-3.md](../alpha-3.md): as 7 cenas do bench e a de
+  referência no Player, com CPU por parte, GPU por passada, draws e memória de vídeo. *(origem: "Pronto quando")*
 
 ## Pronto quando
 
@@ -111,4 +119,42 @@ quadro do editor e do Player; o teste de desempenho roda no `ctest`; e a tabela 
 
 ## Feito
 
+O Motor passou a mostrar onde vai cada milissegundo, e a primeira rodada de medição já rendeu três correções.
+
+- **Profiler:** Tracy 0.14.1 opcional (`-DMOTOR_TRACY=ON`), atrás dos macros `MOTOR_PROFILE_*`; zonas de CPU no loop,
+  nos sistemas, nos scripts e no editor, zonas de GPU nas passadas do renderer. Só localhost, sob demanda.
+  Decisão em `docs/decisoes/2026-10-20-profiler-tracy.md`.
+- **Contadores por quadro, sempre ligados** (`FrameStats`, `GpuTimers`, `GpuMemory`): CPU por parte, GPU por passada,
+  draws, triângulos e memória de vídeo por tipo. Saem no CSV do Player (`--perf`, com `--segundos`), no `editor_status`
+  do MCP e no painel **Estatísticas** do viewport.
+- **Cena de referência** (`bench/referencia`, 4975 entidades) e **`test_desempenho`** no ctest (rótulo `desempenho`,
+  só Release, +30% sobre `bench/referencia/base.txt` reprova).
+- **Correções achadas pela medição:** `glDrawRangeElements` (o driver da Intel varria os índices na CPU a cada draw:
+  ~310 µs para 2 µs por draw de esfera); lista de scripts no `SceneRuntime` (`FixedUpdate` de 3,75 para 0,2 ms por passo
+  em `cubos10000`); layout da UI só com a UI (`Update` de 8,7 para 0,8 ms). Comparação com a Unity: `cubos10000` de
+  68–69% para 98–100%, `fisica1000` de 76–81% para 84–85%, todas as cenas acima de 70%.
+- **Medição confiável:** o `bench/comparar.ps1` estragava o `.mproject` formato 4 (`ConvertTo-Json` sem `-Depth`) e o
+  `medir.ps1` dependia do título da janela, que a Fase 21 tirou; os dois corrigidos. Bisect contra a medição de 18/10
+  mostrou que não houve regressão de 2× desde a 0.2.0 (era a medição).
+- Testes novos: `test_script_list`, `test_frame_stats`, `test_desempenho` e um caso em `test_ui`. Arquivos
+  principais: `engine/include/motor/core/{Profile,FrameStats}.h`, `engine/src/renderer/{GpuProfile.h,GpuTimers,
+  GpuMemory}`, `engine/src/scene/SceneRuntime.cpp`, `engine/src/ui/UiLayout.cpp`, `editor/src/viewport/FrameStatsPanel`,
+  `player/src/main.cpp`, `bench/`.
+
+Números de antes e depois: tabelas em `bench/README.md` (comparação com a Unity e cena de referência) e no
+[alpha-3.md](../alpha-3.md) (linha de base com os contadores).
+
 ## Limitações
+
+- **Ruído da máquina de referência:** a HD 530 divide a energia com a CPU e mudou de estado várias vezes na sessão (a
+  Unity variou de 12 para 22 ms na cena vazia). Os números absolutos de dias diferentes não se comparam; as razões e o
+  `test_desempenho` (menor de 3 repetições, margem de 30%) aguentam melhor.
+- **Custo das consultas de GPU** (`GpuTimers`) não isolado: o A/B com `MOTOR_GPU_TIMERS=0` caiu num período ruidoso.
+  Repetir com a máquina calma (entra junto com a medição da Fase 23).
+- **GPU dedicada:** não medido; foi para o começo da Fase 23.
+- **Zonas nos scripts e nomes nas threads da Jolt:** foram para a Fase 25.
+- **Sistemas que percorrem a cena** (Áudio, Ui, Animação: ~7 ms por quadro em 10 000 entidades) e o JSON da cena
+  (337 ms para gravar a de referência, que o editor faz a cada 0,5 s): anotados nas Fases 25 e 26.
+- **Achados na caixa de entrada:** o ImGui gasta 6 a 7 ms de CPU no editor Release; a linha de FPS do viewport fica
+  por baixo dos botões de Play com o viewport estreito.
+- Não testado à mão: clicar no botão Estatísticas (visto só com a preferência ligada pelo arquivo de configuração).
