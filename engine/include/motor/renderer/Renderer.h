@@ -104,6 +104,7 @@ private:
     void DrawWireframes();
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);
+    DrawItem& AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows);
 
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
@@ -136,6 +137,12 @@ private:
     ShadowParamsIds m_shadowIds;
     std::vector<DrawKey> m_sceneKeys, m_shadowKeys;
     std::vector<DrawKey> m_lastSceneKeys, m_lastShadowKeys;  // do quadro anterior: iguais, a ordem não muda
+    std::vector<glm::mat4> m_objects;  // 2 por item (mundo e normal), na ordem de m_items: o buffer de objetos
+    // Material do Submit anterior: o mesmo objeto, ou os mesmos valores, não consultam as tabelas.
+    const Material* m_lastMaterial = nullptr;
+    MaterialKey m_lastMaterialKey;
+    ShadowParams m_lastShadowParams;
+    uint32_t m_lastMaterialId = 0, m_lastShadowId = 0;
     std::vector<uint32_t> m_sceneOrder, m_shadowOrder;
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};

@@ -13,6 +13,8 @@
 #include <motor/scene/SceneSerializer.h>
 
 #include <glm/geometric.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/trigonometric.hpp>
 
 #include <array>
@@ -405,6 +407,22 @@ int main(int argc, char** argv) {
         CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
         b.occlusionStrength = 0.3f;  // sem mapa de oclusão, a força não chega ao shader
         CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
+    }
+
+    SECTION("Matriz da normal pela cofatora: a mesma direção da inversa transposta (Fase 23)");
+    {
+        // Rotação, escala não uniforme e translação; depois um espelho (escala negativa).
+        glm::mat4 m(1.0f);
+        m = glm::translate(m, glm::vec3(3.0f, -1.0f, 2.0f));
+        m = glm::rotate(m, 0.7f, glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f)));
+        m = glm::scale(m, glm::vec3(2.0f, 0.5f, 3.0f));
+        for (int k = 0; k < 2; ++k) {
+            const glm::mat3 reference = glm::inverseTranspose(glm::mat3(m));
+            for (const glm::vec3& n : {glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), glm::normalize(glm::vec3(1, -2, 3))}) {
+                CHECK(Near(glm::normalize(NormalMatrix(m) * n), glm::normalize(reference * n)));
+            }
+            m = glm::scale(m, glm::vec3(-1.0f, 1.0f, 1.0f));
+        }
     }
 
     SECTION("Ordem de desenho: números de material e lotes seguidos (Fase 23)");

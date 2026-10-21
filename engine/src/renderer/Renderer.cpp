@@ -19,7 +19,6 @@
 #include <glm/vec4.hpp>
 #include <glm/geometric.hpp>
 #include <glm/matrix.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -182,16 +181,45 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_items.clear();
     m_joints.clear();
     m_wires.clear();
+    m_objects.clear();
+    m_materialIds.Clear();
+    m_shadowIds.Clear();
+    m_lastMaterial = nullptr;
+}
+
+DrawItem& Renderer::AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows) {
+    // Os números do material saem aqui, com o material ainda no cache (quem chama acabou de lê-lo): no EndScene,
+    // ler milhares de materiais espalhados na memória custava mais que as contas. O mesmo material seguido, ou com
+    // os mesmos valores (cada objeto com o seu, todos iguais), não consulta as tabelas.
+    if (&material != m_lastMaterial) {
+        const bool first = m_lastMaterial == nullptr;
+        m_lastMaterial = &material;
+        const MaterialKey key{MaterialParamsOf(material), material.doubleSided};
+        if (first || !(key == m_lastMaterialKey)) {
+            m_lastMaterialId = m_materialIds.Id(key);
+            m_lastMaterialKey = key;
+        }
+        const ShadowParams shadow = ShadowParamsOf(material);
+        if (first || !(shadow == m_lastShadowParams)) {
+            m_lastShadowId = m_shadowIds.Id(shadow);
+            m_lastShadowParams = shadow;
+        }
+    }
+    DrawItem& item = m_items.emplace_back();
+    item.mesh = &mesh;
+    item.material = &material;
+    item.materialId = m_lastMaterialId;
+    item.shadowId = m_lastShadowId;
+    item.transparent = material.blend == BlendMode::Transparent;
+    item.shadows = shadows;
+    m_objects.push_back(model);
+    m_objects.push_back(glm::mat4(NormalMatrix(model)));
+    return item;
 }
 
 void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows) {
     MOTOR_ASSERT(m_inScene, "Submit fora de BeginScene/EndScene");
-    DrawItem& item = m_items.emplace_back();
-    item.mesh = &mesh;
-    item.material = &material;
-    item.transparent = material.blend == BlendMode::Transparent;
-    item.model = model;
-    item.shadows = shadows;
+    DrawItem& item = AddItem(mesh, material, model, shadows);
     item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
 }
 
@@ -207,13 +235,8 @@ void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const g
         log::Warn("Renderer: malha com {} juntas; só as primeiras {} se movem", joints.size(), kMaxJoints);
     }
     const size_t count = std::min(joints.size(), kMaxJoints);
-    DrawItem& item = m_items.emplace_back();
-    item.mesh = &mesh;
-    item.material = &material;
-    item.transparent = material.blend == BlendMode::Transparent;
-    item.model = model;
+    DrawItem& item = AddItem(mesh, material, model, shadows);
     item.skinned = true;
-    item.shadows = shadows;
     item.jointOffset = static_cast<uint32_t>(m_joints.size());
     item.jointCount = static_cast<uint32_t>(count);
     m_joints.insert(m_joints.end(), joints.begin(), joints.begin() + static_cast<std::ptrdiff_t>(count));
@@ -277,40 +300,16 @@ void Renderer::EndScene() {
 void Renderer::DrawScene() {
     const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
 
-    // 0) Ordem de desenho: cada item ganha o número do seu material (valores iguais, o mesmo número) e a lista é
-    //    ordenada por (shader, material, malha), uma vez para a cena e outra para as sombras (que só olham recorte e
+    // 0) Ordem de desenho: a lista é ordenada por (shader, material, malha) com os números de material dados no
+    //    Submit (valores iguais, o mesmo número), uma vez para a cena e outra para as sombras (que só olham recorte e
     //    alfa). Itens que podem ir no mesmo draw ficam seguidos.
-    m_materialIds.Clear();
-    m_shadowIds.Clear();
     m_sceneKeys.resize(m_items.size());
     m_shadowKeys.resize(m_items.size());
-    {
-        // O mesmo material seguido (um .mmat) não recalcula; valores iguais aos do anterior (cada objeto com o seu
-        // material, todos iguais: o caso dos cubos) não consultam a tabela.
-        const Material* previous = nullptr;
-        MaterialKey previousKey;
-        ShadowParams previousShadow;
-        uint32_t materialId = 0, shadowId = 0;
-        for (size_t i = 0; i < m_items.size(); ++i) {
-            const DrawItem& item = m_items[i];
-            if (item.material != previous) {
-                const bool first = previous == nullptr;
-                previous = item.material;
-                const MaterialKey key{MaterialParamsOf(*item.material), item.material->doubleSided};
-                if (first || !(key == previousKey)) {
-                    materialId = m_materialIds.Id(key);
-                    previousKey = key;
-                }
-                const ShadowParams shadow = ShadowParamsOf(*item.material);
-                if (first || !(shadow == previousShadow)) {
-                    shadowId = m_shadowIds.Id(shadow);
-                    previousShadow = shadow;
-                }
-            }
-            const uint32_t shader = item.skinned ? 1u : 0u;
-            m_sceneKeys[i] = {shader, materialId, item.mesh};
-            m_shadowKeys[i] = {shader, shadowId, item.mesh};
-        }
+    for (size_t i = 0; i < m_items.size(); ++i) {
+        const DrawItem& item = m_items[i];
+        const uint32_t shader = item.skinned ? 1u : 0u;
+        m_sceneKeys[i] = {shader, item.materialId, item.mesh};
+        m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
     }
     // Cena parada: as mesmas chaves do quadro anterior dão a mesma ordem.
     auto sortIfChanged = [](const std::vector<DrawKey>& keys, std::vector<DrawKey>& lastKeys,
@@ -323,7 +322,7 @@ void Renderer::DrawScene() {
     sortIfChanged(m_shadowKeys, m_lastShadowKeys, m_shadowOrder);
 
     // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
-    m_instances->UploadObjects(m_items);
+    m_instances->UploadObjects(m_objects);
     const ShadowRenderer::Result shadows = [&] {
         MOTOR_PROFILE_GPU("Sombras");
         return m_shadows->Render(m_camera, m_lights, m_environment, m_items, *m_instances,

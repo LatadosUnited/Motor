@@ -20,11 +20,12 @@ namespace motor {
 struct DrawItem {
     const Mesh* mesh = nullptr;
     const Material* material = nullptr;  // de quem chamou o Submit: vivo até o EndScene, sem cópia
-    glm::mat4 model{1.0f};
     Aabb bounds;              // no mundo (malha com pele: a pose de repouso com folga)
     uint32_t jointOffset = 0; // em Renderer::m_joints
     uint32_t jointCount = 0;
     bool skinned = false;
+    uint32_t materialId = 0;  // em Renderer::m_materialIds (dado no Submit, com o material ainda no cache)
+    uint32_t shadowId = 0;    // em Renderer::m_shadowIds
     bool transparent = false;  // material->blend == Transparent, guardado no Submit (o material está longe na memória)
     ShadowCasting shadows = ShadowCasting::On;  // Off: fora dos mapas de sombra; ShadowsOnly: só neles
 };
@@ -56,8 +57,8 @@ public:
     InstanceBuffers(const InstanceBuffers&) = delete;
     InstanceBuffers& operator=(const InstanceBuffers&) = delete;
 
-    // Grava os objetos de todos os itens (uma vez por cena) e deixa o buffer no binding 4.
-    void UploadObjects(std::span<const DrawItem> items);
+    // Grava os objetos (2 matrizes por item: mundo e normal, montadas no Submit) e deixa o buffer no binding 4.
+    void UploadObjects(std::span<const glm::mat4> objects);
     // Grava a lista de índices de uma passada e deixa o buffer no binding 5.
     void UploadIndices(std::span<const uint32_t> indices);
 
@@ -66,7 +67,6 @@ private:
     unsigned int m_indices = 0;
     size_t m_objectBytes = 0;
     size_t m_indexBytes = 0;
-    std::vector<glm::mat4> m_scratch;  // 2 matrizes por item, reaproveitado entre quadros
 };
 
 } // namespace motor

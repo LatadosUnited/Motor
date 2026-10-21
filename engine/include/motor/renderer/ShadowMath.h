@@ -21,6 +21,11 @@ struct Aabb {
 // Caixa (alinhada aos eixos) que contém a caixa `box` transformada por `m`.
 Aabb TransformAabb(const Aabb& box, const glm::mat4& m);
 
+// Matriz da normal de `model` sem inversa: a cofatora da parte 3x3 (três produtos vetoriais), com o sinal do
+// determinante. É a inversa transposta multiplicada por |det|: a mesma direção, e o shader normaliza (o fator é o
+// mesmo em todos os vértices do objeto, então a interpolação não muda).
+glm::mat3 NormalMatrix(const glm::mat4& model);
+
 // Os seis planos de uma matriz de projeção*vista (normais para dentro).
 struct Frustum {
     std::array<glm::vec4, 6> planes{};  // esquerda, direita, baixo, cima, perto, longe

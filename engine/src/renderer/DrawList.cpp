@@ -3,8 +3,6 @@
 #include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
 
-#include <glm/gtc/matrix_inverse.hpp>
-
 #include <algorithm>
 
 namespace motor {
@@ -36,14 +34,10 @@ InstanceBuffers::~InstanceBuffers() {
     glDeleteBuffers(1, &m_indices);
 }
 
-void InstanceBuffers::UploadObjects(std::span<const DrawItem> items) {
-    // Object do object.glsl: model e a inversa transposta da parte 3x3 (colunas de 4 floats, std430).
-    m_scratch.resize(std::max<size_t>(items.size(), 1) * 2);
-    for (size_t i = 0; i < items.size(); ++i) {
-        m_scratch[i * 2] = items[i].model;
-        m_scratch[i * 2 + 1] = glm::mat4(glm::inverseTranspose(glm::mat3(items[i].model)));
-    }
-    Upload(m_objects, m_objectBytes, m_scratch.data(), m_scratch.size() * sizeof(glm::mat4));
+void InstanceBuffers::UploadObjects(std::span<const glm::mat4> objects) {
+    static const glm::mat4 kEmpty[2] = {glm::mat4(1.0f), glm::mat4(1.0f)};  // buffer vazio não pode ser vinculado
+    if (objects.empty()) objects = kEmpty;
+    Upload(m_objects, m_objectBytes, objects.data(), objects.size_bytes());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kObjectsBinding, m_objects);
 }
 
