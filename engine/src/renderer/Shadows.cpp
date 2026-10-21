@@ -41,11 +41,21 @@ GLuint CreateShadowTexture(GLenum target, int resolution, int layers) {
 }
 } // namespace
 
-ShadowRenderer::ShadowRenderer(const std::filesystem::path& dir) {
-    m_directional = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag");
-    m_directionalSkinned = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define SKINNED\n");
-    m_point = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define POINT\n");
-    m_pointSkinned = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define POINT\n#define SKINNED\n");
+ShadowRenderer::Variant ShadowRenderer::MakeVariant(const std::filesystem::path& dir, std::string_view defines) {
+    Variant v;
+    v.shader = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", defines);
+    Shader& s = *v.shader;
+    const bool point = defines.find("POINT") != std::string_view::npos;
+    v.uniforms = {s.Uniform("uLightViewProjection"), point ? s.Uniform("uLightPositionRange") : -1,
+                  s.Uniform("uModel"), s.Uniform("uAlphaCutoff"), s.Uniform("uColorAlpha")};
+    return v;
+}
+
+ShadowRenderer::ShadowRenderer(const std::filesystem::path& dir)
+    : m_directional(MakeVariant(dir, "")),
+      m_directionalSkinned(MakeVariant(dir, "#define SKINNED\n")),
+      m_point(MakeVariant(dir, "#define POINT\n")),
+      m_pointSkinned(MakeVariant(dir, "#define POINT\n#define SKINNED\n")) {
     glCreateFramebuffers(1, &m_fbo);
     glNamedFramebufferDrawBuffer(m_fbo, GL_NONE);
     glNamedFramebufferReadBuffer(m_fbo, GL_NONE);
@@ -81,32 +91,44 @@ void ShadowRenderer::EnsureCubes(int resolution) {
 void ShadowRenderer::DrawItems(std::span<const DrawItem> items, const glm::mat4& viewProjection, const Frustum& frustum,
                                bool point, const glm::vec4& lightPositionRange, const JointUploader& uploadJoints,
                                RenderStats& stats) {
-    Shader& base = point ? *m_point : *m_directional;
-    Shader& skinned = point ? *m_pointSkinned : *m_directionalSkinned;
-    base.SetMat4("uLightViewProjection", viewProjection);
-    skinned.SetMat4("uLightViewProjection", viewProjection);
-    if (point) {
-        base.SetVec4("uLightPositionRange", lightPositionRange);
-        skinned.SetVec4("uLightPositionRange", lightPositionRange);
+    Variant& base = point ? m_point : m_directional;
+    Variant& skinned = point ? m_pointSkinned : m_directionalSkinned;
+    for (Variant* v : {&base, &skinned}) {
+        v->shader->SetMat4(v->uniforms.lightViewProjection, viewProjection);
+        if (point) v->shader->SetVec4(v->uniforms.lightPositionRange, lightPositionRange);
     }
-    const Shader* bound = nullptr;
+    const Variant* bound = nullptr;
+    // Recorte e alfa do desenho anterior (por shader): o mesmo material seguido não reenvia nada.
+    const Variant* paramsVariant = nullptr;
+    float lastCutoff = 0.0f, lastAlpha = 0.0f;
+    GLuint lastAlbedo = 0;
     for (const DrawItem& item : items) {
         if (item.material.blend == BlendMode::Transparent) continue;  // vidro e água não fazem sombra
         if (item.shadows == ShadowCasting::Off) continue;
         if (!frustum.Intersects(item.bounds)) continue;
-        Shader& shader = item.skinned ? skinned : base;
-        if (bound != &shader) {
+        Variant& variant = item.skinned ? skinned : base;
+        Shader& shader = *variant.shader;
+        if (bound != &variant) {
             shader.Bind();
-            bound = &shader;
+            bound = &variant;
         }
         if (item.skinned) uploadJoints(item);
-        shader.SetMat4("uModel", item.model);
+        shader.SetMat4(variant.uniforms.model, item.model);
         const Material& m = item.material;
         const bool cutout = m.blend == BlendMode::Cutout;
-        shader.SetFloat("uAlphaCutoff", cutout ? m.alphaCutoff : -1.0f);
-        shader.SetFloat("uColorAlpha", m.color.a);
-        if (cutout && m.albedo) m.albedo->Bind(0);
-        else if (cutout) shader.SetFloat("uAlphaCutoff", m.color.a < m.alphaCutoff ? 2.0f : -1.0f);  // sem textura
+        float cutoff = cutout ? m.alphaCutoff : -1.0f;
+        if (cutout && !m.albedo) cutoff = m.color.a < m.alphaCutoff ? 2.0f : -1.0f;  // sem textura
+        if (paramsVariant != &variant || cutoff != lastCutoff || m.color.a != lastAlpha) {
+            shader.SetFloat(variant.uniforms.alphaCutoff, cutoff);
+            shader.SetFloat(variant.uniforms.colorAlpha, m.color.a);
+            paramsVariant = &variant;
+            lastCutoff = cutoff;
+            lastAlpha = m.color.a;
+        }
+        if (cutout && m.albedo && m.albedo->NativeHandle() != lastAlbedo) {
+            lastAlbedo = m.albedo->NativeHandle();
+            m.albedo->Bind(0);
+        }
         item.mesh->Draw();
         ++stats.drawCalls;
         ++stats.shadowDrawCalls;

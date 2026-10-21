@@ -92,6 +92,10 @@ private:
         glm::mat4 model;
         glm::vec4 color;
     };
+    // Posições dos uniforms por desenho do lit.frag, resolvidas uma vez por shader (lit e com pele).
+    struct LitUniforms {
+        int alphaMode = -1, model = -1, normalMatrix = -1, color = -1, pbr = -1, emissive = -1;
+    };
 
     void DrawScene();
     void DrawWireframes();
@@ -101,6 +105,8 @@ private:
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
     std::unique_ptr<Shader> m_unlitShader;
+    LitUniforms m_litUniforms, m_skinnedUniforms;
+    int m_unlitModel = -1, m_unlitColor = -1;
     std::shared_ptr<Texture2D> m_whiteTexture;
     std::unique_ptr<PostProcess> m_post;
     std::unique_ptr<ShadowRenderer> m_shadows;

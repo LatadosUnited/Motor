@@ -372,5 +372,36 @@ int main(int argc, char** argv) {
         CHECK(Near(v1.roughness, 0.0f) && v1.specular == 0.3f && v1.metallic == 0.0f);
     }
 
+    SECTION("MaterialParams: o que o lit.frag recebe e quando o material muda (Fase 23)");
+    {
+        Material m;
+        m.blend = BlendMode::Cutout;
+        m.alphaCutoff = 1.7f;
+        m.emissive = glm::vec3(0.5f);
+        m.emissiveIntensity = -2.0f;
+        const MaterialParams p = MaterialParamsOf(m);
+        CHECK(p.alphaMode == glm::vec4(static_cast<float>(BlendMode::Cutout), 1.0f, 0.0f, 0.0f));  // recorte limitado
+        CHECK(p.emissive == glm::vec4(0.0f));  // intensidade negativa = sem luz própria
+        CHECK(p.pbr.w == 0.0f && p.albedo == nullptr);  // sem mapa de normal, sem textura
+
+        m.emissiveIntensity = 2.0f;
+        CHECK(Near(glm::vec3(MaterialParamsOf(m).emissive), SrgbToLinear(glm::vec3(0.5f)) * 2.0f));
+
+        // O renderer só reenvia quando o resultado muda. As texturas são comparadas pelo ponteiro; sem GPU no teste,
+        // um endereço qualquer serve (nunca é lido).
+        Material a, b;
+        CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
+        b.color.r = 0.9f;
+        CHECK(!(MaterialParamsOf(a) == MaterialParamsOf(b)));
+        b = a;
+        int dummy = 0;
+        b.albedo = std::shared_ptr<Texture2D>(reinterpret_cast<Texture2D*>(&dummy), [](Texture2D*) {});
+        CHECK(!(MaterialParamsOf(a) == MaterialParamsOf(b)) && MaterialParamsOf(b).albedo == b.albedo.get());
+        a.albedo = b.albedo;
+        CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
+        b.occlusionStrength = 0.3f;  // sem mapa de oclusão, a força não chega ao shader
+        CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
+    }
+
     return TestResult();
 }

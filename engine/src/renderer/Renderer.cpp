@@ -87,9 +87,6 @@ void APIENTRY OnGlDebug(GLenum, GLenum type, GLuint id, GLenum severity, GLsizei
     }
 }
 
-void BindData(GLuint unit, const std::shared_ptr<Texture2D>& texture, const Texture2D& fallback) {
-    glBindTextureUnit(unit, (texture ? *texture : fallback).LinearHandle());
-}
 } // namespace
 
 Renderer::Renderer() {
@@ -118,6 +115,14 @@ Renderer::Renderer() {
     m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
     m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag");  // animação esquelética (Fase 11)
     m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag");
+    auto findLitUniforms = [](Shader& shader) {
+        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uModel"), shader.Uniform("uNormalMatrix"),
+                           shader.Uniform("uColor"), shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
+    };
+    m_litUniforms = findLitUniforms(*m_litShader);
+    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
+    m_unlitModel = m_unlitShader->Uniform("uModel");
+    m_unlitColor = m_unlitShader->Uniform("uColor");
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
     m_post = std::make_unique<PostProcess>(dir);
     m_shadows = std::make_unique<ShadowRenderer>(dir);
@@ -323,8 +328,20 @@ void Renderer::DrawScene() {
 
     const Frustum frustum = Frustum::FromMatrix(projection * view);
     const Shader* bound = nullptr;
+    // Material e texturas do desenho anterior: objetos seguidos com o mesmo material (o caso comum) não reenviam
+    // nada disso. Os uniforms são de cada programa, por isso a lembrança vale para um shader só.
+    const Shader* paramsShader = nullptr;
+    MaterialParams lastParams;
+    GLuint lastTexture[5] = {0, 0, 0, 0, 0};
+    auto bindTexture = [&](GLuint unit, GLuint texture) {
+        if (lastTexture[unit] == texture) return;
+        lastTexture[unit] = texture;
+        glBindTextureUnit(unit, texture);
+    };
+    const Texture2D& white = *m_whiteTexture;
     auto draw = [&](const DrawItem& item) {
         Shader& shader = item.skinned ? *m_skinnedShader : *m_litShader;
+        const LitUniforms& u = item.skinned ? m_skinnedUniforms : m_litUniforms;
         if (bound != &shader) {
             shader.Bind();
             bound = &shader;
@@ -333,19 +350,22 @@ void Renderer::DrawScene() {
         const Material& m = item.material;
         // Duas faces: sem descartar as de trás (o lit.frag vira a normal delas).
         if (m.doubleSided) glDisable(GL_CULL_FACE);
-        const float cutoff = std::clamp(m.alphaCutoff, 0.0f, 1.0f);
-        shader.SetVec4("uAlphaMode", glm::vec4(static_cast<float>(m.blend), cutoff, 0.0f, 0.0f));
-        shader.SetMat4("uModel", item.model);
-        shader.SetMat3("uNormalMatrix", glm::inverseTranspose(glm::mat3(item.model)));
-        shader.SetVec4("uColor", m.color);
-        shader.SetVec4("uPbr", glm::vec4(m.metallic, m.roughness, m.specular, m.normalMap ? m.normalStrength : 0.0f));
-        shader.SetVec4("uEmissive", glm::vec4(SrgbToLinear(m.emissive) * std::max(m.emissiveIntensity, 0.0f),
-                                              m.occlusionMap ? glm::clamp(m.occlusionStrength, 0.0f, 1.0f) : 0.0f));
-        (m.albedo ? m.albedo : m_whiteTexture)->Bind(kUnitAlbedo);
-        BindData(kUnitNormal, m.normalMap, *m_whiteTexture);
-        BindData(kUnitMetalRough, m.metallicRoughnessMap, *m_whiteTexture);
-        BindData(kUnitOcclusion, m.occlusionMap, *m_whiteTexture);
-        (m.emissiveMap ? m.emissiveMap : m_whiteTexture)->Bind(kUnitEmissive);
+        shader.SetMat4(u.model, item.model);
+        shader.SetMat3(u.normalMatrix, glm::inverseTranspose(glm::mat3(item.model)));
+        const MaterialParams params = MaterialParamsOf(m);
+        if (paramsShader != &shader || !(params == lastParams)) {
+            shader.SetVec4(u.alphaMode, params.alphaMode);
+            shader.SetVec4(u.color, params.color);
+            shader.SetVec4(u.pbr, params.pbr);
+            shader.SetVec4(u.emissive, params.emissive);
+            bindTexture(kUnitAlbedo, (params.albedo ? *params.albedo : white).NativeHandle());
+            bindTexture(kUnitNormal, (params.normalMap ? *params.normalMap : white).LinearHandle());
+            bindTexture(kUnitMetalRough, (params.metallicRoughnessMap ? *params.metallicRoughnessMap : white).LinearHandle());
+            bindTexture(kUnitOcclusion, (params.occlusionMap ? *params.occlusionMap : white).LinearHandle());
+            bindTexture(kUnitEmissive, (params.emissiveMap ? *params.emissiveMap : white).NativeHandle());
+            lastParams = params;
+            paramsShader = &shader;
+        }
 
         item.mesh->Draw();
         if (m.doubleSided) glEnable(GL_CULL_FACE);
@@ -386,7 +406,9 @@ void Renderer::DrawScene() {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
-        bound = nullptr;  // o céu trocou o shader
+        bound = nullptr;  // o céu trocou o shader e as texturas
+        paramsShader = nullptr;
+        std::fill(std::begin(lastTexture), std::end(lastTexture), 0u);
         for (const auto& [distance, item] : transparent) draw(*item);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
@@ -403,8 +425,8 @@ void Renderer::DrawWireframes() {
     m_unlitShader->Bind();
     glBindTextureUnit(0, m_post->SceneDepth());
     for (const WireItem& wire : m_wires) {
-        m_unlitShader->SetMat4("uModel", wire.model);
-        m_unlitShader->SetVec4("uColor", wire.color);
+        m_unlitShader->SetMat4(m_unlitModel, wire.model);
+        m_unlitShader->SetVec4(m_unlitColor, wire.color);
         wire.mesh->Draw();
         ++m_stats.drawCalls;
     }
