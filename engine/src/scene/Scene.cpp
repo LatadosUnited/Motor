@@ -105,15 +105,70 @@ Entity& Scene::CreateEntity(std::string name, EntityId parent) {
 }
 
 void Scene::DestroyEntity(EntityId id) {
-    if (!Find(id)) return;
+    DestroyEntities({id});
+}
+
+void Scene::DestroyEntities(const std::vector<EntityId>& roots) {
+    std::vector<EntityId> doomed = Subtrees(roots);
+    if (doomed.empty()) return;
     ++g_structureVersion;
 
-    std::unordered_set<EntityId> doomed{id};
-    for (const auto& e : m_entities) {
-        if (IsDescendantOf(e->id, id)) doomed.insert(e->id);
-    }
     for (EntityId d : doomed) m_byId.erase(d);
-    std::erase_if(m_entities, [&](const auto& e) { return doomed.contains(e->id); });
+    std::sort(doomed.begin(), doomed.end());
+    std::erase_if(m_entities, [&](const auto& e) { return std::binary_search(doomed.begin(), doomed.end(), e->id); });
+}
+
+std::vector<EntityId> Scene::Subtrees(const std::vector<EntityId>& roots) const {
+    // Vetores ordenados com busca binária em vez de conjuntos com hash: destruir 200 entidades por quadro
+    // (spawn200) alocava um nó por entidade em cada conjunto.
+    std::vector<EntityId> requested;
+    for (EntityId id : roots) {
+        if (Find(id)) requested.push_back(id);
+    }
+    if (requested.empty()) return {};
+    std::sort(requested.begin(), requested.end());
+    requested.erase(std::unique(requested.begin(), requested.end()), requested.end());
+    auto isRequested = [&](EntityId id) { return std::binary_search(requested.begin(), requested.end(), id); };
+
+    // Dono de cada entidade: a raiz pedida mais alta acima dela (ou ela mesma), kNullEntity se nenhuma. Sobe a
+    // hierarquia sem guardar nada: na cena comum (quase tudo na raiz) é uma busca por entidade.
+    auto ownerOf = [&](const Entity& e) {
+        EntityId found = isRequested(e.id) ? e.id : kNullEntity;
+        for (EntityId p = e.parent; p != kNullEntity;) {
+            const Entity* up = Find(p);
+            if (!up) break;
+            if (isRequested(p)) found = p;
+            p = up->parent;
+        }
+        return found;
+    };
+
+    std::vector<std::pair<EntityId, EntityId>> below;  // (raiz, descendente), na ordem da cena
+    std::vector<EntityId> nested;                       // raízes pedidas dentro de outra
+    for (const auto& e : m_entities) {
+        if (e->parent == kNullEntity) continue;  // sem pai: só pode ser a própria raiz
+        const EntityId o = ownerOf(*e);
+        if (o == kNullEntity || o == e->id) continue;
+        below.emplace_back(o, e->id);
+        if (isRequested(e->id)) nested.push_back(e->id);
+    }
+    std::stable_sort(below.begin(), below.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::sort(nested.begin(), nested.end());
+
+    std::vector<EntityId> result;
+    std::vector<bool> emitted(requested.size(), false);
+    for (EntityId root : roots) {
+        const auto it = std::lower_bound(requested.begin(), requested.end(), root);
+        if (it == requested.end() || *it != root) continue;  // inexistente
+        const size_t index = static_cast<size_t>(it - requested.begin());
+        if (emitted[index] || std::binary_search(nested.begin(), nested.end(), root)) continue;  // repetida ou dentro de outra
+        emitted[index] = true;
+        result.push_back(root);
+        auto first = std::lower_bound(below.begin(), below.end(), root,
+                                      [](const auto& pair, EntityId id) { return pair.first < id; });
+        for (; first != below.end() && first->first == root; ++first) result.push_back(first->second);
+    }
+    return result;
 }
 
 EntityId Scene::Duplicate(EntityId id) {

@@ -37,6 +37,7 @@ motor_add_test(test_runtime_systems)
 motor_add_test(test_script_list)  # Fase 22: lista de scripts do SceneRuntime
 motor_add_test(test_frame_stats)  # Fase 22: contadores por quadro e CSV do --perf
 motor_add_test(test_entities_with)  # Fase 25: listas por tipo de componente da cena
+motor_add_test(test_destroy_batch)  # Fase 25: destruir em lote
 
 # Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o
 # ctest mostra "pulado". Rodar só ele: ctest --test-dir build-release -L desempenho

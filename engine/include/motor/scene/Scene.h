@@ -85,6 +85,12 @@ public:
 
     Entity& CreateEntity(std::string name, EntityId parent = kNullEntity);
     void DestroyEntity(EntityId id);               // destrói também os descendentes
+    // Várias sub-árvores de uma vez, numa passada pela cena (DestroyEntity em laço percorre a cena a cada uma).
+    // Ids repetidos, inexistentes ou dentro de outra sub-árvore da lista são ignorados.
+    void DestroyEntities(const std::vector<EntityId>& roots);
+    // As entidades que DestroyEntities(roots) destruiria: cada raiz seguida dos seus descendentes na ordem da
+    // cena, as raízes na ordem dada; raiz que está dentro de outra sub-árvore da lista aparece só nela.
+    std::vector<EntityId> Subtrees(const std::vector<EntityId>& roots) const;
     EntityId Duplicate(EntityId id);               // copia a sub-árvore, mesmo pai
 
     Entity* Find(EntityId id);
