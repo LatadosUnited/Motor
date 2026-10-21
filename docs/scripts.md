@@ -10,8 +10,8 @@ Este guia ensina a programar o comportamento do seu jogo no Motor com scripts em
 Você só precisa saber C++ básico (structs, métodos, `if`, `float`). Não é preciso ler o código da engine.
 
 - Referência de tudo que um script pode chamar: [scripts-api.md](scripts-api.md).
-- Todos os exemplos deste guia estão completos em [`docs/examples/`](examples/) e nos modelos do editor
-  em [`editor/templates/Scripts/`](../editor/templates/Scripts/). Um teste (`test_script_docs`) compila
+- Todos os exemplos deste guia estão completos em [`docs/examples/`](examples) e nos modelos do editor
+  em [`editor/templates/Scripts/`](../editor/templates/Scripts). Um teste (`test_script_docs`) compila
   e roda todos eles a cada build: se o código daqui parar de funcionar, o teste falha.
 
 Sumário:

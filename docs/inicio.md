@@ -10,12 +10,12 @@ relativos: funcionam no Obsidian, no GitHub e para os agentes. Como organizar: [
 
 ## Roteiro
 
-- [Alpha 2 — funcionalidades e pendências (atual)](roadmap/alpha-2.md), com uma nota por fase em
+- [Alpha 2 — funcionalidades e pendências (atual)](arquivo/roadmap/alpha-2.md), com uma nota por fase em
   `roadmap/alpha-2/` e a tabela `roadmap/fases.base`
-- [Caixa de entrada](roadmap/entrada.md): achados que ainda não estão em nenhuma fase
-- [Alpha 3 — desempenho (rascunho)](roadmap/alpha-3.md)
-- [Alpha 4 — ferramentas (rascunho)](roadmap/alpha-4.md)
-- [Alpha 1 — histórico das Fases 0 a 15](roadmap/alpha-1.md)
+- [Caixa de entrada](entrada.md): achados que ainda não estão em nenhuma fase
+- [Alpha 3 — desempenho (rascunho)](arquivo/roadmap/alpha-3.md)
+- [Alpha 4 — ferramentas (rascunho)](arquivo/roadmap/alpha-4.md)
+- [Alpha 1 — histórico das Fases 0 a 15](arquivo/roadmap/alpha-1.md)
 - Decisões de rumo: pasta `decisoes/`
 
 ## Testar

@@ -14,8 +14,8 @@ foco: Funcionalidades e pendências
 | 3 | Desempenho, cenários abertos e renderização 2 (Fases 22 a 28) | atual: [alpha-3.md](alpha-3.md) |
 | 4 | Ferramentas: compilador integrado, distribuição, scripts avançados (Fases 29 a 31) | rascunho: [alpha-4.md](alpha-4.md) |
 
-Como esta pasta se organiza: [padrão da documentação](../padrao.md). Achados ainda sem fase:
-[caixa de entrada](entrada.md). Tabela das fases com status: `fases.base` (Obsidian).
+Como esta pasta se organiza: [padrão da documentação](../../padrao.md). Achados ainda sem fase:
+[caixa de entrada](../../entrada.md). Tabela das fases com status: `fases.base` (Obsidian).
 
 **A alpha 2 está pronta quando:** uma pessoa que não conhece o código do Motor instala tudo pelo `MotorSetup`,
 faz no editor um jogo 3D pequeno que salva o progresso, aceita controle e usa objetos transparentes; um erro

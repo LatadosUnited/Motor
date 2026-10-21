@@ -8,13 +8,13 @@ atualizado: 2026-10-19
 O que os testes automáticos e o servidor MCP não alcançam: mouse e teclado de verdade, menus, arrastar, foco,
 janelas do Windows. Uma pessoa segue este roteiro no **editor instalado pelo Hub** (não no `build/`) a cada
 versão nova, marca o que passou e anota o que não passou. Criado na
-[Fase 19](roadmap/alpha-2/fase-19-validacao.md).
+[Fase 19](arquivo/roadmap/alpha-2/fase-19-validacao.md).
 
 ## Como usar
 
 1. Anote no topo da sua cópia a **versão** (Ajuda > Sobre o Motor), a data e o computador.
 2. Siga as seções na ordem; cada linha diz **o que fazer → o que deve acontecer**. Marque `[x]` quando bater.
-3. Quando não bater, anote uma linha na [caixa de entrada](roadmap/entrada.md) (ou mande para o Claude anotar)
+3. Quando não bater, anote uma linha na [caixa de entrada](entrada.md) (ou mande para o Claude anotar)
    com a gravidade, o que fez e o que viu:
 
    | Gravidade | Quando |

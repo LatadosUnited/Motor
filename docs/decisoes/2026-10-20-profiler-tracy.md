@@ -9,7 +9,7 @@ fases: [22, 25]
 
 ## Contexto
 
-A alpha 3 começa medindo ([Fase 22](../roadmap/alpha-3/fase-22-medicao.md)), e até agora o Motor só mostrava
+A alpha 3 começa medindo ([Fase 22](../arquivo/roadmap/alpha-3/fase-22-medicao.md)), e até agora o Motor só mostrava
 o FPS no título da janela. Para saber onde vai cada milissegundo é preciso uma linha do tempo por quadro, com
 zonas de CPU por sistema e de GPU por passada. As opções eram o Tracy (biblioteca nova) ou um profiler próprio
 (marcadores gravados em JSON e vistos no Perfetto ou no `chrome://tracing`).

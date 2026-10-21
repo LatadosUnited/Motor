@@ -55,7 +55,7 @@ Física, áudio, entrada, formas e transparência que jogos comuns pedem e que h
 - [ ] ~~**Jogo de exemplo no guia** que use tudo isso (câmera orbital que não atravessa paredes, coleta por
   área, passos que não se cortam, música com volume separado, cursor preso, vidro e cerca recortada),
   rodado pelo `test_script_docs` como os outros exemplos.~~ Fora da fase por decisão do usuário (19/10/2026):
-  voltou para a [entrada](../entrada.md); o jogo feito à mão da [Fase 19](fase-19-validacao.md) usa essas
+  voltou para a [entrada](../../../entrada.md); o jogo feito à mão da [Fase 19](fase-19-validacao.md) usa essas
   funcionalidades na prática. *(origem: Pronto quando)*
 
 ## Pronto quando
@@ -92,6 +92,6 @@ com testes sem GPU e exemplo no guia.
 - Transparente não faz sombra nem é recortado na sombra pelo alfa.
 - Não visto na tela: a janela **Camadas de colisão**, o combo da camada e do grupo de som no Inspector, e o
   cursor preso com Esc no editor (o MCP não clica em menus nem prende o mouse). Entraram no
-  [roteiro de teste à mão](../../teste-manual.md) (seções 8 e 9).
+  [roteiro de teste à mão](../../../teste-manual.md) (seções 8 e 9).
 - Mudança de comportamento: Cubo, Esfera e Plano criados pelo menu e pelo MCP agora já vêm com Collider.
 - `test_export` e `test_distribuicao` falharam uma vez cada com os testes em paralelo (na caixa de entrada).

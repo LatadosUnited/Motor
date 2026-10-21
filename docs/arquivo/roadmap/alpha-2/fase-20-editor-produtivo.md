@@ -77,7 +77,7 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 - **Contorno dos colliders por modo:** o botão da barra do viewport alterna **Selecionado** (padrão), **Todos** e
   **Nenhum** (`editor/src/viewport/ColliderOverlay`); em Selecionado o desenho não percorre a cena. A escolha fica
   no `editor.json` (`viewportColliders`; arquivo antigo sem o campo abre em Selecionado). Teste `test_viewport`
-  e item novo na seção 3 do [roteiro à mão](../../teste-manual.md). Conferido numa captura da janela: só o objeto
+  e item novo na seção 3 do [roteiro à mão](../../../teste-manual.md). Conferido numa captura da janela: só o objeto
   selecionado tem contorno. O clique no botão e a troca de modo não foram testados (o MCP não clica na barra).
 - **Seleção múltipla:** `EditorContext::selection` com a principal em `selected` (Inspector, gizmo, foco);
   `SyncSelection` reduz a seleção à principal quando alguém troca só ela (criar, MCP, desfazer), então o código
@@ -167,7 +167,7 @@ com o editor, e o desfazer cobre tudo, inclusive materiais e prefabs.
 ## Limitações
 
 - Fechada e juntada ao main sem o teste à mão dos itens novos (decisão do usuário, 19/10/2026): ficam no roteiro
-  ([teste-manual.md](../../teste-manual.md), seções 3, 4, 6 e 8) e o que aparecer vai para a [entrada](../entrada.md).
+  ([teste-manual.md](../../../teste-manual.md), seções 3, 4, 6 e 8) e o que aparecer vai para a [entrada](../../../entrada.md).
 - Em Selecionado, os colliders dos filhos do objeto selecionado não aparecem (como na Unity): selecione o filho
   ou use Todos.
 - Com vários selecionados, girar e escalar pelo gizmo usam o pivô da principal (a Unity também oferece o centro do

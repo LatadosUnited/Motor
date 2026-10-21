@@ -28,7 +28,7 @@ cena de 5000 entidades sem travar; e uma ilha com terreno, água, vegetação e 
 ## Fase 22 — Medição
 
 **Pronta (20/10/2026):** nota da fase em [alpha-3/fase-22-medicao.md](alpha-3/fase-22-medicao.md) (as tarefas
-abaixo foram para lá). Profiler escolhido: [Tracy](../decisoes/2026-10-20-profiler-tracy.md).
+abaixo foram para lá). Profiler escolhido: [Tracy](../../decisoes/2026-10-20-profiler-tracy.md).
 
 - Cena de referência no repositório: ~5000 entidades (estáticas e com física), 1 luz direcional com sombra e
   8 pontuais, 50 scripts simples, UI e som.
@@ -169,7 +169,7 @@ Conclusões:
 
 ## Fase 24 — Renderer em lote
 
-*(Análise, item 3; ver [Modularizar a engine](../decisoes/2026-10-18-modularizar-a-engine.md), passo 4.)*
+*(Análise, item 3; ver [Modularizar a engine](../../decisoes/2026-10-18-modularizar-a-engine.md), passo 4.)*
 
 - Ordenar os desenhos por shader, material e malha; instancing para a mesma malha com o mesmo material.
 - Uniforms sem procurar por texto: hoje `Shader::Location` cria uma `std::string` e busca num
@@ -189,7 +189,7 @@ Conclusões:
 
 **Em andamento (21/10/2026):** nota da fase em [alpha-3/fase-25-cena.md](alpha-3/fase-25-cena.md).
 
-*(Análise, item 4; pendência da Fase 5; ver [Modularizar a engine](../decisoes/2026-10-18-modularizar-a-engine.md) e [Módulos em DLLs](../decisoes/2026-10-18-modulos-em-dlls.md).)*
+*(Análise, item 4; pendência da Fase 5; ver [Modularizar a engine](../../decisoes/2026-10-18-modularizar-a-engine.md) e [Módulos em DLLs](../../decisoes/2026-10-18-modulos-em-dlls.md).)*
 
 - ~~`WorldMatrix` com cache (marca de "sujo" ao mexer no transform ou no pai), em vez de subir a hierarquia a
   cada chamada.~~ Feito em 21/10/2026, sem marca de "sujo" (o cache confere o transform e o pai a cada consulta):

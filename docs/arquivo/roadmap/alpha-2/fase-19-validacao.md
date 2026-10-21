@@ -21,7 +21,7 @@ que sair daqui decide o resto da alpha.
 
 ## Tarefas
 
-- [x] **Roteiro de teste à mão** em [teste-manual.md](../../teste-manual.md), reaproveitável a cada versão: câmera
+- [x] **Roteiro de teste à mão** em [teste-manual.md](../../../teste-manual.md), reaproveitável a cada versão: câmera
   livre e seleção por clique no viewport, foco do jogo, menus, atalhos, gizmo, arrastar arquivos do painel
   Projeto e do Explorer, popups do Hub e do instalador, Ajuda > Sobre, recarga de scripts com o jogo aberto,
   recuperação depois de uma queda; também o que a Fase 18 não viu na tela (camadas de colisão, grupo de som,
@@ -37,7 +37,7 @@ que sair daqui decide o resto da alpha.
 - [x] **Jogo pequeno do começo ao fim**, exportado. (A exportação em Release é da
   [Fase 21](fase-21-jogo-entregue.md); aqui vale a exportação de hoje.) Feito pelo usuário; confirmado em
   20/10/2026, com a versão 0.2.650 (Fases 16 a 21) já publicada no servidor.
-- [x] **Cada problema achado** vai para a [entrada](../entrada.md) com gravidade; a triagem leva cada um para uma
+- [x] **Cada problema achado** vai para a [entrada](../../../entrada.md) com gravidade; a triagem leva cada um para uma
   fase (na 16, se for pequeno). Um achado, **atrapalha**: o contorno verde de todos os colliders sempre visível
   no viewport; foi direto para a [Fase 20](fase-20-editor-produtivo.md) (só o selecionado). (0bb597b)
 

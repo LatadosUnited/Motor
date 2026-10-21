@@ -104,5 +104,5 @@ código e o tamanho das partes.
 - Os headers internos novos (`*Util.h`, `PhysicsJolt.h`, `SceneJson.h`) repetem um pouco do que existia (ex.:
   `SetError` em mais de uma camada); juntar isso num lugar só fica para quando incomodar.
 - Dois defeitos achados na verificação, sem relação com a divisão, foram para a
-  [caixa de entrada](../entrada.md): projeto compilado antes da Fase 17 não compila mais os scripts, e ferramenta
+  [caixa de entrada](../../../entrada.md): projeto compilado antes da Fase 17 não compila mais os scripts, e ferramenta
   MCP sem argumento obrigatório derruba o editor em Debug.

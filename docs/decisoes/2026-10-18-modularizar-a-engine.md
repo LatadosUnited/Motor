@@ -75,13 +75,13 @@ app ← platform, graphics
 4. **Cena sem renderer.** `Render`, `SubmitTo` e `CollectLights` saem de `Scene` para um `SceneRenderer`
    numa camada `graphics` (acima de `scene` e de `renderer`). `MeshRenderer`, Luz e Câmera vão junto. O
    `Raycast` passa a usar a cópia da malha na CPU, e `Environment` vira dado da cena. **Fazer junto com a
-   [Fase 24](../roadmap/alpha-3.md) (renderer em lote)**, que já vai mudar a montagem dos desenhos.
+   [Fase 24](../arquivo/roadmap/alpha-3.md) (renderer em lote)**, que já vai mudar a montagem dos desenhos.
 5. **Assets na CPU separados da GPU.** `assets/` passa a guardar só os dados (malha, imagem, esqueleto), e
    o envio para a GPU (com cache) fica em `graphics`. Os campos `FieldType::Mesh` e `FieldType::Texture` de
    `Component.h` passam a apontar para os tipos de asset na CPU (ou viram `FieldTraits<T>` em `graphics`),
    tirando de vez os tipos do `renderer` de dentro de `scene`. Assim `assets` e `scene` não dependem mais de
    `renderer`, e importar ou exportar um jogo não precisa de OpenGL. **Fazer junto com a
-   [Fase 25](../roadmap/alpha-3.md)** (dados contínuos), que reorganiza a cena de qualquer jeito.
+   [Fase 25](../arquivo/roadmap/alpha-3.md)** (dados contínuos), que reorganiza a cena de qualquer jeito.
 
 Cada passo é uma tarefa `refactor/<assunto>`, com build sem avisos e `ctest` inteiro. Os passos 1 e 2 cabem
 na alpha 2. Os passos 4 e 5 só compensam junto com as fases da alpha 3 que já mexem nos mesmos arquivos;
