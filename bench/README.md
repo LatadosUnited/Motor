@@ -19,7 +19,8 @@ com ouvinte, 10 fontes de som e uma interface pequena. É a única definição d
 
 - **`test_desempenho`** (ctest, rótulo `desempenho`) monta a cena sem janela e mede a CPU: o passo do jogo (1
   FixedUpdate + 1 Update, com física, scripts, áudio e UI) e o que o editor faz com a cena (montar, copiar, comparar,
-  gravar e ler o JSON). De cada número fica a menor de 3 repetições, comparada com `referencia/base.txt`: mais de
+  gravar e ler o JSON), mais a matriz de mundo de todas as entidades (`mundo_cena`, e `mundo_hierarquia` numa
+  hierarquia funda à parte). De cada número fica a menor de 3 repetições, comparada com `referencia/base.txt`: mais de
   30% acima falha. Só mede em Release; no build Debug aparece como pulado.
 - **`--gerar`** grava a mesma cena num projeto, para medir com GPU no Player (`--perf`) ou no editor (Estatísticas).
 

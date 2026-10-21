@@ -40,9 +40,18 @@ quadrático. Depois, organizar os dados por tipo e dividir o quadro entre os nú
   depois tira todas de uma vez; `DestroyEntity` virou o caso de uma raiz. Teste: `test_destroy_batch`. *(origem:
   contadores da Fase 22: `spawn200` com ~8,6 ms no Update)* (4cff640)
 
+### Matriz de mundo
+
+- [x] **`WorldMatrix` com cache por entidade** (`Entity::cache`), conferido a cada consulta: recalcula só quando o
+  transform, o pai ou o mundo do pai mudaram (cada recálculo ganha um número de um contador global, e o filho
+  guarda o do pai). Não precisa de aviso: scripts e editor continuam mexendo direto em `Entity::transform` e
+  `Entity::parent`. O ponteiro do pai também fica guardado (vale enquanto a estrutura da cena não muda), e
+  `IsActiveInHierarchy` sobe a hierarquia sem buscar no mapa de ids; `Find(kNullEntity)` não busca. A montagem dos
+  desenhos usa a entidade direto. A cópia de uma entidade começa sem cache. `Entity` mudou de tamanho:
+  `kScriptApiVersion` 16. Teste: `test_world_cache`. *(origem: análise de 17/10/2026)* (b32086e)
+
 ### Pendentes (rascunho em [alpha-3.md](../alpha-3.md))
 
-- [ ] `WorldMatrix` com cache. *(origem: análise de 17/10/2026)*
 - [ ] Índice de nomes para `FindEntity`/`FindByName`.
 - [ ] Física: picos do `test_physics_bench` e sincronização cena–física. *(Pendência da Fase 5.)*
 - [ ] Organização dos dados por tipo, trabalho em várias threads, profiler nas threads e nos scripts.
@@ -80,7 +89,24 @@ vira espera pelo driver no Render. A primeira versão, com conjuntos e mapas com
 partes, 1 ms era o mapa por entidade para achar os descendentes (calculado duas vezes) e o resto, alocar um nó por
 entidade nos conjuntos.
 
+**Matriz de mundo (21/10/2026).** Medido antes no Player, por zonas temporárias: em `cubos10000`, montar os
+desenhos custa ~5,5 ms dos ~45 ms de Render, e passar só "ativa na hierarquia" e a matriz de mundo pelas 10 000
+entidades, ~7 ms frios. O custo não era a conta da matriz, eram as buscas: 4 por entidade no mapa de ids (duas delas
+`Find(0)` para o "pai" de quem está na raiz). `test_desempenho`, Release (ms, a mesma conta para todas as entidades):
+
+| | antes | depois |
+|---|---|---|
+| `mundo_cena` (cena de referência, quase tudo na raiz) | 0,53 a 0,64 | **0,31 a 0,38** |
+| `mundo_hierarquia` (200 cadeias de 10) | 0,88 a 1,01 | **0,23 a 0,30** |
+
+No Player, o Render de `cubos10000` ficou igual dentro do ruído (44,2 contra 45,6 ms na rodada limpa; a segunda
+rodada pegou a máquina esquentando): o resto do Render é o envio dos 10 000 draws ao OpenGL (Fase 24).
+
 ## Limitações
+
+- O cache confere o transform a cada consulta (10 floats por nível da hierarquia): numa hierarquia funda, consultar
+  uma folha ainda sobe até a raiz, só que sem recalcular nem buscar no mapa. Projetos de jogo mudam de
+  `kScriptApiVersion` (15 → 16): a DLL de scripts precisa ser compilada de novo (o editor faz ao abrir).
 
 - Os `OnDestroy` de um lote rodam todos antes de tirar as entidades: o `OnDestroy` de uma ainda acha as outras do
   mesmo lote (antes, as já destruídas tinham sumido). É o que a Unity faz (destruição no fim do quadro).

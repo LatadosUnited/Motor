@@ -191,8 +191,9 @@ Conclusões:
 
 *(Análise, item 4; pendência da Fase 5; ver [Modularizar a engine](../decisoes/2026-10-18-modularizar-a-engine.md) e [Módulos em DLLs](../decisoes/2026-10-18-modulos-em-dlls.md).)*
 
-- `WorldMatrix` com cache (marca de "sujo" ao mexer no transform ou no pai), em vez de subir a hierarquia a
-  cada chamada.
+- ~~`WorldMatrix` com cache (marca de "sujo" ao mexer no transform ou no pai), em vez de subir a hierarquia a
+  cada chamada.~~ Feito em 21/10/2026, sem marca de "sujo" (o cache confere o transform e o pai a cada consulta):
+  `mundo_hierarquia` de 0,9 para 0,23 ms no `test_desempenho`.
 - ~~Laço dos scripts sem criar vetor a cada chamada e sem refazer `IsActiveInHierarchy` por componente
   (`SceneRuntime`, `ForEachScript`).~~ Feito na [Fase 22](alpha-3/fase-22-medicao.md): lista das entidades com script,
   refeita só quando a estrutura da cena muda (`SceneStructureVersion`).
