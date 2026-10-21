@@ -2,7 +2,7 @@
 tipo: decisao
 data: {{date:YYYY-MM-DD}}
 status: proposta
-fases: []
+modulos: []
 ---
 
 # {{title}}

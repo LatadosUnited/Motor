@@ -1,110 +1,108 @@
 ---
 tipo: guia
-atualizado: 2026-10-17
+atualizado: 2026-10-21
 ---
 
 # Padrão da documentação
 
 Como organizar a pasta `docs/` (o vault do Obsidian) para que pessoas e agentes achem e atualizem tudo do
-mesmo jeito. Vale para notas novas; quem mexer numa nota antiga aproveita e a ajusta.
+mesmo jeito. O desenvolvimento é dividido em quatro módulos: Engine, Editor, Hub e Instalador
+([decisão](decisoes/2026-10-21-desenvolvimento-por-modulo.md)).
 
 ## 1. Pastas
 
 ```
 docs/
-  inicio.md                  nota inicial (links para tudo)
-  padrao.md                  este padrão
-  scripts.md                 guia de scripts        ┐
-  scripts-api.md             referência da API      ├ documentação de uso
-  examples/                  exemplos .cpp testados ┘
-  roadmap/
-    alpha-2.md               índice da alpha: objetivo, prioridades, links para as fases
-    alpha-2/                 uma nota por fase: fase-16-robustez-e-correcoes.md ...
-    alpha-3.md, alpha-4.md   rascunhos (um arquivo só até a alpha começar)
-    alpha-1.md               histórico (alpha fechada: não se edita)
-    entrada.md               caixa de entrada: achados ainda não colocados numa fase
-    fases.base               tabela das fases (Obsidian Bases)
-  decisoes/                  uma nota por decisão: 2026-10-17-hub-fora-da-engine.md
-  modelos/                   modelos do Obsidian (não são documentação)
+  inicio.md          nota inicial: os módulos e onde ler cada coisa
+  visao.md           o objetivo do projeto e o que é cada módulo
+  padrao.md          este padrão
+  entrada.md         caixa de entrada: achados ainda não colocados num roteiro
+  engine/            estado.md (o que faz hoje) e roteiro.md (o que vem)   ┐
+  editor/            (o mesmo)                                              │ um par por
+  hub/               (o mesmo)                                              │ módulo
+  instalador/        (o mesmo)                                              ┘
+  decisoes/          uma nota por decisão: 2026-10-21-desenvolvimento-por-modulo.md
+  scripts.md         guia de scripts        ┐ documentação de uso; vai junto com cada versão
+  scripts-api.md     referência da API      │ (motor_package) e é conferida pelo test_script_docs:
+  examples/          exemplos .cpp testados ┘ não mude os caminhos
+  teste-manual.md    roteiro de teste à mão
+  modelos/           modelos do Obsidian (não são documentação)
+  arquivo/           roteiro antigo por alphas (Fases 0 a 31): só leitura
 ```
 
-O `README.md` e o `CLAUDE.md` continuam na raiz do repositório (fora do vault); o `ROADMAP.md` da raiz só
-aponta para `docs/roadmap/`.
+Fora do vault: o `README.md` e o `CLAUDE.md` da raiz (curtos, com o que é comum) e um `README.md` e um
+`CLAUDE.md` na pasta de cada módulo (`engine/`, `editor/`, `hub/`, `installer/`), com o uso e as regras dele.
 
 ## 2. Nomes de arquivo
 
-- Minúsculas, sem acento, palavras separadas por hífen: `fase-17-scripts.md`, `2026-10-17-instalador-proprio.md`.
-  O título bonito, com acentos, vai no `# Título` da nota.
-- Fases: `fase-<número>-<assunto>.md`. Decisões: `<AAAA-MM-DD>-<assunto>.md`.
-- Motivo: links Markdown com espaço ou acento precisam de codificação (`%20`) e quebram fácil; nomes simples
-  funcionam igual no Obsidian, no GitHub, no terminal e para os agentes.
+- Minúsculas, sem acento, palavras separadas por hífen. O título bonito, com acentos, vai no `# Título`.
+- Decisões: `<AAAA-MM-DD>-<assunto>.md`.
+- Motivo: links com espaço ou acento precisam de `%20` e quebram fácil; nomes simples funcionam igual no
+  Obsidian, no GitHub, no terminal e para os agentes.
 
 ## 3. Links
 
-- **Markdown com caminho relativo:** `[Fase 17](alpha-2/fase-17-scripts.md)`. Nada de `[[wikilinks]]` (não
-  funcionam no GitHub nem para os agentes). O vault já está configurado assim.
-- Código e arquivos fora de `docs/` vão entre crases, sem link: `engine/src/scene/SceneRuntime.cpp`,
-  `PhysicsSystem.cpp:566`. (Links para fora do vault não abrem no Obsidian.)
+- **Markdown com caminho relativo:** `[roteiro do Hub](hub/roteiro.md)`. Nada de `[[wikilinks]]`.
+- Código e arquivos fora de `docs/` vão entre crases, sem link: `engine/src/scene/SceneRuntime.cpp`. (Links para
+  fora do vault não abrem no Obsidian.)
 
 ## 4. Propriedades (o bloco `---` no topo)
 
-Toda nota de roteiro e de decisão começa com propriedades; é delas que a tabela `fases.base` e as buscas do
-Obsidian tiram as colunas.
-
 | Tipo | Propriedades |
 |---|---|
-| `fase` | `tipo`, `alpha`, `fase` (número), `titulo`, `status`, `prioridade`, `areas` (lista), `branch`, `inicio`, `fim` |
-| `alpha` (índice) | `tipo`, `alpha`, `status`, `foco` |
-| `decisao` | `tipo`, `data`, `status`, `fases` (lista de números relacionados) |
+| `estado` | `tipo`, `modulo`, `versao`, `atualizado` |
+| `roteiro` | `tipo`, `modulo`, `atualizado` |
+| `decisao` | `tipo`, `data`, `status`, `modulos` (lista) |
 | `guia` | `tipo`, `atualizado` |
 | `entrada` | `tipo` |
 
-Valores de `status`:
+`status` de decisão: `proposta`, `aceita`, `substituida` (com link para a que a substituiu). Datas nas
+propriedades e nos nomes: `AAAA-MM-DD`; no texto corrido: `21/10/2026`.
 
-- fase e alpha: `planejada`, `em andamento`, `pronta`, `adiada`, `fechada` (só alpha);
-- decisão: `proposta`, `aceita`, `substituida` (com link para a que a substituiu no texto).
+## 5. Estado e roteiro de um módulo
 
-Datas nas propriedades e nos nomes: `AAAA-MM-DD`. No texto corrido: `17/10/2026`.
+**`estado.md`** — o retrato de hoje, curto (uma tela ou duas): o que o módulo é e onde está o código; o que faz
+hoje; números medidos, se houver; limitações conhecidas; links para o histórico. Atualize quando algo entra
+ou sai de verdade, não a cada commit.
 
-## 5. Nota de fase
+**`roteiro.md`** — o que vem, em blocos:
 
-Seções, nesta ordem (modelo em `modelos/fase.md`):
+- **Agora:** o que está em andamento (poucos itens; idealmente um assunto por vez).
+- **Próximo:** o que vem a seguir, em ordem.
+- **Depois:** o que já se sabe que precisa, sem ordem firme.
+- **Ideias** (opcional): sem data.
 
-1. **Objetivo:** um parágrafo; por que a fase existe.
-2. **Tarefas:** caixas de seleção, agrupadas por assunto com subtítulos `###` se forem muitas.
-   - `- [ ] O que fazer. *(origem: Fase 6, limitação)*` — a **origem** diz de onde veio: fase da alpha anterior,
-     `entrada.md`, análise do código, pedido do usuário.
-   - Feita: `- [x] ... (abc1234)` com o commit curto no fim.
-   - Desistiu ou mudou de fase: risque (`~~texto~~`) e diga para onde foi.
-3. **Pronto quando:** o critério verificável (teste, verificação pelo MCP, número medido).
-4. **Feito** (no fim da fase): resumo do que mudou, arquivos principais, testes, números de antes e depois.
-5. **Limitações** (no fim da fase): o que ficou para trás; cada uma vira tarefa noutra fase ou linha em
-   `entrada.md`.
+Cada tarefa é uma linha: `- [ ] O que fazer. *(origem)*`. A origem diz de onde veio: uma fase antiga
+(`Fase 23`), `entrada.md`, uma medição, um pedido do usuário. Detalhe que não cabe numa linha vai num link (uma
+nota do arquivo, uma decisão) ou numa nota nova ao lado do roteiro. **Feito sai do roteiro:** o histórico fica
+no git e no `CHANGELOG.md` do módulo (na pasta do código), com o commit.
+
+Trabalho que cruza módulos (formato do `motor-version.json`, o pacote "Compilador") entra no roteiro de cada
+módulo envolvido, com link entre eles.
 
 ## 6. Fluxo
 
-1. **Achou algo** (defeito, limitação, ideia), seja pessoa ou agente: uma linha em `roadmap/entrada.md` com
-   data, quem achou, o quê e onde (arquivo:linha). Não precisa decidir a fase na hora.
-2. **Triagem** (o usuário, ou um agente quando pedido): cada linha da entrada vira tarefa de uma fase (com a
+1. **Achou algo** (defeito, limitação, ideia): uma linha no fim de `entrada.md` com data, quem achou, módulo,
+   o quê e onde.
+2. **Triagem** (o usuário, ou um agente quando pedido): cada linha vira tarefa no roteiro de um módulo (com a
    origem) ou é descartada com o motivo; a linha sai da entrada.
-3. **A fase começa:** `status: em andamento`, `branch`, `inicio`; o índice da alpha atualiza a linha dela.
-4. **Durante a fase:** marque as tarefas com o commit; tarefa nova que surgir entra na própria fase.
-5. **A fase termina:** `status: pronta`, `fim`, seções **Feito** e **Limitações**; tarefas não feitas mudam de
-   fase (riscadas aqui, com o destino) ou voltam para a entrada.
-6. **Decisão que muda o rumo** (biblioteca, arquitetura, ordem das alphas): uma nota em `decisoes/` (modelo
-   `modelos/decisao.md`) e o link para ela na fase.
+3. **Começar uma tarefa:** ela sobe para "Agora"; branch com o prefixo do módulo (`engine/...`, `editor/...`,
+   `hub/...`, `instalador/...`, `docs/...`).
+4. **Terminar:** a linha sai do roteiro; o que mudou vai para o `CHANGELOG.md` do módulo; o `estado.md` muda se
+   o módulo passou a fazer algo novo ou perdeu uma limitação; o que ficou para trás vira linha no roteiro.
+5. **Decisão que muda o rumo** (biblioteca, arquitetura, formato): uma nota em `decisoes/` (modelo
+   `modelos/decisao.md`) com o link no roteiro.
 
-## 7. Alphas
+## 7. Versões
 
-- **Alpha futura:** um arquivo só (`alpha-3.md`), rascunho, com as fases como seções.
-- **Alpha que começa:** o arquivo vira índice (`tipo: alpha`) e cada fase ganha a sua nota em `alpha-<n>/`.
-- **Alpha que fecha:** `status: fechada` no índice; as notas das fases ficam como estão (histórico). A
-  numeração das fases continua de uma alpha para a outra.
+Cada módulo tem a sua versão (Engine e Editor 0.2.650 vindas do `project()` do CMake; Hub 0.2.0 em
+`hub/CMakeLists.txt`, que o instalador leva; servidor 0.1.0 em `server/CMakeLists.txt`). A versão aparece na
+propriedade `versao` do `estado.md` e no `CHANGELOG.md` do módulo.
 
 ## 8. Quem edita o quê
 
-- O agente de uma fase edita a **nota da sua fase** à vontade e, no índice da alpha, **só a linha dela**
-  (ponto de coordenação, como no `CLAUDE.md`).
+- Quem trabalha num módulo edita o `estado.md` e o `roteiro.md` dele à vontade.
 - `entrada.md`: todos acrescentam no fim; ninguém reescreve linhas dos outros.
-- `padrao.md`, os índices e as decisões aceitas: mudam só com o pedido do usuário.
+- `visao.md`, `padrao.md` e decisões aceitas: mudam só com o pedido do usuário.
+- `arquivo/`: não se edita.
 - Língua: português, como o resto do projeto.

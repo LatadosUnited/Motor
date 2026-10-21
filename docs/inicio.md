@@ -1,34 +1,36 @@
 ---
 tipo: guia
-atualizado: 2026-10-17
+atualizado: 2026-10-21
 ---
 
 # Motor — documentação
 
-Pasta `docs/` do repositório, aberta também como vault do Obsidian. Os arquivos são Markdown comum, com links
-relativos: funcionam no Obsidian, no GitHub e para os agentes. Como organizar: [padrão da documentação](padrao.md).
+Pasta `docs/` do repositório, aberta também como vault do Obsidian. Comece pela [visão](visao.md): o que é o
+Motor e os quatro módulos. Como escrever e organizar as notas: [padrão](padrao.md).
 
-## Roteiro
+## Módulos
 
-- [Alpha 2 — funcionalidades e pendências (atual)](arquivo/roadmap/alpha-2.md), com uma nota por fase em
-  `roadmap/alpha-2/` e a tabela `roadmap/fases.base`
-- [Caixa de entrada](entrada.md): achados que ainda não estão em nenhuma fase
-- [Alpha 3 — desempenho (rascunho)](arquivo/roadmap/alpha-3.md)
-- [Alpha 4 — ferramentas (rascunho)](arquivo/roadmap/alpha-4.md)
-- [Alpha 1 — histórico das Fases 0 a 15](arquivo/roadmap/alpha-1.md)
-- Decisões de rumo: pasta `decisoes/`
+| Módulo | Estado (o que faz hoje) | Roteiro (o que vem) | Como usar |
+|---|---|---|---|
+| Engine | [estado](engine/estado.md) | [roteiro](engine/roteiro.md) | `engine/README.md` |
+| Editor | [estado](editor/estado.md) | [roteiro](editor/roteiro.md) | `editor/README.md` |
+| Hub | [estado](hub/estado.md) | [roteiro](hub/roteiro.md) | `hub/README.md` |
+| Instalador | [estado](instalador/estado.md) | [roteiro](instalador/roteiro.md) | `installer/README.md` |
+
+- [Caixa de entrada](entrada.md): achados que ainda não entraram no roteiro de um módulo.
+- Decisões de rumo: pasta `decisoes/` (a mais recente: [desenvolvimento por módulo](decisoes/2026-10-21-desenvolvimento-por-modulo.md)).
+
+## Para quem faz jogos
+
+- [Guia de scripts](scripts.md): do primeiro script a um mini jogo.
+- [Referência da API dos scripts](scripts-api.md).
+- Exemplos testados: pasta `examples/` (compilados pelo `test_script_docs`).
 
 ## Testar
 
 - [Roteiro de teste à mão](teste-manual.md): o que uma pessoa confere no editor a cada versão.
+- Desempenho: `bench/README.md` (comparação com a Unity, cena de referência, `test_desempenho`).
 
-## Scripts
+## Histórico
 
-- [Guia de scripts](scripts.md): do primeiro script a um mini jogo.
-- [Referência da API dos scripts](scripts-api.md).
-- Exemplos testados: pasta `examples/` (arquivos `.cpp`, abertos pelo editor de código).
-
-## Fora desta pasta
-
-- `README.md` (raiz do repositório): visão geral, compilar, editor, formatos de arquivo, Hub, instalador.
-- `CLAUDE.md` (raiz): regras para os agentes que trabalham no código.
+- [Arquivo](arquivo/leiame.md): o roteiro antigo por alphas (Fases 0 a 31), como estava em 21/10/2026.
