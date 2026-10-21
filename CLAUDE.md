@@ -1,10 +1,10 @@
 # Motor — instruções para o Claude
 
 Engine 3D em C++20 + OpenGL 4.5 feita do zero, com editor (Dear ImGui). Visão geral e uso: `README.md`.
-Plano por fases: `docs/roadmap/alpha-2.md` (índice da alpha atual) e uma nota por fase em
-`docs/roadmap/alpha-2/`; o `ROADMAP.md` da raiz só aponta para lá. `docs/` é também o vault do Obsidian do
+Plano por fases: `docs/roadmap/alpha-3.md` (índice da alpha atual) e uma nota por fase em
+`docs/roadmap/alpha-3/`; o `ROADMAP.md` da raiz só aponta para lá. `docs/` é também o vault do Obsidian do
 usuário e segue o **padrão em `docs/padrao.md`** (leia antes de criar ou mudar notas): nomes sem acento,
-links Markdown relativos (nada de `[[wikilinks]]`), propriedades no topo, tarefas como `- [ ]` com a origem. O usuário fala português: responda, comente o código e escreva textos de
+links Markdown relativos (nada de `[[wikilinks]]`), propriedades no topo, tarefas de uma linha (`- [ ] Tarefa 1: Paralelizar a montagem do quadro`). O usuário fala português: responda, comente o código e escreva textos de
 interface e logs em **português**.
 
 ## Compilar e testar (Windows, MSYS2 UCRT64)
@@ -204,7 +204,7 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 
 ### Fases do roteiro: onde cada uma mexe
 
-Alpha 1 (feitas; histórico em `docs/roadmap/alpha-1.md`):
+Alpha 1 (feitas; o roteiro foi apagado, histórico no git):
 
 | Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
 |---|---|---|---|
@@ -220,7 +220,7 @@ Alpha 1 (feitas; histórico em `docs/roadmap/alpha-1.md`):
 | 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
 | 15 Instalador | `distrib/`, `server/`, `installer/` | `hub/` (aba Versões, `hub.json` formato 2, `--baixar`) | 14 |
 
-Alpha 2 (`docs/roadmap/alpha-2.md` e `docs/roadmap/alpha-2/`):
+Alpha 2 (feitas; o roteiro foi apagado, histórico no git):
 
 | Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
 |---|---|---|---|
@@ -232,9 +232,21 @@ Alpha 2 (`docs/roadmap/alpha-2.md` e `docs/roadmap/alpha-2/`):
 | 20 Editor produtivo | `SceneViewport`, painéis, `SceneDocument` (divididos antes) | prefabs (`assets/`), MCP | — |
 | 21 Jogo entregue | `player/`, exportação (`GameExport`) | entrada (`core/`), API dos scripts | — |
 
-Alphas 3 (desempenho, Fases 22 a 28) e 4 (ferramentas, Fases 29 a 31): rascunhos em `docs/roadmap/`.
+Alpha 3 (desempenho, replanejada em 21/10/2026; `docs/roadmap/alpha-3.md` e `docs/roadmap/alpha-3/`):
 
-Prioridade atual (ver `docs/roadmap/alpha-2.md`, "Prioridades"): alpha 1 fechada (Fases 0 a 15); alpha 2 (funcionalidades e pendências) começa pelas Fases 16 (robustez e correções), 17 (scripts) e 18 (funcionalidades de jogo).
+| Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
+|---|---|---|---|
+| 23 Renderer em lote | `renderer/` (montagem e envio dos desenhos, uniforms, instancing, recorte espacial) | `scene/` (dados que o renderer lê), shaders | 24 só se mexerem nos mesmos arquivos |
+| 24 GPU: pós, sombras e LOD | `renderer/` (pós, sombras), shaders, LOD em `assets/` | opções do jogador (`player/`), `MeshRenderer` | 23 só se mexerem nos mesmos arquivos |
+| 25 Cena, dados e física | `scene/`, `physics/` | `kScriptApiVersion` (mudanças em `Entity`) | 26 |
+| 26 Várias threads | `core/` (sistema de tarefas), `physics/` (pool da Jolt), montagem do quadro | `renderer/`, `assets/` (carregamento em segundo plano) | 23, 25 (vem depois delas) |
+| 27 Editor que escala | `UndoHistory`, `document/`, `panels/`, `viewport/` | `Scene::operator==`, `SceneSerializer` | — |
+
+Alphas 4 (mundo aberto e renderização 2, Fases 28 a 30) e 5 (ferramentas, Fases 31 a 33): rascunhos em
+`docs/roadmap/alpha-4.md` e `alpha-5.md`.
+
+Prioridade atual (ver `docs/roadmap/alpha-3.md`, "Fases"): alphas 1 e 2 fechadas (Fases 0 a 21); alpha 3 com a
+Fases 22 (medição) e 23 (renderer em lote) prontas e a 25 (cena, dados e física) em andamento.
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

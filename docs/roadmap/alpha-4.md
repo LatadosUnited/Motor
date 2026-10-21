@@ -2,59 +2,46 @@
 tipo: alpha
 alpha: 4
 status: planejada
-foco: Ferramentas
+foco: Mundo aberto e renderização 2
 ---
 
-# Roteiro da Alpha 4 — Ferramentas (rascunho)
+# Alpha 4 — Mundo aberto e renderização 2 (rascunho)
 
-> **Rascunho.** Começa depois da alpha 3 ([`alpha-3.md`](alpha-3.md)). Os números das fases e a ordem podem
-> mudar.
+> **Rascunho.** Começa depois da [alpha 3](alpha-3.md). Antes do replanejamento de 21/10/2026
+> ([decisão](../decisoes/2026-10-21-replanejamento.md)) estas fases eram as 27 e 28 da alpha 3. Os números e a
+> ordem podem mudar.
 
-Foco: quem instala o Motor não precisa instalar mais nada para programar, as ferramentas se atualizam
-sozinhas e escrever scripts fica mais próximo do que engines grandes oferecem.
+Foco: cenários abertos e luz mais bonita, sobre o que a alpha 3 deixa pronto: instancing e recorte espacial
+(Fase 23), sombras com cache e LOD (Fase 24), várias threads e carregamento em segundo plano (Fase 26).
 
-**A alpha 4 está pronta quando:** num computador sem MSYS2 nem CMake, o `MotorSetup` instala tudo, o editor
-compila os scripts de um projeto novo, o Hub se atualiza para uma versão publicada no servidor, e um erro grave
-num script (ponteiro inválido) não fecha o editor.
+**A alpha 4 está pronta quando:** uma ilha com terreno pintado, água, árvores, grama e uma fogueira com fumaça roda
+no Player a 60 FPS na máquina de referência; e uma sala fechada com janela fica escura nos cantos, reflete o
+ambiente de dentro e a câmera se adapta ao sair para o sol.
 
-## Fase 29 — Compilador integrado
+## Fase 28 — Terreno e água
 
-Hoje o editor depende do MSYS2 (GCC 15.2 UCRT64) e do CMake instalados nos caminhos do `MotorSDK.json`.
+- **Recorte com estrutura espacial** (BVH ou grade para os estáticos), servindo também às sombras, ao raycast do
+  editor e às consultas de área. Na alpha 3 não compensava: nas cenas do bench a câmera vê quase tudo e o recorte
+  inteiro custa ~1,6 ms na referência; com terreno e mundo aberto a câmera vê uma parte pequena da cena.
+  *(origem: Fase 23, Tarefa 5, adiada em 21/10/2026)*
+- **Desenho guiado pela GPU** (multi-draw indirect, buffers mapeados de forma persistente) e **objetos guardados
+  entre quadros** no renderer (só reenviar o que mudou, como o GPU Resident Drawer da Unity): o que sobrou de CPU
+  no fim da Fase 23 é percorrer a cena e montar a lista a cada quadro. *(origem: Fase 23, Tarefa 6 e estudo da 11)*
+- **Terreno:** mapa de altura editável (subir, baixar, suavizar), pintura de até 4 camadas de textura, collider da
+  física, LOD por blocos.
+- **Água:** ondas, reflexo do céu, refração e cor pela profundidade (transparência da Fase 18, `SceneDepthTexture`
+  e `SceneColorTexture` da Fase 7).
 
-- **Escolher o compilador medindo:** compilar o mesmo projeto de scripts (e a engine) com o GCC do MSYS2 e
-  com o Clang (llvm-mingw, com `lld` e `clangd`); comparar tempo de compilação, tamanho e desempenho do jogo.
-  O compilador dos scripts tem de ser **o mesmo que gerou a `libMotor.dll`** (mesma `libstdc++`/`libc++`):
-  trocar de compilador é recompilar e republicar a engine. MSVC fica de fora (não pode ser redistribuído).
-- **Compilação feita pelo editor**, sem CMake nem make para os scripts: chama o compilador direto, compila em
-  paralelo só os `.cpp` que mudaram (dependências pelo `-MMD`), com o cabeçalho pré-compilado da Fase 17, e
-  liga a DLL. Sem o passo de configurar.
-- **Pacote "Compilador"** separado da versão do Motor: só o que os scripts usam (compilador, ligador,
-  cabeçalhos do C++ e do Windows, biblioteca padrão, `gdb`), com licença e link do código-fonte. O
-  `motor-version.json` diz qual compilador a versão precisa; o `MotorServidor` publica, o Hub e o instalador
-  baixam uma vez e as versões que usam o mesmo compilador compartilham. Estimativa: 150 a 200 MB.
-- Sem o pacote, o editor continua usando o MSYS2, como hoje.
-- **Recarga em menos de 1 s do salvar** (veio da [Fase 17](alpha-2/fase-17-scripts.md)): no projeto Island,
-  1,5 a 1,9 s num script simples e 5 a 6,5 s num que usa `<format>` (só incluir custa ~1,8 s por arquivo, usar
-  `std::format` mais ~1 s, e o objeto em Debug quase dobra). Perceber o arquivo e recarregar a DLL somam menos
-  de 0,25 s: o resto é compilar. Caminhos: `<format>` no PCH (medir o `.gch`, hoje ~107 MB), um formatador
-  da engine compilado na `libMotor.dll`, compilador que fica aberto entre as compilações.
-  *(origem: Fase 17, medição de 18/10/2026)*
+## Fase 29 — Vegetação e partículas
 
-## Fase 30 — Distribuição
+- **Vegetação:** grama e árvores espalhadas por pincel no terreno, com instancing e sumindo com a distância.
+- **Partículas:** emissor como componente (taxa, vida, velocidade, cor e tamanho no tempo, textura), atualizado em
+  tarefas (Fase 26); fumaça, fogo, faíscas.
 
-*(Limitações das Fases 14 e 15.)*
+## Fase 30 — Renderização 2
 
-- **Hub se atualiza** sozinho a partir do servidor (hoje só avisa e abre o link do instalador).
-- **https e assinatura** dos arquivos, para servidores fora da rede local.
-- **Ícones próprios** do Hub, do instalador e do editor.
-- Hub como repositório próprio (opcional).
+*(Limitações da Fase 7.)*
 
-## Fase 31 — Scripts avançados
-
-- **Scripts isolados:** um ponteiro inválido num script não derruba o editor. Estudar e escolher: rodar o jogo
-  (Play) num processo filho que o editor comanda, ou proteger as chamadas com tratamento de exceções
-  estruturadas do Windows. *(Limite que sobrou da Fase 16.)*
-- **Geração de código para os campos**, no estilo do UnrealHeaderTool: o editor lê marcadores no `.cpp` e gera
-  o registro (`Register`/`Field`), sem escrever a lista à mão.
-- **Recarga mais rápida** no estilo Live Coding: aplicar só as funções alteradas no processo que está rodando.
-  Estudo primeiro; só entra se o ganho sobre a recarga da Fase 17 compensar.
+- Oclusão de ambiente na tela (SSAO), com opção de qualidade (é cara na HD 530).
+- Reflexos locais: probes de reflexo posicionáveis (e, depois, SSR).
+- Exposição automática (adaptação do olho).

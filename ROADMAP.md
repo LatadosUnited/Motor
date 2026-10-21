@@ -1,10 +1,12 @@
 # Roteiro do Motor
 
-O roteiro fica em [`docs/roadmap/`](docs/roadmap/), que é também o vault do Obsidian ([`docs/inicio.md`](docs/inicio.md)):
+O roteiro fica em [`docs/roadmap/`](docs/roadmap/), que é também o vault do Obsidian ([`docs/inicio.md`](docs/inicio.md)).
+Replanejado em 21/10/2026 ([decisão](docs/decisoes/2026-10-21-replanejamento.md)).
 
 | Alpha | Foco | Arquivo |
 |---|---|---|
-| 1 | Base da engine, editor, jogo exportado, Hub e instalador (Fases 0 a 15) | ✅ [`docs/roadmap/alpha-1.md`](docs/roadmap/alpha-1.md) |
-| 2 | Funcionalidades e pendências (Fases 16 a 21) | ✅ [`docs/roadmap/alpha-2.md`](docs/roadmap/alpha-2.md) |
-| **3** | **Desempenho, cenários abertos e renderização 2 (Fases 22 a 28) — atual** | [`docs/roadmap/alpha-3.md`](docs/roadmap/alpha-3.md); fases em [`docs/roadmap/alpha-3/`](docs/roadmap/alpha-3/) |
-| 4 | Ferramentas: compilador integrado, distribuição, scripts avançados (Fases 29 a 31) | rascunho: [`docs/roadmap/alpha-4.md`](docs/roadmap/alpha-4.md) |
+| 1 | Base da engine, editor, jogo exportado, Hub e instalador (Fases 0 a 15) | ✅ fechada (histórico no git) |
+| 2 | Funcionalidades e pendências (Fases 16 a 21) | ✅ fechada (histórico no git) |
+| **3** | **Desempenho: renderer em lote, GPU, cena e física, várias threads, editor (Fases 22 a 27) — atual** | [`docs/roadmap/alpha-3.md`](docs/roadmap/alpha-3.md); fases em [`docs/roadmap/alpha-3/`](docs/roadmap/alpha-3/) |
+| 4 | Mundo aberto e renderização 2: terreno, água, vegetação, partículas, SSAO (Fases 28 a 30) | rascunho: [`docs/roadmap/alpha-4.md`](docs/roadmap/alpha-4.md) |
+| 5 | Ferramentas: compilador integrado, distribuição, scripts avançados (Fases 31 a 33) | rascunho: [`docs/roadmap/alpha-5.md`](docs/roadmap/alpha-5.md) |

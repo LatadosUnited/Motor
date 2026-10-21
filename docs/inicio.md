@@ -1,6 +1,6 @@
 ---
 tipo: guia
-atualizado: 2026-10-17
+atualizado: 2026-10-21
 ---
 
 # Motor — documentação
@@ -10,12 +10,12 @@ relativos: funcionam no Obsidian, no GitHub e para os agentes. Como organizar: [
 
 ## Roteiro
 
-- [Alpha 2 — funcionalidades e pendências (atual)](roadmap/alpha-2.md), com uma nota por fase em
-  `roadmap/alpha-2/` e a tabela `roadmap/fases.base`
+- [Alpha 3 — desempenho (atual)](roadmap/alpha-3.md), com uma nota por fase em andamento em `roadmap/alpha-3/`
+  e a tabela `roadmap/fases.base`
 - [Caixa de entrada](roadmap/entrada.md): achados que ainda não estão em nenhuma fase
-- [Alpha 3 — desempenho (rascunho)](roadmap/alpha-3.md)
-- [Alpha 4 — ferramentas (rascunho)](roadmap/alpha-4.md)
-- [Alpha 1 — histórico das Fases 0 a 15](roadmap/alpha-1.md)
+- [Alpha 4 — mundo aberto e renderização 2 (rascunho)](roadmap/alpha-4.md)
+- [Alpha 5 — ferramentas (rascunho)](roadmap/alpha-5.md)
+- Alphas 1 e 2 (Fases 0 a 21): fechadas; o histórico fica no git
 - Decisões de rumo: pasta `decisoes/`
 
 ## Testar
