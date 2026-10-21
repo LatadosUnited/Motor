@@ -445,33 +445,27 @@ void SceneRuntime::Destroy(EntityId id) {
 }
 
 void SceneRuntime::FlushDestroyed() {
-    // OnDestroy pode pedir outras destruições: repete até esvaziar.
+    // Em lote: OnDestroy de todas as entidades pedidas (cada raiz seguida dos descendentes), depois uma passada só
+    // pela cena para tirá-las (destruir uma por uma percorria a cena a cada entidade: ~8 ms para 200 por quadro no
+    // spawn200). OnDestroy pode pedir outras destruições: entram na rodada seguinte, até esvaziar.
     while (!m_toDestroy.empty()) {
         const std::vector<EntityId> pending = std::exchange(m_toDestroy, {});
-        for (EntityId root : pending) {
-            if (!m_scene.Find(root)) continue;  // pedida duas vezes, ou já foi junto com o pai
-
-            std::vector<EntityId> doomed{root};
-            for (const auto& e : m_scene.Entities()) {
-                if (m_scene.IsDescendantOf(e->id, root)) doomed.push_back(e->id);
+        for (EntityId id : m_scene.Subtrees(pending)) {
+            for (size_t i = 0;; ++i) {
+                Entity* e = m_scene.Find(id);
+                if (!e || i >= e->components.size()) break;
+                ComponentPtr& c = e->components[i];
+                if (!c.Type().IsScript()) continue;
+                Script& s = *c.Type().asScript(c.Data());
+                const bool faulted = m_faultedScripts.erase(&s) > 0;
+                if (!s.m_started) continue;
+                s.m_started = false;
+                if (faulted) continue;
+                Bind(s, id);
+                InvokeScript(s, id, c.Type().name, "OnDestroy", [&]() { s.OnDestroy(); });
             }
-            for (EntityId id : doomed) {
-                for (size_t i = 0;; ++i) {
-                    Entity* e = m_scene.Find(id);
-                    if (!e || i >= e->components.size()) break;
-                    ComponentPtr& c = e->components[i];
-                    if (!c.Type().IsScript()) continue;
-                    Script& s = *c.Type().asScript(c.Data());
-                    const bool faulted = m_faultedScripts.erase(&s) > 0;
-                    if (!s.m_started) continue;
-                    s.m_started = false;
-                    if (faulted) continue;
-                    Bind(s, id);
-                    InvokeScript(s, id, c.Type().name, "OnDestroy", [&]() { s.OnDestroy(); });
-                }
-            }
-            m_scene.DestroyEntity(root);
         }
+        m_scene.DestroyEntities(pending);
     }
 }
 

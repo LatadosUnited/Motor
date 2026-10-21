@@ -213,6 +213,7 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
                         // Script que ainda não foi compilado/carregado, ou que foi removido: os dados ficam guardados.
                         log::Warn("Cena: componente desconhecido '{}' em '{}' (dados mantidos)", typeName, e.name);
                         e.components.push_back(MakeMissing(typeName, jc));
+                        MarkSceneStructureChanged();
                     } else if (e.Get(*type)) {
                         log::Warn("Cena: componente '{}' repetido em '{}' foi ignorado", typeName, e.name);
                     } else if (type == ComponentRegistry::TypeOf<MeshRenderer>()) {

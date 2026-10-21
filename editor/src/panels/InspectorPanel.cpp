@@ -503,7 +503,10 @@ void DrawEntity(EditorContext& ctx, motor::Entity& e, bool prefabAsset) {
         }
         ImGui::PopID();
     }
-    if (toRemove) e.components.erase(e.components.begin() + static_cast<std::ptrdiff_t>(*toRemove));
+    if (toRemove) {
+        e.components.erase(e.components.begin() + static_cast<std::ptrdiff_t>(*toRemove));
+        motor::MarkSceneStructureChanged();
+    }
 
     ImGui::Spacing();
     ImGui::Separator();

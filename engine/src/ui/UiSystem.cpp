@@ -44,12 +44,13 @@ void UiSystem::OnUpdate(SceneRuntime& runtime, float) {
     m_hovered = hovered;
 
     // O estado vai nos componentes (o editor mostra a cor certa; os scripts leem com WasClicked).
-    for (const auto& e : scene.Entities()) {
-        UiButton* button = e->Get<UiButton>();
+    for (EntityId id : scene.EntitiesWith<UiButton>()) {
+        Entity* e = scene.Find(id);
+        UiButton* button = e ? e->Get<UiButton>() : nullptr;
         if (!button) continue;
-        button->hovered = e->id == hovered;
-        button->pressed = e->id == m_pressed && down && e->id == hovered;
-        button->clicked = e->id == clicked;
+        button->hovered = id == hovered;
+        button->pressed = id == m_pressed && down && id == hovered;
+        button->clicked = id == clicked;
     }
 }
 

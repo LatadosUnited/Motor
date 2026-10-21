@@ -89,7 +89,10 @@ void PropagateEdits(const motor::Entity& before, const motor::Entity& after, mot
         const void* old = before.Get(type);
         void* dst = target.Get(type);
         if (!old) {
-            if (!dst) target.components.push_back(component);  // adicionado na principal
+            if (!dst) {  // adicionado na principal
+                target.components.push_back(component);
+                motor::MarkSceneStructureChanged();
+            }
             continue;
         }
         if (!dst) continue;

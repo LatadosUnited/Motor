@@ -50,6 +50,7 @@ void BuildStarterScene(Scene& scene, const AssetLibrary& assets, bool withScript
         missing.type = "Girar";
         missing.json = R"({"type": "Girar", "velocidade": 45.0})";
         cube.components.push_back(std::move(girar));
+        MarkSceneStructureChanged();
     }
 
     Entity& camera = scene.CreateEntity("Câmera");

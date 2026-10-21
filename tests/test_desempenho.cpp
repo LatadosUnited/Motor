@@ -90,6 +90,29 @@ AssetLibrary MakeAssets() {
     return assets;
 }
 
+// O que a montagem dos desenhos faz por entidade a cada quadro: "ativa na hierarquia" e matriz de mundo.
+float MundoDeTodas(const Scene& scene) {
+    float soma = 0.0f;
+    for (const auto& e : scene.Entities()) {
+        if (scene.IsActiveInHierarchy(e->id)) soma += scene.WorldMatrix(e->id)[3][0];
+    }
+    return soma;
+}
+
+// Hierarquia funda, como a de um modelo importado: `cadeias` cadeias de `fundura` entidades, cada uma filha da
+// anterior, com um giro e um passo em cada nível.
+void MontarArvores(Scene& scene, int cadeias, int fundura) {
+    for (int c = 0; c < cadeias; ++c) {
+        EntityId pai = kNullEntity;
+        for (int d = 0; d < fundura; ++d) {
+            Entity& e = scene.CreateEntity("No", pai);
+            e.transform.position = {pai == kNullEntity ? static_cast<float>(c) : 0.0f, 0.5f, 0.0f};
+            e.transform.Rotate({0.0f, 1.0f, 0.0f}, 0.1f);
+            pai = e.id;
+        }
+    }
+}
+
 std::map<std::string, double> Run(AssetLibrary& assets, size_t& entidades) {
     std::map<std::string, double> r;
     Scene scene;
@@ -112,6 +135,13 @@ std::map<std::string, double> Run(AssetLibrary& assets, size_t& entidades) {
         Scene lida;
         SceneSerializer::FromJson(json, lida, assets);
     });
+
+    // Matrizes de mundo: na cena de referência (quase tudo na raiz) e numa hierarquia funda (200 cadeias de 10).
+    volatile float soma = 0.0f;
+    r["mundo_cena"] = Measure(21, [&] { soma = soma + MundoDeTodas(scene); });
+    Scene arvores;
+    MontarArvores(arvores, 200, 10);
+    r["mundo_hierarquia"] = Measure(21, [&] { soma = soma + MundoDeTodas(arvores); });
 
     // O passo do jogo: 1 FixedUpdate + 1 Update por quadro, depois de 2 s (as caixas caem, empilham e dormem).
     SceneRuntime runtime(scene);

@@ -79,12 +79,19 @@ std::vector<UiNode> ComputeUiLayout(const Scene& scene, const glm::vec2& screenS
     LayoutBuilder builder{scene, UiScale(screenSize), {}, {}};
     // Só entram as entidades de UI e as que estão acima delas: as outras não geram nó nenhum, e numa cena de 10 000
     // objetos sem UI montar e ordenar a árvore inteira custava ~7 ms por chamada (Fase 22, medido com o Tracy).
+    // As entidades de UI vêm das listas por tipo da cena (sem percorrer a cena); só a ordem dos filhos, abaixo,
+    // percorre a cena, e só quando há UI.
     std::unordered_set<EntityId> relevant;
-    for (const auto& e : scene.Entities()) {
-        if (!IsUiEntity(*e)) continue;
-        for (const Entity* up = e.get(); up && relevant.insert(up->id).second; up = scene.Find(up->parent)) {
+    auto addWithAncestors = [&](const std::vector<EntityId>& ids) {
+        for (EntityId id : ids) {
+            for (const Entity* up = scene.Find(id); up && relevant.insert(up->id).second; up = scene.Find(up->parent)) {
+            }
         }
-    }
+    };
+    addWithAncestors(scene.EntitiesWith<UiRect>());
+    addWithAncestors(scene.EntitiesWith<UiImage>());
+    addWithAncestors(scene.EntitiesWith<UiText>());
+    addWithAncestors(scene.EntitiesWith<UiButton>());
     if (relevant.empty()) return {};
     for (const auto& e : scene.Entities()) {
         if (relevant.contains(e->id)) builder.children[e->parent].push_back(e.get());

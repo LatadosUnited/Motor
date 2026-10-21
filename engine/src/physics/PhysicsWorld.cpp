@@ -172,15 +172,16 @@ void PhysicsSystem::World::SyncBodies(Scene& scene, float dt) {
     JPH::BodyInterface& bi = Bodies();
     std::vector<JPH::BodyID> addStatic, addMoving, remove;
 
-    for (const auto& entityPtr : scene.Entities()) {
+    for (EntityId id : scene.EntitiesWith<RigidbodyComponent>()) {
+        const Entity* e = scene.Find(id);
+        if (e && !e->Has<ColliderComponent>()) WarnOnce(id, "Física: Rigidbody sem Collider é ignorado");
+    }
+    for (EntityId id : scene.EntitiesWith<ColliderComponent>()) {
+        Entity* entityPtr = scene.Find(id);
+        const ColliderComponent* collider = entityPtr ? entityPtr->Get<ColliderComponent>() : nullptr;
+        if (!collider || !scene.IsActiveInHierarchy(id)) continue;
         Entity& entity = *entityPtr;
-        const ColliderComponent* collider = entity.Get<ColliderComponent>();
         const RigidbodyComponent* rigidbody = entity.Get<RigidbodyComponent>();
-        if (!collider) {
-            if (rigidbody) WarnOnce(entity.id, "Física: Rigidbody sem Collider é ignorado");
-            continue;
-        }
-        if (!scene.IsActiveInHierarchy(entity.id)) continue;
 
         const MeshRenderer* renderer = collider->shape == ColliderShape::Mesh ? entity.Get<MeshRenderer>() : nullptr;
         const Mesh* mesh = renderer ? renderer->mesh.get() : nullptr;

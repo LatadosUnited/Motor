@@ -169,10 +169,10 @@ void AudioSystem::OnUpdate(SceneRuntime& runtime, float) {
     Preload(scene);  // fontes que apareceram durante o jogo (prefabs instanciados)
     if (m_impl->engineOk) UpdateListener(scene);
 
-    for (const auto& e : scene.Entities()) {
-        const AudioSource* source = e->Get<AudioSource>();
+    for (EntityId id : scene.EntitiesWith<AudioSource>()) {
+        const Entity* e = scene.Find(id);
+        const AudioSource* source = e ? e->Get<AudioSource>() : nullptr;
         if (!source) continue;
-        const EntityId id = e->id;
         auto it = m_impl->voices.find(id);
         if (!scene.IsActiveInHierarchy(id)) {
             // Desativada: para; ao reativar, "Tocar ao iniciar" vale de novo.
@@ -208,10 +208,11 @@ void AudioSystem::OnUpdate(SceneRuntime& runtime, float) {
 void AudioSystem::UpdateListener(Scene& scene) {
     EntityId listener = kNullEntity;
     float volume = 1.0f;
-    for (const auto& e : scene.Entities()) {
-        const AudioListener* l = e->Get<AudioListener>();
-        if (l && scene.IsActiveInHierarchy(e->id)) {
-            listener = e->id;
+    for (EntityId id : scene.EntitiesWith<AudioListener>()) {
+        const Entity* e = scene.Find(id);
+        const AudioListener* l = e ? e->Get<AudioListener>() : nullptr;
+        if (l && scene.IsActiveInHierarchy(id)) {
+            listener = id;
             volume = std::max(0.0f, l->volume);
             break;
         }
@@ -299,8 +300,9 @@ std::unique_ptr<AudioSystem::Voice> AudioSystem::OpenVoice(const AudioClip& clip
 
 void AudioSystem::Preload(Scene& scene) {
     std::vector<std::filesystem::path> batch;
-    for (const auto& e : scene.Entities()) {
-        const AudioSource* source = e->Get<AudioSource>();
+    for (EntityId id : scene.EntitiesWith<AudioSource>()) {
+        const Entity* e = scene.Find(id);
+        const AudioSource* source = e ? e->Get<AudioSource>() : nullptr;
         if (!source || source->clip.file.empty() || m_impl->preloaded.contains(source->clip.file)) continue;
         const std::filesystem::path& file = source->clip.file;
         m_impl->preloaded.insert(file);

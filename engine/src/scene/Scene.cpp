@@ -21,6 +21,7 @@ namespace motor {
 
 namespace {
 uint64_t g_structureVersion = 0;  // SceneStructureVersion(); a cena só é mexida na thread principal
+uint64_t g_worldStamp = 0;        // EntityCache::stamp
 
 bool SameEntity(const Entity& a, const Entity& b) {
     if (a.id != b.id || a.name != b.name || a.active != b.active || a.parent != b.parent) return false;
@@ -37,6 +38,10 @@ bool SameEntity(const Entity& a, const Entity& b) {
 
 uint64_t SceneStructureVersion() {
     return g_structureVersion;
+}
+
+void MarkSceneStructureChanged() {
+    ++g_structureVersion;
 }
 
 // --- Entity -----------------------------------------------------------------------
@@ -59,7 +64,7 @@ void* Entity::Add(const ComponentType& type) {
 }
 
 void Entity::Remove(const ComponentType& type) {
-    std::erase_if(components, [&](const ComponentPtr& c) { return &c.Type() == &type; });
+    if (std::erase_if(components, [&](const ComponentPtr& c) { return &c.Type() == &type; })) ++g_structureVersion;
 }
 
 // --- Scene ------------------------------------------------------------------------
@@ -101,15 +106,70 @@ Entity& Scene::CreateEntity(std::string name, EntityId parent) {
 }
 
 void Scene::DestroyEntity(EntityId id) {
-    if (!Find(id)) return;
+    DestroyEntities({id});
+}
+
+void Scene::DestroyEntities(const std::vector<EntityId>& roots) {
+    std::vector<EntityId> doomed = Subtrees(roots);
+    if (doomed.empty()) return;
     ++g_structureVersion;
 
-    std::unordered_set<EntityId> doomed{id};
-    for (const auto& e : m_entities) {
-        if (IsDescendantOf(e->id, id)) doomed.insert(e->id);
-    }
     for (EntityId d : doomed) m_byId.erase(d);
-    std::erase_if(m_entities, [&](const auto& e) { return doomed.contains(e->id); });
+    std::sort(doomed.begin(), doomed.end());
+    std::erase_if(m_entities, [&](const auto& e) { return std::binary_search(doomed.begin(), doomed.end(), e->id); });
+}
+
+std::vector<EntityId> Scene::Subtrees(const std::vector<EntityId>& roots) const {
+    // Vetores ordenados com busca binária em vez de conjuntos com hash: destruir 200 entidades por quadro
+    // (spawn200) alocava um nó por entidade em cada conjunto.
+    std::vector<EntityId> requested;
+    for (EntityId id : roots) {
+        if (Find(id)) requested.push_back(id);
+    }
+    if (requested.empty()) return {};
+    std::sort(requested.begin(), requested.end());
+    requested.erase(std::unique(requested.begin(), requested.end()), requested.end());
+    auto isRequested = [&](EntityId id) { return std::binary_search(requested.begin(), requested.end(), id); };
+
+    // Dono de cada entidade: a raiz pedida mais alta acima dela (ou ela mesma), kNullEntity se nenhuma. Sobe a
+    // hierarquia sem guardar nada: na cena comum (quase tudo na raiz) é uma busca por entidade.
+    auto ownerOf = [&](const Entity& e) {
+        EntityId found = isRequested(e.id) ? e.id : kNullEntity;
+        for (EntityId p = e.parent; p != kNullEntity;) {
+            const Entity* up = Find(p);
+            if (!up) break;
+            if (isRequested(p)) found = p;
+            p = up->parent;
+        }
+        return found;
+    };
+
+    std::vector<std::pair<EntityId, EntityId>> below;  // (raiz, descendente), na ordem da cena
+    std::vector<EntityId> nested;                       // raízes pedidas dentro de outra
+    for (const auto& e : m_entities) {
+        if (e->parent == kNullEntity) continue;  // sem pai: só pode ser a própria raiz
+        const EntityId o = ownerOf(*e);
+        if (o == kNullEntity || o == e->id) continue;
+        below.emplace_back(o, e->id);
+        if (isRequested(e->id)) nested.push_back(e->id);
+    }
+    std::stable_sort(below.begin(), below.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::sort(nested.begin(), nested.end());
+
+    std::vector<EntityId> result;
+    std::vector<bool> emitted(requested.size(), false);
+    for (EntityId root : roots) {
+        const auto it = std::lower_bound(requested.begin(), requested.end(), root);
+        if (it == requested.end() || *it != root) continue;  // inexistente
+        const size_t index = static_cast<size_t>(it - requested.begin());
+        if (emitted[index] || std::binary_search(nested.begin(), nested.end(), root)) continue;  // repetida ou dentro de outra
+        emitted[index] = true;
+        result.push_back(root);
+        auto first = std::lower_bound(below.begin(), below.end(), root,
+                                      [](const auto& pair, EntityId id) { return pair.first < id; });
+        for (; first != below.end() && first->first == root; ++first) result.push_back(first->second);
+    }
+    return result;
 }
 
 EntityId Scene::Duplicate(EntityId id) {
@@ -139,6 +199,7 @@ EntityId Scene::CloneRecursive(const Entity& source, EntityId newParent,
     clone.active = source.active;
     clone.transform = source.transform;
     clone.components = source.components;
+    ++g_structureVersion;
     const EntityId cloneId = clone.id;
     copies.emplace_back(source.id, cloneId);
 
@@ -150,13 +211,29 @@ EntityId Scene::CloneRecursive(const Entity& source, EntityId newParent,
 }
 
 Entity* Scene::Find(EntityId id) {
+    if (id == kNullEntity) return nullptr;  // o "pai" de quem está na raiz: sem busca no mapa
     auto it = m_byId.find(id);
     return it != m_byId.end() ? it->second : nullptr;
 }
 
 const Entity* Scene::Find(EntityId id) const {
+    if (id == kNullEntity) return nullptr;
     auto it = m_byId.find(id);
     return it != m_byId.end() ? it->second : nullptr;
+}
+
+const std::vector<EntityId>& Scene::EntitiesWith(const ComponentType* type) const {
+    static const std::vector<EntityId> kNone;
+    if (!type) return kNone;  // tipo não registrado: ninguém tem
+    if (m_byTypeVersion != g_structureVersion) {
+        for (auto& [t, ids] : m_byType) ids.clear();  // mantém a memória das listas
+        for (const auto& e : m_entities) {
+            for (const ComponentPtr& c : e->components) m_byType[&c.Type()].push_back(e->id);
+        }
+        m_byTypeVersion = g_structureVersion;
+    }
+    auto it = m_byType.find(type);
+    return it != m_byType.end() ? it->second : kNone;
 }
 
 Entity* Scene::FindByName(std::string_view name) {
@@ -168,11 +245,12 @@ Entity* Scene::FindByName(std::string_view name) {
 
 EntityId Scene::FindMainCamera() const {
     EntityId fallback = kNullEntity;
-    for (const auto& e : m_entities) {
-        const CameraComponent* cam = e->Get<CameraComponent>();
-        if (!cam || !IsActiveInHierarchy(e->id)) continue;
-        if (cam->main) return e->id;
-        if (fallback == kNullEntity) fallback = e->id;
+    for (EntityId id : EntitiesWith<CameraComponent>()) {
+        const Entity* e = Find(id);
+        const CameraComponent* cam = e ? e->Get<CameraComponent>() : nullptr;
+        if (!cam || !IsActiveInHierarchy(id)) continue;
+        if (cam->main) return id;
+        if (fallback == kNullEntity) fallback = id;
     }
     return fallback;
 }
@@ -220,10 +298,28 @@ bool Scene::IsDescendantOf(EntityId id, EntityId ancestor) const {
 }
 
 bool Scene::IsActiveInHierarchy(EntityId id) const {
-    for (const Entity* e = Find(id); e; e = Find(e->parent)) {
+    const Entity* e = Find(id);
+    return !e || IsActiveInHierarchy(*e);
+}
+
+bool Scene::IsActiveInHierarchy(const Entity& entity) const {
+    for (const Entity* e = &entity; e; e = ParentOf(*e)) {
         if (!e->active) return false;
     }
     return true;
+}
+
+const Entity* Scene::ParentOf(const Entity& e) const {
+    if (e.parent == kNullEntity) return nullptr;
+    EntityCache& c = e.cache;
+    // Destruir sobe a versão da estrutura; trocar de pai muda e.parent: nos dois casos, busca de novo. (A matriz
+    // guardada se confere sozinha: pai diferente tem outro `stamp`.)
+    if (c.structure != g_structureVersion || c.parent != e.parent || !c.parentPtr) {
+        c.parentPtr = Find(e.parent);
+        c.parent = e.parent;
+        c.structure = g_structureVersion;
+    }
+    return c.parentPtr;
 }
 
 bool Scene::SetParent(EntityId id, EntityId newParent, bool keepWorldTransform) {
@@ -258,19 +354,37 @@ void Scene::SetWorldMatrix(EntityId id, const glm::mat4& world) {
 }
 
 glm::mat4 Scene::WorldMatrix(EntityId id) const {
-    glm::mat4 m(1.0f);
-    for (const Entity* e = Find(id); e; e = Find(e->parent)) {
-        m = e->transform.Matrix() * m;
+    const Entity* e = Find(id);
+    return e ? CachedWorld(*e) : glm::mat4(1.0f);
+}
+
+const glm::mat4& Scene::CachedWorld(const Entity& e) const {
+    // Confere de cima para baixo: o pai primeiro (que confere o dele), depois o transform desta. Numa hierarquia,
+    // cada nível recalcula só quando algo acima ou nele mudou, em vez de remontar a cadeia inteira a cada consulta.
+    const Entity* parent = ParentOf(e);
+    const glm::mat4* parentWorld = parent ? &CachedWorld(*parent) : nullptr;
+    const uint64_t parentStamp = parent ? parent->cache.stamp : 0;
+    EntityCache& c = e.cache;
+    const Transform& t = e.transform;
+    if (c.valid && c.parentStamp == parentStamp && c.local.position == t.position && c.local.rotation == t.rotation &&
+        c.local.scale == t.scale) {
+        return c.world;
     }
-    return m;
+    c.world = parentWorld ? *parentWorld * t.Matrix() : t.Matrix();
+    c.local = t;
+    c.parentStamp = parentStamp;
+    c.stamp = ++g_worldStamp;
+    c.valid = true;
+    return c.world;
 }
 
 std::vector<Light> Scene::CollectLights() const {
     std::vector<Light> lights;
-    for (const auto& e : m_entities) {
-        const LightComponent* light = e->Get<LightComponent>();
-        if (!light || !IsActiveInHierarchy(e->id)) continue;
-        lights.push_back(MakeLight(*light, WorldMatrix(e->id)));
+    for (EntityId id : EntitiesWith<LightComponent>()) {
+        const Entity* e = Find(id);
+        const LightComponent* light = e ? e->Get<LightComponent>() : nullptr;
+        if (!light || !IsActiveInHierarchy(id)) continue;
+        lights.push_back(MakeLight(*light, WorldMatrix(id)));
     }
     return lights;
 }
@@ -285,7 +399,7 @@ void Scene::SubmitTo(Renderer& renderer) const {
     std::vector<glm::mat4> joints;
     for (const auto& e : m_entities) {
         const MeshRenderer* mr = e->Get<MeshRenderer>();
-        if (!mr || !mr->mesh || !IsActiveInHierarchy(e->id)) continue;
+        if (!mr || !mr->mesh || !IsActiveInHierarchy(*e)) continue;
         if (mr->mesh->IsSkinned()) {
             // Pose do Animator mais próximo (a própria entidade ou acima) que anima o esqueleto desta pele;
             // sem ele, a pose de repouso. As juntas ficam no espaço da entidade da malha.
@@ -299,10 +413,10 @@ void Scene::SubmitTo(Renderer& renderer) const {
                 }
             }
             skin.JointMatrices(globals, joints);
-            renderer.SubmitSkinned(*mr->mesh, mr->Resolved(), WorldMatrix(e->id), joints, mr->shadows);
+            renderer.SubmitSkinned(*mr->mesh, mr->Resolved(), CachedWorld(*e), joints, mr->shadows);
             continue;
         }
-        renderer.Submit(*mr->mesh, mr->Resolved(), WorldMatrix(e->id), mr->shadows);
+        renderer.Submit(*mr->mesh, mr->Resolved(), CachedWorld(*e), mr->shadows);
     }
 }
 
@@ -368,7 +482,7 @@ std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec
     std::optional<RaycastHit> best;
     for (const auto& e : m_entities) {
         const MeshRenderer* mr = e->Get<MeshRenderer>();
-        if (!mr || !mr->mesh || !IsActiveInHierarchy(e->id)) continue;
+        if (!mr || !mr->mesh || !IsActiveInHierarchy(*e)) continue;
 
         // Leva o raio para o espaço local; como a transformação é linear, o t vale nos dois espaços.
         const glm::mat4 inv = glm::inverse(WorldMatrix(e->id));

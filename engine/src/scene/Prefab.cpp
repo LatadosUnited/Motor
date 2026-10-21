@@ -65,6 +65,7 @@ void SetLink(Entity& e, PrefabLink link) {
     }
     const ComponentType& type = *ComponentRegistry::TypeOf<PrefabInstance>();
     e.components.insert(e.components.begin(), ComponentPtr(type));
+    MarkSceneStructureChanged();
     static_cast<PrefabInstance*>(e.components.front().Data())->link = std::move(link);
 }
 
@@ -105,6 +106,7 @@ EntityId CopyTree(const Scene& from, EntityId id, Scene& to, EntityId parent,
     dst.active = src->active;
     dst.transform = src->transform;
     dst.components = src->components;
+    MarkSceneStructureChanged();
     if (fn) fn(*src, dst);
     const EntityId dstId = dst.id;
     for (EntityId child : from.Children(id)) CopyTree(from, child, to, dstId, fn);
@@ -194,7 +196,10 @@ void ApplyEntity(Entity& e, const Entity& p, bool isRoot, AssetLibrary& assets, 
         if (Skipped(type)) continue;
         void* data = e.Get(type);
         if (!data) {
-            if (!has("-" + type.name)) e.components.push_back(pc);  // o prefab ganhou este componente
+            if (!has("-" + type.name)) {  // o prefab ganhou este componente
+                e.components.push_back(pc);
+                MarkSceneStructureChanged();
+            }
             continue;
         }
         for (const FieldInfo& f : type.fields) {
@@ -202,9 +207,11 @@ void ApplyEntity(Entity& e, const Entity& p, bool isRoot, AssetLibrary& assets, 
         }
     }
     // Componente que o prefab perdeu (e que não foi adicionado na instância).
-    std::erase_if(e.components, [&](const ComponentPtr& c) {
-        return !Skipped(c.Type()) && !p.Get(c.Type()) && !has("+" + c.Type().name);
-    });
+    if (std::erase_if(e.components, [&](const ComponentPtr& c) {
+            return !Skipped(c.Type()) && !p.Get(c.Type()) && !has("+" + c.Type().name);
+        })) {
+        MarkSceneStructureChanged();
+    }
     // Na cena, a cópia do vínculo aninhado só informa de onde a entidade veio: acompanha o prefab. (No conteúdo
     // de um prefab, o PrefabNested é o vínculo com o de dentro e não se copia do de dentro.)
     if (kind == LinkKind::Instance) {

@@ -27,10 +27,32 @@ struct Light;
 using EntityId = uint32_t;
 inline constexpr EntityId kNullEntity = 0;
 
-// Contador global que sobe a cada entidade criada ou destruída, componente adicionado (Entity::Add) e cena copiada.
-// Quem guarda algo derivado da estrutura das cenas (a lista de scripts do SceneRuntime) o compara para saber se
-// precisa refazer, sem percorrer a cena. Componente removido não sobe o contador: quem usa confere na hora.
+// Contador global que sobe a cada entidade criada ou destruída, componente adicionado ou removido (Entity::Add e
+// Remove) e cena copiada. Quem guarda algo derivado da estrutura das cenas (a lista de scripts do SceneRuntime, as
+// listas por tipo de Scene::EntitiesWith) o compara para saber se precisa refazer, sem percorrer a cena.
 uint64_t SceneStructureVersion();
+// Para quem mexe direto em Entity::components (prefabs, serializador, editor) em vez de usar Add e Remove.
+void MarkSceneStructureChanged();
+
+struct Entity;
+
+// Cache da Scene por entidade (matriz de mundo e ponteiro do pai), conferido a cada consulta: não precisa de aviso
+// quando o transform muda (scripts e o editor mexem direto em Entity::transform). A cópia de uma entidade começa
+// sem cache.
+struct EntityCache {
+    EntityCache() = default;
+    EntityCache(const EntityCache&) {}
+    EntityCache& operator=(const EntityCache&) { valid = false; return *this; }
+
+    bool valid = false;
+    Transform local;                       // transform de quando `world` foi calculado
+    EntityId parent = kNullEntity;         // pai de parentPtr
+    const Entity* parentPtr = nullptr;     // vale enquanto SceneStructureVersion() == structure
+    uint64_t structure = 0;
+    uint64_t parentStamp = 0;              // `stamp` do pai quando foi calculado
+    uint64_t stamp = 0;                    // sobe (contador global) a cada vez que `world` é recalculado
+    glm::mat4 world{1.0f};
+};
 
 struct Entity {
     EntityId id = kNullEntity;
@@ -52,6 +74,8 @@ struct Entity {
     const void* Get(const ComponentType& type) const;
     void* Add(const ComponentType& type);  // se já existir, devolve o existente
     void Remove(const ComponentType& type);
+
+    mutable EntityCache cache;  // interno da Scene (WorldMatrix, IsActiveInHierarchy)
 
 private:
     template <class T>
@@ -83,6 +107,12 @@ public:
 
     Entity& CreateEntity(std::string name, EntityId parent = kNullEntity);
     void DestroyEntity(EntityId id);               // destrói também os descendentes
+    // Várias sub-árvores de uma vez, numa passada pela cena (DestroyEntity em laço percorre a cena a cada uma).
+    // Ids repetidos, inexistentes ou dentro de outra sub-árvore da lista são ignorados.
+    void DestroyEntities(const std::vector<EntityId>& roots);
+    // As entidades que DestroyEntities(roots) destruiria: cada raiz seguida dos seus descendentes na ordem da
+    // cena, as raízes na ordem dada; raiz que está dentro de outra sub-árvore da lista aparece só nela.
+    std::vector<EntityId> Subtrees(const std::vector<EntityId>& roots) const;
     EntityId Duplicate(EntityId id);               // copia a sub-árvore, mesmo pai
 
     Entity* Find(EntityId id);
@@ -96,6 +126,14 @@ public:
     bool ApplyCamera(EntityId id, Camera& camera) const;
 
     const std::vector<std::unique_ptr<Entity>>& Entities() const { return m_entities; }
+    // Ids das entidades com o componente, na ordem da cena (ativas ou não), sem percorrer a cena: as listas de todos
+    // os tipos são montadas numa passada só e refeitas quando a estrutura muda (SceneStructureVersion). A lista
+    // muda na próxima chamada depois de criar ou destruir entidades e de adicionar ou remover componentes: quem faz
+    // isso dentro do laço (ou chama código do jogo) percorre uma cópia.
+    const std::vector<EntityId>& EntitiesWith(const ComponentType* type) const;
+    template <class T> const std::vector<EntityId>& EntitiesWith() const {
+        return EntitiesWith(ComponentRegistry::TypeOf<T>());
+    }
     std::vector<EntityId> Children(EntityId parent) const;  // kNullEntity => raízes
 
     bool IsDescendantOf(EntityId id, EntityId ancestor) const;
@@ -104,6 +142,7 @@ public:
     // Falha (retorna false) se criar um ciclo. keepWorldTransform preserva a posição no mundo.
     bool SetParent(EntityId id, EntityId newParent, bool keepWorldTransform = true);
 
+    // Com cache por entidade: recalcula só quando o transform, o pai ou o mundo do pai mudaram.
     glm::mat4 WorldMatrix(EntityId id) const;
     // Ajusta o Transform local para que a entidade fique com esta matriz no mundo.
     void SetWorldMatrix(EntityId id, const glm::mat4& world);
@@ -123,6 +162,10 @@ public:
     Environment environment;
 
 private:
+    const Entity* ParentOf(const Entity& e) const;  // Find(e.parent) sem a busca, se a estrutura não mudou
+    bool IsActiveInHierarchy(const Entity& e) const;
+    const glm::mat4& CachedWorld(const Entity& e) const;
+
     // `copies`: pares (original, cópia) de cada entidade copiada, para ajustar as EntityRef.
     EntityId CloneRecursive(const Entity& source, EntityId newParent,
                             std::vector<std::pair<EntityId, EntityId>>& copies);
@@ -130,6 +173,10 @@ private:
     std::vector<std::unique_ptr<Entity>> m_entities;
     std::unordered_map<EntityId, Entity*> m_byId;
     EntityId m_nextId = 1;
+
+    // EntitiesWith: listas por tipo, válidas enquanto SceneStructureVersion() == m_byTypeVersion.
+    mutable std::unordered_map<const ComponentType*, std::vector<EntityId>> m_byType;
+    mutable uint64_t m_byTypeVersion = UINT64_MAX;
 };
 
 } // namespace motor
