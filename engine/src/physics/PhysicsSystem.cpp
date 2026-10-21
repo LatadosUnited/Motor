@@ -50,10 +50,8 @@ PhysicsSettings& PhysicsSettings::Global() {
 namespace {
 
 bool SceneHasPhysics(const Scene& scene) {
-    for (const auto& entity : scene.Entities()) {
-        if (entity->Has<ColliderComponent>() || entity->Has<CharacterControllerComponent>()) return true;
-    }
-    return false;
+    return !scene.EntitiesWith<ColliderComponent>().empty() ||
+           !scene.EntitiesWith<CharacterControllerComponent>().empty();
 }
 
 double MillisecondsSince(std::chrono::steady_clock::time_point start) {

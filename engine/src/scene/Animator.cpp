@@ -207,8 +207,9 @@ Animator* FindAnimator(Scene& scene, EntityId id) {
     Entity* e = scene.Find(id);
     if (!e) return nullptr;
     if (Animator* a = e->Get<Animator>()) return a;
-    for (const auto& other : scene.Entities()) {  // ordem da cena: o descendente mais "alto" vem antes
-        if (Animator* a = other->Get<Animator>(); a && scene.IsDescendantOf(other->id, id)) return a;
+    for (EntityId other : scene.EntitiesWith<Animator>()) {  // ordem da cena: o descendente mais "alto" vem antes
+        if (!scene.IsDescendantOf(other, id)) continue;
+        if (Animator* a = scene.Find(other)->Get<Animator>()) return a;
     }
     return nullptr;
 }
@@ -218,8 +219,10 @@ Animator* Script::GetAnimator() {
 }
 
 void AnimationSystem::OnStart(SceneRuntime& runtime) {
-    for (const auto& e : runtime.GetScene().Entities()) {
-        Animator* a = e->Get<Animator>();
+    Scene& scene = runtime.GetScene();
+    for (EntityId id : scene.EntitiesWith<Animator>()) {
+        Entity* e = scene.Find(id);
+        Animator* a = e ? e->Get<Animator>() : nullptr;
         if (!a || !a->playOnStart || a->clip.empty()) continue;
         if (!a->Play(a->clip, a->loop)) log::Warn("Animator de '{}': o modelo não tem o clipe '{}'", e->name, a->clip);
         a->Update(0.0f);
@@ -228,9 +231,10 @@ void AnimationSystem::OnStart(SceneRuntime& runtime) {
 
 void AnimationSystem::OnUpdate(SceneRuntime& runtime, float dt) {
     Scene& scene = runtime.GetScene();
-    for (const auto& e : scene.Entities()) {
-        Animator* a = e->Get<Animator>();
-        if (a && scene.IsActiveInHierarchy(e->id)) a->Update(dt);
+    for (EntityId id : scene.EntitiesWith<Animator>()) {
+        Entity* e = scene.Find(id);
+        Animator* a = e ? e->Get<Animator>() : nullptr;
+        if (a && scene.IsActiveInHierarchy(id)) a->Update(dt);
     }
 }
 

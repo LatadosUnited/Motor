@@ -100,8 +100,9 @@ CustomFieldType FieldTraits<AudioGroup>::Describe() {
 
 std::vector<AudioClip> CollectAudioClips(const Scene& scene) {
     std::vector<AudioClip> clips;
-    for (const auto& e : scene.Entities()) {
-        const AudioSource* source = e->Get<AudioSource>();
+    for (EntityId id : scene.EntitiesWith<AudioSource>()) {
+        const Entity* e = scene.Find(id);
+        const AudioSource* source = e ? e->Get<AudioSource>() : nullptr;
         if (!source || source->clip.IsEmpty()) continue;
         if (std::find(clips.begin(), clips.end(), source->clip) == clips.end()) clips.push_back(source->clip);
     }

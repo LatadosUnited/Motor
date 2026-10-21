@@ -50,10 +50,12 @@ namespace motor {
 
 using namespace physics_jolt;
 void PhysicsSystem::World::SyncCharacters(Scene& scene, float dt) {
-    for (const auto& entityPtr : scene.Entities()) {
+    for (EntityId id : scene.EntitiesWith<CharacterControllerComponent>()) {
+        Entity* entityPtr = scene.Find(id);
+        const CharacterControllerComponent* controller =
+            entityPtr ? entityPtr->Get<CharacterControllerComponent>() : nullptr;
+        if (!controller || !scene.IsActiveInHierarchy(id)) continue;
         Entity& entity = *entityPtr;
-        const CharacterControllerComponent* controller = entity.Get<CharacterControllerComponent>();
-        if (!controller || !scene.IsActiveInHierarchy(entity.id)) continue;
         const glm::vec3 position = glm::vec3(scene.WorldMatrix(entity.id)[3]);
 
         auto it = characters.find(entity.id);
