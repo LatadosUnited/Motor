@@ -17,7 +17,8 @@ docs/
   visao.md           o objetivo do projeto e o que é cada módulo
   padrao.md          este padrão
   entrada.md         caixa de entrada: achados ainda não colocados num roteiro
-  engine/            estado.md (o que faz hoje) e roteiro.md (o que vem)   ┐
+  engine/            estado.md (o que faz hoje), roteiro.md (o que vem)    ┐
+                     e, opcional, mapa.md (mapa mental de tudo)           │
   editor/            (o mesmo)                                              │ um par por
   hub/               (o mesmo)                                              │ módulo
   instalador/        (o mesmo)                                              ┘
@@ -76,6 +77,9 @@ Cada tarefa é uma linha: `- [ ] O que fazer. *(origem)*`. A origem diz de onde 
 (`Fase 23`), `entrada.md`, uma medição, um pedido do usuário. Detalhe que não cabe numa linha vai num link (uma
 nota do arquivo, uma decisão) ou numa nota nova ao lado do roteiro. **Feito sai do roteiro:** o histórico fica
 no git e no `CHANGELOG.md` do módulo (na pasta do código), com o commit.
+
+**`mapa.md`** (opcional) — mapa mental em Mermaid (`mindmap`) de tudo o que o módulo faz, com uma lista detalhada
+embaixo; levantado do código e refeito quando o módulo muda bastante.
 
 Trabalho que cruza módulos (formato do `motor-version.json`, o pacote "Compilador") entra no roteiro de cada
 módulo envolvido, com link entre eles.
