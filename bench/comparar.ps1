@@ -17,9 +17,9 @@ foreach ($cena in "vazia", "cubos1000", "cubos1000sombra", "cubos10000", "fisica
     $j.startupScene = "Assets/Scenes/$cena.mscene"
     # -Depth: o padrão (2) achata os objetos aninhados do .mproject (camadas de física, ações de entrada) em texto.
     [IO.File]::WriteAllText($mproj.FullName, ($j | ConvertTo-Json -Depth 32), (New-Object Text.UTF8Encoding $false))
-    # --stats: FPS no título (o Player normal mostra só o nome do jogo). --opcoes num arquivo que não existe: as opções
-    # padrão (1280x720 em janela, MSAA 4x), nunca as que um teste anterior salvou em %APPDATA%.
-    $extra = @("--stats", "--janela", "--opcoes", "`"$env:TEMP\motor-bench-sem-opcoes.json`"")
+    # --opcoes num arquivo que não existe: as opções padrão (1280x720 em janela, MSAA 4x), nunca as que um teste
+    # anterior salvou em %APPDATA%. O medir.ps1 acrescenta --perf e --segundos.
+    $extra = @("--janela", "--opcoes", "`"$env:TEMP\motor-bench-sem-opcoes.json`"")
     $m = & "$PSScriptRoot\medir.ps1" -Exe $Player -Projeto $Projeto -Rotulo "Motor $cena" -Extra $extra
     Start-Process $Unity -ArgumentList "-cena", $cena, "-screen-width", "1280", "-screen-height", "720", "-screen-fullscreen", "0" -Wait | Out-Null
     $u = Import-Csv $csvUnity | Where-Object { $_.cena -eq $cena } | Select-Object -Last 1

@@ -7,7 +7,8 @@ Meta da alpha 3: o Motor com **pelo menos 70% do desempenho da Unity** nas mesma
 - `unity/MotorBench/`: projeto gêmeo na Unity 6.3 (URP). `Assets/Bench/BenchRunner.cs` monta as mesmas cenas por
   código e mede; `Bobber.cs` e `Spawner.cs` são os scripts equivalentes; `Editor/BenchBuild.cs` configura o URP
   igual ao Motor e gera o player.
-- `medir.ps1` (mede o Motor pelo título da janela) e `comparar.ps1` (roda as 7 cenas nos dois, alternando).
+- `medir.ps1` (mede o Player pelos contadores: `--perf` e `--segundos`; `-Csv` guarda o CSV com CPU, GPU e memória)
+  e `comparar.ps1` (roda as 7 cenas nos dois, alternando).
 - `referencia/`: a **cena de referência** do Motor (abaixo) e a linha de base do teste de desempenho.
 
 ## Cena de referência e teste de desempenho

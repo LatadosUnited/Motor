@@ -3,6 +3,7 @@
 //   <Jogo>.exe                    abre a pasta Dados/ ao lado do executável (jogo exportado)
 //   Player.exe "<pasta ou .mproject>"   roda um projeto direto (para testar sem exportar)
 //   --quadros N                   fecha sozinho depois de N quadros (testes automáticos)
+//   --segundos S                  fecha sozinho depois de S segundos de jogo (medição: grava o --perf ao sair)
 //   --janela                      abre em janela mesmo com tela cheia nas opções
 //   --opcoes "<arquivo>"          opções do jogador neste arquivo, não em %APPDATA%\<Jogo>\opcoes.json
 //   --stats                       FPS, ms e draws no título da janela (medição: bench/medir.ps1)
@@ -50,6 +51,7 @@ constexpr const char* kScriptsDll = "GameScripts.dll";
 struct LaunchOptions {
     fs::path project;  // pasta ou .mproject; vazio = <pasta do executável>/Dados
     int frames = 0;    // > 0: fecha depois desse número de quadros
+    double seconds = 0.0;  // > 0: fecha depois desse tempo (--segundos)
     bool windowed = false;  // --janela
     fs::path optionsFile;   // --opcoes; vazio = %APPDATA%\<Jogo>\opcoes.json
     bool stats = false;     // --stats
@@ -271,6 +273,10 @@ private:
             log::Info("Jogo: {} quadros rodados (--quadros), fechando", m_frame);
             Quit();
         }
+        if (m_options.seconds > 0.0 && ElapsedTime() >= m_options.seconds) {
+            log::Info("Jogo: {:.1f} s rodados (--segundos), fechando", ElapsedTime());
+            Quit();
+        }
     }
 
     void OnRender(Renderer& renderer) override {
@@ -394,6 +400,8 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "--quadros" && i + 1 < args.size()) {
             options.frames = std::atoi(args[++i].c_str());
+        } else if (args[i] == "--segundos" && i + 1 < args.size()) {
+            options.seconds = std::atof(args[++i].c_str());
         } else if (args[i] == "--janela") {
             options.windowed = true;
         } else if (args[i] == "--opcoes" && i + 1 < args.size()) {
