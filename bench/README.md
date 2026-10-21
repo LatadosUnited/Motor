@@ -39,6 +39,7 @@ Máquina de referência (i5 de 4 núcleos, Intel HD 530), Release.
 | `test_desempenho` (CPU, ms) | jogo_passo | cena_montar | cena_copiar | cena_comparar | cena_json | cena_ler |
 |---|---|---|---|---|---|---|
 | base.txt | 3,1 | 5,4 | 4,7 | 1,8 | **337** | **314** |
+| base.txt depois da Fase 25 (listas por tipo, 21/10) | 2,0 | | | | | |
 
 Player 1280×720, vsync desligado, 900 quadros com `--perf`, medianas depois de 4 s:
 

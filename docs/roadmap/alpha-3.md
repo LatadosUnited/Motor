@@ -187,6 +187,8 @@ Conclusões:
 
 ## Fase 25 — Cena, dados e threads
 
+**Em andamento (21/10/2026):** nota da fase em [alpha-3/fase-25-cena.md](alpha-3/fase-25-cena.md).
+
 *(Análise, item 4; pendência da Fase 5; ver [Modularizar a engine](../decisoes/2026-10-18-modularizar-a-engine.md) e [Módulos em DLLs](../decisoes/2026-10-18-modulos-em-dlls.md).)*
 
 - `WorldMatrix` com cache (marca de "sujo" ao mexer no transform ou no pai), em vez de subir a hierarquia a
@@ -194,10 +196,10 @@ Conclusões:
 - ~~Laço dos scripts sem criar vetor a cada chamada e sem refazer `IsActiveInHierarchy` por componente
   (`SceneRuntime`, `ForEachScript`).~~ Feito na [Fase 22](alpha-3/fase-22-medicao.md): lista das entidades com script,
   refeita só quando a estrutura da cena muda (`SceneStructureVersion`).
-- **Sistemas sem percorrer a cena inteira:** cada sistema procura os seus componentes em todas as entidades a cada
-  quadro. Em `cubos10000` (sem som, UI ou animação): Áudio 2,9 ms, Ui 2,8 ms, Animação 1,0 ms por quadro. Lista por
-  tipo de componente, mantida com o mesmo `SceneStructureVersion` da lista de scripts (ou os blocos por tipo da
-  organização dos dados, abaixo). *(origem: contadores da Fase 22, 20/10/2026)*
+- ~~**Sistemas sem percorrer a cena inteira:** cada sistema procura os seus componentes em todas as entidades a cada
+  quadro. Em `cubos10000` (sem som, UI ou animação): Áudio 2,9 ms, Ui 2,8 ms, Animação 1,0 ms por quadro.~~ Feito
+  em 21/10/2026 ([nota da fase](alpha-3/fase-25-cena.md)): `Scene::EntitiesWith`, listas por tipo refeitas pelo
+  `SceneStructureVersion`. `cubos10000`: Update de ~7 para 0,02 ms, quadro de 51–61 para 42–44 ms.
 - Destruir em lote: `Children`, `DestroyEntity` e `FlushDestroyed` deixam de ser lineares na cena (destruir
   muitas entidades no mesmo quadro hoje é quadrático).
 - Índice de nomes para `FindEntity`/`FindByName`.
