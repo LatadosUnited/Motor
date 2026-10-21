@@ -119,7 +119,7 @@ void Shader::Bind() const {
     glUseProgram(m_program);
 }
 
-int Shader::Location(std::string_view name) {
+int Shader::Uniform(std::string_view name) {
     auto it = m_locations.find(std::string(name));
     if (it != m_locations.end()) return it->second;
 
@@ -130,32 +130,40 @@ int Shader::Location(std::string_view name) {
     return loc;
 }
 
-void Shader::SetInt(std::string_view name, int value) {
-    glProgramUniform1i(m_program, Location(name), value);
+void Shader::SetInt(std::string_view name, int value) { SetInt(Uniform(name), value); }
+void Shader::SetFloat(std::string_view name, float value) { SetFloat(Uniform(name), value); }
+void Shader::SetVec2(std::string_view name, const glm::vec2& value) { SetVec2(Uniform(name), value); }
+void Shader::SetVec3(std::string_view name, const glm::vec3& value) { SetVec3(Uniform(name), value); }
+void Shader::SetVec4(std::string_view name, const glm::vec4& value) { SetVec4(Uniform(name), value); }
+void Shader::SetMat3(std::string_view name, const glm::mat3& value) { SetMat3(Uniform(name), value); }
+void Shader::SetMat4(std::string_view name, const glm::mat4& value) { SetMat4(Uniform(name), value); }
+
+void Shader::SetInt(int location, int value) {
+    glProgramUniform1i(m_program, location, value);
 }
 
-void Shader::SetFloat(std::string_view name, float value) {
-    glProgramUniform1f(m_program, Location(name), value);
+void Shader::SetFloat(int location, float value) {
+    glProgramUniform1f(m_program, location, value);
 }
 
-void Shader::SetVec2(std::string_view name, const glm::vec2& value) {
-    glProgramUniform2fv(m_program, Location(name), 1, glm::value_ptr(value));
+void Shader::SetVec2(int location, const glm::vec2& value) {
+    glProgramUniform2fv(m_program, location, 1, glm::value_ptr(value));
 }
 
-void Shader::SetVec3(std::string_view name, const glm::vec3& value) {
-    glProgramUniform3fv(m_program, Location(name), 1, glm::value_ptr(value));
+void Shader::SetVec3(int location, const glm::vec3& value) {
+    glProgramUniform3fv(m_program, location, 1, glm::value_ptr(value));
 }
 
-void Shader::SetVec4(std::string_view name, const glm::vec4& value) {
-    glProgramUniform4fv(m_program, Location(name), 1, glm::value_ptr(value));
+void Shader::SetVec4(int location, const glm::vec4& value) {
+    glProgramUniform4fv(m_program, location, 1, glm::value_ptr(value));
 }
 
-void Shader::SetMat3(std::string_view name, const glm::mat3& value) {
-    glProgramUniformMatrix3fv(m_program, Location(name), 1, GL_FALSE, glm::value_ptr(value));
+void Shader::SetMat3(int location, const glm::mat3& value) {
+    glProgramUniformMatrix3fv(m_program, location, 1, GL_FALSE, glm::value_ptr(value));
 }
 
-void Shader::SetMat4(std::string_view name, const glm::mat4& value) {
-    glProgramUniformMatrix4fv(m_program, Location(name), 1, GL_FALSE, glm::value_ptr(value));
+void Shader::SetMat4(int location, const glm::mat4& value) {
+    glProgramUniformMatrix4fv(m_program, location, 1, GL_FALSE, glm::value_ptr(value));
 }
 
 } // namespace motor

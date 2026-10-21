@@ -21,6 +21,13 @@ Aabb TransformAabb(const Aabb& box, const glm::mat4& m) {
     return {c - h, c + h};
 }
 
+glm::mat3 NormalMatrix(const glm::mat4& model) {
+    const glm::vec3 a(model[0]), b(model[1]), c(model[2]);
+    glm::mat3 cof(glm::cross(b, c), glm::cross(c, a), glm::cross(a, b));
+    if (glm::dot(a, cof[0]) < 0.0f) cof = -cof;  // escala negativa (espelho): a inversa transposta vira o sinal
+    return cof;
+}
+
 Frustum Frustum::FromMatrix(const glm::mat4& vp) {
     // Gribb-Hartmann: cada plano é uma linha da matriz somada/subtraída da quarta.
     const glm::vec4 row0{vp[0][0], vp[1][0], vp[2][0], vp[3][0]};

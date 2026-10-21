@@ -5,6 +5,7 @@
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/core/Paths.h>
+#include <motor/renderer/DrawOrder.h>
 #include <motor/renderer/Pbr.h>
 #include <motor/renderer/ShadowMath.h>
 #include <motor/scene/Components.h>
@@ -12,6 +13,8 @@
 #include <motor/scene/SceneSerializer.h>
 
 #include <glm/geometric.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/trigonometric.hpp>
 
 #include <array>
@@ -370,6 +373,101 @@ int main(int argc, char** argv) {
         Material v1;
         CHECK(assets.MaterialFromJson(R"({"format": "motor-material", "version": 1, "specular": 0.3, "shininess": 128})", v1, &error));
         CHECK(Near(v1.roughness, 0.0f) && v1.specular == 0.3f && v1.metallic == 0.0f);
+    }
+
+    SECTION("MaterialParams: o que o lit.frag recebe e quando o material muda (Fase 23)");
+    {
+        Material m;
+        m.blend = BlendMode::Cutout;
+        m.alphaCutoff = 1.7f;
+        m.emissive = glm::vec3(0.5f);
+        m.emissiveIntensity = -2.0f;
+        const MaterialParams p = MaterialParamsOf(m);
+        CHECK(p.alphaMode == glm::vec4(static_cast<float>(BlendMode::Cutout), 1.0f, 0.0f, 0.0f));  // recorte limitado
+        CHECK(p.emissive == glm::vec4(0.0f));  // intensidade negativa = sem luz própria
+        CHECK(p.pbr.w == 0.0f && p.albedo == nullptr);  // sem mapa de normal, sem textura
+
+        m.emissiveIntensity = 2.0f;
+        CHECK(Near(glm::vec3(MaterialParamsOf(m).emissive), SrgbToLinear(glm::vec3(0.5f)) * 2.0f));
+        m.emissive = glm::vec3(0.0f);
+        m.emissiveIntensity = 5.0f;
+        CHECK(MaterialParamsOf(m).emissive == glm::vec4(0.0f));  // preto não brilha, com qualquer intensidade
+
+        // O renderer só reenvia quando o resultado muda. As texturas são comparadas pelo ponteiro; sem GPU no teste,
+        // um endereço qualquer serve (nunca é lido).
+        Material a, b;
+        CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
+        b.color.r = 0.9f;
+        CHECK(!(MaterialParamsOf(a) == MaterialParamsOf(b)));
+        b = a;
+        int dummy = 0;
+        b.albedo = std::shared_ptr<Texture2D>(reinterpret_cast<Texture2D*>(&dummy), [](Texture2D*) {});
+        CHECK(!(MaterialParamsOf(a) == MaterialParamsOf(b)) && MaterialParamsOf(b).albedo == b.albedo.get());
+        a.albedo = b.albedo;
+        CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
+        b.occlusionStrength = 0.3f;  // sem mapa de oclusão, a força não chega ao shader
+        CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
+    }
+
+    SECTION("Matriz da normal pela cofatora: a mesma direção da inversa transposta (Fase 23)");
+    {
+        // Rotação, escala não uniforme e translação; depois um espelho (escala negativa).
+        glm::mat4 m(1.0f);
+        m = glm::translate(m, glm::vec3(3.0f, -1.0f, 2.0f));
+        m = glm::rotate(m, 0.7f, glm::normalize(glm::vec3(1.0f, 2.0f, 0.5f)));
+        m = glm::scale(m, glm::vec3(2.0f, 0.5f, 3.0f));
+        for (int k = 0; k < 2; ++k) {
+            const glm::mat3 reference = glm::inverseTranspose(glm::mat3(m));
+            for (const glm::vec3& n : {glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), glm::normalize(glm::vec3(1, -2, 3))}) {
+                CHECK(Near(glm::normalize(NormalMatrix(m) * n), glm::normalize(reference * n)));
+            }
+            m = glm::scale(m, glm::vec3(-1.0f, 1.0f, 1.0f));
+        }
+    }
+
+    SECTION("Ordem de desenho: números de material e lotes seguidos (Fase 23)");
+    {
+        // Materiais de objetos diferentes com os mesmos valores ganham o mesmo número; duas faces separa.
+        Material azul, azul2, vermelho, azulDuasFaces;
+        azul.color = azul2.color = azulDuasFaces.color = glm::vec4(0.2f, 0.4f, 1.0f, 1.0f);
+        vermelho.color = glm::vec4(1.0f, 0.1f, 0.1f, 1.0f);
+        azulDuasFaces.doubleSided = true;
+        MaterialIds ids;
+        auto id = [&](const Material& m) { return ids.Id({MaterialParamsOf(m), m.doubleSided}); };
+        CHECK(id(azul) == 0 && id(vermelho) == 1 && id(azul2) == 0 && id(azulDuasFaces) == 2);
+        CHECK(ids.Size() == 3 && ids[1].params.color == vermelho.color);
+        ids.Clear();
+        CHECK(ids.Size() == 0 && id(vermelho) == 0);
+
+        // Sombra: só recorte e alfa contam (a cor não separa os lotes).
+        ShadowParamsIds shadowIds;
+        CHECK(shadowIds.Id(ShadowParamsOf(azul)) == shadowIds.Id(ShadowParamsOf(vermelho)));
+        Material grade;
+        grade.blend = BlendMode::Cutout;
+        grade.alphaCutoff = 0.5f;
+        grade.color.a = 0.3f;  // recorte sem textura e alfa baixo: some inteiro
+        CHECK(ShadowParamsOf(grade).cutoff == 2.0f && ShadowParamsOf(azul).cutoff == -1.0f);
+
+        // Intercalados (cubo, esfera, cubo...) com dois materiais: a ordem junta os iguais, sem trocar a ordem
+        // de quem tem a mesma chave; com pele (shader 1) vai para o fim.
+        int cubo = 0, esfera = 0;
+        const std::vector<DrawKey> keys = {
+            {0, 1, &cubo}, {0, 0, &esfera}, {1, 0, &cubo}, {0, 1, &cubo}, {0, 0, &esfera}, {0, 0, &cubo},
+        };
+        std::vector<uint32_t> order;
+        SortByKey(keys, order);
+        CHECK(order.size() == keys.size());
+        std::vector<int> runs;  // tamanho de cada sequência de chaves iguais
+        for (size_t k = 0; k < order.size(); ++k) {
+            if (k == 0 || !(keys[order[k]] == keys[order[k - 1]])) runs.push_back(0);
+            ++runs.back();
+        }
+        CHECK(runs.size() == 4);  // (0,0,esfera)x2, (0,0,cubo), (0,1,cubo)x2, (1,0,cubo)
+        CHECK(keys[order.back()].shader == 1);
+        // Mesma chave: na ordem original.
+        for (size_t k = 1; k < order.size(); ++k) {
+            if (keys[order[k]] == keys[order[k - 1]]) CHECK(order[k] > order[k - 1]);
+        }
     }
 
     return TestResult();

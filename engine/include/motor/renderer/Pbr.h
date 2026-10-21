@@ -4,9 +4,11 @@
 // têm uma cópia igual nos shaders (pbr.glsl, sky_cube.frag, prefilter.frag): mudou uma, mude a outra.
 
 #include "motor/renderer/Environment.h"
+#include "motor/renderer/Material.h"
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <array>
 #include <cstdint>
@@ -62,5 +64,25 @@ glm::vec3 SrgbToLinear(const glm::vec3& srgb);  // gama 2.2, como o resto do ren
 // Radiância do céu na direção (mundo): o que o fundo mostra e o que ilumina a cena, sem a intensidade.
 // Modo textura sem imagem cai na cor.
 glm::vec3 SkyRadiance(const Environment& environment, const glm::vec3& direction);
+
+// --- Material no lit.frag -----------------------------------------------------------------------------------
+
+// O que um material manda para o lit.frag: os uniforms já convertidos (emissivo linear, recorte limitado) e as
+// texturas (nula = a branca do renderer). O renderer compara com o do desenho anterior e só reenvia o que mudou.
+struct MaterialParams {
+    glm::vec4 alphaMode{0.0f};  // x = BlendMode, y = alphaCutoff
+    glm::vec4 color{1.0f};
+    glm::vec4 pbr{0.0f};        // metallic, roughness, specular, força do mapa de normal (0 = sem mapa)
+    glm::vec4 emissive{0.0f};   // rgb = emissivo linear * intensidade, a = força da oclusão (0 = sem mapa)
+    const Texture2D* albedo = nullptr;
+    const Texture2D* normalMap = nullptr;
+    const Texture2D* metallicRoughnessMap = nullptr;
+    const Texture2D* occlusionMap = nullptr;
+    const Texture2D* emissiveMap = nullptr;
+
+    bool operator==(const MaterialParams&) const = default;
+};
+
+MaterialParams MaterialParamsOf(const Material& material);
 
 } // namespace motor

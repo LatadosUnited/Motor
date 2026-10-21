@@ -17,8 +17,7 @@ layout(std140, binding = 2) uniform Joints {
     mat4 uJoints[kMaxJoints];
 };
 
-uniform mat4 uModel;
-uniform mat3 uNormalMatrix;
+#include "object.glsl"
 
 out VS_OUT {
     vec3 worldPos;
@@ -33,9 +32,10 @@ void main() {
         skin += aWeights[i] * uJoints[joint];
     }
     vec4 local = skin * vec4(aPosition, 1.0);
-    vec4 world = uModel * local;
+    Object object = CurrentObject();
+    vec4 world = object.model * local;
     vs.worldPos = world.xyz;
-    vs.normal = uNormalMatrix * (mat3(skin) * aNormal);
+    vs.normal = mat3(object.normal) * (mat3(skin) * aNormal);
     vs.uv = aUV;
     gl_Position = uProjection * uView * world;
 }

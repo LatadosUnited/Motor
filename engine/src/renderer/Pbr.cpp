@@ -189,4 +189,21 @@ glm::vec3 SkyRadiance(const Environment& env, const glm::vec3& direction) {
     return GradientSky(direction, SrgbToLinear(env.skyColor));
 }
 
+MaterialParams MaterialParamsOf(const Material& m) {
+    MaterialParams p;
+    p.alphaMode = glm::vec4(static_cast<float>(m.blend), std::clamp(m.alphaCutoff, 0.0f, 1.0f), 0.0f, 0.0f);
+    p.color = m.color;
+    p.pbr = glm::vec4(m.metallic, m.roughness, m.specular, m.normalMap ? m.normalStrength : 0.0f);
+    // Sem luz própria (o comum), sem as 3 potências: o renderer chama isto a cada desenho.
+    const bool glows = m.emissiveIntensity > 0.0f && m.emissive != glm::vec3(0.0f);
+    p.emissive = glm::vec4(glows ? SrgbToLinear(m.emissive) * m.emissiveIntensity : glm::vec3(0.0f),
+                           m.occlusionMap ? std::clamp(m.occlusionStrength, 0.0f, 1.0f) : 0.0f);
+    p.albedo = m.albedo.get();
+    p.normalMap = m.normalMap.get();
+    p.metallicRoughnessMap = m.metallicRoughnessMap.get();
+    p.occlusionMap = m.occlusionMap.get();
+    p.emissiveMap = m.emissiveMap.get();
+    return p;
+}
+
 } // namespace motor

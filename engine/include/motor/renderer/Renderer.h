@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motor/renderer/Camera.h"
+#include "motor/renderer/DrawOrder.h"
 #include "motor/renderer/Environment.h"
 #include "motor/renderer/Light.h"
 #include "motor/renderer/Material.h"
@@ -20,6 +21,7 @@ namespace motor {
 
 class Framebuffer;
 class GpuTimers;
+class InstanceBuffers;
 class PostProcess;
 class ShadowRenderer;
 class SkyRenderer;
@@ -67,13 +69,14 @@ public:
     // nenhuma = só a luz do céu e a ambiente.
     void BeginScene(const Camera& camera, std::span<const Light> lights, const Environment& environment = {},
                     const Framebuffer* target = nullptr);
-    // O material é copiado; a malha precisa continuar viva até o EndScene.
+    // A malha e o material são guardados por referência (sem cópia): precisam continuar vivos e sem mudar até o
+    // EndScene.
     void Submit(const Mesh& mesh, const Material& material, const glm::mat4& model,
                 ShadowCasting shadows = ShadowCasting::On);
     // Linhas sem iluminação por cima da imagem final (só aparecem onde não há nada na frente).
     void SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color);
     // Malha com pele (animação): `joints` são as matrizes das juntas da pele (Skin::JointMatrices), no espaço
-    // de `model`. Até kMaxJoints (as demais ficam paradas, com aviso no log).
+    // de `model`. Até kMaxJoints (as demais ficam paradas, com aviso no log). Malha e material como no Submit.
     void SubmitSkinned(const Mesh& mesh, const Material& material, const glm::mat4& model,
                        std::span<const glm::mat4> joints, ShadowCasting shadows = ShadowCasting::On);
     void EndScene();
@@ -92,19 +95,27 @@ private:
         glm::mat4 model;
         glm::vec4 color;
     };
+    // Posições dos uniforms por desenho do lit.frag, resolvidas uma vez por shader (lit e com pele).
+    struct LitUniforms {
+        int alphaMode = -1, drawBase = -1, color = -1, pbr = -1, emissive = -1;
+    };
 
     void DrawScene();
     void DrawWireframes();
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);
+    DrawItem& AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows);
 
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
     std::unique_ptr<Shader> m_unlitShader;
+    LitUniforms m_litUniforms, m_skinnedUniforms;
+    int m_unlitModel = -1, m_unlitColor = -1;
     std::shared_ptr<Texture2D> m_whiteTexture;
     std::unique_ptr<PostProcess> m_post;
     std::unique_ptr<ShadowRenderer> m_shadows;
     std::unique_ptr<SkyRenderer> m_sky;
+    std::unique_ptr<InstanceBuffers> m_instances;  // objetos e índices dos desenhos em lote (Fase 23)
     std::unique_ptr<GpuTimers> m_gpuTimers;  // tempo de GPU por passada (contadores, Fase 22)
     unsigned int m_frameUbo = 0;
     unsigned int m_lightsUbo = 0;
@@ -120,6 +131,19 @@ private:
     std::vector<DrawItem> m_items;
     std::vector<glm::mat4> m_joints;
     std::vector<WireItem> m_wires;
+
+    // Ordem de desenho do quadro (Fase 23): número de material de cada item e as ordens da cena e das sombras.
+    MaterialIds m_materialIds;
+    ShadowParamsIds m_shadowIds;
+    std::vector<DrawKey> m_sceneKeys, m_shadowKeys;
+    std::vector<DrawKey> m_lastSceneKeys, m_lastShadowKeys;  // do quadro anterior: iguais, a ordem não muda
+    std::vector<glm::mat4> m_objects;  // 2 por item (mundo e normal), na ordem de m_items: o buffer de objetos
+    // Material do Submit anterior: o mesmo objeto, ou os mesmos valores, não consultam as tabelas.
+    const Material* m_lastMaterial = nullptr;
+    MaterialKey m_lastMaterialKey;
+    ShadowParams m_lastShadowParams;
+    uint32_t m_lastMaterialId = 0, m_lastShadowId = 0;
+    std::vector<uint32_t> m_sceneOrder, m_shadowOrder;
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;

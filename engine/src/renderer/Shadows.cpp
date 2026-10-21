@@ -41,11 +41,21 @@ GLuint CreateShadowTexture(GLenum target, int resolution, int layers) {
 }
 } // namespace
 
-ShadowRenderer::ShadowRenderer(const std::filesystem::path& dir) {
-    m_directional = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag");
-    m_directionalSkinned = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define SKINNED\n");
-    m_point = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define POINT\n");
-    m_pointSkinned = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", "#define POINT\n#define SKINNED\n");
+ShadowRenderer::Variant ShadowRenderer::MakeVariant(const std::filesystem::path& dir, std::string_view defines) {
+    Variant v;
+    v.shader = Shader::FromFiles(dir / "shadow.vert", dir / "shadow.frag", defines);
+    Shader& s = *v.shader;
+    const bool point = defines.find("POINT") != std::string_view::npos;
+    v.uniforms = {s.Uniform("uLightViewProjection"), point ? s.Uniform("uLightPositionRange") : -1,
+                  s.Uniform("uDrawBase"), s.Uniform("uAlphaCutoff"), s.Uniform("uColorAlpha")};
+    return v;
+}
+
+ShadowRenderer::ShadowRenderer(const std::filesystem::path& dir)
+    : m_directional(MakeVariant(dir, "")),
+      m_directionalSkinned(MakeVariant(dir, "#define SKINNED\n")),
+      m_point(MakeVariant(dir, "#define POINT\n")),
+      m_pointSkinned(MakeVariant(dir, "#define POINT\n#define SKINNED\n")) {
     glCreateFramebuffers(1, &m_fbo);
     glNamedFramebufferDrawBuffer(m_fbo, GL_NONE);
     glNamedFramebufferReadBuffer(m_fbo, GL_NONE);
@@ -79,42 +89,69 @@ void ShadowRenderer::EnsureCubes(int resolution) {
 }
 
 void ShadowRenderer::DrawItems(std::span<const DrawItem> items, const glm::mat4& viewProjection, const Frustum& frustum,
-                               bool point, const glm::vec4& lightPositionRange, const JointUploader& uploadJoints,
-                               RenderStats& stats) {
-    Shader& base = point ? *m_point : *m_directional;
-    Shader& skinned = point ? *m_pointSkinned : *m_directionalSkinned;
-    base.SetMat4("uLightViewProjection", viewProjection);
-    skinned.SetMat4("uLightViewProjection", viewProjection);
-    if (point) {
-        base.SetVec4("uLightPositionRange", lightPositionRange);
-        skinned.SetVec4("uLightPositionRange", lightPositionRange);
-    }
-    const Shader* bound = nullptr;
-    for (const DrawItem& item : items) {
-        if (item.material.blend == BlendMode::Transparent) continue;  // vidro e água não fazem sombra
+                               bool point, const glm::vec4& lightPositionRange, InstanceBuffers& instances,
+                               const ShadowOrder& order, const JointUploader& uploadJoints, RenderStats& stats) {
+    // Na ordem das sombras, itens seguidos com a mesma chave (shader, recorte/alfa, malha) viram um draw
+    // instanciado; com pele, um por item (as juntas são dele).
+    m_indices.clear();
+    m_batches.clear();
+    for (const uint32_t i : order.order) {
+        const DrawItem& item = items[i];
+        if (item.transparent) continue;  // vidro e água não fazem sombra
         if (item.shadows == ShadowCasting::Off) continue;
         if (!frustum.Intersects(item.bounds)) continue;
-        Shader& shader = item.skinned ? skinned : base;
-        if (bound != &shader) {
+        if (!m_batches.empty() && !item.skinned && order.keys[i] == order.keys[m_batches.back().firstIndex]) {
+            ++m_batches.back().count;
+            m_indices.push_back(i);
+            continue;
+        }
+        m_batches.push_back({&item, static_cast<uint32_t>(m_indices.size()), 1, i});
+        m_indices.push_back(i);
+    }
+    if (m_batches.empty()) return;
+    instances.UploadIndices(m_indices);
+
+    Variant& base = point ? m_point : m_directional;
+    Variant& skinned = point ? m_pointSkinned : m_directionalSkinned;
+    for (Variant* v : {&base, &skinned}) {
+        v->shader->SetMat4(v->uniforms.lightViewProjection, viewProjection);
+        if (point) v->shader->SetVec4(v->uniforms.lightPositionRange, lightPositionRange);
+    }
+    const Variant* bound = nullptr;
+    // Recorte e alfa do lote anterior (por shader): o mesmo valor seguido não reenvia nada.
+    const Variant* paramsVariant = nullptr;
+    const ShadowParams* lastParams = nullptr;
+    GLuint lastAlbedo = 0;
+    for (const DrawBatch& batch : m_batches) {
+        const DrawItem& item = *batch.first;
+        const ShadowParams& params = (*order.params)[order.keys[batch.firstIndex].material];
+        Variant& variant = item.skinned ? skinned : base;
+        Shader& shader = *variant.shader;
+        if (bound != &variant) {
             shader.Bind();
-            bound = &shader;
+            bound = &variant;
         }
         if (item.skinned) uploadJoints(item);
-        shader.SetMat4("uModel", item.model);
-        const Material& m = item.material;
-        const bool cutout = m.blend == BlendMode::Cutout;
-        shader.SetFloat("uAlphaCutoff", cutout ? m.alphaCutoff : -1.0f);
-        shader.SetFloat("uColorAlpha", m.color.a);
-        if (cutout && m.albedo) m.albedo->Bind(0);
-        else if (cutout) shader.SetFloat("uAlphaCutoff", m.color.a < m.alphaCutoff ? 2.0f : -1.0f);  // sem textura
-        item.mesh->Draw();
+        if (paramsVariant != &variant || !lastParams || !(params == *lastParams)) {
+            shader.SetFloat(variant.uniforms.alphaCutoff, params.cutoff);
+            shader.SetFloat(variant.uniforms.colorAlpha, params.alpha);
+            paramsVariant = &variant;
+            lastParams = &params;
+        }
+        if (params.albedo && params.albedo->NativeHandle() != lastAlbedo) {
+            lastAlbedo = params.albedo->NativeHandle();
+            params.albedo->Bind(0);
+        }
+        shader.SetInt(variant.uniforms.drawBase, static_cast<int>(batch.start));
+        item.mesh->DrawInstanced(batch.count);
         ++stats.drawCalls;
         ++stats.shadowDrawCalls;
     }
 }
 
 ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<const Light> lights, const Environment& env,
-                                              std::span<const DrawItem> items, const JointUploader& uploadJoints,
+                                              std::span<const DrawItem> items, InstanceBuffers& instances,
+                                              const ShadowOrder& order, const JointUploader& uploadJoints,
                                               RenderStats& stats) {
     Result result;
     result.cubeLayer.assign(lights.size(), -1);
@@ -146,7 +183,7 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
             glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, m_cascades, 0, c);
             glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
             DrawItems(items, cascade.viewProjection, Frustum::FromMatrix(cascade.viewProjection), false, glm::vec4(0.0f),
-                      uploadJoints, stats);
+                      instances, order, uploadJoints, stats);
             ++stats.shadowPasses;
             result.data.cascadeMatrices[c] = cascade.viewProjection;
             result.data.cascadeSplits[c] = splits[static_cast<size_t>(c)];
@@ -190,7 +227,8 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
                 const glm::mat4 viewProjection = projection * CubeFaceView(light.position, face);
                 glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, m_cubes, 0, static_cast<int>(slot) * 6 + face);
                 glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
-                DrawItems(items, viewProjection, Frustum::FromMatrix(viewProjection), true, positionRange, uploadJoints, stats);
+                DrawItems(items, viewProjection, Frustum::FromMatrix(viewProjection), true, positionRange, instances, order,
+                          uploadJoints, stats);
                 ++stats.shadowPasses;
             }
             result.cubeLayer[candidates[slot].light] = static_cast<int>(slot);

@@ -32,6 +32,8 @@ public:
     Mesh& operator=(const Mesh&) = delete;
 
     void Draw() const;
+    // `count` cópias numa chamada só (instancing, Fase 23): cada uma acha os seus dados por gl_InstanceID.
+    void DrawInstanced(uint32_t count) const;
 
     uint32_t IndexCount() const { return static_cast<uint32_t>(m_indices.size()); }
 

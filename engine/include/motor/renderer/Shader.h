@@ -38,10 +38,21 @@ public:
     void SetMat3(std::string_view name, const glm::mat3& value);
     void SetMat4(std::string_view name, const glm::mat4& value);
 
+    // Posição de um uniform: quem desenha muitas vezes por quadro guarda a posição uma vez e usa os Set* abaixo,
+    // sem buscar pelo nome a cada desenho. -1 se o uniform não existir (os Set* com -1 não fazem nada).
+    int Uniform(std::string_view name);
+
+    void SetInt(int location, int value);
+    void SetFloat(int location, float value);
+    void SetVec2(int location, const glm::vec2& value);
+    void SetVec3(int location, const glm::vec3& value);
+    void SetVec4(int location, const glm::vec4& value);
+    void SetMat3(int location, const glm::mat3& value);
+    void SetMat4(int location, const glm::mat4& value);
+
     unsigned int Id() const { return m_program; }
 
 private:
-    int Location(std::string_view name);
 
     unsigned int m_program = 0;
     std::string m_name;
