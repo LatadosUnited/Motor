@@ -32,11 +32,17 @@ quadrático. Depois, organizar os dados por tipo e dividir o quadro entre os nú
 - [x] Áudio (fontes, ouvinte, pré-carga), animação, UI (botões e layout), física (corpos, personagens, "a cena tem
   física?"), câmera principal e luzes usam as listas. (10c2343)
 
+### Destruir em lote
+
+- [x] **`Scene::DestroyEntities` e `Scene::Subtrees`:** várias sub-árvores numa passada só pela cena, com vetores
+  ordenados e busca binária (sem conjunto com hash por entidade). O `FlushDestroyed` do `SceneRuntime` chama o
+  `OnDestroy` de todas as entidades pedidas no passo (cada raiz seguida dos descendentes, na ordem dos pedidos) e
+  depois tira todas de uma vez; `DestroyEntity` virou o caso de uma raiz. Teste: `test_destroy_batch`. *(origem:
+  contadores da Fase 22: `spawn200` com ~8,6 ms no Update)* (4cff640)
+
 ### Pendentes (rascunho em [alpha-3.md](../alpha-3.md))
 
 - [ ] `WorldMatrix` com cache. *(origem: análise de 17/10/2026)*
-- [ ] Destruir em lote (`Children`, `DestroyEntity`, `FlushDestroyed`): `spawn200` gasta ~8,6 ms no Update criando e
-  destruindo 200 objetos por quadro. *(origem: contadores da Fase 22)*
 - [ ] Índice de nomes para `FindEntity`/`FindByName`.
 - [ ] Física: picos do `test_physics_bench` e sincronização cena–física. *(Pendência da Fase 5.)*
 - [ ] Organização dos dados por tipo, trabalho em várias threads, profiler nas threads e nos scripts.
@@ -62,8 +68,23 @@ colliders, numa cena sem nenhum. A cena de referência não muda o quadro (a GPU
 `fisica1000` ficam iguais (o custo deles é destruir em lote e a Jolt). `test_desempenho`: `jogo_passo` de 2,65 para
 1,85 a 1,99 ms na mesma sessão (−27%); base regravada só nesse número.
 
+**Destruir em lote (21/10/2026).** `spawn200`, mesmo A/B (ms):
+
+| | Quadro | CPU Update | Destruir entidades | CPU Render |
+|---|---|---|---|---|
+| antes | 15,6 a 15,8 | 8,5 | 7,9 a 8,0 | 2,8 a 3,0 |
+| depois | 15,5 a 16,2 | **1,2 a 1,3** | **0,6** | 4,9 a 5,2 |
+
+O quadro não muda: a cena é limitada pela GPU (~10,5 ms de GPU mais a apresentação), e o tempo de CPU que sobra
+vira espera pelo driver no Render. A primeira versão, com conjuntos e mapas com hash, ficava em 2,6 ms: medido por
+partes, 1 ms era o mapa por entidade para achar os descendentes (calculado duas vezes) e o resto, alocar um nó por
+entidade nos conjuntos.
+
 ## Limitações
 
+- Os `OnDestroy` de um lote rodam todos antes de tirar as entidades: o `OnDestroy` de uma ainda acha as outras do
+  mesmo lote (antes, as já destruídas tinham sumido). É o que a Unity faz (destruição no fim do quadro).
+- `Scene::Children` continua percorrendo a cena: duplicar e copiar sub-árvores grandes (prefabs) segue quadrático.
 - As listas são refeitas inteiras (uma passada pela cena) a cada mudança de estrutura. Numa cena que cria ou
   destrói entidades todo quadro (`spawn200`), é uma passada por quadro em vez de uma por sistema. Manter as listas
   incrementais fica para a organização dos dados por tipo.

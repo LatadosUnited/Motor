@@ -200,8 +200,9 @@ Conclusões:
   quadro. Em `cubos10000` (sem som, UI ou animação): Áudio 2,9 ms, Ui 2,8 ms, Animação 1,0 ms por quadro.~~ Feito
   em 21/10/2026 ([nota da fase](alpha-3/fase-25-cena.md)): `Scene::EntitiesWith`, listas por tipo refeitas pelo
   `SceneStructureVersion`. `cubos10000`: Update de ~7 para 0,02 ms, quadro de 51–61 para 42–44 ms.
-- Destruir em lote: `Children`, `DestroyEntity` e `FlushDestroyed` deixam de ser lineares na cena (destruir
-  muitas entidades no mesmo quadro hoje é quadrático).
+- ~~Destruir em lote: `DestroyEntity` e `FlushDestroyed` deixam de ser lineares na cena (destruir
+  muitas entidades no mesmo quadro hoje é quadrático).~~ Feito em 21/10/2026: `spawn200` com Destruir entidades de 8
+  para 0,6 ms. Falta o `Children` (duplicar e copiar sub-árvores grandes).
 - Índice de nomes para `FindEntity`/`FindByName`.
 - Física: os picos isolados de até ~185 ms no `test_physics_bench`. *(Pendência da Fase 5.)*
 - Física: a sincronização entre a cena e a física a cada passo (transformações para a Jolt e de volta). Alvo
