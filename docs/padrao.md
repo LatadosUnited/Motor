@@ -1,110 +1,82 @@
 ---
 tipo: guia
-atualizado: 2026-10-17
+atualizado: 2026-10-21
 ---
 
 # Padrão da documentação
 
-Como organizar a pasta `docs/` (o vault do Obsidian) para que pessoas e agentes achem e atualizem tudo do
-mesmo jeito. Vale para notas novas; quem mexer numa nota antiga aproveita e a ajusta.
+Regras da pasta `docs/` (o vault do Obsidian), para pessoas e agentes acharem e atualizarem tudo do mesmo jeito.
 
-## 1. Pastas
+## Pastas
 
 ```
 docs/
-  inicio.md                  nota inicial (links para tudo)
-  padrao.md                  este padrão
-  scripts.md                 guia de scripts        ┐
-  scripts-api.md             referência da API      ├ documentação de uso
-  examples/                  exemplos .cpp testados ┘
+  inicio.md, padrao.md       nota inicial e este padrão
+  scripts.md, scripts-api.md guia e referência dos scripts (exemplos testados em examples/)
   roadmap/
-    alpha-2.md               índice da alpha: objetivo, prioridades, links para as fases
-    alpha-2/                 uma nota por fase: fase-16-robustez-e-correcoes.md ...
-    alpha-3.md, alpha-4.md   rascunhos (um arquivo só até a alpha começar)
-    alpha-1.md               histórico (alpha fechada: não se edita)
-    entrada.md               caixa de entrada: achados ainda não colocados numa fase
+    alpha-<n>.md             índice da alpha atual; as futuras são rascunho num arquivo só
+    alpha-<n>/               uma nota por fase em andamento
+    entrada.md               achados que ainda não estão numa fase
     fases.base               tabela das fases (Obsidian Bases)
-  decisoes/                  uma nota por decisão: 2026-10-17-hub-fora-da-engine.md
-  modelos/                   modelos do Obsidian (não são documentação)
+  decisoes/                  uma nota por decisão
+  modelos/                   modelos de nota (fase, alpha, decisão)
 ```
 
-O `README.md` e o `CLAUDE.md` continuam na raiz do repositório (fora do vault); o `ROADMAP.md` da raiz só
-aponta para `docs/roadmap/`.
+`README.md` e `CLAUDE.md` ficam na raiz do repositório; o `ROADMAP.md` da raiz só aponta para `docs/roadmap/`.
 
-## 2. Nomes de arquivo
+## Escrita
 
-- Minúsculas, sem acento, palavras separadas por hífen: `fase-17-scripts.md`, `2026-10-17-instalador-proprio.md`.
-  O título bonito, com acentos, vai no `# Título` da nota.
-- Fases: `fase-<número>-<assunto>.md`. Decisões: `<AAAA-MM-DD>-<assunto>.md`.
-- Motivo: links Markdown com espaço ou acento precisam de codificação (`%20`) e quebram fácil; nomes simples
-  funcionam igual no Obsidian, no GitHub, no terminal e para os agentes.
+- **Nomes de arquivo:** minúsculas, sem acento, com hífen: `fase-25-cena.md`, `2026-10-21-replanejamento.md`.
+  O título com acentos vai no `# Título`.
+- **Links:** Markdown relativo, `[Fase 25](alpha-3/fase-25-cena.md)`; nada de `[[wikilinks]]`. Código e arquivos
+  fora de `docs/` vão entre crases, sem link: `engine/src/scene/SceneRuntime.cpp:120`.
+- **Datas:** `AAAA-MM-DD` em nomes e propriedades, `21/10/2026` no texto.
+- **Língua:** português.
 
-## 3. Links
+## Propriedades (bloco `---` no topo)
 
-- **Markdown com caminho relativo:** `[Fase 17](alpha-2/fase-17-scripts.md)`. Nada de `[[wikilinks]]` (não
-  funcionam no GitHub nem para os agentes). O vault já está configurado assim.
-- Código e arquivos fora de `docs/` vão entre crases, sem link: `engine/src/scene/SceneRuntime.cpp`,
-  `PhysicsSystem.cpp:566`. (Links para fora do vault não abrem no Obsidian.)
+Toda nota tem `tipo` (a primeira coluna; a `entrada.md` tem só ele) e mais estas:
 
-## 4. Propriedades (o bloco `---` no topo)
+| Tipo | Propriedades | `status` |
+|---|---|---|
+| `fase` | `alpha`, `fase`, `titulo`, `status`, `prioridade`, `areas`, `branch`, `inicio`, `fim` | `planejada`, `em andamento`, `pronta`, `adiada` |
+| `alpha` | `alpha`, `status`, `foco` | os da fase e `fechada` |
+| `decisao` | `data`, `status`, `fases` | `proposta`, `aceita`, `substituida` |
+| `guia` | `atualizado` | — |
 
-Toda nota de roteiro e de decisão começa com propriedades; é delas que a tabela `fases.base` e as buscas do
-Obsidian tiram as colunas.
+## Nota de fase
 
-| Tipo | Propriedades |
-|---|---|
-| `fase` | `tipo`, `alpha`, `fase` (número), `titulo`, `status`, `prioridade`, `areas` (lista), `branch`, `inicio`, `fim` |
-| `alpha` (índice) | `tipo`, `alpha`, `status`, `foco` |
-| `decisao` | `tipo`, `data`, `status`, `fases` (lista de números relacionados) |
-| `guia` | `tipo`, `atualizado` |
-| `entrada` | `tipo` |
+Seções (modelo em `modelos/fase.md`): **Objetivo**, **Tarefas**, **Pronto quando** (critério verificável: teste,
+MCP ou número medido) e, ao terminar, **Feito** (números de antes e depois) e **Limitações**.
 
-Valores de `status`:
+## Tarefas
 
-- fase e alpha: `planejada`, `em andamento`, `pronta`, `adiada`, `fechada` (só alpha);
-- decisão: `proposta`, `aceita`, `substituida` (com link para a que a substituiu no texto).
+Uma linha por tarefa, numerada dentro da fase, começando com um verbo:
 
-Datas nas propriedades e nos nomes: `AAAA-MM-DD`. No texto corrido: `17/10/2026`.
+```
+- [ ] Tarefa 1: Paralelizar a montagem do quadro
+- [ ] Tarefa 2: Limitar os passos fixos da física por quadro
+- [x] Tarefa 3: Cache da matriz de mundo — b32086e
+- [ ] ~~Tarefa 4: Thread de render~~ — foi para a Fase 30
+```
 
-## 5. Nota de fase
+- Feita: marque `[x]` e ponha o commit no fim.
+- Mudou de fase ou desistiu: risque e diga para onde foi.
+- O número não muda nem é reaproveitado; tarefa nova entra no fim.
+- Sem explicação na linha: o porquê fica no Objetivo da fase, os números no Feito.
 
-Seções, nesta ordem (modelo em `modelos/fase.md`):
+## Fluxo
 
-1. **Objetivo:** um parágrafo; por que a fase existe.
-2. **Tarefas:** caixas de seleção, agrupadas por assunto com subtítulos `###` se forem muitas.
-   - `- [ ] O que fazer. *(origem: Fase 6, limitação)*` — a **origem** diz de onde veio: fase da alpha anterior,
-     `entrada.md`, análise do código, pedido do usuário.
-   - Feita: `- [x] ... (abc1234)` com o commit curto no fim.
-   - Desistiu ou mudou de fase: risque (`~~texto~~`) e diga para onde foi.
-3. **Pronto quando:** o critério verificável (teste, verificação pelo MCP, número medido).
-4. **Feito** (no fim da fase): resumo do que mudou, arquivos principais, testes, números de antes e depois.
-5. **Limitações** (no fim da fase): o que ficou para trás; cada uma vira tarefa noutra fase ou linha em
-   `entrada.md`.
+1. **Achou algo:** uma linha no fim de `entrada.md` (data, quem, o quê, onde). A triagem leva para uma fase ou
+   descarta.
+2. **Fase começa:** nota em `alpha-<n>/`, `status: em andamento`, `branch`, `inicio`.
+3. **Fase termina:** `status: pronta`, `fim`, Feito e Limitações; o que sobrou vai para outra fase ou para a
+   entrada. Com o resumo já no índice da alpha, a nota pode ser apagada (fica no git).
+4. **Alpha fecha:** índice e notas apagados (fica no git); a numeração das fases continua.
+5. **Decisão de rumo** (biblioteca, arquitetura, ordem das alphas): nota em `decisoes/`, com link na fase.
 
-## 6. Fluxo
+## Quem edita o quê
 
-1. **Achou algo** (defeito, limitação, ideia), seja pessoa ou agente: uma linha em `roadmap/entrada.md` com
-   data, quem achou, o quê e onde (arquivo:linha). Não precisa decidir a fase na hora.
-2. **Triagem** (o usuário, ou um agente quando pedido): cada linha da entrada vira tarefa de uma fase (com a
-   origem) ou é descartada com o motivo; a linha sai da entrada.
-3. **A fase começa:** `status: em andamento`, `branch`, `inicio`; o índice da alpha atualiza a linha dela.
-4. **Durante a fase:** marque as tarefas com o commit; tarefa nova que surgir entra na própria fase.
-5. **A fase termina:** `status: pronta`, `fim`, seções **Feito** e **Limitações**; tarefas não feitas mudam de
-   fase (riscadas aqui, com o destino) ou voltam para a entrada.
-6. **Decisão que muda o rumo** (biblioteca, arquitetura, ordem das alphas): uma nota em `decisoes/` (modelo
-   `modelos/decisao.md`) e o link para ela na fase.
-
-## 7. Alphas
-
-- **Alpha futura:** um arquivo só (`alpha-3.md`), rascunho, com as fases como seções.
-- **Alpha que começa:** o arquivo vira índice (`tipo: alpha`) e cada fase ganha a sua nota em `alpha-<n>/`.
-- **Alpha que fecha:** `status: fechada` no índice; as notas das fases ficam como estão (histórico). A
-  numeração das fases continua de uma alpha para a outra.
-
-## 8. Quem edita o quê
-
-- O agente de uma fase edita a **nota da sua fase** à vontade e, no índice da alpha, **só a linha dela**
-  (ponto de coordenação, como no `CLAUDE.md`).
-- `entrada.md`: todos acrescentam no fim; ninguém reescreve linhas dos outros.
-- `padrao.md`, os índices e as decisões aceitas: mudam só com o pedido do usuário.
-- Língua: português, como o resto do projeto.
+- O agente de uma fase edita a nota dela e, no índice da alpha, só a linha dela.
+- `entrada.md`: todos acrescentam no fim.
+- Este padrão, os índices e as decisões aceitas: só com pedido do usuário.

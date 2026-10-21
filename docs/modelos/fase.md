@@ -19,7 +19,8 @@ Por que esta fase existe, em um parágrafo.
 
 ## Tarefas
 
-- [ ] O que fazer. *(origem: …)*
+- [ ] Tarefa 1: 
+- [ ] Tarefa 2: 
 
 ## Pronto quando
 

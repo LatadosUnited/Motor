@@ -10,18 +10,25 @@ ou a descarta com o motivo, e então apaga a linha daqui. Ver o [padrão](../pad
 
 Formato: `- AAAA-MM-DD — quem achou — o quê — onde (arquivo:linha, se souber)`
 
+Triagem de 21/10/2026 (replanejamento): o ImGui caro e a linha de FPS por baixo dos botões de Play foram para a
+Fase 27; o jogo de exemplo da Fase 18, para a Fase 33.
+
 ## Para triar
 
 - 2026-10-19 — Claude (gravação segura, Fase 16) — a falha intermitente do `Project::Save` não se repetiu em
   8 rodadas para capturar a mensagem; a correção (troca que tenta de novo, cf18356) cobre o caso do arquivo
   preso, que reproduz "Acesso negado". Se `test_export` ou `test_distribuicao` voltarem a falhar em paralelo,
   guardar a mensagem.
-- 2026-10-19 — usuário (fecho da Fase 18) — o jogo de exemplo do guia que junta as funcionalidades da Fase 18
-  (câmera orbital que não atravessa paredes, coleta por área, passos, música com volume separado, cursor preso,
-  vidro e cerca recortada), rodado pelo `test_script_docs`, ficou de fora da fase — `docs/scripts.md`
-- 2026-10-20 — Claude (Fase 22, painel de estatísticas) — com o viewport estreito (~830 px), a linha de FPS no topo
-  do viewport fica por baixo dos botões de Play (os dois no mesmo lugar). Detalhe — `editor/src/viewport/SceneViewport.cpp`
-  (overlay de estatísticas) e `PlayController::DrawControls`
-- 2026-10-20 — Claude (Fase 22, contadores) — no editor Release, o ImGui gasta 6 a 7 ms de CPU por quadro numa cena
-  de 4 entidades, mais que a cena inteira (Render ~2 ms). Medir com o Tracy o que pesa (painéis, Inspector) — alpha 3,
-  Fase 26 (editor que escala)
+- 2026-10-21 — Claude (Fase 23, Tarefa 2) — `Scene::SubmitTo` percorre todas as entidades procurando `MeshRenderer`
+  a cada quadro, em vez da lista por tipo `EntitiesWith<MeshRenderer>()` da Fase 25; é parte dos ~10 ms de "montar
+  a lista" em `cubos10000`. Área da cena — `engine/src/scene/Scene.cpp` (`SubmitTo`)
+- 2026-10-21 — Claude (Fase 23, Tarefa 3) — `test_script_project` falhou uma vez no `ctest -j4` (Release) e passou
+  sozinho e na rodada seguinte; a saída da falha não foi guardada. Se repetir, rodar com `--output-on-failure` —
+  `tests/test_script_project.cpp`
+- 2026-10-21 — Claude (Fase 23) — no `ctest -j4` (Release), testes pesados falham às vezes por disputa de CPU:
+  `test_desempenho` (`cena_comparar` +33%, limite 30%) e `test_script_project`; os dois passam sozinhos. Rodar o de
+  desempenho só com `-L desempenho`, ou tirá-lo do paralelo (`RUN_SERIAL`) — `tests/CMakeLists.txt`
+- 2026-10-21 — Claude (fecho da Fase 23) — causa da falha intermitente do `test_script_project` no `ctest -j4`
+  (Debug e Release): a checagem de tempo `vazioSeconds < 0.6f * withoutPch` (compilar com o PCH abaixo de 60% do
+  tempo sem ele) falha quando outros testes disputam a CPU; passa sozinho. Tirar do paralelo (`RUN_SERIAL`) ou
+  afrouxar a checagem — `tests/test_script_project.cpp:489`
