@@ -386,6 +386,9 @@ int main(int argc, char** argv) {
 
         m.emissiveIntensity = 2.0f;
         CHECK(Near(glm::vec3(MaterialParamsOf(m).emissive), SrgbToLinear(glm::vec3(0.5f)) * 2.0f));
+        m.emissive = glm::vec3(0.0f);
+        m.emissiveIntensity = 5.0f;
+        CHECK(MaterialParamsOf(m).emissive == glm::vec4(0.0f));  // preto não brilha, com qualquer intensidade
 
         // O renderer só reenvia quando o resultado muda. As texturas são comparadas pelo ponteiro; sem GPU no teste,
         // um endereço qualquer serve (nunca é lido).

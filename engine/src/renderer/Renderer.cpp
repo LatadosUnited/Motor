@@ -187,7 +187,7 @@ void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat
     MOTOR_ASSERT(m_inScene, "Submit fora de BeginScene/EndScene");
     DrawItem& item = m_items.emplace_back();
     item.mesh = &mesh;
-    item.material = material;
+    item.material = &material;
     item.model = model;
     item.shadows = shadows;
     item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
@@ -207,7 +207,7 @@ void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const g
     const size_t count = std::min(joints.size(), kMaxJoints);
     DrawItem& item = m_items.emplace_back();
     item.mesh = &mesh;
-    item.material = material;
+    item.material = &material;
     item.model = model;
     item.skinned = true;
     item.shadows = shadows;
@@ -331,6 +331,7 @@ void Renderer::DrawScene() {
     // Material e texturas do desenho anterior: objetos seguidos com o mesmo material (o caso comum) não reenviam
     // nada disso. Os uniforms são de cada programa, por isso a lembrança vale para um shader só.
     const Shader* paramsShader = nullptr;
+    const Material* lastMaterial = nullptr;  // o mesmo material seguido (um .mmat compartilhado) nem recalcula
     MaterialParams lastParams;
     GLuint lastTexture[5] = {0, 0, 0, 0, 0};
     auto bindTexture = [&](GLuint unit, GLuint texture) {
@@ -347,12 +348,14 @@ void Renderer::DrawScene() {
             bound = &shader;
         }
         if (item.skinned) UploadJoints(item);
-        const Material& m = item.material;
+        const Material& m = *item.material;
         // Duas faces: sem descartar as de trás (o lit.frag vira a normal delas).
         if (m.doubleSided) glDisable(GL_CULL_FACE);
         shader.SetMat4(u.model, item.model);
         shader.SetMat3(u.normalMatrix, glm::inverseTranspose(glm::mat3(item.model)));
-        const MaterialParams params = MaterialParamsOf(m);
+        const bool sameMaterial = paramsShader == &shader && lastMaterial == &m;
+        const MaterialParams params = sameMaterial ? lastParams : MaterialParamsOf(m);
+        lastMaterial = &m;
         if (paramsShader != &shader || !(params == lastParams)) {
             shader.SetVec4(u.alphaMode, params.alphaMode);
             shader.SetVec4(u.color, params.color);
@@ -381,7 +384,7 @@ void Renderer::DrawScene() {
             ++m_stats.culled;
             continue;
         }
-        if (item.material.blend == BlendMode::Transparent) {
+        if (item.material->blend == BlendMode::Transparent) {
             const glm::vec3 center = (item.bounds.min + item.bounds.max) * 0.5f;
             const glm::vec3 toCamera = center - m_camera.position;
             transparent.emplace_back(glm::dot(toCamera, toCamera), &item);

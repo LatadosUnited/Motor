@@ -16,7 +16,7 @@ namespace motor {
 
 struct DrawItem {
     const Mesh* mesh = nullptr;
-    Material material;
+    const Material* material = nullptr;  // de quem chamou o Submit: vivo até o EndScene, sem cópia
     glm::mat4 model{1.0f};
     Aabb bounds;              // no mundo (malha com pele: a pose de repouso com folga)
     uint32_t jointOffset = 0; // em Renderer::m_joints
