@@ -48,8 +48,8 @@ public:
 
     // Escolhe as luzes com sombra e desenha os mapas. Deixa o framebuffer próprio vinculado.
     Result Render(const Camera& camera, std::span<const Light> lights, const Environment& environment,
-                  std::span<const DrawItem> items, InstanceBuffers& instances, const JointUploader& uploadJoints,
-                  RenderStats& stats);
+                  std::span<const DrawItem> items, InstanceBuffers& instances, const ShadowOrder& order,
+                  const JointUploader& uploadJoints, RenderStats& stats);
 
     unsigned int CascadeTexture() const { return m_cascades; }
     unsigned int CubeTexture() const { return m_cubes; }
@@ -59,7 +59,7 @@ private:
     void EnsureCubes(int resolution);
     void DrawItems(std::span<const DrawItem> items, const glm::mat4& viewProjection, const Frustum& frustum,
                    bool point, const glm::vec4& lightPositionRange, InstanceBuffers& instances,
-                   const JointUploader& uploadJoints, RenderStats& stats);
+                   const ShadowOrder& order, const JointUploader& uploadJoints, RenderStats& stats);
 
     // Posições dos uniforms do shadow.vert/.frag, resolvidas uma vez por variante.
     struct Uniforms {
@@ -73,14 +73,7 @@ private:
 
     Variant m_directional, m_directionalSkinned, m_point, m_pointSkinned;
     // Lotes da passada atual (reaproveitados entre passadas e quadros).
-    struct BatchKey {
-        float cutoff = -1.0f;
-        float alpha = 1.0f;
-        const Texture2D* albedo = nullptr;  // só no recorte com textura
-        bool operator==(const BatchKey&) const = default;
-    };
     std::vector<uint32_t> m_indices;
-    std::vector<BatchKey> m_keys;
     std::vector<DrawBatch> m_batches;
     unsigned int m_fbo = 0;
     unsigned int m_cascades = 0;

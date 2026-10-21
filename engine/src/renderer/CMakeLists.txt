@@ -9,6 +9,7 @@ motor_add_layer(renderer
         Camera.cpp
         Renderer.cpp
         DrawList.cpp
+        DrawOrder.cpp
         Framebuffer.cpp
         Renderer2D.cpp
         Skeleton.cpp

@@ -5,6 +5,7 @@
 
 #include <motor/assets/AssetLibrary.h>
 #include <motor/core/Paths.h>
+#include <motor/renderer/DrawOrder.h>
 #include <motor/renderer/Pbr.h>
 #include <motor/renderer/ShadowMath.h>
 #include <motor/scene/Components.h>
@@ -404,6 +405,51 @@ int main(int argc, char** argv) {
         CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
         b.occlusionStrength = 0.3f;  // sem mapa de oclusão, a força não chega ao shader
         CHECK(MaterialParamsOf(a) == MaterialParamsOf(b));
+    }
+
+    SECTION("Ordem de desenho: números de material e lotes seguidos (Fase 23)");
+    {
+        // Materiais de objetos diferentes com os mesmos valores ganham o mesmo número; duas faces separa.
+        Material azul, azul2, vermelho, azulDuasFaces;
+        azul.color = azul2.color = azulDuasFaces.color = glm::vec4(0.2f, 0.4f, 1.0f, 1.0f);
+        vermelho.color = glm::vec4(1.0f, 0.1f, 0.1f, 1.0f);
+        azulDuasFaces.doubleSided = true;
+        MaterialIds ids;
+        auto id = [&](const Material& m) { return ids.Id({MaterialParamsOf(m), m.doubleSided}); };
+        CHECK(id(azul) == 0 && id(vermelho) == 1 && id(azul2) == 0 && id(azulDuasFaces) == 2);
+        CHECK(ids.Size() == 3 && ids[1].params.color == vermelho.color);
+        ids.Clear();
+        CHECK(ids.Size() == 0 && id(vermelho) == 0);
+
+        // Sombra: só recorte e alfa contam (a cor não separa os lotes).
+        ShadowParamsIds shadowIds;
+        CHECK(shadowIds.Id(ShadowParamsOf(azul)) == shadowIds.Id(ShadowParamsOf(vermelho)));
+        Material grade;
+        grade.blend = BlendMode::Cutout;
+        grade.alphaCutoff = 0.5f;
+        grade.color.a = 0.3f;  // recorte sem textura e alfa baixo: some inteiro
+        CHECK(ShadowParamsOf(grade).cutoff == 2.0f && ShadowParamsOf(azul).cutoff == -1.0f);
+
+        // Intercalados (cubo, esfera, cubo...) com dois materiais: a ordem junta os iguais, sem trocar a ordem
+        // de quem tem a mesma chave; com pele (shader 1) vai para o fim.
+        int cubo = 0, esfera = 0;
+        const std::vector<DrawKey> keys = {
+            {0, 1, &cubo}, {0, 0, &esfera}, {1, 0, &cubo}, {0, 1, &cubo}, {0, 0, &esfera}, {0, 0, &cubo},
+        };
+        std::vector<uint32_t> order;
+        SortByKey(keys, order);
+        CHECK(order.size() == keys.size());
+        std::vector<int> runs;  // tamanho de cada sequência de chaves iguais
+        for (size_t k = 0; k < order.size(); ++k) {
+            if (k == 0 || !(keys[order[k]] == keys[order[k - 1]])) runs.push_back(0);
+            ++runs.back();
+        }
+        CHECK(runs.size() == 4);  // (0,0,esfera)x2, (0,0,cubo), (0,1,cubo)x2, (1,0,cubo)
+        CHECK(keys[order.back()].shader == 1);
+        // Mesma chave: na ordem original.
+        for (size_t k = 1; k < order.size(); ++k) {
+            if (keys[order[k]] == keys[order[k - 1]]) CHECK(order[k] > order[k - 1]);
+        }
     }
 
     return TestResult();

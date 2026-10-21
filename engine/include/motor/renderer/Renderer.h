@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motor/renderer/Camera.h"
+#include "motor/renderer/DrawOrder.h"
 #include "motor/renderer/Environment.h"
 #include "motor/renderer/Light.h"
 #include "motor/renderer/Material.h"
@@ -129,6 +130,13 @@ private:
     std::vector<DrawItem> m_items;
     std::vector<glm::mat4> m_joints;
     std::vector<WireItem> m_wires;
+
+    // Ordem de desenho do quadro (Fase 23): número de material de cada item e as ordens da cena e das sombras.
+    MaterialIds m_materialIds;
+    ShadowParamsIds m_shadowIds;
+    std::vector<DrawKey> m_sceneKeys, m_shadowKeys;
+    std::vector<DrawKey> m_lastSceneKeys, m_lastShadowKeys;  // do quadro anterior: iguais, a ordem não muda
+    std::vector<uint32_t> m_sceneOrder, m_shadowOrder;
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;

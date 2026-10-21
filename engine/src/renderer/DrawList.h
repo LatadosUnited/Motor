@@ -3,6 +3,7 @@
 // Header privado do renderer: o que Submit/SubmitSkinned guardam para desenhar no EndScene (várias passadas
 // usam a mesma lista: sombras e cena).
 
+#include "motor/renderer/DrawOrder.h"
 #include "motor/renderer/Material.h"
 #include "motor/renderer/Mesh.h"
 #include "motor/renderer/ShadowMath.h"
@@ -37,6 +38,14 @@ struct DrawBatch {
     const DrawItem* first = nullptr;  // malha, material e pele do lote (todos iguais)
     uint32_t start = 0;               // na lista de índices da passada
     uint32_t count = 0;
+    uint32_t firstIndex = 0;          // de `first` na lista de itens (a chave dele)
+};
+
+// Ordem das passadas de sombra: os itens ordenados pela chave de sombra (DrawKey.material = número em `params`).
+struct ShadowOrder {
+    std::span<const uint32_t> order;
+    std::span<const DrawKey> keys;
+    const ShadowParamsIds* params = nullptr;
 };
 
 class InstanceBuffers {

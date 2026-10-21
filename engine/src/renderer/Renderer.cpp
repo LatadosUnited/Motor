@@ -275,11 +275,57 @@ void Renderer::EndScene() {
 void Renderer::DrawScene() {
     const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
 
+    // 0) Ordem de desenho: cada item ganha o número do seu material (valores iguais, o mesmo número) e a lista é
+    //    ordenada por (shader, material, malha), uma vez para a cena e outra para as sombras (que só olham recorte e
+    //    alfa). Itens que podem ir no mesmo draw ficam seguidos.
+    m_materialIds.Clear();
+    m_shadowIds.Clear();
+    m_sceneKeys.resize(m_items.size());
+    m_shadowKeys.resize(m_items.size());
+    {
+        // O mesmo material seguido (um .mmat) não recalcula; valores iguais aos do anterior (cada objeto com o seu
+        // material, todos iguais: o caso dos cubos) não consultam a tabela.
+        const Material* previous = nullptr;
+        MaterialKey previousKey;
+        ShadowParams previousShadow;
+        uint32_t materialId = 0, shadowId = 0;
+        for (size_t i = 0; i < m_items.size(); ++i) {
+            const DrawItem& item = m_items[i];
+            if (item.material != previous) {
+                const bool first = previous == nullptr;
+                previous = item.material;
+                const MaterialKey key{MaterialParamsOf(*item.material), item.material->doubleSided};
+                if (first || !(key == previousKey)) {
+                    materialId = m_materialIds.Id(key);
+                    previousKey = key;
+                }
+                const ShadowParams shadow = ShadowParamsOf(*item.material);
+                if (first || !(shadow == previousShadow)) {
+                    shadowId = m_shadowIds.Id(shadow);
+                    previousShadow = shadow;
+                }
+            }
+            const uint32_t shader = item.skinned ? 1u : 0u;
+            m_sceneKeys[i] = {shader, materialId, item.mesh};
+            m_shadowKeys[i] = {shader, shadowId, item.mesh};
+        }
+    }
+    // Cena parada: as mesmas chaves do quadro anterior dão a mesma ordem.
+    auto sortIfChanged = [](const std::vector<DrawKey>& keys, std::vector<DrawKey>& lastKeys,
+                            std::vector<uint32_t>& order) {
+        if (keys == lastKeys && order.size() == keys.size()) return;
+        SortByKey(keys, order);
+        lastKeys = keys;
+    };
+    sortIfChanged(m_sceneKeys, m_lastSceneKeys, m_sceneOrder);
+    sortIfChanged(m_shadowKeys, m_lastShadowKeys, m_shadowOrder);
+
     // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
     m_instances->UploadObjects(m_items);
     const ShadowRenderer::Result shadows = [&] {
         MOTOR_PROFILE_GPU("Sombras");
-        return m_shadows->Render(m_camera, m_lights, m_environment, m_items, *m_instances, uploadJoints, m_stats);
+        return m_shadows->Render(m_camera, m_lights, m_environment, m_items, *m_instances,
+                                 {m_shadowOrder, m_shadowKeys, &m_shadowIds}, uploadJoints, m_stats);
     }();
 
     // 2) Blocos de dados do quadro.
@@ -328,34 +374,25 @@ void Renderer::DrawScene() {
     glBindTextureUnit(kUnitPrefiltered, m_sky->PrefilteredCube());
     glBindTextureUnit(kUnitBrdf, m_sky->BrdfLut());
 
-    // Lotes: itens seguidos com a mesma malha e o mesmo material (o mesmo objeto ou valores iguais) viram um draw
+    // Lotes: na ordem da cena, itens seguidos com a mesma chave (shader, material, malha) viram um draw
     // instanciado. Com pele, cada item é um lote (as juntas são dele). Transparentes: um por vez, de trás para
     // frente, depois do céu.
     const Frustum frustum = Frustum::FromMatrix(projection * view);
     std::vector<uint32_t> indices;
     std::vector<DrawBatch> batches;
-    std::vector<MaterialParams> batchParams;  // o material de cada lote, já convertido
     std::vector<std::pair<float, uint32_t>> transparent;
     indices.reserve(m_items.size());
     auto add = [&](uint32_t index, bool join) {
         const DrawItem& item = m_items[index];
-        if (join && !batches.empty()) {
-            const DrawItem& first = *batches.back().first;
-            const bool same = !item.skinned && !first.skinned && item.mesh == first.mesh &&
-                              (item.material == first.material ||
-                               (item.material->doubleSided == first.material->doubleSided &&
-                                MaterialParamsOf(*item.material) == batchParams.back()));
-            if (same) {
-                ++batches.back().count;
-                indices.push_back(index);
-                return;
-            }
+        if (join && !batches.empty() && !item.skinned && m_sceneKeys[index] == m_sceneKeys[batches.back().firstIndex]) {
+            ++batches.back().count;
+            indices.push_back(index);
+            return;
         }
-        batches.push_back({&item, static_cast<uint32_t>(indices.size()), 1});
-        batchParams.push_back(MaterialParamsOf(*item.material));
+        batches.push_back({&item, static_cast<uint32_t>(indices.size()), 1, index});
         indices.push_back(index);
     };
-    for (uint32_t i = 0; i < m_items.size(); ++i) {
+    for (const uint32_t i : m_sceneOrder) {
         const DrawItem& item = m_items[i];
         if (item.shadows == ShadowCasting::ShadowsOnly) continue;  // só nos mapas de sombra
         if (!frustum.Intersects(item.bounds)) {
@@ -401,7 +438,7 @@ void Renderer::DrawScene() {
         const bool doubleSided = item.material->doubleSided;
         // Duas faces: sem descartar as de trás (o lit.frag vira a normal delas).
         if (doubleSided) glDisable(GL_CULL_FACE);
-        const MaterialParams& params = batchParams[b];
+        const MaterialParams& params = m_materialIds[m_sceneKeys[batch.firstIndex].material].params;
         if (paramsShader != &shader || !lastParams || !(params == *lastParams)) {
             shader.SetVec4(u.alphaMode, params.alphaMode);
             shader.SetVec4(u.color, params.color);
