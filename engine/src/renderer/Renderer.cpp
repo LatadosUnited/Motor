@@ -189,6 +189,7 @@ void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat
     DrawItem& item = m_items.emplace_back();
     item.mesh = &mesh;
     item.material = &material;
+    item.transparent = material.blend == BlendMode::Transparent;
     item.model = model;
     item.shadows = shadows;
     item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
@@ -209,6 +210,7 @@ void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const g
     DrawItem& item = m_items.emplace_back();
     item.mesh = &mesh;
     item.material = &material;
+    item.transparent = material.blend == BlendMode::Transparent;
     item.model = model;
     item.skinned = true;
     item.shadows = shadows;
@@ -399,7 +401,7 @@ void Renderer::DrawScene() {
             ++m_stats.culled;
             continue;
         }
-        if (item.material->blend == BlendMode::Transparent) {
+        if (item.transparent) {
             const glm::vec3 center = (item.bounds.min + item.bounds.max) * 0.5f;
             const glm::vec3 toCamera = center - m_camera.position;
             transparent.emplace_back(glm::dot(toCamera, toCamera), i);

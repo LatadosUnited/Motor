@@ -97,7 +97,7 @@ void ShadowRenderer::DrawItems(std::span<const DrawItem> items, const glm::mat4&
     m_batches.clear();
     for (const uint32_t i : order.order) {
         const DrawItem& item = items[i];
-        if (item.material->blend == BlendMode::Transparent) continue;  // vidro e água não fazem sombra
+        if (item.transparent) continue;  // vidro e água não fazem sombra
         if (item.shadows == ShadowCasting::Off) continue;
         if (!frustum.Intersects(item.bounds)) continue;
         if (!m_batches.empty() && !item.skinned && order.keys[i] == order.keys[m_batches.back().firstIndex]) {
