@@ -1,5 +1,6 @@
 #include "motor/renderer/Texture.h"
 
+#include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
 
 #include <algorithm>
@@ -14,8 +15,10 @@ Texture2D::Texture2D(int width, int height, const uint8_t* pixels, TextureFilter
     const GLsizei levels = static_cast<GLsizei>(std::bit_width(largest));  // 1 + floor(log2)
     m_levels = levels;
 
+    const GLenum format = colorSpace == TextureColorSpace::Srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8;
     glCreateTextures(GL_TEXTURE_2D, 1, &m_id);
-    glTextureStorage2D(m_id, levels, colorSpace == TextureColorSpace::Srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8, width, height);
+    glTextureStorage2D(m_id, levels, format, width, height);
+    TrackGpuMemory(GpuObject::Texture, m_id, GpuMemoryKind::Textures, GpuTextureBytes(format, width, height, 1, levels));
     glTextureSubImage2D(m_id, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 
     const bool nearest = filter == TextureFilter::Nearest;
@@ -28,7 +31,8 @@ Texture2D::Texture2D(int width, int height, const uint8_t* pixels, TextureFilter
 }
 
 Texture2D::~Texture2D() {
-    if (m_linearView) glDeleteTextures(1, &m_linearView);
+    if (m_linearView) glDeleteTextures(1, &m_linearView);  // vista da mesma memória: não conta à parte
+    UntrackGpuMemory(GpuObject::Texture, m_id);
     glDeleteTextures(1, &m_id);
 }
 

@@ -71,6 +71,14 @@ if(MINGW)
     target_link_options(Motor PRIVATE -Wl,--export-all-symbols)
 endif()
 
+# Fase 22: profiler Tracy (opção MOTOR_TRACY na raiz). O cliente fica na libMotor.dll; quem liga no Motor (editor,
+# Player) usa os mesmos símbolos com TRACY_IMPORTS. A DLL de scripts não recebe MOTOR_TRACY (o SDK não o define).
+if(MOTOR_TRACY)
+    target_link_libraries(Motor PRIVATE tracy_client)
+    target_include_directories(Motor SYSTEM PUBLIC ${tracy_SOURCE_DIR}/public)
+    target_compile_definitions(Motor PUBLIC MOTOR_TRACY TRACY_ENABLE TRACY_ON_DEMAND INTERFACE TRACY_IMPORTS)
+endif()
+
 # ---------------------------------------------------------------------------
 # SDK para os scripts dos projetos: o editor gera um CMakeLists por projeto que inclui MotorSDK.cmake (alvo
 # importado Motor::Motor) e lê MotorSDK.json para saber qual toolchain usar (o mesmo deste build).

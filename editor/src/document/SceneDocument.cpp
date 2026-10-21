@@ -7,6 +7,7 @@
 #include "scripts/ScriptProject.h"
 
 #include <imgui.h>
+#include <motor/core/Profile.h>
 #include <motor/core/Version.h>
 #include <imgui_stdlib.h>
 
@@ -218,6 +219,7 @@ void SceneDocument::MarkSaved() {
 }
 
 bool SceneDocument::HasUnsavedChanges() {
+    MOTOR_PROFILE_SCOPE("Checar alterações não salvas");  // serializa a cena inteira (alpha 3, Fase 26)
     const bool dirty = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false}) != m_savedSnapshot;
     if (dirty != m_dirty) {
         m_dirty = dirty;

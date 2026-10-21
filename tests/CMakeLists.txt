@@ -34,6 +34,15 @@ target_compile_definitions(test_layers PRIVATE
 
 motor_add_test(test_scripts)
 motor_add_test(test_runtime_systems)
+motor_add_test(test_script_list)  # Fase 22: lista de scripts do SceneRuntime
+motor_add_test(test_frame_stats)  # Fase 22: contadores por quadro e CSV do --perf
+
+# Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o
+# ctest mostra "pulado". Rodar só ele: ctest --test-dir build-release -L desempenho
+motor_add_test(test_desempenho ${PROJECT_SOURCE_DIR}/bench/referencia/CenaReferencia.cpp)
+target_include_directories(test_desempenho PRIVATE ${PROJECT_SOURCE_DIR}/bench/referencia)
+target_compile_definitions(test_desempenho PRIVATE MOTOR_BENCH_DIR="${PROJECT_SOURCE_DIR}/bench")
+set_tests_properties(test_desempenho PROPERTIES LABELS desempenho SKIP_RETURN_CODE 77 RUN_SERIAL TRUE)
 
 # O histórico de desfazer e o modo Play são do editor; compilamos só eles junto com os testes.
 motor_add_test(test_undo ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)

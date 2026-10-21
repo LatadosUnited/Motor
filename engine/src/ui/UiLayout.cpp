@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace motor {
 
@@ -76,7 +77,18 @@ struct LayoutBuilder {
 
 std::vector<UiNode> ComputeUiLayout(const Scene& scene, const glm::vec2& screenSize) {
     LayoutBuilder builder{scene, UiScale(screenSize), {}, {}};
-    for (const auto& e : scene.Entities()) builder.children[e->parent].push_back(e.get());
+    // Só entram as entidades de UI e as que estão acima delas: as outras não geram nó nenhum, e numa cena de 10 000
+    // objetos sem UI montar e ordenar a árvore inteira custava ~7 ms por chamada (Fase 22, medido com o Tracy).
+    std::unordered_set<EntityId> relevant;
+    for (const auto& e : scene.Entities()) {
+        if (!IsUiEntity(*e)) continue;
+        for (const Entity* up = e.get(); up && relevant.insert(up->id).second; up = scene.Find(up->parent)) {
+        }
+    }
+    if (relevant.empty()) return {};
+    for (const auto& e : scene.Entities()) {
+        if (relevant.contains(e->id)) builder.children[e->parent].push_back(e.get());
+    }
     builder.Visit(kNullEntity, UiBox{{0.0f, 0.0f}, screenSize}, 0);
     return std::move(builder.nodes);
 }

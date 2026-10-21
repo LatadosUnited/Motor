@@ -15,8 +15,12 @@ $linhas = @()
 foreach ($cena in "vazia", "cubos1000", "cubos1000sombra", "cubos10000", "fisica1000", "scripts1000", "spawn200") {
     $j = Get-Content $mproj.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
     $j.startupScene = "Assets/Scenes/$cena.mscene"
-    [IO.File]::WriteAllText($mproj.FullName, ($j | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
-    $m = & "$PSScriptRoot\medir.ps1" -Exe $Player -Projeto $Projeto -Rotulo "Motor $cena"
+    # -Depth: o padrão (2) achata os objetos aninhados do .mproject (camadas de física, ações de entrada) em texto.
+    [IO.File]::WriteAllText($mproj.FullName, ($j | ConvertTo-Json -Depth 32), (New-Object Text.UTF8Encoding $false))
+    # --opcoes num arquivo que não existe: as opções padrão (1280x720 em janela, MSAA 4x), nunca as que um teste
+    # anterior salvou em %APPDATA%. O medir.ps1 acrescenta --perf e --segundos.
+    $extra = @("--janela", "--opcoes", "`"$env:TEMP\motor-bench-sem-opcoes.json`"")
+    $m = & "$PSScriptRoot\medir.ps1" -Exe $Player -Projeto $Projeto -Rotulo "Motor $cena" -Extra $extra
     Start-Process $Unity -ArgumentList "-cena", $cena, "-screen-width", "1280", "-screen-height", "720", "-screen-fullscreen", "0" -Wait | Out-Null
     $u = Import-Csv $csvUnity | Where-Object { $_.cena -eq $cena } | Select-Object -Last 1
     $msM = if ($m -match '([\d,\.]+) ms') { [double]($matches[1] -replace ',', '.') } else { [double]::NaN }

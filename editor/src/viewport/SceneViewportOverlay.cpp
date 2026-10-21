@@ -372,6 +372,10 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
     if (toggleButton("UI", m_showUi)) m_showUi = !m_showUi;
     ImGui::SetItemTooltip("Mostrar a interface do jogo (HUD) por cima da cena. Com ela ligada, um clique na UI a\n"
                           "seleciona e arrastar move o elemento; desligue para clicar nos objetos 3D por trás dela.");
+    ImGui::SameLine(0.0f, 14.0f);
+    if (toggleButton("Estatísticas", m_prefs.stats)) m_prefs.stats = !m_prefs.stats;
+    ImGui::SetItemTooltip("Contadores do quadro no canto do viewport: ms de CPU por parte (loop, sistemas, scripts),\n"
+                          "ms de GPU por passada do renderer, draws, triângulos e memória de vídeo por tipo.");
     ImGui::PopStyleVar();
     ImGui::EndGroup();
 

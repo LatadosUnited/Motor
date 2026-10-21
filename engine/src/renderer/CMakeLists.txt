@@ -16,5 +16,7 @@ motor_add_layer(renderer
         PostProcess.cpp
         Shadows.cpp
         Sky.cpp
+        GpuTimers.cpp
+        GpuMemory.cpp
     DEPENDS core
     PRIVATE_LIBS glfw)

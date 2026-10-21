@@ -1,7 +1,7 @@
 ---
 tipo: alpha
 alpha: 2
-status: em andamento
+status: fechada
 foco: Funcionalidades e pendências
 ---
 
@@ -10,8 +10,8 @@ foco: Funcionalidades e pendências
 | Alpha | Foco | Roteiro |
 |---|---|---|
 | 1 | Base da engine, editor, jogo exportado, Hub e instalador (Fases 0 a 15) | ✅ [alpha-1.md](alpha-1.md) |
-| **2** | **Funcionalidades e pendências (Fases 16 a 21)** | **esta nota** |
-| 3 | Desempenho, cenários abertos e renderização 2 (Fases 22 a 28) | rascunho: [alpha-3.md](alpha-3.md) |
+| **2** | **Funcionalidades e pendências (Fases 16 a 21)** | ✅ **esta nota** |
+| 3 | Desempenho, cenários abertos e renderização 2 (Fases 22 a 28) | atual: [alpha-3.md](alpha-3.md) |
 | 4 | Ferramentas: compilador integrado, distribuição, scripts avançados (Fases 29 a 31) | rascunho: [alpha-4.md](alpha-4.md) |
 
 Como esta pasta se organiza: [padrão da documentação](../padrao.md). Achados ainda sem fase:
@@ -21,6 +21,9 @@ Como esta pasta se organiza: [padrão da documentação](../padrao.md). Achados 
 faz no editor um jogo 3D pequeno que salva o progresso, aceita controle e usa objetos transparentes; um erro
 num script não fecha o editor nem perde trabalho; o jogo é exportado em Release e roda em outro computador da
 rede.
+
+**Fechada em 20/10/2026:** Fases 16 a 21 prontas e a versão 0.2.650 publicada no servidor. Segue na
+[alpha 3](alpha-3.md), começando pela [Fase 22 — Medição](alpha-3/fase-22-medicao.md).
 
 ## Onde estamos (18/10/2026)
 
@@ -37,7 +40,7 @@ servidor de versões. Main sem pendências de merge.
 | 2 | [Fase 17 — Scripts mais rápidos e fáceis](alpha-2/fase-17-scripts.md) | pronta | compilações de 10 a 124 s medidas num projeto real; menos código repetido | 16, 18 |
 | — | [Organização do código](alpha-2/organizacao-do-codigo.md) | pronta | arquivos de 600 a 1200 linhas e o editor numa pasta só; dividir antes da 18 e da 20, sem mudar comportamento | — (mexe em quase tudo) |
 | 3 | [Fase 18 — Funcionalidades de jogo](alpha-2/fase-18-funcionalidades-de-jogo.md) | pronta | física, áudio, cursor, formas e transparência que jogos comuns pedem | 17 |
-| 4 | [Fase 19 — Validação de uso real](alpha-2/fase-19-validacao.md) | em andamento | o editor quase só foi testado por agentes; a lista de defeitos decide o resto | — |
+| 4 | [Fase 19 — Validação de uso real](alpha-2/fase-19-validacao.md) | pronta | o editor quase só foi testado por agentes; a lista de defeitos decide o resto | — |
 | 5 | [Fase 20 — Editor produtivo](alpha-2/fase-20-editor-produtivo.md) | pronta | multi-seleção, copiar/colar, snapping, Cena e Jogo lado a lado, prefab dentro de prefab | 21 |
 | 6 | [Fase 21 — Jogo entregue](alpha-2/fase-21-jogo-entregue.md) | pronta | opções do jogador, ícone, salvar progresso, controle, exportação Release | 20 |
 

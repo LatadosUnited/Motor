@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorContext.h"
+#include "viewport/FrameStatsPanel.h"
 #include "viewport/ViewportPrefs.h"
 #include "viewport/UiEditor.h"
 
@@ -92,6 +93,7 @@ private:
     std::unique_ptr<motor::Framebuffer> m_framebuffer;
     std::unique_ptr<motor::UiRenderer> m_ui;
     UiViewportTool m_uiTool;
+    FrameStatsPanel m_statsPanel;  // contadores por quadro (Fase 22), com m_prefs.stats
     bool m_showUi = true;
 
     enum class GizmoTool { None, Translate, Rotate, Scale };

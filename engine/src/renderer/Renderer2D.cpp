@@ -6,6 +6,7 @@
 #include "motor/renderer/Shader.h"
 #include "motor/renderer/Texture.h"
 
+#include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
 
 #include <algorithm>
@@ -72,6 +73,8 @@ Renderer2D::Renderer2D() {
 
 Renderer2D::~Renderer2D() {
     glDeleteVertexArrays(1, &m_vao);
+    UntrackGpuMemory(GpuObject::Buffer, m_vbo);
+    UntrackGpuMemory(GpuObject::Buffer, m_ebo);
     glDeleteBuffers(1, &m_vbo);
     glDeleteBuffers(1, &m_ebo);
 }
@@ -82,11 +85,14 @@ void Renderer2D::Reserve(size_t quads) {
     size_t capacity = std::max<size_t>(m_capacity, 256);
     while (capacity < quads) capacity *= 2;
 
+    UntrackGpuMemory(GpuObject::Buffer, m_vbo);
+    UntrackGpuMemory(GpuObject::Buffer, m_ebo);
     glDeleteBuffers(1, &m_vbo);
     glDeleteBuffers(1, &m_ebo);
     glCreateBuffers(1, &m_vbo);
     glNamedBufferStorage(m_vbo, static_cast<GLsizeiptr>(capacity * 4 * sizeof(Vertex2D)), nullptr,
                          GL_DYNAMIC_STORAGE_BIT);
+    TrackGpuMemory(GpuObject::Buffer, m_vbo, GpuMemoryKind::Buffers, capacity * 4 * sizeof(Vertex2D));
 
     // Índices fixos: 2 triângulos por quadrilátero.
     std::vector<uint32_t> indices(capacity * 6);
@@ -97,6 +103,7 @@ void Renderer2D::Reserve(size_t quads) {
     }
     glCreateBuffers(1, &m_ebo);
     glNamedBufferStorage(m_ebo, static_cast<GLsizeiptr>(indices.size() * sizeof(uint32_t)), indices.data(), 0);
+    TrackGpuMemory(GpuObject::Buffer, m_ebo, GpuMemoryKind::Buffers, indices.size() * sizeof(uint32_t));
 
     glVertexArrayVertexBuffer(m_vao, 0, m_vbo, 0, sizeof(Vertex2D));
     glVertexArrayElementBuffer(m_vao, m_ebo);
@@ -135,8 +142,11 @@ void Renderer2D::Render(const DrawList2D& list, int width, int height, const Fra
         const Texture2D* texture = batch.texture ? batch.texture : m_white.get();
         texture->Bind(0);
         m_shader->SetInt("uSrgbTexture", texture->ColorSpace() == TextureColorSpace::Srgb ? 1 : 0);
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.quadCount * 6), GL_UNSIGNED_INT,
-                       reinterpret_cast<const void*>(static_cast<uintptr_t>(batch.firstQuad) * 6 * sizeof(uint32_t)));
+        // Com o intervalo de vértices (4 por quad): o driver não varre os índices na CPU (ver Mesh::Draw).
+        const auto firstVertex = static_cast<GLuint>(batch.firstQuad * 4);
+        glDrawRangeElements(GL_TRIANGLES, firstVertex, firstVertex + static_cast<GLuint>(batch.quadCount * 4) - 1,
+                            static_cast<GLsizei>(batch.quadCount * 6), GL_UNSIGNED_INT,
+                            reinterpret_cast<const void*>(static_cast<uintptr_t>(batch.firstQuad) * 6 * sizeof(uint32_t)));
         ++m_drawCalls;
     }
 

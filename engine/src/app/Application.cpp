@@ -3,6 +3,8 @@
 #include "motor/core/ImGuiLayer.h"
 #include "motor/core/Input.h"
 #include "motor/core/Log.h"
+#include "motor/core/FrameStats.h"
+#include "motor/renderer/GpuMemory.h"
 #include "motor/renderer/Renderer.h"
 
 #include <algorithm>
@@ -11,6 +13,20 @@
 #include <thread>
 
 namespace motor {
+
+namespace {
+// Memória de vídeo por tipo de recurso nos contadores do quadro (Fase 22), em MB. Todo quadro, mesmo minimizada.
+void PublishGpuMemory() {
+    const GpuMemoryUsage usage = CurrentGpuMemory();
+    FrameStats& stats = FrameStats::Instance();
+    constexpr double kMb = 1024.0 * 1024.0;
+    for (int k = 0; k < kGpuMemoryKinds; ++k) {
+        const std::string name = std::string("vram ") + GpuMemoryKindName(static_cast<GpuMemoryKind>(k)) + " MB";
+        stats.SetValue(name, static_cast<double>(usage.bytes[k]) / kMb);
+    }
+    stats.SetValue("vram total MB", static_cast<double>(usage.Total()) / kMb);
+}
+} // namespace
 
 Application::Application(const ApplicationDesc& desc) : m_desc(desc) {
     m_window = std::make_unique<Window>(desc.window);
@@ -47,6 +63,7 @@ void Application::Run() {
     double fpsTimer = 0.0;
     int fpsFrames = 0;
 
+    auto lastFrameEnd = Clock::now();
     while (m_running) {
         const auto frameStart = Clock::now();
         if (m_window->ShouldClose()) {
@@ -54,8 +71,11 @@ void Application::Run() {
             m_window->CancelClose();
         }
 
-        Input::BeginFrame();
-        m_window->PollEvents();
+        {
+            MOTOR_PROFILE_STAT("Eventos");
+            Input::BeginFrame();
+            m_window->PollEvents();
+        }
 
         const auto now = Clock::now();
         // Limita o dt para evitar a "espiral da morte" após travamentos/breakpoints.
@@ -65,21 +85,41 @@ void Application::Run() {
 
         accumulator += dt;
         while (accumulator >= fixedDt) {
+            MOTOR_PROFILE_STAT("FixedUpdate");
             OnFixedUpdate(static_cast<float>(fixedDt));
             accumulator -= fixedDt;
         }
 
-        OnUpdate(static_cast<float>(dt));
+        {
+            MOTOR_PROFILE_STAT("Update");
+            OnUpdate(static_cast<float>(dt));
+        }
 
         if (!m_window->IsMinimized()) {
-            m_renderer->BeginFrame(m_window->Width(), m_window->Height());
-            OnRender(*m_renderer);
+            {
+                MOTOR_PROFILE_STAT("Render");
+                m_renderer->BeginFrame(m_window->Width(), m_window->Height());
+                OnRender(*m_renderer);
+            }
             if (m_imgui) {
+                MOTOR_PROFILE_STAT("ImGui");
                 m_imgui->BeginFrame();
                 OnImGui();
                 m_imgui->EndFrame();
             }
-            m_window->SwapBuffers();
+            {
+                MOTOR_PROFILE_STAT("SwapBuffers");  // inclui a espera do vsync
+                m_window->SwapBuffers();
+            }
+            const RenderStats& rs = m_renderer->GetStats();
+            MOTOR_PROFILE_PLOT("Draws", rs.drawCalls);
+            MOTOR_PROFILE_PLOT("Triângulos", rs.triangles);
+            FrameStats& stats = FrameStats::Instance();
+            stats.SetValue("draws", rs.drawCalls);
+            stats.SetValue("draws sombra", rs.shadowDrawCalls);
+            stats.SetValue("triangulos", rs.triangles);
+            stats.SetValue("recortados", rs.culled);
+            stats.SetValue("transparentes", rs.transparent);
         } else {
             // Minimizada não há SwapBuffers para esperar o vsync: sem esta pausa o loop gira a milhares de FPS.
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -88,6 +128,12 @@ void Application::Run() {
             std::this_thread::sleep_until(frameStart + std::chrono::duration_cast<Clock::duration>(
                                                           std::chrono::duration<double>(1.0 / m_frameLimit)));
         }
+        MOTOR_PROFILE_FRAME();
+        PublishGpuMemory();
+        // Período do quadro: de um fim de volta ao outro (tudo entra, até a espera do vsync).
+        const auto frameEnd = Clock::now();
+        FrameStats::Instance().EndFrame(std::chrono::duration<double, std::milli>(frameEnd - lastFrameEnd).count());
+        lastFrameEnd = frameEnd;
 
         ++fpsFrames;
         fpsTimer += dt;

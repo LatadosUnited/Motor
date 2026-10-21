@@ -1,6 +1,7 @@
 #include "motor/renderer/Framebuffer.h"
 
 #include "motor/core/Log.h"
+#include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
 
 #include <algorithm>
@@ -32,6 +33,8 @@ void Framebuffer::Create() {
 
     glCreateTextures(GL_TEXTURE_2D, 1, &m_colorTexture);
     glTextureStorage2D(m_colorTexture, 1, GL_RGBA8, m_width, m_height);
+    TrackGpuMemory(GpuObject::Texture, m_colorTexture, GpuMemoryKind::Framebuffers,
+                   GpuTextureBytes(GL_RGBA8, m_width, m_height));
     glTextureParameteri(m_colorTexture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTextureParameteri(m_colorTexture, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTextureParameteri(m_colorTexture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -39,11 +42,15 @@ void Framebuffer::Create() {
 
     glCreateRenderbuffers(1, &m_depthRbo);
     glNamedRenderbufferStorageMultisample(m_depthRbo, msaa ? m_samples : 0, GL_DEPTH24_STENCIL8, m_width, m_height);
+    TrackGpuMemory(GpuObject::Renderbuffer, m_depthRbo, GpuMemoryKind::Framebuffers,
+                   GpuTextureBytes(GL_DEPTH24_STENCIL8, m_width, m_height, 1, 1, m_samples));
 
     glCreateFramebuffers(1, &m_renderFbo);
     if (msaa) {
         glCreateRenderbuffers(1, &m_colorRbo);
         glNamedRenderbufferStorageMultisample(m_colorRbo, m_samples, GL_RGBA8, m_width, m_height);
+        TrackGpuMemory(GpuObject::Renderbuffer, m_colorRbo, GpuMemoryKind::Framebuffers,
+                       GpuTextureBytes(GL_RGBA8, m_width, m_height, 1, 1, m_samples));
         glNamedFramebufferRenderbuffer(m_renderFbo, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, m_colorRbo);
 
         glCreateFramebuffers(1, &m_resolveFbo);
@@ -60,6 +67,9 @@ void Framebuffer::Create() {
 }
 
 void Framebuffer::Destroy() {
+    UntrackGpuMemory(GpuObject::Texture, m_colorTexture);
+    UntrackGpuMemory(GpuObject::Renderbuffer, m_depthRbo);
+    UntrackGpuMemory(GpuObject::Renderbuffer, m_colorRbo);
     glDeleteFramebuffers(1, &m_renderFbo);
     glDeleteTextures(1, &m_colorTexture);
     glDeleteRenderbuffers(1, &m_depthRbo);

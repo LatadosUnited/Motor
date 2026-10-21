@@ -220,6 +220,11 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     const ImVec2 p0{origin.x + 8.0f, gameView ? origin.y + m_size.y - size.y - pad.y * 2 - 8.0f : origin.y + 8.0f};
     dl->AddRectFilled(p0, ImVec2(p0.x + size.x + pad.x * 2, p0.y + size.y + pad.y * 2), IM_COL32(0, 0, 0, 120), 4.0f);
     dl->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), IM_COL32(235, 235, 235, 255), text);
+    // Contadores à direita, abaixo dos botões de Play e (fora da visão do jogo) da barra de ferramentas.
+    if (m_prefs.stats) {
+        const float top = gameView ? 44.0f : 84.0f;
+        m_statsPanel.Draw(dl, ImVec2(origin.x + m_size.x - 8.0f, origin.y + top), m_size.y - top - 8.0f);
+    }
 
     // Indicação de Play: borda colorida em volta da imagem, e aviso se a cena não tem câmera.
     if (play.IsActive()) {

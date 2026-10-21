@@ -1,6 +1,7 @@
 #include "renderer/PostProcess.h"
 
 #include "motor/core/Log.h"
+#include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
 
 #include <glm/vec2.hpp>
@@ -16,6 +17,7 @@ GLuint CreateTexture2D(GLenum format, int width, int height) {
     GLuint texture = 0;
     glCreateTextures(GL_TEXTURE_2D, 1, &texture);
     glTextureStorage2D(texture, 1, format, width, height);
+    TrackGpuMemory(GpuObject::Texture, texture, GpuMemoryKind::PostProcess, GpuTextureBytes(format, width, height));
     glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTextureParameteri(texture, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTextureParameteri(texture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -70,8 +72,12 @@ void PostProcess::Create() {
     if (msaa) {
         glCreateRenderbuffers(1, &m_colorRbo);
         glNamedRenderbufferStorageMultisample(m_colorRbo, m_samples, GL_RGBA16F, m_width, m_height);
+        TrackGpuMemory(GpuObject::Renderbuffer, m_colorRbo, GpuMemoryKind::PostProcess,
+                       GpuTextureBytes(GL_RGBA16F, m_width, m_height, 1, 1, m_samples));
         glCreateRenderbuffers(1, &m_depthRbo);
         glNamedRenderbufferStorageMultisample(m_depthRbo, m_samples, GL_DEPTH_COMPONENT32F, m_width, m_height);
+        TrackGpuMemory(GpuObject::Renderbuffer, m_depthRbo, GpuMemoryKind::PostProcess,
+                       GpuTextureBytes(GL_DEPTH_COMPONENT32F, m_width, m_height, 1, 1, m_samples));
         glNamedFramebufferRenderbuffer(m_sceneFbo, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, m_colorRbo);
         glNamedFramebufferRenderbuffer(m_sceneFbo, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthRbo);
 
@@ -107,10 +113,16 @@ void PostProcess::Create() {
 void PostProcess::Destroy() {
     for (const BloomLevel& level : m_bloom) {
         glDeleteFramebuffers(1, &level.fbo);
+        UntrackGpuMemory(GpuObject::Texture, level.texture);
         glDeleteTextures(1, &level.texture);
     }
     m_bloom.clear();
     if (m_ldrFbo) glDeleteFramebuffers(1, &m_ldrFbo);
+    UntrackGpuMemory(GpuObject::Texture, m_ldrTexture);
+    UntrackGpuMemory(GpuObject::Texture, m_colorTexture);
+    UntrackGpuMemory(GpuObject::Texture, m_depthTexture);
+    UntrackGpuMemory(GpuObject::Renderbuffer, m_colorRbo);
+    UntrackGpuMemory(GpuObject::Renderbuffer, m_depthRbo);
     if (m_ldrTexture) glDeleteTextures(1, &m_ldrTexture);
     if (m_sceneFbo) glDeleteFramebuffers(1, &m_sceneFbo);
     if (m_resolveFbo) glDeleteFramebuffers(1, &m_resolveFbo);

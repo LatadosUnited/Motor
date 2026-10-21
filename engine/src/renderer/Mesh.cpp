@@ -1,5 +1,6 @@
 #include "motor/renderer/Mesh.h"
 
+#include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
 
 #include <glm/common.hpp>
@@ -33,6 +34,9 @@ Mesh::Mesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices, 
 Mesh::~Mesh() {
     if (m_vao == 0) return;  // nunca foi desenhada: não há nada na GPU
     glDeleteVertexArrays(1, &m_vao);
+    UntrackGpuMemory(GpuObject::Buffer, m_vbo);
+    UntrackGpuMemory(GpuObject::Buffer, m_ibo);
+    UntrackGpuMemory(GpuObject::Buffer, m_skinVbo);
     glDeleteBuffers(1, &m_vbo);
     glDeleteBuffers(1, &m_ibo);
     if (m_skinVbo) glDeleteBuffers(1, &m_skinVbo);
@@ -42,9 +46,11 @@ void Mesh::Upload() const {
     glCreateBuffers(1, &m_vbo);
     glNamedBufferStorage(m_vbo, static_cast<GLsizeiptr>(m_pendingVertices.size() * sizeof(Vertex)),
                          m_pendingVertices.data(), 0);
+    TrackGpuMemory(GpuObject::Buffer, m_vbo, GpuMemoryKind::Meshes, m_pendingVertices.size() * sizeof(Vertex));
 
     glCreateBuffers(1, &m_ibo);
     glNamedBufferStorage(m_ibo, static_cast<GLsizeiptr>(m_indices.size() * sizeof(uint32_t)), m_indices.data(), 0);
+    TrackGpuMemory(GpuObject::Buffer, m_ibo, GpuMemoryKind::Meshes, m_indices.size() * sizeof(uint32_t));
 
     glCreateVertexArrays(1, &m_vao);
     glVertexArrayVertexBuffer(m_vao, 0, m_vbo, 0, sizeof(Vertex));
@@ -61,6 +67,7 @@ void Mesh::Upload() const {
         glCreateBuffers(1, &m_skinVbo);
         glNamedBufferStorage(m_skinVbo, static_cast<GLsizeiptr>(m_weights.size() * sizeof(SkinWeights)),
                              m_weights.data(), 0);
+        TrackGpuMemory(GpuObject::Buffer, m_skinVbo, GpuMemoryKind::Meshes, m_weights.size() * sizeof(SkinWeights));
         glVertexArrayVertexBuffer(m_vao, 1, m_skinVbo, 0, sizeof(SkinWeights));
         attrs.push_back({3, 4, offsetof(SkinWeights, joints), 1});
         attrs.push_back({4, 4, offsetof(SkinWeights, weights), 1});
@@ -74,9 +81,13 @@ void Mesh::Upload() const {
 }
 
 void Mesh::Draw() const {
+    if (m_indices.empty() || m_positions.empty()) return;
     if (m_vao == 0) Upload();
     glBindVertexArray(m_vao);
-    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
+    // Com o intervalo de vértices: sem ele, o driver da Intel (HD 530) varre os índices na CPU a cada draw, lendo
+    // a memória de vídeo (~300 µs para uma esfera de 2300 triângulos; medido com o Tracy na Fase 22).
+    glDrawRangeElements(GL_TRIANGLES, 0, static_cast<GLuint>(m_positions.size() - 1),
+                        static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
 }
 
 std::shared_ptr<Mesh> Mesh::CreateCube() {

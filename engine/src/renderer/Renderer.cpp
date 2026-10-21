@@ -3,9 +3,11 @@
 #include "motor/core/EngineAssets.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Framebuffer.h"
+#include "motor/renderer/GpuMemory.h"
 #include "motor/renderer/Pbr.h"
 #include "renderer/DrawList.h"
 #include "renderer/GL.h"
+#include "renderer/GpuProfile.h"
 #include "renderer/PostProcess.h"
 #include "renderer/Shadows.h"
 #include "renderer/Sky.h"
@@ -108,6 +110,9 @@ Renderer::Renderer() {
         log::Info("OpenGL debug output ativo");
     }
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);  // reflexos sem costura entre as faces do cubo
+    MOTOR_PROFILE_GPU_CONTEXT();
+    m_gpuTimers = std::make_unique<GpuTimers>();
+    GpuTimers::SetCurrent(m_gpuTimers.get());
 
     const std::filesystem::path dir = EngineAssetsDir() / "shaders";
     m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
@@ -126,9 +131,14 @@ Renderer::Renderer() {
     glNamedBufferStorage(m_shadowsUbo, sizeof(ShadowRenderer::Data), nullptr, GL_DYNAMIC_STORAGE_BIT);
     glCreateBuffers(1, &m_jointsUbo);
     glNamedBufferStorage(m_jointsUbo, sizeof(glm::mat4) * kMaxJoints, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    TrackGpuMemory(GpuObject::Buffer, m_frameUbo, GpuMemoryKind::Buffers, sizeof(FrameData));
+    TrackGpuMemory(GpuObject::Buffer, m_lightsUbo, GpuMemoryKind::Buffers, sizeof(LightsData));
+    TrackGpuMemory(GpuObject::Buffer, m_shadowsUbo, GpuMemoryKind::Buffers, sizeof(ShadowRenderer::Data));
+    TrackGpuMemory(GpuObject::Buffer, m_jointsUbo, GpuMemoryKind::Buffers, sizeof(glm::mat4) * kMaxJoints);
 }
 
 Renderer::~Renderer() {
+    for (unsigned int ubo : {m_jointsUbo, m_shadowsUbo, m_lightsUbo, m_frameUbo}) UntrackGpuMemory(GpuObject::Buffer, ubo);
     glDeleteBuffers(1, &m_jointsUbo);
     glDeleteBuffers(1, &m_shadowsUbo);
     glDeleteBuffers(1, &m_lightsUbo);
@@ -136,6 +146,8 @@ Renderer::~Renderer() {
 }
 
 void Renderer::BeginFrame(int width, int height) {
+    MOTOR_PROFILE_GPU_COLLECT();  // as zonas de GPU do quadro anterior
+    m_gpuTimers->BeginFrame();    // e as dos contadores, de alguns quadros atrás
     m_stats = {};
     m_windowWidth = width;
     m_windowHeight = height;
@@ -220,6 +232,7 @@ void Renderer::BindTarget() const {
 
 void Renderer::EndScene() {
     MOTOR_ASSERT(m_inScene, "EndScene sem BeginScene");
+    MOTOR_PROFILE_GPU("Renderer");
     m_inScene = false;
 
     // Outras camadas (ex.: ImGui) mexem no estado do GL; reafirmamos o que a cena precisa.
@@ -231,11 +244,17 @@ void Renderer::EndScene() {
     const int width = m_target ? m_target->Width() : std::max(m_windowWidth, 1);
     const int height = m_target ? m_target->Height() : std::max(m_windowHeight, 1);
     m_post->Resize(width, height, m_samples);
-    m_sky->Update(m_environment, *m_post);
+    {
+        MOTOR_PROFILE_GPU("Céu");
+        m_sky->Update(m_environment, *m_post);
+    }
 
     DrawScene();
-    m_post->Resolve();
-    m_post->Apply(m_environment, [this] { BindTarget(); });
+    {
+        MOTOR_PROFILE_GPU("Pós-processamento");
+        m_post->Resolve();
+        m_post->Apply(m_environment, [this] { BindTarget(); });
+    }
     DrawWireframes();
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -251,7 +270,10 @@ void Renderer::DrawScene() {
     const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
 
     // 1) Mapas de sombra.
-    const ShadowRenderer::Result shadows = m_shadows->Render(m_camera, m_lights, m_environment, m_items, uploadJoints, m_stats);
+    const ShadowRenderer::Result shadows = [&] {
+        MOTOR_PROFILE_GPU("Sombras");
+        return m_shadows->Render(m_camera, m_lights, m_environment, m_items, uploadJoints, m_stats);
+    }();
 
     // 2) Blocos de dados do quadro.
     const Environment& env = m_environment;
@@ -285,6 +307,7 @@ void Renderer::DrawScene() {
     glBindBufferBase(GL_UNIFORM_BUFFER, kShadowsBinding, m_shadowsUbo);
 
     // 3) Cena em HDR.
+    MOTOR_PROFILE_GPU("Cena HDR");  // opacos, céu ao fundo e transparentes
     m_post->BeginScene();
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
@@ -353,6 +376,7 @@ void Renderer::DrawScene() {
     // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
     //    vidro continua aparecendo pelo vidro seguinte). Ordenados pelo centro: do mais longe ao mais perto.
     if (!transparent.empty()) {
+        MOTOR_PROFILE_GPU("Transparentes");
         std::stable_sort(transparent.begin(), transparent.end(),
                          [](const auto& a, const auto& b) { return a.first > b.first; });
         glEnable(GL_DEPTH_TEST);

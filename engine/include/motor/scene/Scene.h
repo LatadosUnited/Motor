@@ -27,6 +27,11 @@ struct Light;
 using EntityId = uint32_t;
 inline constexpr EntityId kNullEntity = 0;
 
+// Contador global que sobe a cada entidade criada ou destruída, componente adicionado (Entity::Add) e cena copiada.
+// Quem guarda algo derivado da estrutura das cenas (a lista de scripts do SceneRuntime) o compara para saber se
+// precisa refazer, sem percorrer a cena. Componente removido não sobe o contador: quem usa confere na hora.
+uint64_t SceneStructureVersion();
+
 struct Entity {
     EntityId id = kNullEntity;
     std::string name;

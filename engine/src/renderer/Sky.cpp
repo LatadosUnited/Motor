@@ -1,5 +1,6 @@
 #include "renderer/Sky.h"
 
+#include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
 #include "renderer/PostProcess.h"
 
@@ -45,6 +46,7 @@ GLuint CreateCube(int size, int levels) {
     GLuint cube = 0;
     glCreateTextures(GL_TEXTURE_CUBE_MAP, 1, &cube);
     glTextureStorage2D(cube, levels, GL_RGBA16F, size, size);
+    TrackGpuMemory(GpuObject::Texture, cube, GpuMemoryKind::Sky, GpuTextureBytes(GL_RGBA16F, size, size, 6, levels));
     glTextureParameteri(cube, GL_TEXTURE_MIN_FILTER, levels > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
     glTextureParameteri(cube, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTextureParameteri(cube, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -68,6 +70,7 @@ SkyRenderer::SkyRenderer(const std::filesystem::path& dir) {
     const std::vector<glm::vec2> lut = BuildBrdfLut(kBrdfLutSize, 128);
     glCreateTextures(GL_TEXTURE_2D, 1, &m_brdfLut);
     glTextureStorage2D(m_brdfLut, 1, GL_RG16F, kBrdfLutSize, kBrdfLutSize);
+    TrackGpuMemory(GpuObject::Texture, m_brdfLut, GpuMemoryKind::Sky, GpuTextureBytes(GL_RG16F, kBrdfLutSize, kBrdfLutSize));
     glTextureSubImage2D(m_brdfLut, 0, 0, 0, kBrdfLutSize, kBrdfLutSize, GL_RG, GL_FLOAT, lut.data());
     glTextureParameteri(m_brdfLut, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTextureParameteri(m_brdfLut, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -77,6 +80,7 @@ SkyRenderer::SkyRenderer(const std::filesystem::path& dir) {
 
 SkyRenderer::~SkyRenderer() {
     glDeleteFramebuffers(1, &m_fbo);
+    for (GLuint t : {m_environmentCube, m_prefilteredCube, m_brdfLut, m_equirect}) UntrackGpuMemory(GpuObject::Texture, t);
     glDeleteTextures(1, &m_environmentCube);
     glDeleteTextures(1, &m_prefilteredCube);
     glDeleteTextures(1, &m_brdfLut);
@@ -84,10 +88,13 @@ SkyRenderer::~SkyRenderer() {
 }
 
 void SkyRenderer::UploadEquirect(const HdrImage& image) {
+    UntrackGpuMemory(GpuObject::Texture, m_equirect);
     if (m_equirect) glDeleteTextures(1, &m_equirect);
     const auto levels = static_cast<GLsizei>(std::bit_width(static_cast<unsigned>(std::max(image.width, image.height))));
     glCreateTextures(GL_TEXTURE_2D, 1, &m_equirect);
     glTextureStorage2D(m_equirect, levels, GL_RGB16F, image.width, image.height);
+    TrackGpuMemory(GpuObject::Texture, m_equirect, GpuMemoryKind::Sky,
+                   GpuTextureBytes(GL_RGB16F, image.width, image.height, 1, levels));
     glTextureSubImage2D(m_equirect, 0, 0, 0, image.width, image.height, GL_RGB, GL_FLOAT, image.rgb.data());
     glTextureParameteri(m_equirect, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTextureParameteri(m_equirect, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

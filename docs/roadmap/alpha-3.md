@@ -1,14 +1,14 @@
 ---
 tipo: alpha
 alpha: 3
-status: planejada
+status: em andamento
 foco: Desempenho
 ---
 
-# Roteiro da Alpha 3 — Desempenho (rascunho)
+# Roteiro da Alpha 3 — Desempenho
 
-> **Rascunho.** Começa depois da alpha 2 ([alpha-2.md](alpha-2.md)). Os números das fases e a ordem
-> podem mudar com o que a validação de uso real (Fase 19) encontrar.
+> **Começou em 20/10/2026**, depois da alpha 2 ([alpha-2.md](alpha-2.md)). Cada fase ganha a sua nota em
+> `alpha-3/` quando começa; as seções abaixo das fases que ainda não começaram continuam sendo rascunho.
 
 Foco: o Motor rodar bem em máquinas modestas (referência: i5 de 4 núcleos com Intel HD 530, 1 GB de vídeo
 compartilhado) com cenas de milhares de objetos. Só depois disso vêm os cenários abertos e a renderização 2,
@@ -26,6 +26,9 @@ Unity** com configurações equivalentes; nenhuma cena abaixo de 50%. *(origem: 
 cena de 5000 entidades sem travar; e uma ilha com terreno, água, vegetação e partículas roda a 60 FPS.
 
 ## Fase 22 — Medição
+
+**Pronta (20/10/2026):** nota da fase em [alpha-3/fase-22-medicao.md](alpha-3/fase-22-medicao.md) (as tarefas
+abaixo foram para lá). Profiler escolhido: [Tracy](../decisoes/2026-10-20-profiler-tracy.md).
 
 - Cena de referência no repositório: ~5000 entidades (estáticas e com física), 1 luz direcional com sombra e
   8 pontuais, 50 scripts simples, UI e som.
@@ -67,13 +70,56 @@ Feito antes da alpha 3 (18/10/2026): projeto gêmeo, geradores e scripts de medi
 tabela completa em `bench/README.md`). Unity 6000.3 (URP 17.3, Direct3D 11, Mono) com o SSAO do template
 desligado. Motor em % da Unity:
 
-| vazia | cubos1000 | cubos1000sombra | cubos10000 | fisica1000 | scripts1000 | spawn200 |
-|---|---|---|---|---|---|---|
-| 110–113% | 121–125% | 124–126% | **68–69%** | **76–81%** | 121% | 114–122% |
+| Data | vazia | cubos1000 | cubos1000sombra | cubos10000 | fisica1000 | scripts1000 | spawn200 |
+|---|---|---|---|---|---|---|---|
+| 18/10/2026 (0.2.0) | 110–113% | 121–125% | 124–126% | **68–69%** | **76–81%** | 121% | 114–122% |
+| 20/10/2026 (0.2.650, Fase 22) | 100–102% | 107–112% | 110–112% | **98–100%** | **84–85%** | 112% | 101% |
 
-Só `cubos10000` está abaixo da meta (custo por desenho na CPU: Fase 24), e `fisica1000` está perto do limite
-(sincronização cena–física: Fase 25). Nas cenas dominadas pela GPU o Motor ganha, mas na HD 530 elas medem mais
-o desenho que os scripts; repetir numa máquina com GPU dedicada para separar CPU e GPU.
+Em 20/10, depois de três achados do Tracy na [Fase 22](alpha-3/fase-22-medicao.md) (`glDrawRangeElements`, lista de
+scripts no `SceneRuntime`, layout da UI só com a UI), **todas as cenas passam da meta de 70%**: `cubos10000` foi de
+68–69% para 98–100% (de 54 para 33,5 ms) e `fisica1000` de 76–81% para 84–85%. A máquina estava mais rápida nesta
+sessão, a Unity também; vale a razão. Detalhes em `bench/README.md`.
+
+O que falta para a meta ser folgada: `fisica1000` (sincronização cena–física: Fase 25) e, em `cubos10000`, os ~22 ms
+de CPU dos 10 000 draws e os ~8 ms de montar a lista deles (Fases 24 e 25). Nas cenas dominadas pela GPU o Motor
+ganha, mas na HD 530 elas medem mais o desenho que os scripts; repetir numa máquina com GPU dedicada.
+
+### Linha de base com os contadores (20/10/2026)
+
+Refeita com os contadores da Fase 22: Player Release, 1280×720 em janela, MSAA 4x, vsync desligado, 12 s com
+`--perf` (`bench/medir.ps1`), medianas por quadro do segundo 4 em diante, cenas do `bench/` e a cena de referência
+(`bench/referencia`). A máquina estava no estado mais lento da sessão (a Unity mediu `vazia` em 22 ms nessa hora,
+contra 12 a 13,5 ms em outras); compare as colunas entre si, não com a tabela de 18/10.
+
+| Cena | Quadro | CPU Update | CPU FixedUpdate | CPU Render | CPU Swap | GPU total | GPU Sombras | GPU Cena HDR | GPU Pós | Draws | Vídeo |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| vazia | 15,9 | 0,1 | 0,0 | 2,1 | 10,9 | 10,4 | — | 1,1 | 9,3 | 0 | 66 MB |
+| cubos1000 | 17,0 | 0,2 | 0,2 | 9,0 | 4,1 | 11,2 | — | 3,0 | 8,2 | 1001 | 66 MB |
+| cubos1000sombra | 20,6 | 0,1 | 0,1 | 12,4 | 4,7 | 13,9 | 1,5 | 4,2 | 8,1 | 2401 | 130 MB |
+| cubos10000 | 49,5 | 6,8 | 1,3 | 41,1 | 0,5 | 32,4 | — | 23,5 | 9,0 | 10001 | 66 MB |
+| fisica1000 | 20,3 | 0,2 | 2,6 | 7,8 | 1,3 | 12,0 | — | 2,9 | 8,9 | 1001 | 66 MB |
+| scripts1000 | 17,2 | 1,1 | 0,8 | 8,9 | 2,7 | 11,2 | — | 2,9 | 8,3 | 1001 | 66 MB |
+| spawn200 | 15,5 | 9,2 | 0,1 | 2,9 | 1,4 | 10,5 | — | 2,2 | 8,2 | 202 | 66 MB |
+| **referência** | **56,5** | 0,9 | 14,9 | 32,4 | 4,2 | **54,5** | 14,7 | 33,1 | 6,7 | 7927 | 130 MB |
+
+(ms, exceto draws e memória de vídeo. "CPU Render" inclui montar a lista de desenhos e enviar ao OpenGL; "CPU Swap" é
+a espera pela GPU no fim do quadro: alta = limitado pela GPU.)
+
+Conclusões:
+
+- **Custo fixo da GPU:** a cena vazia já gasta ~10 ms de GPU, dos quais ~9 ms são o pós-processamento (bloom, tone
+  mapping, FXAA a 1280×720 com MSAA 4x em HDR). É o maior custo de quase todas as cenas pequenas (Fase 23 e opções de
+  qualidade).
+- **CPU por desenho:** `cubos10000` gasta 41 ms de CPU no Render para 10 001 draws (~4 µs cada, mais a montagem):
+  é a Fase 24 (lotes e instancing).
+- **Sistemas que percorrem a cena:** o `Update` de 6,8 ms em `cubos10000` são Áudio, Ui e Animação procurando seus
+  componentes em 10 000 entidades (Fase 25). `spawn200` gasta 9,2 ms no Update criando e destruindo 200 objetos por
+  quadro (Fase 25, destruir em lote).
+- **Cena de referência:** 56,5 ms (18 FPS), limitada pela GPU (54,5 ms: Cena HDR 33, sombras 15) e com 32 ms de CPU
+  no Render. Física: 14,9 ms por quadro, porque o quadro lento pede 3 a 4 passos fixos. Para chegar a 60 FPS:
+  Fases 23 (sombras), 24 (lotes, LOD) e 25.
+- **Memória de vídeo:** 66 MB sem sombras (57 do pós-processamento com MSAA 4x), 130 MB com elas (64 das 4 cascatas
+  de 2048²).
 
 ### Linha de base (18/10/2026)
 
@@ -106,6 +152,10 @@ Conclusões:
 - Os 135 ms da análise de 17/10 eram de outra cena (ilhas, sombra Alta), muito provavelmente no editor Debug.
 
 ## Fase 23 — Sombras
+
+- **Antes de mexer:** medir numa máquina com GPU dedicada (`bench/medir.ps1`, `test_desempenho`, Player com
+  `--perf`), para separar CPU de GPU, e repetir o A/B do custo das consultas de GPU (`MOTOR_GPU_TIMERS=0`) com a
+  máquina calma. *(origem: Fase 22, não feito)*
 
 *(Análise de 17/10/2026, item 2. Medido: 135 ms por quadro com sombra Alta contra 21 ms sem sombra.)*
 
@@ -141,8 +191,13 @@ Conclusões:
 
 - `WorldMatrix` com cache (marca de "sujo" ao mexer no transform ou no pai), em vez de subir a hierarquia a
   cada chamada.
-- Laço dos scripts sem criar vetor a cada chamada e sem refazer `IsActiveInHierarchy` por componente
-  (`SceneRuntime`, `ForEachScript`).
+- ~~Laço dos scripts sem criar vetor a cada chamada e sem refazer `IsActiveInHierarchy` por componente
+  (`SceneRuntime`, `ForEachScript`).~~ Feito na [Fase 22](alpha-3/fase-22-medicao.md): lista das entidades com script,
+  refeita só quando a estrutura da cena muda (`SceneStructureVersion`).
+- **Sistemas sem percorrer a cena inteira:** cada sistema procura os seus componentes em todas as entidades a cada
+  quadro. Em `cubos10000` (sem som, UI ou animação): Áudio 2,9 ms, Ui 2,8 ms, Animação 1,0 ms por quadro. Lista por
+  tipo de componente, mantida com o mesmo `SceneStructureVersion` da lista de scripts (ou os blocos por tipo da
+  organização dos dados, abaixo). *(origem: contadores da Fase 22, 20/10/2026)*
 - Destruir em lote: `Children`, `DestroyEntity` e `FlushDestroyed` deixam de ser lineares na cena (destruir
   muitas entidades no mesmo quadro hoje é quadrático).
 - Índice de nomes para `FindEntity`/`FindByName`.
@@ -160,6 +215,9 @@ Conclusões:
   animação e sincronização da física; os scripts continuam numa thread (regra simples para quem programa o
   jogo). Depois da organização dos dados, que é o que permite dividir o trabalho sem travas.
   *(origem: conversa de 18/10/2026)*
+- **Profiler nas threads e nos scripts:** nomes das threads da Jolt e do sistema de tarefas na linha do tempo do
+  Tracy (`MOTOR_PROFILE_THREAD`), e zonas dentro dos scripts do jogo (a DLL de scripts hoje compila sem
+  `MOTOR_TRACY`: passar a opção pelo SDK). *(origem: Fase 22, não feito)*
 
 ## Fase 26 — Editor que escala
 
@@ -169,7 +227,10 @@ Conclusões:
   cópias completas. Marcar entidades alteradas, guardar só as diferenças, limitar o histórico por memória. O
   componente novo continua entrando no desfazer sem código extra.
 - "Alterações não salvas" sem serializar a cena inteira em JSON a cada 0,5 s (`SceneDocument`): usar a mesma
-  marca de alteração do desfazer.
+  marca de alteração do desfazer. Medido na Fase 22: gravar a cena de referência em JSON leva 337 ms e ler, 314 ms
+  (`test_desempenho`, `cena_json` e `cena_ler`); com ela aberta, o editor travaria 1/3 de segundo a cada meio segundo.
+- ImGui com 6 a 7 ms de CPU por quadro no editor Release, numa cena de 4 entidades (contadores da Fase 22; ver a
+  caixa de entrada). *(origem: Fase 22)*
 - ~~Dividir os arquivos grandes que sobraram da Fase 20: `PhysicsSystem.cpp` (~940 linhas), `McpController.cpp`,
   `AssetLibrary.cpp`, `SceneSerializer.cpp`.~~ Feito na [Organização do código](alpha-2/organizacao-do-codigo.md)
   (alpha 2).

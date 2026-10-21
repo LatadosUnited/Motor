@@ -29,6 +29,41 @@ Executáveis e DLLs ficam juntos em `build/bin`: a engine é a `libMotor.dll` (c
 o runtime do C++ (`libstdc++-6.dll`, `libgcc_s_seh-1.dll`, `libwinpthread-1.dll`) é copiado do toolchain
 para lá. `build/bin/sdk/` tem o que o editor usa para compilar os scripts dos projetos (ver "Scripts").
 
+### Medir com o Tracy (profiler por quadro)
+
+Um build à parte, em Release, com a opção `MOTOR_TRACY`:
+
+```bash
+cmake -S . -B build-tracy -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release -DMOTOR_TRACY=ON -DMOTOR_BUILD_TESTS=OFF
+cmake --build build-tracy -j8
+./build-tracy/bin/MotorEditor.exe "C:/caminho/MeuJogo"   # ou Player.exe, Sandbox.exe
+```
+
+Abra o visualizador do Tracy **0.14.1** (`windows-0.14.1.zip` nos releases do Tracy; tem de ser a mesma versão do
+cliente) e conecte em `127.0.0.1`. Ele só grava com o visualizador conectado, e só aceita conexões da própria
+máquina. Aparecem o quadro dividido (eventos, update, render, ImGui, swap), cada sistema do jogo, os scripts, as
+passadas do renderer na CPU e na GPU, e os gráficos de draws e triângulos. Zona nova no código:
+`MOTOR_PROFILE_SCOPE("Nome")` de `motor/core/Profile.h` (sem o Tracy, não gera código). Decisão:
+`docs/decisoes/2026-10-20-profiler-tracy.md`.
+
+### Contadores por quadro (sem o Tracy)
+
+Sempre ligados, em qualquer build: ms de CPU de cada parte do quadro (eventos, update, render, ImGui, swap, cada
+sistema do jogo, os scripts), ms de GPU de cada passada do renderer (timer queries lidas ~4 quadros depois, sem a CPU
+esperar), números (draws, draws de sombra, triângulos, recortados, transparentes) e a memória de vídeo por tipo de
+recurso em MB (texturas, malhas, framebuffers do editor, pós-processamento, sombras, céu, buffers; estimativa pelo
+formato e tamanho de cada objeto, registrado em `motor/renderer/GpuMemory.h`). Onde ver:
+
+- **Viewport do editor:** botão **Estatísticas** na barra do viewport (lembrado entre aberturas): painel no canto
+  com os mesmos números, suavizados para não piscarem.
+- **Player:** `Player.exe "C:/caminho/MeuJogo" --perf medicao.csv` grava um quadro por linha ao fechar (com
+  `--quadros N`, fecha sozinho). Colunas `quadro`, `tempo_s`, `quadro_ms`, `cpu <parte>`, `gpu <passada>` e os
+  números; vírgula e ponto decimal. O log mostra o quadro mediano depois de 4 s.
+- **Editor:** a ferramenta MCP `editor_status` traz o bloco `perf` com o último quadro.
+- **No código:** `MOTOR_PROFILE_STAT("Nome")` (`motor/core/FrameStats.h`) mede a CPU e é também zona do Tracy;
+  passada nova do renderer: `MOTOR_PROFILE_GPU("Nome")` (`renderer/GpuProfile.h`). `MOTOR_GPU_TIMERS=0` desliga as
+  consultas de GPU.
+
 ## Estrutura
 
 ```
@@ -664,7 +699,9 @@ Exportado/
   `SceneRuntime`, física, HUD e câmera principal). Para testar um projeto sem exportar:
   `Player.exe "C:/caminho/MeuJogo"`. `--quadros N` fecha sozinho depois de N quadros (testes automáticos);
   `--janela` abre em janela mesmo com tela cheia nas opções; `--opcoes "<arquivo>"` usa outro arquivo de opções.
-  O título da janela é só o nome do jogo (sem FPS).
+  O título da janela é só o nome do jogo (sem FPS); `--stats` acrescenta FPS, ms e draws (medição, `bench/`), e
+  `--perf "<arquivo.csv>"` grava os contadores de cada quadro (ver "Contadores por quadro"); `--segundos S` fecha
+  sozinho depois de S segundos (e grava o `--perf`).
 - **Identidade do jogo** (Fase 21, **Arquivo > Configurações do jogo** ou MCP `game_settings`): nome do `.exe`
   (vazio = o do projeto), versão (`1.0.0`, vai para as propriedades do `.exe` e para `Script::GameVersion`) e
   ícone (`.ico` com vários tamanhos ou `.png` de até 256x256, de `Assets/`). A exportação grava o ícone e a versão
