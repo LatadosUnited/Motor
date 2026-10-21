@@ -85,6 +85,23 @@ powershell -File bench/comparar.ps1 -Projeto "C:/temp/bench/Motor Bench"
 
 ## Resultados
 
+### 21/10/2026 — Fase 23: renderer em lote (só o Motor)
+
+Sem a Unity nesta rodada: Player Release do `main` (39ef6fc) contra o fim da Fase 23 (branch `fase-23-renderer-em-lote`),
+medidos pelo `--perf` (medianas por quadro depois de 4 s), alternando as versões, duas rodadas por cena. Os números de
+cada tarefa estão na nota da fase (`docs/roadmap/alpha-3/fase-23-renderer-em-lote.md`).
+
+| Cena | Draws | CPU Render | Quadro |
+|---|---|---|---|
+| `cubos10000` | 10 001 → **2** | 33,3 → **12,7 ms** | 33,9 → **18,6 ms** |
+| `cubos1000sombra` | 2401 → **6** | 11,8 → **3,0 ms** | 18,3 → 17,3 ms |
+| referência | 7927 → **16** | ~25 → **8,3 ms** | 49,4 → **44,0 ms** |
+
+O que mudou: lotes instanciados na cena e nas sombras (os objetos do quadro num buffer na GPU, um draw por sequência
+de mesma malha e material), ordenados por shader, material e malha; posições dos uniforms fixas; o material sem cópia,
+virando um número no `Submit`. Com 10 000 cubos, `cubos10000` passou de limitado pela CPU para limitado pela GPU; o que
+sobra de CPU no Render é percorrer a cena (Fase 25). Falta refazer a comparação com a Unity.
+
 ### 20/10/2026 — Fase 22: `glDrawRangeElements`, lista de scripts e layout da UI
 
 Mesma máquina e mesma build da Unity de 18/10; Motor 0.2.650 Release (branch `fase-22-medicao`), duas rodadas do
