@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hub — mapa · Motor</title>
+<title>Hub — mapa de recursos · Motor</title>
 <style>
   :root { --bg: #f7f7f5; --fg: #1f1f1d; --muted: #6b6a66; --line: #d9d8d2; --card: #ffffff; --accent: #534ab7; }
   @media (prefers-color-scheme: dark) {
@@ -35,7 +35,7 @@
 </head>
 <body>
 <header>
-  <div><h1>Hub — mapa</h1><div class="sub">Gerado de docs/hub/mapa.md (atualizado em 2026-10-21)</div></div>
+  <div><h1>Hub — mapa de recursos</h1><div class="sub">Gerado de docs/hub/mapa.md (atualizado em 2026-10-21)</div></div>
   <nav><a href="index.html">Início</a><a href="hub.html" class="atual">Hub</a></nav>
   <div class="barra">
     <button id="menos" title="Diminuir">−</button>
@@ -48,7 +48,7 @@
   mapa não aparece: veja o <code>docs/hub/mapa.md</code> no Obsidian)</div></div></div>
 <script type="module">
 import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs';
-const fonte = "mindmap\n  root((Hub do Motor 0.2.0))\n    Projetos\n      Cartões com nome, pasta, versão e última abertura\n      Busca por nome ou pasta, sem acento nem maiúsculas\n      Abrir com a versão do projeto\n        Versão instalada: abre direto\n        Sem versão no projeto: pergunta e sugere a padrão\n        Versão ausente: sugere a mais próxima\n        Mais antiga que a do projeto: avisa\n      Menu de cada projeto\n        Abrir com outra versão\n        Mostrar no Explorer\n        Remover da lista, a pasta fica\n      Adicionar pasta de um projeto existente\n      Novo projeto\n        Nome validado\n        Pasta-pai, lembra a última\n        Versão do Motor\n        Chama o editor com --create\n    Versões\n      Instaladas\n        Lê o motor-version.json\n        Tornar padrão\n        Mostrar no Explorer\n        Remover para a Lixeira\n        Abrir a pasta das versões\n      Adicionar de uma pasta montada\n        Cópia em segundo plano\n        Pasta .tmp renomeada no fim\n      Disponíveis para baixar\n        Lê os servidores em segundo plano\n        Baixar com progresso\n        Cancelar e retomar\n        Confere o SHA-256 de cada arquivo\n        Uma de cada vez\n      Servidores\n        Padrão: MotorServidor desta máquina\n        Adicionar e remover\n      Aviso de Hub mais novo\n        Baixar o instalador\n    Linha de comando\n      Ações sem janela\n        --list\n        --add-version e --remove-version\n        --set-default\n        --add-project e --remove-project\n        --create e --open com --engine\n        --disponiveis e --baixar com --servidor\n      Janela\n        --aba projetos ou versões\n      Geral\n        --data\n        --version e --help\n        Depois de --, argumentos para o editor\n    Dados\n      hub.json formato motor-hub 2\n        Projetos, mais recentes primeiro\n        Versão padrão\n        Última pasta de novo projeto\n        Servidores\n      Leitura tolerante e gravação atômica\n      Pasta de dados\n        LOCALAPPDATA/Motor\n        --data para testes\n        instalacao.json do MotorSetup\n    Fala com\n      Editor\n        MotorEditor --project\n        MotorEditor --create\n        Abre sem console\n      Projetos: lê o .mproject\n      Versões: lê o motor-version.json\n      Servidores: manifesto e arquivos por HTTP\n      Instalador: leva o Hub dentro\n    Código\n      HubCore: lógica sem janela, test_hub\n      HubApp: estado, ações e janela\n      Abas: Projetos e Versões\n      HubPlatform: Windows\n      HubWidgets: estilo e botões\n      main.cpp: linha de comando\n      Sem a libMotor.dll\n      Usa common e distrib\n";
+const fonte = "mindmap\n  root((Hub do Motor))\n    Projetos\n      Ver todos os projetos\n      Buscar\n      Abrir na versão certa\n      Criar projeto novo\n      Adicionar projeto existente\n    Versões do Motor\n      Ver as instaladas\n      Escolher a padrão\n      Instalar de uma pasta\n      Remover\n    Download\n      Ver versões publicadas\n      Baixar com progresso\n      Pausar e retomar\n      Conferir os arquivos\n    Servidores\n      Servidor desta máquina\n      Servidores da rede\n    Atualização\n      Aviso de Hub novo\n      Baixar o instalador\n    Automação\n      Tudo pela linha de comando\n      Dados separados para testes\n";
 const escuro = matchMedia('(prefers-color-scheme: dark)').matches;
 mermaid.initialize({ startOnLoad: false, theme: escuro ? 'dark' : 'default',
   fontFamily: 'system-ui, "Segoe UI", sans-serif', mindmap: { padding: 12 } });

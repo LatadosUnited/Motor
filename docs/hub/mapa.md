@@ -3,96 +3,40 @@ tipo: guia
 atualizado: 2026-10-21
 ---
 
-# Hub — mapa
+# Hub — mapa de recursos
 
-Tudo o que o Hub faz, de onde vem e com quem fala. Levantado do código em 21/10/2026 (`hub/src/`, 2416 linhas).
+O que o Hub oferece a quem usa, em seis grupos. Levantado do código em 21/10/2026 (`hub/src/`); como cada recurso
+funciona, com quem o Hub fala e onde está no código fica nos detalhes, abaixo do mapa.
 [Estado](estado.md) · [Roteiro](roteiro.md).
 
 ```mermaid
 mindmap
-  root((Hub do Motor 0.2.0))
+  root((Hub do Motor))
     Projetos
-      Cartões com nome, pasta, versão e última abertura
-      Busca por nome ou pasta, sem acento nem maiúsculas
-      Abrir com a versão do projeto
-        Versão instalada: abre direto
-        Sem versão no projeto: pergunta e sugere a padrão
-        Versão ausente: sugere a mais próxima
-        Mais antiga que a do projeto: avisa
-      Menu de cada projeto
-        Abrir com outra versão
-        Mostrar no Explorer
-        Remover da lista, a pasta fica
-      Adicionar pasta de um projeto existente
-      Novo projeto
-        Nome validado
-        Pasta-pai, lembra a última
-        Versão do Motor
-        Chama o editor com --create
-    Versões
-      Instaladas
-        Lê o motor-version.json
-        Tornar padrão
-        Mostrar no Explorer
-        Remover para a Lixeira
-        Abrir a pasta das versões
-      Adicionar de uma pasta montada
-        Cópia em segundo plano
-        Pasta .tmp renomeada no fim
-      Disponíveis para baixar
-        Lê os servidores em segundo plano
-        Baixar com progresso
-        Cancelar e retomar
-        Confere o SHA-256 de cada arquivo
-        Uma de cada vez
-      Servidores
-        Padrão: MotorServidor desta máquina
-        Adicionar e remover
-      Aviso de Hub mais novo
-        Baixar o instalador
-    Linha de comando
-      Ações sem janela
-        --list
-        --add-version e --remove-version
-        --set-default
-        --add-project e --remove-project
-        --create e --open com --engine
-        --disponiveis e --baixar com --servidor
-      Janela
-        --aba projetos ou versões
-      Geral
-        --data
-        --version e --help
-        Depois de --, argumentos para o editor
-    Dados
-      hub.json formato motor-hub 2
-        Projetos, mais recentes primeiro
-        Versão padrão
-        Última pasta de novo projeto
-        Servidores
-      Leitura tolerante e gravação atômica
-      Pasta de dados
-        LOCALAPPDATA/Motor
-        --data para testes
-        instalacao.json do MotorSetup
-    Fala com
-      Editor
-        MotorEditor --project
-        MotorEditor --create
-        Abre sem console
-      Projetos: lê o .mproject
-      Versões: lê o motor-version.json
-      Servidores: manifesto e arquivos por HTTP
-      Instalador: leva o Hub dentro
-    Código
-      HubCore: lógica sem janela, test_hub
-      HubApp: estado, ações e janela
-      Abas: Projetos e Versões
-      HubPlatform: Windows
-      HubWidgets: estilo e botões
-      main.cpp: linha de comando
-      Sem a libMotor.dll
-      Usa common e distrib
+      Ver todos os projetos
+      Buscar
+      Abrir na versão certa
+      Criar projeto novo
+      Adicionar projeto existente
+    Versões do Motor
+      Ver as instaladas
+      Escolher a padrão
+      Instalar de uma pasta
+      Remover
+    Download
+      Ver versões publicadas
+      Baixar com progresso
+      Pausar e retomar
+      Conferir os arquivos
+    Servidores
+      Servidor desta máquina
+      Servidores da rede
+    Atualização
+      Aviso de Hub novo
+      Baixar o instalador
+    Automação
+      Tudo pela linha de comando
+      Dados separados para testes
 ```
 
 ## Detalhes

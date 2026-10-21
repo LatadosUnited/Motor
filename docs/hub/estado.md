@@ -10,7 +10,7 @@ atualizado: 2026-10-21
 O `MotorHub.exe`, como o Unity Hub. Programa separado: **não liga na `libMotor.dll`** (GLFW, ImGui e
 nlohmann_json estáticos) e fala com o editor só pela linha de comando e lendo `.mproject` e
 `motor-version.json` ([decisão](../decisoes/2026-10-17-hub-fora-da-engine.md)). Código em `hub/src/`. Como usar:
-`hub/README.md`. [Roteiro](roteiro.md) · [Mapa de tudo o que ele faz](mapa.md).
+`hub/README.md`. [Roteiro](roteiro.md) · [Mapa de recursos](mapa.md).
 
 ## O que faz hoje
 
