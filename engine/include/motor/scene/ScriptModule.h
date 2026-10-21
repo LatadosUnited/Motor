@@ -47,7 +47,8 @@ namespace motor {
 //     (SaveSlot/HasSave/DeleteSave/SaveFolder, motor::SaveData), ações de entrada (IsActionDown, GetAxis...) e
 //     controle (GamepadButton/GamepadAxis).
 // 15: campo shadows (ShadowCasting: com sombra, sem sombra, só sombra) no MeshRenderer.
-inline constexpr int kScriptApiVersion = 15;
+// 16: Fase 25: Entity::cache (matriz de mundo guardada pela Scene) muda o tamanho de Entity.
+inline constexpr int kScriptApiVersion = 16;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

@@ -34,6 +34,26 @@ uint64_t SceneStructureVersion();
 // Para quem mexe direto em Entity::components (prefabs, serializador, editor) em vez de usar Add e Remove.
 void MarkSceneStructureChanged();
 
+struct Entity;
+
+// Cache da Scene por entidade (matriz de mundo e ponteiro do pai), conferido a cada consulta: não precisa de aviso
+// quando o transform muda (scripts e o editor mexem direto em Entity::transform). A cópia de uma entidade começa
+// sem cache.
+struct EntityCache {
+    EntityCache() = default;
+    EntityCache(const EntityCache&) {}
+    EntityCache& operator=(const EntityCache&) { valid = false; return *this; }
+
+    bool valid = false;
+    Transform local;                       // transform de quando `world` foi calculado
+    EntityId parent = kNullEntity;         // pai de parentPtr
+    const Entity* parentPtr = nullptr;     // vale enquanto SceneStructureVersion() == structure
+    uint64_t structure = 0;
+    uint64_t parentStamp = 0;              // `stamp` do pai quando foi calculado
+    uint64_t stamp = 0;                    // sobe (contador global) a cada vez que `world` é recalculado
+    glm::mat4 world{1.0f};
+};
+
 struct Entity {
     EntityId id = kNullEntity;
     std::string name;
@@ -54,6 +74,8 @@ struct Entity {
     const void* Get(const ComponentType& type) const;
     void* Add(const ComponentType& type);  // se já existir, devolve o existente
     void Remove(const ComponentType& type);
+
+    mutable EntityCache cache;  // interno da Scene (WorldMatrix, IsActiveInHierarchy)
 
 private:
     template <class T>
@@ -120,6 +142,7 @@ public:
     // Falha (retorna false) se criar um ciclo. keepWorldTransform preserva a posição no mundo.
     bool SetParent(EntityId id, EntityId newParent, bool keepWorldTransform = true);
 
+    // Com cache por entidade: recalcula só quando o transform, o pai ou o mundo do pai mudaram.
     glm::mat4 WorldMatrix(EntityId id) const;
     // Ajusta o Transform local para que a entidade fique com esta matriz no mundo.
     void SetWorldMatrix(EntityId id, const glm::mat4& world);
@@ -139,6 +162,10 @@ public:
     Environment environment;
 
 private:
+    const Entity* ParentOf(const Entity& e) const;  // Find(e.parent) sem a busca, se a estrutura não mudou
+    bool IsActiveInHierarchy(const Entity& e) const;
+    const glm::mat4& CachedWorld(const Entity& e) const;
+
     // `copies`: pares (original, cópia) de cada entidade copiada, para ajustar as EntityRef.
     EntityId CloneRecursive(const Entity& source, EntityId newParent,
                             std::vector<std::pair<EntityId, EntityId>>& copies);
