@@ -48,7 +48,8 @@ public:
 
     // Escolhe as luzes com sombra e desenha os mapas. Deixa o framebuffer próprio vinculado.
     Result Render(const Camera& camera, std::span<const Light> lights, const Environment& environment,
-                  std::span<const DrawItem> items, const JointUploader& uploadJoints, RenderStats& stats);
+                  std::span<const DrawItem> items, InstanceBuffers& instances, const JointUploader& uploadJoints,
+                  RenderStats& stats);
 
     unsigned int CascadeTexture() const { return m_cascades; }
     unsigned int CubeTexture() const { return m_cubes; }
@@ -57,11 +58,12 @@ private:
     void EnsureCascades(int resolution);
     void EnsureCubes(int resolution);
     void DrawItems(std::span<const DrawItem> items, const glm::mat4& viewProjection, const Frustum& frustum,
-                   bool point, const glm::vec4& lightPositionRange, const JointUploader& uploadJoints, RenderStats& stats);
+                   bool point, const glm::vec4& lightPositionRange, InstanceBuffers& instances,
+                   const JointUploader& uploadJoints, RenderStats& stats);
 
     // Posições dos uniforms do shadow.vert/.frag, resolvidas uma vez por variante.
     struct Uniforms {
-        int lightViewProjection = -1, lightPositionRange = -1, model = -1, alphaCutoff = -1, colorAlpha = -1;
+        int lightViewProjection = -1, lightPositionRange = -1, drawBase = -1, alphaCutoff = -1, colorAlpha = -1;
     };
     struct Variant {
         std::unique_ptr<Shader> shader;
@@ -70,6 +72,16 @@ private:
     static Variant MakeVariant(const std::filesystem::path& dir, std::string_view defines);
 
     Variant m_directional, m_directionalSkinned, m_point, m_pointSkinned;
+    // Lotes da passada atual (reaproveitados entre passadas e quadros).
+    struct BatchKey {
+        float cutoff = -1.0f;
+        float alpha = 1.0f;
+        const Texture2D* albedo = nullptr;  // só no recorte com textura
+        bool operator==(const BatchKey&) const = default;
+    };
+    std::vector<uint32_t> m_indices;
+    std::vector<BatchKey> m_keys;
+    std::vector<DrawBatch> m_batches;
     unsigned int m_fbo = 0;
     unsigned int m_cascades = 0;
     int m_cascadeResolution = 0;

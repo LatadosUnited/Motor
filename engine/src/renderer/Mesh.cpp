@@ -90,6 +90,15 @@ void Mesh::Draw() const {
                         static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
 }
 
+void Mesh::DrawInstanced(uint32_t count) const {
+    if (count == 1) return Draw();  // o caminho com o intervalo de vértices (driver da Intel, acima)
+    if (count == 0 || m_indices.empty() || m_positions.empty()) return;
+    if (m_vao == 0) Upload();
+    glBindVertexArray(m_vao);
+    glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr,
+                            static_cast<GLsizei>(count));
+}
+
 std::shared_ptr<Mesh> Mesh::CreateCube() {
     // Cada face: normal n e eixos (u, v) com u x v = n, para winding anti-horário visto de fora.
     struct Face { glm::vec3 n, u, v; };

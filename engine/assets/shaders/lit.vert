@@ -6,8 +6,12 @@ layout(location = 2) in vec2 aUV;
 
 #include "frame.glsl"
 
+// SINGLE_MODEL: uma malha por desenho, com a matriz em uniform (contornos do editor, unlit.frag).
+#ifdef SINGLE_MODEL
 uniform mat4 uModel;
-uniform mat3 uNormalMatrix;
+#else
+#include "object.glsl"
+#endif
 
 out VS_OUT {
     vec3 worldPos;
@@ -16,9 +20,17 @@ out VS_OUT {
 } vs;
 
 void main() {
-    vec4 world = uModel * vec4(aPosition, 1.0);
+#ifdef SINGLE_MODEL
+    mat4 model = uModel;
+    mat3 normalMatrix = transpose(inverse(mat3(uModel)));
+#else
+    Object object = CurrentObject();
+    mat4 model = object.model;
+    mat3 normalMatrix = mat3(object.normal);
+#endif
+    vec4 world = model * vec4(aPosition, 1.0);
     vs.worldPos = world.xyz;
-    vs.normal = uNormalMatrix * aNormal;
+    vs.normal = normalMatrix * aNormal;
     vs.uv = aUV;
     gl_Position = uProjection * uView * world;
 }

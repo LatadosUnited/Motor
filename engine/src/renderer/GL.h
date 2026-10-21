@@ -22,6 +22,7 @@
     X(PFNGLPOLYGONMODEPROC, glPolygonMode)                            \
     X(PFNGLPOLYGONOFFSETPROC, glPolygonOffset)                        \
     X(PFNGLDRAWELEMENTSPROC, glDrawElements)                          \
+    X(PFNGLDRAWELEMENTSINSTANCEDPROC, glDrawElementsInstanced)        \
     X(PFNGLBLENDFUNCSEPARATEPROC, glBlendFuncSeparate)                \
     /* Debug */                                                       \
     X(PFNGLDEBUGMESSAGECALLBACKPROC, glDebugMessageCallback)          \
@@ -53,6 +54,7 @@
     X(PFNGLCREATEBUFFERSPROC, glCreateBuffers)                        \
     X(PFNGLNAMEDBUFFERSTORAGEPROC, glNamedBufferStorage)              \
     X(PFNGLNAMEDBUFFERSUBDATAPROC, glNamedBufferSubData)              \
+    X(PFNGLNAMEDBUFFERDATAPROC, glNamedBufferData)                    \
     X(PFNGLDELETEBUFFERSPROC, glDeleteBuffers)                        \
     X(PFNGLBINDBUFFERBASEPROC, glBindBufferBase)                      \
     /* Vertex arrays (DSA) */                                         \

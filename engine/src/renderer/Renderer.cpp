@@ -114,16 +114,17 @@ Renderer::Renderer() {
     const std::filesystem::path dir = EngineAssetsDir() / "shaders";
     m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
     m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag");  // animação esquelética (Fase 11)
-    m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag");
+    m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag", "#define SINGLE_MODEL\n");
     auto findLitUniforms = [](Shader& shader) {
-        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uModel"), shader.Uniform("uNormalMatrix"),
-                           shader.Uniform("uColor"), shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
+        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
+                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
     };
     m_litUniforms = findLitUniforms(*m_litShader);
     m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
     m_unlitModel = m_unlitShader->Uniform("uModel");
     m_unlitColor = m_unlitShader->Uniform("uColor");
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
+    m_instances = std::make_unique<InstanceBuffers>();
     m_post = std::make_unique<PostProcess>(dir);
     m_shadows = std::make_unique<ShadowRenderer>(dir);
     m_sky = std::make_unique<SkyRenderer>(dir);
@@ -274,10 +275,11 @@ void Renderer::EndScene() {
 void Renderer::DrawScene() {
     const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
 
-    // 1) Mapas de sombra.
+    // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
+    m_instances->UploadObjects(m_items);
     const ShadowRenderer::Result shadows = [&] {
         MOTOR_PROFILE_GPU("Sombras");
-        return m_shadows->Render(m_camera, m_lights, m_environment, m_items, uploadJoints, m_stats);
+        return m_shadows->Render(m_camera, m_lights, m_environment, m_items, *m_instances, uploadJoints, m_stats);
     }();
 
     // 2) Blocos de dados do quadro.
@@ -326,13 +328,59 @@ void Renderer::DrawScene() {
     glBindTextureUnit(kUnitPrefiltered, m_sky->PrefilteredCube());
     glBindTextureUnit(kUnitBrdf, m_sky->BrdfLut());
 
+    // Lotes: itens seguidos com a mesma malha e o mesmo material (o mesmo objeto ou valores iguais) viram um draw
+    // instanciado. Com pele, cada item é um lote (as juntas são dele). Transparentes: um por vez, de trás para
+    // frente, depois do céu.
     const Frustum frustum = Frustum::FromMatrix(projection * view);
+    std::vector<uint32_t> indices;
+    std::vector<DrawBatch> batches;
+    std::vector<MaterialParams> batchParams;  // o material de cada lote, já convertido
+    std::vector<std::pair<float, uint32_t>> transparent;
+    indices.reserve(m_items.size());
+    auto add = [&](uint32_t index, bool join) {
+        const DrawItem& item = m_items[index];
+        if (join && !batches.empty()) {
+            const DrawItem& first = *batches.back().first;
+            const bool same = !item.skinned && !first.skinned && item.mesh == first.mesh &&
+                              (item.material == first.material ||
+                               (item.material->doubleSided == first.material->doubleSided &&
+                                MaterialParamsOf(*item.material) == batchParams.back()));
+            if (same) {
+                ++batches.back().count;
+                indices.push_back(index);
+                return;
+            }
+        }
+        batches.push_back({&item, static_cast<uint32_t>(indices.size()), 1});
+        batchParams.push_back(MaterialParamsOf(*item.material));
+        indices.push_back(index);
+    };
+    for (uint32_t i = 0; i < m_items.size(); ++i) {
+        const DrawItem& item = m_items[i];
+        if (item.shadows == ShadowCasting::ShadowsOnly) continue;  // só nos mapas de sombra
+        if (!frustum.Intersects(item.bounds)) {
+            ++m_stats.culled;
+            continue;
+        }
+        if (item.material->blend == BlendMode::Transparent) {
+            const glm::vec3 center = (item.bounds.min + item.bounds.max) * 0.5f;
+            const glm::vec3 toCamera = center - m_camera.position;
+            transparent.emplace_back(glm::dot(toCamera, toCamera), i);
+            continue;
+        }
+        add(i, true);
+    }
+    const size_t opaqueBatches = batches.size();
+    // Transparentes ordenados pelo centro: do mais longe ao mais perto.
+    std::stable_sort(transparent.begin(), transparent.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
+    for (const auto& [distance, index] : transparent) add(index, false);
+    m_instances->UploadIndices(indices);
+
     const Shader* bound = nullptr;
-    // Material e texturas do desenho anterior: objetos seguidos com o mesmo material (o caso comum) não reenviam
-    // nada disso. Os uniforms são de cada programa, por isso a lembrança vale para um shader só.
+    // Material e texturas do lote anterior: lotes seguidos com o mesmo material não reenviam nada disso. Os
+    // uniforms são de cada programa, por isso a lembrança vale para um shader só.
     const Shader* paramsShader = nullptr;
-    const Material* lastMaterial = nullptr;  // o mesmo material seguido (um .mmat compartilhado) nem recalcula
-    MaterialParams lastParams;
+    const MaterialParams* lastParams = nullptr;
     GLuint lastTexture[5] = {0, 0, 0, 0, 0};
     auto bindTexture = [&](GLuint unit, GLuint texture) {
         if (lastTexture[unit] == texture) return;
@@ -340,7 +388,9 @@ void Renderer::DrawScene() {
         glBindTextureUnit(unit, texture);
     };
     const Texture2D& white = *m_whiteTexture;
-    auto draw = [&](const DrawItem& item) {
+    auto draw = [&](size_t b) {
+        const DrawBatch& batch = batches[b];
+        const DrawItem& item = *batch.first;
         Shader& shader = item.skinned ? *m_skinnedShader : *m_litShader;
         const LitUniforms& u = item.skinned ? m_skinnedUniforms : m_litUniforms;
         if (bound != &shader) {
@@ -348,15 +398,11 @@ void Renderer::DrawScene() {
             bound = &shader;
         }
         if (item.skinned) UploadJoints(item);
-        const Material& m = *item.material;
+        const bool doubleSided = item.material->doubleSided;
         // Duas faces: sem descartar as de trás (o lit.frag vira a normal delas).
-        if (m.doubleSided) glDisable(GL_CULL_FACE);
-        shader.SetMat4(u.model, item.model);
-        shader.SetMat3(u.normalMatrix, glm::inverseTranspose(glm::mat3(item.model)));
-        const bool sameMaterial = paramsShader == &shader && lastMaterial == &m;
-        const MaterialParams params = sameMaterial ? lastParams : MaterialParamsOf(m);
-        lastMaterial = &m;
-        if (paramsShader != &shader || !(params == lastParams)) {
+        if (doubleSided) glDisable(GL_CULL_FACE);
+        const MaterialParams& params = batchParams[b];
+        if (paramsShader != &shader || !lastParams || !(params == *lastParams)) {
             shader.SetVec4(u.alphaMode, params.alphaMode);
             shader.SetVec4(u.color, params.color);
             shader.SetVec4(u.pbr, params.pbr);
@@ -366,42 +412,24 @@ void Renderer::DrawScene() {
             bindTexture(kUnitMetalRough, (params.metallicRoughnessMap ? *params.metallicRoughnessMap : white).LinearHandle());
             bindTexture(kUnitOcclusion, (params.occlusionMap ? *params.occlusionMap : white).LinearHandle());
             bindTexture(kUnitEmissive, (params.emissiveMap ? *params.emissiveMap : white).NativeHandle());
-            lastParams = params;
+            lastParams = &params;
             paramsShader = &shader;
         }
-
-        item.mesh->Draw();
-        if (m.doubleSided) glEnable(GL_CULL_FACE);
+        shader.SetInt(u.drawBase, static_cast<int>(batch.start));
+        item.mesh->DrawInstanced(batch.count);
+        if (doubleSided) glEnable(GL_CULL_FACE);
         ++m_stats.drawCalls;
-        m_stats.triangles += item.mesh->IndexCount() / 3;
+        m_stats.triangles += item.mesh->IndexCount() / 3 * batch.count;
     };
-
-    // Opacos e recortes primeiro; os transparentes ficam para depois do céu, de trás para frente.
-    std::vector<std::pair<float, const DrawItem*>> transparent;
-    for (const DrawItem& item : m_items) {
-        if (item.shadows == ShadowCasting::ShadowsOnly) continue;  // só nos mapas de sombra
-        if (!frustum.Intersects(item.bounds)) {
-            ++m_stats.culled;
-            continue;
-        }
-        if (item.material->blend == BlendMode::Transparent) {
-            const glm::vec3 center = (item.bounds.min + item.bounds.max) * 0.5f;
-            const glm::vec3 toCamera = center - m_camera.position;
-            transparent.emplace_back(glm::dot(toCamera, toCamera), &item);
-            continue;
-        }
-        draw(item);
-    }
+    for (size_t b = 0; b < opaqueBatches; ++b) draw(b);
 
     // 4) Céu ao fundo, onde não há nada.
     m_sky->DrawBackground(*m_post);
 
     // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
-    //    vidro continua aparecendo pelo vidro seguinte). Ordenados pelo centro: do mais longe ao mais perto.
+    //    vidro continua aparecendo pelo vidro seguinte).
     if (!transparent.empty()) {
         MOTOR_PROFILE_GPU("Transparentes");
-        std::stable_sort(transparent.begin(), transparent.end(),
-                         [](const auto& a, const auto& b) { return a.first > b.first; });
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
         glEnable(GL_CULL_FACE);
@@ -412,7 +440,7 @@ void Renderer::DrawScene() {
         bound = nullptr;  // o céu trocou o shader e as texturas
         paramsShader = nullptr;
         std::fill(std::begin(lastTexture), std::end(lastTexture), 0u);
-        for (const auto& [distance, item] : transparent) draw(*item);
+        for (size_t b = opaqueBatches; b < batches.size(); ++b) draw(b);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         m_stats.transparent += static_cast<uint32_t>(transparent.size());

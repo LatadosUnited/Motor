@@ -20,6 +20,7 @@ namespace motor {
 
 class Framebuffer;
 class GpuTimers;
+class InstanceBuffers;
 class PostProcess;
 class ShadowRenderer;
 class SkyRenderer;
@@ -95,7 +96,7 @@ private:
     };
     // Posições dos uniforms por desenho do lit.frag, resolvidas uma vez por shader (lit e com pele).
     struct LitUniforms {
-        int alphaMode = -1, model = -1, normalMatrix = -1, color = -1, pbr = -1, emissive = -1;
+        int alphaMode = -1, drawBase = -1, color = -1, pbr = -1, emissive = -1;
     };
 
     void DrawScene();
@@ -112,6 +113,7 @@ private:
     std::unique_ptr<PostProcess> m_post;
     std::unique_ptr<ShadowRenderer> m_shadows;
     std::unique_ptr<SkyRenderer> m_sky;
+    std::unique_ptr<InstanceBuffers> m_instances;  // objetos e índices dos desenhos em lote (Fase 23)
     std::unique_ptr<GpuTimers> m_gpuTimers;  // tempo de GPU por passada (contadores, Fase 22)
     unsigned int m_frameUbo = 0;
     unsigned int m_lightsUbo = 0;

@@ -14,7 +14,7 @@ layout(std140, binding = 2) uniform Joints {
 };
 #endif
 
-uniform mat4 uModel;
+#include "object.glsl"
 uniform mat4 uLightViewProjection;
 
 out vec3 vWorldPos;
@@ -30,7 +30,7 @@ void main() {
     }
     local = skin * local;
 #endif
-    vec4 world = uModel * local;
+    vec4 world = CurrentObject().model * local;
     vWorldPos = world.xyz;
     vUV = aUV;
     gl_Position = uLightViewProjection * world;
