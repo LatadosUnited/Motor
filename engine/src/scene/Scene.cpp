@@ -39,6 +39,10 @@ uint64_t SceneStructureVersion() {
     return g_structureVersion;
 }
 
+void MarkSceneStructureChanged() {
+    ++g_structureVersion;
+}
+
 // --- Entity -----------------------------------------------------------------------
 
 void* Entity::Get(const ComponentType& type) {
@@ -59,7 +63,7 @@ void* Entity::Add(const ComponentType& type) {
 }
 
 void Entity::Remove(const ComponentType& type) {
-    std::erase_if(components, [&](const ComponentPtr& c) { return &c.Type() == &type; });
+    if (std::erase_if(components, [&](const ComponentPtr& c) { return &c.Type() == &type; })) ++g_structureVersion;
 }
 
 // --- Scene ------------------------------------------------------------------------
@@ -139,6 +143,7 @@ EntityId Scene::CloneRecursive(const Entity& source, EntityId newParent,
     clone.active = source.active;
     clone.transform = source.transform;
     clone.components = source.components;
+    ++g_structureVersion;
     const EntityId cloneId = clone.id;
     copies.emplace_back(source.id, cloneId);
 
@@ -159,6 +164,20 @@ const Entity* Scene::Find(EntityId id) const {
     return it != m_byId.end() ? it->second : nullptr;
 }
 
+const std::vector<EntityId>& Scene::EntitiesWith(const ComponentType* type) const {
+    static const std::vector<EntityId> kNone;
+    if (!type) return kNone;  // tipo não registrado: ninguém tem
+    if (m_byTypeVersion != g_structureVersion) {
+        for (auto& [t, ids] : m_byType) ids.clear();  // mantém a memória das listas
+        for (const auto& e : m_entities) {
+            for (const ComponentPtr& c : e->components) m_byType[&c.Type()].push_back(e->id);
+        }
+        m_byTypeVersion = g_structureVersion;
+    }
+    auto it = m_byType.find(type);
+    return it != m_byType.end() ? it->second : kNone;
+}
+
 Entity* Scene::FindByName(std::string_view name) {
     for (const auto& e : m_entities) {
         if (e->name == name) return e.get();
@@ -168,11 +187,12 @@ Entity* Scene::FindByName(std::string_view name) {
 
 EntityId Scene::FindMainCamera() const {
     EntityId fallback = kNullEntity;
-    for (const auto& e : m_entities) {
-        const CameraComponent* cam = e->Get<CameraComponent>();
-        if (!cam || !IsActiveInHierarchy(e->id)) continue;
-        if (cam->main) return e->id;
-        if (fallback == kNullEntity) fallback = e->id;
+    for (EntityId id : EntitiesWith<CameraComponent>()) {
+        const Entity* e = Find(id);
+        const CameraComponent* cam = e ? e->Get<CameraComponent>() : nullptr;
+        if (!cam || !IsActiveInHierarchy(id)) continue;
+        if (cam->main) return id;
+        if (fallback == kNullEntity) fallback = id;
     }
     return fallback;
 }
@@ -267,10 +287,11 @@ glm::mat4 Scene::WorldMatrix(EntityId id) const {
 
 std::vector<Light> Scene::CollectLights() const {
     std::vector<Light> lights;
-    for (const auto& e : m_entities) {
-        const LightComponent* light = e->Get<LightComponent>();
-        if (!light || !IsActiveInHierarchy(e->id)) continue;
-        lights.push_back(MakeLight(*light, WorldMatrix(e->id)));
+    for (EntityId id : EntitiesWith<LightComponent>()) {
+        const Entity* e = Find(id);
+        const LightComponent* light = e ? e->Get<LightComponent>() : nullptr;
+        if (!light || !IsActiveInHierarchy(id)) continue;
+        lights.push_back(MakeLight(*light, WorldMatrix(id)));
     }
     return lights;
 }

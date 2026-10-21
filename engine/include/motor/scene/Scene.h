@@ -27,10 +27,12 @@ struct Light;
 using EntityId = uint32_t;
 inline constexpr EntityId kNullEntity = 0;
 
-// Contador global que sobe a cada entidade criada ou destruída, componente adicionado (Entity::Add) e cena copiada.
-// Quem guarda algo derivado da estrutura das cenas (a lista de scripts do SceneRuntime) o compara para saber se
-// precisa refazer, sem percorrer a cena. Componente removido não sobe o contador: quem usa confere na hora.
+// Contador global que sobe a cada entidade criada ou destruída, componente adicionado ou removido (Entity::Add e
+// Remove) e cena copiada. Quem guarda algo derivado da estrutura das cenas (a lista de scripts do SceneRuntime, as
+// listas por tipo de Scene::EntitiesWith) o compara para saber se precisa refazer, sem percorrer a cena.
 uint64_t SceneStructureVersion();
+// Para quem mexe direto em Entity::components (prefabs, serializador, editor) em vez de usar Add e Remove.
+void MarkSceneStructureChanged();
 
 struct Entity {
     EntityId id = kNullEntity;
@@ -96,6 +98,14 @@ public:
     bool ApplyCamera(EntityId id, Camera& camera) const;
 
     const std::vector<std::unique_ptr<Entity>>& Entities() const { return m_entities; }
+    // Ids das entidades com o componente, na ordem da cena (ativas ou não), sem percorrer a cena: as listas de todos
+    // os tipos são montadas numa passada só e refeitas quando a estrutura muda (SceneStructureVersion). A lista
+    // muda na próxima chamada depois de criar ou destruir entidades e de adicionar ou remover componentes: quem faz
+    // isso dentro do laço (ou chama código do jogo) percorre uma cópia.
+    const std::vector<EntityId>& EntitiesWith(const ComponentType* type) const;
+    template <class T> const std::vector<EntityId>& EntitiesWith() const {
+        return EntitiesWith(ComponentRegistry::TypeOf<T>());
+    }
     std::vector<EntityId> Children(EntityId parent) const;  // kNullEntity => raízes
 
     bool IsDescendantOf(EntityId id, EntityId ancestor) const;
@@ -130,6 +140,10 @@ private:
     std::vector<std::unique_ptr<Entity>> m_entities;
     std::unordered_map<EntityId, Entity*> m_byId;
     EntityId m_nextId = 1;
+
+    // EntitiesWith: listas por tipo, válidas enquanto SceneStructureVersion() == m_byTypeVersion.
+    mutable std::unordered_map<const ComponentType*, std::vector<EntityId>> m_byType;
+    mutable uint64_t m_byTypeVersion = UINT64_MAX;
 };
 
 } // namespace motor

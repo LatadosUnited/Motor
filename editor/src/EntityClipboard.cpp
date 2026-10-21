@@ -23,6 +23,7 @@ EntityId CopySubtree(const motor::Scene& from, EntityId id, motor::Scene& to, En
     clone.active = source->active;
     clone.transform = source->transform;
     clone.components = source->components;
+    motor::MarkSceneStructureChanged();
     const EntityId cloneId = clone.id;  // CreateEntity dos filhos pode realocar a lista
     copies.emplace_back(id, cloneId);
     for (EntityId child : from.Children(id)) CopySubtree(from, child, to, cloneId, copies);
