@@ -17,6 +17,8 @@ Motor e os quatro módulos. Como escrever e organizar as notas: [padrão](padrao
 | Hub | [estado](hub/estado.md) | [roteiro](hub/roteiro.md) | `hub/README.md` |
 | Instalador | [estado](instalador/estado.md) | [roteiro](instalador/roteiro.md) | `installer/README.md` |
 
+- **Site local dos mapas:** abra `docs/site/index.html` no navegador (duplo clique). As páginas são geradas dos
+  `mapa.md` dos módulos com `python docs/site/gerar.py`; o desenho usa o Mermaid da internet.
 - [Caixa de entrada](entrada.md): achados que ainda não entraram no roteiro de um módulo.
 - Decisões de rumo: pasta `decisoes/` (a mais recente: [desenvolvimento por módulo](decisoes/2026-10-21-desenvolvimento-por-modulo.md)).
 

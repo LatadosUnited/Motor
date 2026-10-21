@@ -79,7 +79,8 @@ nota do arquivo, uma decisão) ou numa nota nova ao lado do roteiro. **Feito sai
 no git e no `CHANGELOG.md` do módulo (na pasta do código), com o commit.
 
 **`mapa.md`** (opcional) — mapa mental em Mermaid (`mindmap`) de tudo o que o módulo faz, com uma lista detalhada
-embaixo; levantado do código e refeito quando o módulo muda bastante.
+embaixo; levantado do código e refeito quando o módulo muda bastante. Mudou um mapa? Rode
+`python docs/site/gerar.py` para refazer a página dele no site local (`docs/site/`, com zoom e arrastar).
 
 Trabalho que cruza módulos (formato do `motor-version.json`, o pacote "Compilador") entra no roteiro de cada
 módulo envolvido, com link entre eles.
