@@ -25,7 +25,7 @@ dos dados por tipo ficou aqui, porque é o que deixa a 26 dividir o trabalho sem
 - [x] Tarefa 2: Sistemas usando as listas por tipo — 10c2343
 - [x] Tarefa 3: Destruir entidades em lote — 4cff640
 - [x] Tarefa 4: Cache da matriz de mundo — b32086e
-- [ ] Tarefa 5: Limitar os passos fixos da física por quadro (e interpolar)
+- [x] Tarefa 5: Limitar os passos fixos da física por quadro (e interpolar) — 653e39c
 - [ ] Tarefa 6: Sincronizar com a física só os corpos que se mexeram
 - [ ] Tarefa 7: Investigar os picos de ~185 ms do `test_physics_bench`
 - [ ] Tarefa 8: Índice de nomes para `FindEntity`/`FindByName`
@@ -42,6 +42,24 @@ Cena de referência com física ≤ 3 ms por quadro (hoje 11,6), `fisica1000` ac
 
 Números do que já foi feito: histórico desta nota no git (commit 0220479) e `bench/README.md`.
 
+**Tarefa 5 (22/10, branch `fase-25-fisica-passos`):** no máximo 4 passos fixos por quadro (`FixedStepClock`; acima
+disso o jogo fica mais lento junto) e interpolação dos corpos dinâmicos e personagens no Update
+(`PhysicsSettings::interpolate`, ligada). Contadores novos no `--perf`: `Fisica sincronizar`, `Fisica passo`,
+`Fisica escrever`, `passos fixos` e `corpos ativos`.
+
+Medição (Player Release, referência, 14 s, medianas por quadro do segundo 4 em diante, mesma sessão):
+
+| | Quadro | Física | Passos por quadro | Sincronizar | Passo do Jolt | Escrever | GPU |
+|---|---|---|---|---|---|---|---|
+| antes (`main`) | 51,5 ms | — | — | — | — | — | — |
+| depois | 51,4 ms | 11,8 ms | 3,1 (3 em 85% dos quadros) | 4,6 | 5,4 | 1,8 | 49,4 ms |
+
+Leitura: o limite não muda esta cena (ela fica em 3 passos; o limite só corta quadros acima de 67 ms) e o quadro
+é limitado pela GPU (32,9 ms parado no `SwapBuffers`). Cada passo custa ~3,8 ms, dos quais 1,5 só para sincronizar
+os componentes com os corpos, com 460 corpos ainda acordados. A meta de física ≤ 3 ms depende da Tarefa 6 e de
+quadros mais rápidos (Fase 24). Com a interpolação dá também para medir um passo fixo maior (1/50 s, o padrão da
+Unity) sem tranco na tela.
+
 ## Limitações
 
 - O cache da matriz de mundo confere o transform a cada consulta: numa hierarquia funda, consultar uma folha ainda
@@ -49,3 +67,11 @@ Números do que já foi feito: histórico desta nota no git (commit 0220479) e `
 - Os `OnDestroy` de um lote rodam todos antes de tirar as entidades (como na Unity).
 - Quem mexe direto em `Entity::components` precisa chamar `MarkSceneStructureChanged`.
 - O contador de estrutura é global: mudar uma cena refaz as listas das outras na próxima consulta.
+- Interpolação: no `OnUpdate` dos scripts, o Transform de um corpo fica até um passo atrás da física. Ela é ligada
+  ou desligada para o jogo todo, não por corpo, e não aparece no `.mproject` nem no Inspector.
+- Interpolação de filho de outra entidade é feita no Transform local: se o pai também se move, o filho pode
+  sair um pouco do caminho entre os dois passos.
+- Script que chama `AddForce`/`MoveCharacter` no `OnUpdate` para uma entidade sem corpo ainda faz os corpos
+  interpolados voltarem à pose do último passo naquele quadro (um tranco de um quadro).
+- Não verificado na tela: a suavidade foi conferida só pelos testes (`test_passo_fixo`), não vendo o jogo rodar
+  com quadros fora do ritmo do passo fixo.
