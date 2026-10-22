@@ -35,6 +35,7 @@ struct PhysicsSystem::World {
         Transform written;          // dinâmicos: Transform local que a física escreveu por último
         EntityId parent = kNullEntity;  // pai quando `written` foi escrito
         physics_jolt::Pose pose;                  // estáticos e cinemáticos: pose do mundo aplicada por último
+        glm::mat4 world{1.0f};                    // estáticos e cinemáticos: matriz de mundo de `pose`
         bool kinematicMoving = false;
         uint32_t seen = 0;
     };
@@ -47,6 +48,17 @@ struct PhysicsSystem::World {
         float jump = 0.0f;        // pulo pendente
         std::optional<glm::vec3> velocity;  // SetCharacterVelocity pendente (substitui andar e pular no passo)
         uint32_t seen = 0;
+    };
+
+    // Entidade com Collider, com os ponteiros já buscados: o SyncBodies a cada passo não procura nada no mapa da cena
+    // nem nos componentes. Valem enquanto a estrutura das cenas não muda (SceneStructureVersion); `record` vale
+    // até o corpo sair de `bodies` (nulo = procurar de novo).
+    struct ColliderSlot {
+        Entity* entity = nullptr;
+        const ColliderComponent* collider = nullptr;
+        const RigidbodyComponent* rigidbody = nullptr;
+        const MeshRenderer* renderer = nullptr;  // só com forma Malha
+        BodyRecord* record = nullptr;
     };
 
     struct PairState {
@@ -88,8 +100,11 @@ struct PhysicsSystem::World {
 
     void WarnOnce(EntityId id, const char* message);
 
-    // Componentes -> corpos. Novos e alterados entram em lote (bem mais rápido que um a um com milhares).
+    // Componentes -> corpos. Novos e alterados entram em lote (bem mais rápido que um a um com milhares). Corpo cujo
+    // Transform e componentes não mudaram custa só as comparações (sem buscas nem decompor matriz).
     void SyncBodies(Scene& scene, float dt);
+    // Refaz `slots` se a estrutura mudou ou a cena é outra; true se refez.
+    bool RefreshSlots(Scene& scene);
 
     BodyRecord* CreateBody(const Entity& entity, const ColliderComponent& collider, const RigidbodyComponent* rigidbody,
                            const Mesh* mesh, const physics_jolt::Pose& pose, std::vector<JPH::BodyID>& addStatic,
@@ -142,6 +157,10 @@ struct PhysicsSystem::World {
     JPH::PhysicsSystem physics;  // depois do coletor de contatos e das camadas, que ele usa
 
     std::unordered_map<EntityId, BodyRecord> bodies;
+    std::vector<ColliderSlot> slots;
+    const Scene* slotsScene = nullptr;
+    uint64_t slotsVersion = ~uint64_t{0};
+    JPH::BodyIDVector activeBodies;  // WriteBack: os corpos acordados do passo
     std::unordered_map<EntityId, CharacterRecord> characters;  // depois de physics: sai antes dele
     std::unordered_map<const Mesh*, std::shared_ptr<MeshData>> meshData;
     std::unordered_map<uint64_t, PairState> pairs;

@@ -83,6 +83,9 @@ motor_add_test(test_physics_bench)
 # Passo fixo (Fase 25): limite de passos por quadro e interpolação da física no Update.
 motor_add_test(test_passo_fixo)
 
+# Sincronização da física (Fase 25): só o que mudou chega aos corpos, sem perder mudanças que não mexem na estrutura.
+motor_add_test(test_fisica_sincronizar)
+
 # Materiais (.mmat) e migração de cenas antigas; prefabs (.mprefab) com overrides e o histórico de desfazer.
 motor_add_test(test_materials)
 motor_add_test(test_prefabs ${PROJECT_SOURCE_DIR}/editor/src/UndoHistory.cpp)

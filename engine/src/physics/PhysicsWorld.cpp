@@ -167,97 +167,139 @@ void PhysicsSystem::World::WarnOnce(EntityId id, const char* message) {
     if (warned.insert(id).second) log::Warn("{} (entidade {})", message, id);
 }
 
-void PhysicsSystem::World::SyncBodies(Scene& scene, float dt) {
-    ++frame;
-    JPH::BodyInterface& bi = Bodies();
-    std::vector<JPH::BodyID> addStatic, addMoving, remove;
-
+bool PhysicsSystem::World::RefreshSlots(Scene& scene) {
+    if (slotsScene == &scene && slotsVersion == SceneStructureVersion()) return false;
+    slotsScene = &scene;
+    slotsVersion = SceneStructureVersion();
+    slots.clear();
     for (EntityId id : scene.EntitiesWith<RigidbodyComponent>()) {
         const Entity* e = scene.Find(id);
         if (e && !e->Has<ColliderComponent>()) WarnOnce(id, "Física: Rigidbody sem Collider é ignorado");
     }
     for (EntityId id : scene.EntitiesWith<ColliderComponent>()) {
-        Entity* entityPtr = scene.Find(id);
-        const ColliderComponent* collider = entityPtr ? entityPtr->Get<ColliderComponent>() : nullptr;
-        if (!collider || !scene.IsActiveInHierarchy(id)) continue;
-        Entity& entity = *entityPtr;
-        const RigidbodyComponent* rigidbody = entity.Get<RigidbodyComponent>();
+        Entity* entity = scene.Find(id);
+        const ColliderComponent* collider = entity ? entity->Get<ColliderComponent>() : nullptr;
+        if (!collider) continue;
+        ColliderSlot& s = slots.emplace_back();
+        s.entity = entity;
+        s.collider = collider;
+        s.rigidbody = entity->Get<RigidbodyComponent>();
+        s.renderer = entity->Get<MeshRenderer>();  // mesmo sem forma Malha: a forma pode mudar sem mudar a estrutura
+        auto it = bodies.find(id);
+        s.record = it != bodies.end() ? &it->second : nullptr;
+    }
+    return true;
+}
 
-        const MeshRenderer* renderer = collider->shape == ColliderShape::Mesh ? entity.Get<MeshRenderer>() : nullptr;
-        const Mesh* mesh = renderer ? renderer->mesh.get() : nullptr;
-        auto it = bodies.find(entity.id);
-        if (it != bodies.end()) {
-            BodyRecord& r = it->second;
-            // Caminho comum (milhares de caixas): dinâmico que só a física mexeu, nada a fazer.
-            if (r.motion == JPH::EMotionType::Dynamic && r.parent == entity.parent &&
-                SameTransform(entity.transform, r.written) && rigidbody && r.rigidbody == *rigidbody &&
-                r.collider == *collider && r.mesh == mesh) {
-                r.seen = frame;
+void PhysicsSystem::World::SyncBodies(Scene& scene, float dt) {
+    ++frame;
+    JPH::BodyInterface& bi = Bodies();
+    std::vector<JPH::BodyID> addStatic, addMoving, remove;
+    // Corpos sem entidade só sobram se a estrutura mudou (entidade ou componente saiu) ou se alguma foi desativada:
+    // fora disso não precisa percorrer `bodies` atrás deles.
+    bool sweep = RefreshSlots(scene);
+
+    for (ColliderSlot& s : slots) {
+        Entity& entity = *s.entity;
+        if (!scene.IsActiveInHierarchy(entity)) {
+            if (s.record || bodies.contains(entity.id)) sweep = true;
+            continue;
+        }
+        const ColliderComponent& collider = *s.collider;
+        const RigidbodyComponent* rigidbody = s.rigidbody;
+        const Mesh* mesh = collider.shape == ColliderShape::Mesh && s.renderer ? s.renderer->mesh.get() : nullptr;
+        if (!s.record) {
+            auto it = bodies.find(entity.id);
+            if (it != bodies.end()) s.record = &it->second;
+        }
+        BodyRecord* r = s.record;
+        const bool sameComponents = r && r->collider == collider && r->hasRigidbody == (rigidbody != nullptr) &&
+                                    (!rigidbody || r->rigidbody == *rigidbody) && r->mesh == mesh;
+        // Caminhos comuns (milhares de corpos): nada mudou desde o último passo.
+        if (sameComponents) {
+            if (r->motion == JPH::EMotionType::Dynamic) {
+                // Dinâmico que só a física mexeu.
+                if (r->parent == entity.parent && SameTransform(entity.transform, r->written)) {
+                    r->seen = frame;
+                    continue;
+                }
+            } else if (!r->kinematicMoving && scene.WorldMatrix(entity) == r->world) {
+                // Estático ou cinemático parado no mesmo lugar (sem decompor a matriz).
+                r->seen = frame;
                 continue;
             }
         }
-        const Pose pose = Decompose(scene.WorldMatrix(entity.id));
-        if (it != bodies.end()) {
-            BodyRecord& r = it->second;
-            const bool changed = !(r.collider == *collider) || r.hasRigidbody != (rigidbody != nullptr) ||
-                                 (rigidbody && !(r.rigidbody == *rigidbody)) || r.mesh != mesh ||
-                                 !SameScale(r.scale, pose.scale);
-            if (changed) {
-                // Refaz o corpo, mantendo a velocidade de quem já se movia.
-                const JPH::Vec3 velocity = bi.GetLinearVelocity(r.id), angular = bi.GetAngularVelocity(r.id);
-                WakeAround(r.id);
-                DropPairsOf(r.id);
-                bi.RemoveBody(r.id);
-                bi.DestroyBody(r.id);
-                bodies.erase(it);
-                BodyRecord* created = CreateBody(entity, *collider, rigidbody, mesh, pose, addStatic, addMoving);
-                if (created && created->motion == JPH::EMotionType::Dynamic) {
-                    bi.SetLinearAndAngularVelocity(created->id, velocity, angular);
+
+        const glm::mat4 world = scene.WorldMatrix(entity);
+        const Pose pose = Decompose(world);
+        if (!r) {
+            s.record = CreateBody(entity, collider, rigidbody, mesh, pose, addStatic, addMoving);
+            if (s.record) s.record->world = world;
+            continue;
+        }
+        if (!sameComponents || !SameScale(r->scale, pose.scale)) {
+            // Refaz o corpo, mantendo a velocidade de quem já se movia.
+            const JPH::Vec3 velocity = bi.GetLinearVelocity(r->id), angular = bi.GetAngularVelocity(r->id);
+            WakeAround(r->id);
+            DropPairsOf(r->id);
+            bi.RemoveBody(r->id);
+            bi.DestroyBody(r->id);
+            bodies.erase(entity.id);  // só este registro: os ponteiros dos outros slots continuam valendo
+            s.record = CreateBody(entity, collider, rigidbody, mesh, pose, addStatic, addMoving);
+            if (s.record) {
+                s.record->world = world;
+                if (s.record->motion == JPH::EMotionType::Dynamic) {
+                    bi.SetLinearAndAngularVelocity(s.record->id, velocity, angular);
                 }
-                continue;
-            }
-            r.seen = frame;
-            if (r.motion == JPH::EMotionType::Dynamic) {
-                // Transform mexido por script ou pelo editor: teleporta (a velocidade continua).
-                r.parent = entity.parent;
-                if (!SameTransform(entity.transform, r.written)) {
-                    WakeAround(r.id);
-                    bi.SetPositionAndRotation(r.id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
-                    r.written = entity.transform;
-                }
-            } else if (r.motion == JPH::EMotionType::Kinematic) {
-                const bool moved = pose.position != r.pose.position || pose.rotation != r.pose.rotation;
-                // MoveKinematic dá a velocidade para chegar lá neste passo (e empurrar os outros); parado,
-                // mais uma chamada zera a velocidade.
-                if ((moved || r.kinematicMoving) && dt > 0.0f) {
-                    bi.MoveKinematic(r.id, ToJolt(pose.position), ToJolt(pose.rotation), dt);
-                } else if (moved) {
-                    bi.SetPositionAndRotation(r.id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
-                }
-                r.kinematicMoving = moved;
-                r.pose = pose;
-            } else if (pose.position != r.pose.position || pose.rotation != r.pose.rotation) {
-                WakeAround(r.id);  // antes e depois: quem estava em cima e quem está no lugar novo
-                bi.SetPositionAndRotation(r.id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::DontActivate);
-                WakeAround(r.id);
-                r.pose = pose;
             }
             continue;
         }
-        CreateBody(entity, *collider, rigidbody, mesh, pose, addStatic, addMoving);
+        r->seen = frame;
+        if (r->motion == JPH::EMotionType::Dynamic) {
+            // Transform mexido por script ou pelo editor: teleporta (a velocidade continua).
+            r->parent = entity.parent;
+            if (!SameTransform(entity.transform, r->written)) {
+                WakeAround(r->id);
+                bi.SetPositionAndRotation(r->id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
+                r->written = entity.transform;
+            }
+        } else if (r->motion == JPH::EMotionType::Kinematic) {
+            const bool moved = pose.position != r->pose.position || pose.rotation != r->pose.rotation;
+            // MoveKinematic dá a velocidade para chegar lá neste passo (e empurrar os outros); parado,
+            // mais uma chamada zera a velocidade.
+            if ((moved || r->kinematicMoving) && dt > 0.0f) {
+                bi.MoveKinematic(r->id, ToJolt(pose.position), ToJolt(pose.rotation), dt);
+            } else if (moved) {
+                bi.SetPositionAndRotation(r->id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
+            }
+            r->kinematicMoving = moved;
+            r->pose = pose;
+            r->world = world;
+        } else {
+            if (pose.position != r->pose.position || pose.rotation != r->pose.rotation) {
+                WakeAround(r->id);  // antes e depois: quem estava em cima e quem está no lugar novo
+                bi.SetPositionAndRotation(r->id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::DontActivate);
+                WakeAround(r->id);
+                r->pose = pose;
+            }
+            r->world = world;
+        }
     }
 
-    for (auto it = bodies.begin(); it != bodies.end();) {
-        if (it->second.seen != frame) {
-            WakeAround(it->second.id);
-            DropPairsOf(it->second.id);
-            remove.push_back(it->second.id);
-            it = bodies.erase(it);
-        } else {
-            ++it;
+    if (sweep) {
+        for (auto it = bodies.begin(); it != bodies.end();) {
+            if (it->second.seen != frame) {
+                WakeAround(it->second.id);
+                DropPairsOf(it->second.id);
+                remove.push_back(it->second.id);
+                it = bodies.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
     if (!remove.empty()) {
+        for (ColliderSlot& s : slots) s.record = nullptr;  // procurados de novo no próximo passo
         bi.RemoveBodies(remove.data(), static_cast<int>(remove.size()));
         bi.DestroyBodies(remove.data(), static_cast<int>(remove.size()));
     }

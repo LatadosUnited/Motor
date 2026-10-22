@@ -41,6 +41,7 @@ Máquina de referência (i5 de 4 núcleos, Intel HD 530), Release.
 |---|---|---|---|---|---|---|
 | base.txt | 3,1 | 5,4 | 4,7 | 1,8 | **337** | **314** |
 | base.txt depois da Fase 25 (listas por tipo, 21/10) | 2,0 | | | | | |
+| base.txt depois da Fase 25 (sincronizar só o que mudou, 22/10) | 1,4 (1,1 a 1,4 entre rodadas) | | | | | |
 
 Player 1280×720, vsync desligado, 900 quadros com `--perf`, medianas depois de 4 s:
 

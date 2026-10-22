@@ -158,8 +158,15 @@ void PhysicsSystem::World::WriteBack(Scene& scene, bool smooth) {
         if (smooth && !SameTransform(before, after)) smoothed.push_back({id, before, after, after});
     };
     JPH::BodyInterface& bi = Bodies();
-    for (auto& [id, r] : bodies) {
-        if (r.motion != JPH::EMotionType::Dynamic || !bi.IsActive(r.id)) continue;
+    // Só os acordados: com a maioria dormindo, não percorre todos os corpos perguntando um a um.
+    activeBodies.clear();
+    physics.GetActiveBodies(JPH::EBodyType::RigidBody, activeBodies);
+    for (const JPH::BodyID bodyId : activeBodies) {
+        const EntityId id = static_cast<EntityId>(bi.GetUserData(bodyId));
+        auto found = bodies.find(id);
+        if (found == bodies.end() || found->second.id != bodyId) continue;  // ex.: corpo interno de personagem
+        BodyRecord& r = found->second;
+        if (r.motion != JPH::EMotionType::Dynamic) continue;
         Entity* entity = scene.Find(id);
         if (!entity) continue;
         const Transform before = entity->transform;

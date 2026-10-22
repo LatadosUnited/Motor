@@ -138,12 +138,15 @@ public:
 
     bool IsDescendantOf(EntityId id, EntityId ancestor) const;
     bool IsActiveInHierarchy(EntityId id) const;
+    bool IsActiveInHierarchy(const Entity& e) const;  // sem a busca pelo id
 
     // Falha (retorna false) se criar um ciclo. keepWorldTransform preserva a posição no mundo.
     bool SetParent(EntityId id, EntityId newParent, bool keepWorldTransform = true);
 
     // Com cache por entidade: recalcula só quando o transform, o pai ou o mundo do pai mudaram.
     glm::mat4 WorldMatrix(EntityId id) const;
+    // O mesmo sem a busca pelo id (a entidade precisa ser desta cena); a referência vale até a próxima consulta.
+    const glm::mat4& WorldMatrix(const Entity& e) const { return CachedWorld(e); }
     // Ajusta o Transform local para que a entidade fique com esta matriz no mundo.
     void SetWorldMatrix(EntityId id, const glm::mat4& world);
 
@@ -163,7 +166,6 @@ public:
 
 private:
     const Entity* ParentOf(const Entity& e) const;  // Find(e.parent) sem a busca, se a estrutura não mudou
-    bool IsActiveInHierarchy(const Entity& e) const;
     const glm::mat4& CachedWorld(const Entity& e) const;
 
     // `copies`: pares (original, cópia) de cada entidade copiada, para ajustar as EntityRef.
