@@ -26,12 +26,13 @@ dos dados por tipo ficou aqui, porque é o que deixa a 26 dividir o trabalho sem
 - [x] Tarefa 3: Destruir entidades em lote — 4cff640
 - [x] Tarefa 4: Cache da matriz de mundo — b32086e
 - [x] Tarefa 5: Limitar os passos fixos da física por quadro (e interpolar) — 653e39c
-- [ ] Tarefa 6: Sincronizar com a física só os corpos que se mexeram
+- [x] Tarefa 6: Sincronizar com a física só os corpos que se mexeram — c22171d
 - [ ] Tarefa 7: Investigar os picos de ~185 ms do `test_physics_bench`
 - [ ] Tarefa 8: Índice de nomes para `FindEntity`/`FindByName`
 - [ ] Tarefa 9: `Scene::Children` sem percorrer a cena
 - [ ] Tarefa 10: Listas por tipo incrementais
 - [ ] Tarefa 11: Guardar componentes em blocos contínuos por tipo (estilo ECS)
+- [ ] Tarefa 12: Investigar por que metade das caixas da referência não dorme
 
 ## Pronto quando
 
@@ -60,12 +61,33 @@ os componentes com os corpos, com 460 corpos ainda acordados. A meta de física 
 quadros mais rápidos (Fase 24). Com a interpolação dá também para medir um passo fixo maior (1/50 s, o padrão da
 Unity) sem tranco na tela.
 
+**Tarefa 6 (22/10):** o `SyncBodies` guarda a lista dos colliders com os ponteiros da entidade, dos componentes e
+do corpo, refeita só quando a estrutura muda (`SceneStructureVersion`). A cada passo, corpo sem mudança custa só
+as comparações: estático e cinemático parados comparam a matriz de mundo, sem decompor. O aviso de Rigidbody sem
+Collider e a procura de corpos sem entidade só rodam quando a estrutura muda ou alguma entidade é desativada. O
+`WriteBack` percorre só os corpos acordados que o Jolt lista. A `Scene` ganhou `IsActiveInHierarchy` e
+`WorldMatrix` por `Entity&` (sem a busca pelo id).
+
+| Referência (mesma sessão, mesmo método) | Física por quadro | Sincronizar | Escrever | Passo do Jolt | Quadro |
+|---|---|---|---|---|---|
+| `main` | 15,2 ms | — | — | — | 44,3 ms |
+| antes (Tarefa 5) | 13,3 ms | 4,7 | 1,9 | 6,7 | 44,5 ms |
+| depois | 12,9 ms | 2,2 | 1,4 | 8,6 | 44,2 ms |
+
+`test_desempenho`: `jogo_passo` 1,96 → 1,07 ms (−45%; 1 passo + 1 Update, a referência 2 s depois do Play).
+O passo do Jolt variou de 6,7 a 8,6 ms entre rodadas sem mudança dentro dele. Ele é agora ~2/3 da física: 460 das
+900 caixas continuam acordadas depois de 14 s (no `test_desempenho`, 810 depois de 2 s e 440 depois de 10 s, com e
+sem interpolação). A meta de física ≤ 3 ms passa por elas dormirem (Tarefa 12) e por quadros mais rápidos (Fase 24).
+
 ## Limitações
 
 - O cache da matriz de mundo confere o transform a cada consulta: numa hierarquia funda, consultar uma folha ainda
   sobe até a raiz (sem recalcular nem buscar no mapa).
 - Os `OnDestroy` de um lote rodam todos antes de tirar as entidades (como na Unity).
-- Quem mexe direto em `Entity::components` precisa chamar `MarkSceneStructureChanged`.
+- Quem mexe direto em `Entity::components` precisa chamar `MarkSceneStructureChanged`. Vale também para a física:
+  ela guarda ponteiros para os componentes até a estrutura mudar.
+- A sincronização ainda passa por todos os colliders a cada passo (só compara, sem buscar). Para não passar, os
+  componentes e o Transform precisariam avisar quando mudam.
 - O contador de estrutura é global: mudar uma cena refaz as listas das outras na próxima consulta.
 - Interpolação: no `OnUpdate` dos scripts, o Transform de um corpo fica até um passo atrás da física. Ela é ligada
   ou desligada para o jogo todo, não por corpo, e não aparece no `.mproject` nem no Inspector.
