@@ -256,10 +256,10 @@ Ordem dentro de um passo do jogo (a física é um "sistema", seção 8):
 
 ```text
 Play:   OnStart dos sistemas (física) -> OnStart dos scripts
-Frame:  [passo fixo, 0 ou mais vezes]
+Frame:  [passo fixo, 0 a 4 vezes]
             OnStart dos scripts novos -> física avança -> OnCollision*/OnTrigger* -> OnFixedUpdate dos scripts
             -> destruições pedidas
-        OnStart dos scripts novos -> OnUpdate dos scripts -> destruições pedidas
+        OnStart dos scripts novos -> física interpola -> OnUpdate dos scripts -> destruições pedidas
 Parar:  OnDestroy dos scripts -> a física para -> a cena volta ao estado de antes do Play
 ```
 
@@ -573,6 +573,11 @@ orbital que não deve bater no próprio jogador olha só as paredes, com
   objeto que deve empurrar os outros (porta, plataforma), use Rigidbody **Cinemático**.
 - Entidade criada neste passo só ganha corpo no próximo passo fixo: as chamadas acima devolvem `false`/zero
   até lá.
+- **Interpolação:** no `OnUpdate` (e na tela), corpos com Rigidbody e personagens aparecem entre os dois últimos
+  passos fixos, para não tremerem quando o frame e o passo não batem. Por isso, no `OnUpdate`, o Transform deles
+  fica até um passo (1/60 s) atrás da física; a posição exata é a do `OnFixedUpdate` (ou `GetVelocity` e
+  `Raycast`, que perguntam à física). Mudar o Transform no `OnUpdate` continua teleportando.
+- Num frame muito lento (mais de 4 passos fixos), o jogo inteiro fica mais lento em vez de rodar mais passos.
 
 ## 8. Sistemas do jogo (`GetSystem`)
 

@@ -61,6 +61,15 @@ struct PhysicsSystem::World {
         bool trigger = false;
     };
 
+    // Corpo ou personagem que o último passo mexeu: Transform local antes e depois do passo, e o que a interpolação
+    // pôs no Transform por último (para saber se um script mexeu nele depois).
+    struct Smoothed {
+        EntityId id = kNullEntity;
+        Transform from;
+        Transform to;
+        Transform shown;
+    };
+
     // InitJolt antes de qualquer membro: o JPH::PhysicsSystem já usa o alocador do Jolt ao ser construído.
     explicit World(const PhysicsSettings& worldSettings);
 
@@ -94,8 +103,16 @@ struct PhysicsSystem::World {
 
     void UpdateCharacter(CharacterRecord& r, float dt);
 
-    // Corpos -> Transforms (só os dinâmicos acordados) e personagens -> Transforms.
-    void WriteBack(Scene& scene);
+    // Corpos -> Transforms (só os dinâmicos acordados) e personagens -> Transforms. Com `smooth`, guarda em
+    // `smoothed` quem mudou de lugar, com o Transform de antes e o de depois.
+    void WriteBack(Scene& scene, bool smooth);
+
+    // Interpolação (só visual): ApplySmoothing põe nos Transforms a mistura entre o penúltimo e o último passo
+    // (alpha 0 a 1); RestoreSmoothed, antes de cada passo, devolve o Transform do último passo, para a simulação
+    // nunca ver a pose interpolada. Transform mexido por script depois da interpolação fica como o script deixou
+    // (vira teleporte no SyncBodies, como sempre).
+    void ApplySmoothing(Scene& scene, float alpha);
+    void RestoreSmoothed(Scene& scene);
 
     // Acordado para fins de contato (estático nunca "acorda", mas também nunca dorme).
     bool Awake(JPH::BodyID id);
@@ -129,6 +146,7 @@ struct PhysicsSystem::World {
     std::unordered_map<const Mesh*, std::shared_ptr<MeshData>> meshData;
     std::unordered_map<uint64_t, PairState> pairs;
     std::vector<Exit> pendingExits;
+    std::vector<Smoothed> smoothed;  // do último passo
     std::unordered_set<EntityId> warned;
     uint32_t frame = 0;
     bool reportedUpdateError = false;

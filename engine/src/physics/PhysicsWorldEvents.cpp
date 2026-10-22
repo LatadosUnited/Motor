@@ -30,6 +30,7 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
 
+#include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/mat3x3.hpp>
@@ -151,12 +152,17 @@ void PhysicsSystem::World::UpdateCharacter(CharacterRecord& r, float dt) {
                       physics.GetDefaultLayerFilter(layer), {}, {}, *temp);
 }
 
-void PhysicsSystem::World::WriteBack(Scene& scene) {
+void PhysicsSystem::World::WriteBack(Scene& scene, bool smooth) {
+    smoothed.clear();
+    auto remember = [&](EntityId id, const Transform& before, const Transform& after) {
+        if (smooth && !SameTransform(before, after)) smoothed.push_back({id, before, after, after});
+    };
     JPH::BodyInterface& bi = Bodies();
     for (auto& [id, r] : bodies) {
         if (r.motion != JPH::EMotionType::Dynamic || !bi.IsActive(r.id)) continue;
         Entity* entity = scene.Find(id);
         if (!entity) continue;
+        const Transform before = entity->transform;
         JPH::RVec3 position;
         JPH::Quat rotation;
         bi.GetPositionAndRotation(r.id, position, rotation);
@@ -170,10 +176,12 @@ void PhysicsSystem::World::WriteBack(Scene& scene) {
             scene.SetWorldMatrix(id, world);
         }
         r.written = entity->transform;
+        remember(id, before, entity->transform);
     }
     for (auto& [id, r] : characters) {
         Entity* entity = scene.Find(id);
         if (!entity) continue;
+        const Transform before = entity->transform;
         const glm::vec3 position = ToGlm(r.character->GetPosition());
         if (entity->parent == kNullEntity) {
             entity->transform.position = position;
@@ -183,7 +191,35 @@ void PhysicsSystem::World::WriteBack(Scene& scene) {
             scene.SetWorldMatrix(id, world);
         }
         r.written = glm::vec3(scene.WorldMatrix(id)[3]);
+        remember(id, before, entity->transform);
     }
+}
+
+void PhysicsSystem::World::ApplySmoothing(Scene& scene, float alpha) {
+    alpha = std::clamp(alpha, 0.0f, 1.0f);
+    for (Smoothed& s : smoothed) {
+        if (s.id == kNullEntity) continue;
+        Entity* entity = scene.Find(s.id);
+        if (!entity || !SameTransform(entity->transform, s.shown)) {
+            s.id = kNullEntity;  // sumiu ou um script mexeu: fica como está, sem interpolar nem devolver
+            continue;
+        }
+        Transform t = s.to;
+        t.position = glm::mix(s.from.position, s.to.position, alpha);
+        t.rotation = glm::slerp(s.from.rotation, s.to.rotation, alpha);
+        t.scale = glm::mix(s.from.scale, s.to.scale, alpha);  // filho: a escala sai da matriz e varia um pouco
+        entity->transform = t;
+        s.shown = t;
+    }
+}
+
+void PhysicsSystem::World::RestoreSmoothed(Scene& scene) {
+    for (const Smoothed& s : smoothed) {
+        if (s.id == kNullEntity) continue;
+        Entity* entity = scene.Find(s.id);
+        if (entity && SameTransform(entity->transform, s.shown)) entity->transform = s.to;
+    }
+    smoothed.clear();
 }
 
 bool PhysicsSystem::World::Awake(JPH::BodyID id) {

@@ -265,6 +265,7 @@ private:
             ui->SetPointer({{static_cast<float>(window.Width()), static_cast<float>(window.Height())},
                             Input::MousePosition(), !window.IsMinimized(), Input::IsMouseDown(MouseButton::Left)});
         }
+        m_runtime->SetFixedAlpha(FixedAlpha());  // interpolação da física
         m_runtime->Update(dt);
         ApplySceneRequest();
         if (m_runtime) GetWindow().SetCursorMode(m_runtime->GetCursorMode());  // pedido pelos scripts

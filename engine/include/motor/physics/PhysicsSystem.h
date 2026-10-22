@@ -11,6 +11,7 @@
 //
 // Em cada FixedUpdate: corpos novos/removidos/alterados entram no mundo -> personagens andam -> o mundo
 // avança -> Transforms recebem as posições -> OnCollision/OnTrigger dos scripts -> OnFixedUpdate dos scripts.
+// No Update, os corpos que o último passo mexeu aparecem interpolados (PhysicsSettings::interpolate).
 // Mudar o Transform de um corpo pelo script ou pelo editor teleporta o corpo; mudar um componente refaz o corpo.
 //
 // Num script:
@@ -55,6 +56,11 @@ struct PhysicsSettings {
     CollisionLayers layers;
     // Troca os triângulos do Collider de malha (testes); normalmente vazio (usa a cópia na CPU da Mesh).
     MeshDataSource meshData;
+    // Interpolação: no Update, corpos dinâmicos e personagens aparecem entre o penúltimo e o último passo fixo
+    // (SceneRuntime::FixedAlpha), sem o tranco de quando o quadro e o passo fixo não batem. Só visual: no
+    // OnFixedUpdate os Transforms voltam a ser os do último passo. No OnUpdate dos scripts, o Transform de um corpo
+    // fica até um passo atrás da física (como na Unity com Rigidbody.interpolation).
+    bool interpolate = true;
 
     static PhysicsSettings& Global();
 };
@@ -84,6 +90,7 @@ public:
 
     void OnStart(SceneRuntime& runtime) override;
     void OnFixedUpdate(SceneRuntime& runtime, float dt) override;
+    void OnUpdate(SceneRuntime& runtime, float dt) override;  // interpolação (PhysicsSettings::interpolate)
     void OnStop(SceneRuntime& runtime) override;
 
     // Primeiro corpo no raio (direction não precisa ser normalizada), até maxDistance. `ignore`: entidade
