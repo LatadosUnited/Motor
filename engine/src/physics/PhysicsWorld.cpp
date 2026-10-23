@@ -2,9 +2,12 @@
 
 #include "PhysicsWorld.h"
 
+#include "JoltJobs.h"
+
 #include "motor/physics/PhysicsSystem.h"
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/AssetLoaders.h"
+#include "motor/core/JobSystem.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Mesh.h"
 #include "motor/scene/Components.h"
@@ -50,11 +53,16 @@ namespace motor {
 
 using namespace physics_jolt;
 PhysicsSystem::World::World(const PhysicsSettings& worldSettings) : settings((InitJolt(), worldSettings)) {
-    const unsigned hardware = std::max(1u, std::thread::hardware_concurrency());
-    threads = settings.workerThreads < 0 ? static_cast<int>(hardware) - 1 : settings.workerThreads;
-    threads = std::clamp(threads, 0, 64);
     temp = std::make_unique<JPH::TempAllocatorImplWithMallocFallback>(16 * 1024 * 1024);
-    jobs = std::make_unique<JPH::JobSystemThreadPool>(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, threads);
+    if (settings.workerThreads < 0) {
+        // Padrão (Fase 26): as threads do sistema de tarefas da engine, divididas com a montagem do quadro.
+        jobs = std::make_unique<EngineJobSystem>(JPH::cMaxPhysicsBarriers);
+        threads = JobSystem::Get().WorkerCount();
+    } else {
+        // Número pedido (testes, benchmark): um pool só da Jolt, com essas threads.
+        threads = std::clamp(settings.workerThreads, 0, 64);
+        jobs = std::make_unique<JPH::JobSystemThreadPool>(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, threads);
+    }
     physics.Init(65536, 0, 65536, 65536, broadPhaseLayers, objectVsBroadPhase, objectPairs);
     physics.SetGravity(ToJolt(settings.gravity));
     physics.SetContactListener(&contacts);
