@@ -32,7 +32,7 @@ dos dados por tipo ficou aqui, porque é o que deixa a 26 dividir o trabalho sem
 - [ ] Tarefa 9: `Scene::Children` sem percorrer a cena
 - [ ] Tarefa 10: Listas por tipo incrementais
 - [ ] Tarefa 11: Guardar componentes em blocos contínuos por tipo (estilo ECS)
-- [ ] Tarefa 12: Investigar por que metade das caixas da referência não dorme
+- [x] Tarefa 12: Investigar por que metade das caixas da referência não dorme — 23f6a39
 
 ## Pronto quando
 
@@ -79,7 +79,44 @@ O passo do Jolt variou de 6,7 a 8,6 ms entre rodadas sem mudança dentro dele. E
 900 caixas continuam acordadas depois de 14 s (no `test_desempenho`, 810 depois de 2 s e 440 depois de 10 s, com e
 sem interpolação). A meta de física ≤ 3 ms passa por elas dormirem (Tarefa 12) e por quadros mais rápidos (Fase 24).
 
+**Tarefa 12 (23/10):** as caixas acordadas ficam em colunas inteiras (o número cai de 10 em 10), e a do topo
+descreve um círculo a ~0,6 m/s sem sair da coluna: **a coluna inteira balança** como um pêndulo invertido que não
+perde energia. Experimento (chão e as 900 caixas da referência, 20 s a 60 Hz, corpos acordados):
+
+| Variação | Acordados depois de 20 s |
+|---|---|
+| como na referência (giro de 0,05 rad × (i % 7) entre caixas vizinhas) | 440 |
+| sem interpolação | 440 |
+| sem o giro (caixas alinhadas) | 0 (em ~6 s) |
+| colunas de 5 / de 3 | 65 / 0 |
+| só a Jolt, sem a engine (mesma cena) | 420 |
+| quinas vivas (raio convexo 0 ou 0,01), atrito 1,0, amortecimento angular 0,5 | 360 a 410 |
+| 4 ou 8 iterações de posição | 360 a 420 |
+| 20 iterações de velocidade | 180 |
+| sono a 0,05 m/s (Jolt: 0,03) | 250 |
+| **20 iterações de velocidade e sono a 0,05 m/s** | **20** |
+
+Conclusões: a engine não acorda as caixas (zero teleportes contados no `SyncBodies`; a interpolação não muda nada),
+e a Jolt pura balança igual. É o solucionador com 10 iterações que não assenta pilhas altas de caixas giradas umas
+sobre as outras. `PhysicsSettings` ganhou `velocitySteps` (20), `positionSteps` (2) e `sleepVelocity` (0,05 m/s;
+a PhysX da Unity dorme com energia equivalente a ~0,1 m/s).
+
+| `test_physics_bench` (1000 caixas, 4 s, 3 threads) | Dormindo | FixedUpdate médio | Fora da coluna |
+|---|---|---|---|
+| antes | 411 de 1001 | 4,70 ms | 0 |
+| depois (3 rodadas) | 981 de 1001 | 0,87–1,71 ms | 0 |
+
+Referência no Player: 60 corpos acordados a partir de 2 s (antes, 460 depois de 14 s). Os tempos de quadro dessa
+rodada e o `test_desempenho` não valem: a máquina estava com outros processos usando ~5 núcleos (todas as medidas,
+até as de JSON, 2 a 4 vezes mais lentas). Mesmo assim o `jogo_passo` ficou igual à base (−3%). Falta remedir a
+referência com a máquina parada e regravar a base.
+
 ## Limitações
+
+- 20 iterações de velocidade custam mais por corpo acordado (no `test_physics_bench`, a queda do primeiro segundo
+  não ficou mais cara; o ganho vem de quase todos dormirem). 6 das 90 colunas da referência ainda balançam.
+- `velocitySteps`, `positionSteps` e `sleepVelocity` são globais (`PhysicsSettings`), sem campo no `.mproject` nem
+  no editor. Corpo que anda abaixo de 5 cm/s por meio segundo agora para (antes, 3 cm/s).
 
 - O cache da matriz de mundo confere o transform a cada consulta: numa hierarquia funda, consultar uma folha ainda
   sobe até a raiz (sem recalcular nem buscar no mapa).
