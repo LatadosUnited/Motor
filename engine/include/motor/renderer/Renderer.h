@@ -26,6 +26,7 @@ class PostProcess;
 class ShadowRenderer;
 class SkyRenderer;
 struct DrawItem;
+struct Frustum;
 
 struct RenderStats {
     uint32_t drawCalls = 0;        // malhas desenhadas em todas as passadas (cena, sombras, contornos)
@@ -105,6 +106,7 @@ private:
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);
     DrawItem& AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows);
+    void PrepareItems(const Frustum& view);
 
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
@@ -144,6 +146,7 @@ private:
     ShadowParams m_lastShadowParams;
     uint32_t m_lastMaterialId = 0, m_lastShadowId = 0;
     std::vector<uint32_t> m_sceneOrder, m_shadowOrder;
+    std::vector<uint8_t> m_visible;  // por item: aparece na câmera (PrepareItems)
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;

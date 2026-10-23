@@ -1,6 +1,8 @@
 #include "motor/renderer/Renderer.h"
 
 #include "motor/core/EngineAssets.h"
+#include "motor/core/JobSystem.h"
+#include "motor/core/Profile.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Framebuffer.h"
 #include "motor/renderer/GpuMemory.h"
@@ -212,15 +214,15 @@ DrawItem& Renderer::AddItem(const Mesh& mesh, const Material& material, const gl
     item.shadowId = m_lastShadowId;
     item.transparent = material.blend == BlendMode::Transparent;
     item.shadows = shadows;
+    // A matriz da normal e a caixa no mundo saem no EndScene, em paralelo (PrepareItems): aqui só a de mundo.
     m_objects.push_back(model);
-    m_objects.push_back(glm::mat4(NormalMatrix(model)));
+    m_objects.push_back(model);
     return item;
 }
 
 void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows) {
     MOTOR_ASSERT(m_inScene, "Submit fora de BeginScene/EndScene");
-    DrawItem& item = AddItem(mesh, material, model, shadows);
-    item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
+    AddItem(mesh, material, model, shadows);
 }
 
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
@@ -240,10 +242,37 @@ void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const g
     item.jointOffset = static_cast<uint32_t>(m_joints.size());
     item.jointCount = static_cast<uint32_t>(count);
     m_joints.insert(m_joints.end(), joints.begin(), joints.begin() + static_cast<std::ptrdiff_t>(count));
-    // A pose animada sai da caixa de repouso: folga de 50% (e meio metro) para o recorte não sumir com ela.
-    const glm::vec3 center = (mesh.BoundsMin() + mesh.BoundsMax()) * 0.5f;
-    const glm::vec3 half = (mesh.BoundsMax() - mesh.BoundsMin()) * 0.75f + glm::vec3(0.5f);
-    item.bounds = TransformAabb({center - half, center + half}, model);
+}
+
+void Renderer::PrepareItems(const Frustum& view) {
+    MOTOR_PROFILE_SCOPE("Renderer: preparar itens");
+    // Por item: matriz da normal, caixa no mundo, chaves de ordem e recorte da câmera. Cada item só escreve no que é
+    // dele, então os itens se dividem entre as threads sem trava (Fase 26).
+    const size_t count = m_items.size();
+    m_sceneKeys.resize(count);
+    m_shadowKeys.resize(count);
+    m_visible.resize(count);
+    JobSystem::Get().ParallelFor(count, 256, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            DrawItem& item = m_items[i];
+            const glm::mat4& model = m_objects[2 * i];
+            m_objects[2 * i + 1] = glm::mat4(NormalMatrix(model));
+            const glm::vec3 min = item.mesh->BoundsMin(), max = item.mesh->BoundsMax();
+            if (item.skinned) {
+                // A pose animada sai da caixa de repouso: folga de 50% (e meio metro) para o recorte não sumir com ela.
+                const glm::vec3 center = (min + max) * 0.5f;
+                const glm::vec3 half = (max - min) * 0.75f + glm::vec3(0.5f);
+                item.bounds = TransformAabb({center - half, center + half}, model);
+            } else {
+                item.bounds = TransformAabb({min, max}, model);
+            }
+            // Ordem de desenho: (shader, material, malha) para a cena e (shader, recorte/alfa, malha) para as sombras.
+            const uint32_t shader = item.skinned ? 1u : 0u;
+            m_sceneKeys[i] = {shader, item.materialId, item.mesh};
+            m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
+            m_visible[i] = item.shadows != ShadowCasting::ShadowsOnly && view.Intersects(item.bounds);
+        }
+    });
 }
 
 void Renderer::UploadJoints(const DrawItem& item) {
@@ -302,15 +331,11 @@ void Renderer::DrawScene() {
 
     // 0) Ordem de desenho: a lista é ordenada por (shader, material, malha) com os números de material dados no
     //    Submit (valores iguais, o mesmo número), uma vez para a cena e outra para as sombras (que só olham recorte e
-    //    alfa). Itens que podem ir no mesmo draw ficam seguidos.
-    m_sceneKeys.resize(m_items.size());
-    m_shadowKeys.resize(m_items.size());
-    for (size_t i = 0; i < m_items.size(); ++i) {
-        const DrawItem& item = m_items[i];
-        const uint32_t shader = item.skinned ? 1u : 0u;
-        m_sceneKeys[i] = {shader, item.materialId, item.mesh};
-        m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
-    }
+    //    alfa). Itens que podem ir no mesmo draw ficam seguidos. As chaves (e o resto por item) saem em paralelo.
+    const glm::mat4 view = m_camera.View();
+    const glm::mat4 projection = m_camera.Projection();
+    const Frustum frustum = Frustum::FromMatrix(projection * view);
+    PrepareItems(frustum);
     // Cena parada: as mesmas chaves do quadro anterior dão a mesma ordem.
     auto sortIfChanged = [](const std::vector<DrawKey>& keys, std::vector<DrawKey>& lastKeys,
                             std::vector<uint32_t>& order) {
@@ -333,8 +358,6 @@ void Renderer::DrawScene() {
     const Environment& env = m_environment;
     const float skyIntensity = std::max(env.skyIntensity, 0.0f);
     const float skyLight = skyIntensity * std::max(env.skyLight, 0.0f);
-    const glm::mat4 view = m_camera.View();
-    const glm::mat4 projection = m_camera.Projection();
     FrameData frame{};
     frame.view = view;
     frame.projection = projection;
@@ -377,8 +400,7 @@ void Renderer::DrawScene() {
 
     // Lotes: na ordem da cena, itens seguidos com a mesma chave (shader, material, malha) viram um draw
     // instanciado. Com pele, cada item é um lote (as juntas são dele). Transparentes: um por vez, de trás para
-    // frente, depois do céu.
-    const Frustum frustum = Frustum::FromMatrix(projection * view);
+    // frente, depois do céu. O recorte da câmera já saiu no PrepareItems (m_visible).
     std::vector<uint32_t> indices;
     std::vector<DrawBatch> batches;
     std::vector<std::pair<float, uint32_t>> transparent;
@@ -396,7 +418,7 @@ void Renderer::DrawScene() {
     for (const uint32_t i : m_sceneOrder) {
         const DrawItem& item = m_items[i];
         if (item.shadows == ShadowCasting::ShadowsOnly) continue;  // só nos mapas de sombra
-        if (!frustum.Intersects(item.bounds)) {
+        if (!m_visible[i]) {
             ++m_stats.culled;
             continue;
         }

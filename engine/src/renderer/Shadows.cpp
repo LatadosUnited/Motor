@@ -1,5 +1,7 @@
 #include "renderer/Shadows.h"
 
+#include "motor/core/JobSystem.h"
+#include "motor/core/Profile.h"
 #include "motor/renderer/Renderer.h"
 #include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
@@ -88,41 +90,69 @@ void ShadowRenderer::EnsureCubes(int resolution) {
     m_cubeResolution = resolution;
 }
 
-void ShadowRenderer::DrawItems(std::span<const DrawItem> items, const glm::mat4& viewProjection, const Frustum& frustum,
-                               bool point, const glm::vec4& lightPositionRange, InstanceBuffers& instances,
-                               const ShadowOrder& order, const JointUploader& uploadJoints, RenderStats& stats) {
-    // Na ordem das sombras, itens seguidos com a mesma chave (shader, recorte/alfa, malha) viram um draw
-    // instanciado; com pele, um por item (as juntas são dele).
-    m_indices.clear();
-    m_batches.clear();
-    for (const uint32_t i : order.order) {
-        const DrawItem& item = items[i];
-        if (item.transparent) continue;  // vidro e água não fazem sombra
-        if (item.shadows == ShadowCasting::Off) continue;
-        if (!frustum.Intersects(item.bounds)) continue;
-        if (!m_batches.empty() && !item.skinned && order.keys[i] == order.keys[m_batches.back().firstIndex]) {
-            ++m_batches.back().count;
-            m_indices.push_back(i);
-            continue;
+void ShadowRenderer::BuildPasses(std::span<const DrawItem> items, const ShadowOrder& order) {
+    MOTOR_PROFILE_SCOPE("Sombras: listas");
+    JobSystem& jobs = JobSystem::Get();
+    // 1) Recorte: um bit por passada em cada item, os itens divididos entre as threads.
+    m_masks.resize(items.size());
+    jobs.ParallelFor(items.size(), 512, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            const DrawItem& item = items[i];
+            uint32_t mask = 0;
+            // Vidro e água não fazem sombra.
+            if (!item.transparent && item.shadows != ShadowCasting::Off) {
+                for (size_t p = 0; p < m_passCount; ++p) {
+                    if (m_passes[p].frustum.Intersects(item.bounds)) mask |= 1u << p;
+                }
+            }
+            m_masks[i] = mask;
         }
-        m_batches.push_back({&item, static_cast<uint32_t>(m_indices.size()), 1, i});
-        m_indices.push_back(i);
-    }
-    if (m_batches.empty()) return;
-    instances.UploadIndices(m_indices);
+    });
+    // 2) Lotes de cada passada, as passadas divididas entre as threads. Na ordem das sombras, itens seguidos com a
+    //    mesma chave (shader, recorte/alfa, malha) viram um draw instanciado; com pele, um por item (as juntas são dele).
+    jobs.ParallelFor(m_passCount, 1, [&](size_t begin, size_t end) {
+        for (size_t p = begin; p < end; ++p) {
+            Pass& pass = m_passes[p];
+            const uint32_t bit = 1u << p;
+            pass.indices.clear();
+            pass.batches.clear();
+            for (const uint32_t i : order.order) {
+                if (!(m_masks[i] & bit)) continue;
+                const DrawItem& item = items[i];
+                if (!pass.batches.empty() && !item.skinned && order.keys[i] == order.keys[pass.batches.back().firstIndex]) {
+                    ++pass.batches.back().count;
+                    pass.indices.push_back(i);
+                    continue;
+                }
+                pass.batches.push_back({&item, static_cast<uint32_t>(pass.indices.size()), 1, i});
+                pass.indices.push_back(i);
+            }
+        }
+    });
+}
 
-    Variant& base = point ? m_point : m_directional;
-    Variant& skinned = point ? m_pointSkinned : m_directionalSkinned;
+void ShadowRenderer::DrawPass(const Pass& pass, InstanceBuffers& instances, const ShadowOrder& order,
+                              const JointUploader& uploadJoints, RenderStats& stats) {
+    const float clearDepth = 1.0f;
+    glViewport(0, 0, pass.resolution, pass.resolution);
+    glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, pass.texture, 0, pass.layer);
+    glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
+    ++stats.shadowPasses;
+    if (pass.batches.empty()) return;
+    instances.UploadIndices(pass.indices);
+
+    Variant& base = pass.point ? m_point : m_directional;
+    Variant& skinned = pass.point ? m_pointSkinned : m_directionalSkinned;
     for (Variant* v : {&base, &skinned}) {
-        v->shader->SetMat4(v->uniforms.lightViewProjection, viewProjection);
-        if (point) v->shader->SetVec4(v->uniforms.lightPositionRange, lightPositionRange);
+        v->shader->SetMat4(v->uniforms.lightViewProjection, pass.viewProjection);
+        if (pass.point) v->shader->SetVec4(v->uniforms.lightPositionRange, pass.positionRange);
     }
     const Variant* bound = nullptr;
     // Recorte e alfa do lote anterior (por shader): o mesmo valor seguido não reenvia nada.
     const Variant* paramsVariant = nullptr;
     const ShadowParams* lastParams = nullptr;
     GLuint lastAlbedo = 0;
-    for (const DrawBatch& batch : m_batches) {
+    for (const DrawBatch& batch : pass.batches) {
         const DrawItem& item = *batch.first;
         const ShadowParams& params = (*order.params)[order.keys[batch.firstIndex].material];
         Variant& variant = item.skinned ? skinned : base;
@@ -156,15 +186,12 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
     Result result;
     result.cubeLayer.assign(lights.size(), -1);
     const float distance = std::clamp(env.shadowDistance, 1.0f, std::max(camera.farPlane, 1.0f));
-
-    glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_CULL_FACE);  // planos de um lado só também projetam sombra
-    glDisable(GL_BLEND);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    const float clearDepth = 1.0f;
+    // Primeiro as passadas do quadro (cascatas e faces de cubo), depois as listas de todas em paralelo, por fim o
+    // desenho. Até 4 cascatas e 6 faces por luz pontual: um bit de m_masks por passada.
+    static_assert(kCascades + 6 * kMaxPointShadows <= 32);
+    m_passes.resize(kCascades + 6 * kMaxPointShadows);
+    m_passCount = 0;
+    size_t cascadePasses = 0;
 
     // --- Direcional: a primeira com sombra, em cascatas ---
     for (size_t i = 0; i < lights.size(); ++i) {
@@ -173,23 +200,22 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
         const int resolution = ShadowResolution(LightType::Directional, light.shadowQuality);
         EnsureCascades(resolution);
         const std::vector<float> splits = CascadeSplits(camera.nearPlane, distance, kCascades, kCascadeLambda);
-        glViewport(0, 0, resolution, resolution);
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(1.5f, 2.0f);
         for (int c = 0; c < kCascades; ++c) {
             const float nearDist = c == 0 ? camera.nearPlane : splits[static_cast<size_t>(c - 1)];
             const Cascade cascade = ComputeCascade(camera, nearDist, splits[static_cast<size_t>(c)], light.direction,
                                                    resolution, std::max(50.0f, distance));
-            glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, m_cascades, 0, c);
-            glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
-            DrawItems(items, cascade.viewProjection, Frustum::FromMatrix(cascade.viewProjection), false, glm::vec4(0.0f),
-                      instances, order, uploadJoints, stats);
-            ++stats.shadowPasses;
+            Pass& pass = m_passes[m_passCount++];
+            pass.viewProjection = cascade.viewProjection;
+            pass.frustum = Frustum::FromMatrix(cascade.viewProjection);
+            pass.point = false;
+            pass.texture = m_cascades;
+            pass.layer = c;
+            pass.resolution = resolution;
             result.data.cascadeMatrices[c] = cascade.viewProjection;
             result.data.cascadeSplits[c] = splits[static_cast<size_t>(c)];
             result.data.cascadeTexels[c] = cascade.texelSize;
         }
-        glDisable(GL_POLYGON_OFFSET_FILL);
+        cascadePasses = m_passCount;
         result.data.params = glm::vec4(static_cast<float>(kCascades), 1.0f / static_cast<float>(resolution), 0.0f, distance);
         result.cascadeLight = static_cast<int>(i);
         break;
@@ -218,24 +244,40 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
             resolution = std::max(resolution, ShadowResolution(lights[c.light].type, lights[c.light].shadowQuality));
         }
         EnsureCubes(resolution);
-        glViewport(0, 0, resolution, resolution);
         for (size_t slot = 0; slot < candidates.size(); ++slot) {
             const Light& light = lights[candidates[slot].light];
             const glm::mat4 projection = CubeFaceProjection(kPointNear, light.range);
-            const glm::vec4 positionRange(light.position, light.range);
             for (int face = 0; face < 6; ++face) {
-                const glm::mat4 viewProjection = projection * CubeFaceView(light.position, face);
-                glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, m_cubes, 0, static_cast<int>(slot) * 6 + face);
-                glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
-                DrawItems(items, viewProjection, Frustum::FromMatrix(viewProjection), true, positionRange, instances, order,
-                          uploadJoints, stats);
-                ++stats.shadowPasses;
+                Pass& pass = m_passes[m_passCount++];
+                pass.viewProjection = projection * CubeFaceView(light.position, face);
+                pass.frustum = Frustum::FromMatrix(pass.viewProjection);
+                pass.point = true;
+                pass.positionRange = glm::vec4(light.position, light.range);
+                pass.texture = m_cubes;
+                pass.layer = static_cast<int>(slot) * 6 + face;
+                pass.resolution = resolution;
             }
             result.cubeLayer[candidates[slot].light] = static_cast<int>(slot);
         }
         result.data.params.z = 1.0f / static_cast<float>(resolution);
     }
+    if (m_passCount > 0) BuildPasses(items, order);
 
+    glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_CULL_FACE);  // planos de um lado só também projetam sombra
+    glDisable(GL_BLEND);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    // Desvio de profundidade só nas cascatas (as primeiras passadas).
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.5f, 2.0f);
+    for (size_t p = 0; p < m_passCount; ++p) {
+        if (p == cascadePasses) glDisable(GL_POLYGON_OFFSET_FILL);
+        DrawPass(m_passes[p], instances, order, uploadJoints, stats);
+    }
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glNamedFramebufferTexture(m_fbo, GL_DEPTH_ATTACHMENT, 0, 0);
     return result;
 }
