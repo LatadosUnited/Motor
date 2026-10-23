@@ -36,7 +36,7 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 | — | [Fase 23 — Renderer em lote](alpha-3/fase-23-renderer-em-lote.md) | pronta (21/10) | `cubos10000`: 10 001 → 2 draws, Render 33 → 12,7 ms; referência 7927 → 16 draws, quadro 49 → 44 ms | — |
 | 2 | Fase 24 — GPU: pós, sombras e LOD | planejada | 8 ms de pós numa cena vazia; 47 ms de GPU na referência | 25, 27 |
 | 3 | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | em andamento | física de 11,6 ms na referência (passos fixos acumulados) | 23, 24, 27 |
-| 4 | Fase 26 — Várias threads | planejada | tudo menos a física roda numa thread; 3 núcleos parados | 27 |
+| 4 | [Fase 26 — Várias threads](alpha-3/fase-26-threads.md) | em andamento | tudo menos a física roda numa thread; 3 núcleos parados | 27 |
 | 5 | Fase 27 — Editor que escala | planejada | gravar a referência em JSON leva 337 ms, a cada 0,5 s | 23, 24, 25, 26 |
 
 ## Ordem e dependências
