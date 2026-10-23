@@ -225,6 +225,67 @@ void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat
     AddItem(mesh, material, model, shadows);
 }
 
+void Renderer::SubmitMany(size_t count, const SubmitFill& fill) {
+    MOTOR_ASSERT(m_inScene, "SubmitMany fora de BeginScene/EndScene");
+    MOTOR_PROFILE_SCOPE("Renderer: SubmitMany");
+    JobSystem& jobs = JobSystem::Get();
+
+    // 1) Pedidos e chaves do material, em paralelo: ler os materiais (espalhados na memória) é o que custa.
+    m_pending.resize(count);
+    jobs.ParallelFor(count, 256, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            PendingSubmit& p = m_pending[i];
+            p.ok = fill(i, p.request) && p.request.mesh && p.request.material;
+            if (!p.ok) continue;
+            const Material& material = *p.request.material;
+            p.key = {MaterialParamsOf(material), material.doubleSided};
+            p.shadow = ShadowParamsOf(material);
+        }
+    });
+
+    // 2) Números de material na ordem dos pedidos (a tabela é uma só): serial, mas só compara chaves seguidas num
+    //    vetor contíguo. Mesmo atalho do AddItem: o mesmo material, ou os mesmos valores, não consultam as tabelas.
+    uint32_t slot = static_cast<uint32_t>(m_items.size());
+    for (PendingSubmit& p : m_pending) {
+        if (!p.ok) continue;
+        if (p.request.material != m_lastMaterial) {
+            const bool first = m_lastMaterial == nullptr;
+            m_lastMaterial = p.request.material;
+            if (first || !(p.key == m_lastMaterialKey)) {
+                m_lastMaterialId = m_materialIds.Id(p.key);
+                m_lastMaterialKey = p.key;
+            }
+            if (first || !(p.shadow == m_lastShadowParams)) {
+                m_lastShadowId = m_shadowIds.Id(p.shadow);
+                m_lastShadowParams = p.shadow;
+            }
+        }
+        p.materialId = m_lastMaterialId;
+        p.shadowId = m_lastShadowId;
+        p.slot = slot++;
+    }
+
+    // 3) Itens e matrizes nos lugares deles, em paralelo (a matriz da normal e a caixa saem no PrepareItems).
+    m_items.resize(slot);
+    m_objects.resize(2 * static_cast<size_t>(slot));
+    jobs.ParallelFor(count, 512, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            const PendingSubmit& p = m_pending[i];
+            if (!p.ok) continue;
+            DrawItem& item = m_items[p.slot];
+            item = DrawItem{};
+            item.mesh = p.request.mesh;
+            item.material = p.request.material;
+            item.materialId = p.materialId;
+            item.shadowId = p.shadowId;
+            item.transparent = p.request.material->blend == BlendMode::Transparent;
+            item.shadows = p.request.shadows;
+            m_objects[2 * size_t{p.slot}] = p.request.model;
+            m_objects[2 * size_t{p.slot} + 1] = p.request.model;
+        }
+    });
+}
+
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
     MOTOR_ASSERT(m_inScene, "SubmitWireframe fora de BeginScene/EndScene");
     m_wires.push_back({&mesh, model, color});

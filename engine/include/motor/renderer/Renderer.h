@@ -13,6 +13,7 @@
 #include <glm/vec4.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <vector>
@@ -80,6 +81,18 @@ public:
     // de `model`. Até kMaxJoints (as demais ficam paradas, com aviso no log). Malha e material como no Submit.
     void SubmitSkinned(const Mesh& mesh, const Material& material, const glm::mat4& model,
                        std::span<const glm::mat4> joints, ShadowCasting shadows = ShadowCasting::On);
+
+    // Muitos Submit de uma vez, montados em paralelo (Fase 26): `fill(i, pedido)` para i em [0, count) preenche o
+    // pedido ou devolve false para pular o i. Roda em várias threads ao mesmo tempo: só pode ler dados que ninguém
+    // muda durante a chamada e escrever no que é só do i. O resultado é o mesmo de chamar Submit na ordem dos i.
+    struct SubmitRequest {
+        const Mesh* mesh = nullptr;
+        const Material* material = nullptr;
+        glm::mat4 model{1.0f};
+        ShadowCasting shadows = ShadowCasting::On;
+    };
+    using SubmitFill = std::function<bool(size_t index, SubmitRequest& request)>;
+    void SubmitMany(size_t count, const SubmitFill& fill);
     void EndScene();
 
     const RenderStats& GetStats() const { return m_stats; }
@@ -147,6 +160,16 @@ private:
     uint32_t m_lastMaterialId = 0, m_lastShadowId = 0;
     std::vector<uint32_t> m_sceneOrder, m_shadowOrder;
     std::vector<uint8_t> m_visible;  // por item: aparece na câmera (PrepareItems)
+    // SubmitMany: pedidos montados em paralelo e as chaves de material de cada um (reaproveitados entre quadros).
+    struct PendingSubmit {
+        SubmitRequest request;
+        MaterialKey key;
+        ShadowParams shadow;
+        uint32_t materialId = 0, shadowId = 0;
+        uint32_t slot = 0;  // posição em m_items
+        bool ok = false;
+    };
+    std::vector<PendingSubmit> m_pending;
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;
