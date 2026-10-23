@@ -57,6 +57,11 @@ PhysicsSystem::World::World(const PhysicsSettings& worldSettings) : settings((In
     jobs = std::make_unique<JPH::JobSystemThreadPool>(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, threads);
     physics.Init(65536, 0, 65536, 65536, broadPhaseLayers, objectVsBroadPhase, objectPairs);
     physics.SetGravity(ToJolt(settings.gravity));
+    JPH::PhysicsSettings solver = physics.GetPhysicsSettings();
+    solver.mNumVelocitySteps = static_cast<JPH::uint>(std::clamp(settings.velocitySteps, 2, 64));
+    solver.mNumPositionSteps = static_cast<JPH::uint>(std::clamp(settings.positionSteps, 1, 64));
+    solver.mPointVelocitySleepThreshold = std::max(settings.sleepVelocity, 0.0f);
+    physics.SetPhysicsSettings(solver);
     physics.SetContactListener(&contacts);
 }
 
