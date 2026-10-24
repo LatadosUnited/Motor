@@ -777,8 +777,8 @@ componentes comuns (Inspector, cena, desfazer):
   quantos polígonos saíram e quanto tempo levou, ou por que não saiu nenhum.
 - **Agente:** anda pelo caminho até o destino, acelerando e freando a tempo de parar, vira em Y para onde anda (a
   frente é o -Z) e mantém os pés no navmesh (a origem fica **Altura da base** acima). Com **Alvo**, segue a
-  entidade e refaz o caminho quando ela anda. Ele mexe no Transform direto: por enquanto, use em entidades sem
-  física.
+  entidade e refaz o caminho quando ela anda. Sem física, mexe no Transform direto; com **Controlador de
+  personagem** na mesma entidade, anda pela física (empurra caixas, cai, não sai do navmesh).
 - **Multidão:** os agentes desviam uns dos outros e não se atravessam (DetourCrowd, Fase 35); **Raio** é o tamanho
   com que os outros o veem. Os caminhos de quem segue um alvo entram numa fila dividida entre os passos.
 - **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
@@ -788,7 +788,7 @@ componentes comuns (Inspector, cena, desfazer):
 - **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
   Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando) e, no Play com a câmera do editor, o
   caminho de cada agente em amarelo.
-- **Ainda não:** agente com física, pulos, áreas com custo, obstáculos que se mexem (roteiro em
+- **Ainda não:** pulos, áreas com custo, obstáculos que se mexem (roteiro em
   `docs/roadmap/alpha-6.md`).
 
 ## Servidor MCP (agentes no editor)
