@@ -38,6 +38,7 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 | 3 | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | em andamento | física de 11,6 ms na referência (passos fixos acumulados) | 23, 24, 27 |
 | 4 | Fase 26 — Várias threads | planejada | tudo menos a física roda numa thread; 3 núcleos parados | 27 |
 | 5 | Fase 27 — Editor que escala | planejada | gravar a referência em JSON leva 337 ms, a cada 0,5 s | 23, 24, 25, 26 |
+| — | [Organização do código 2](alpha-3/organizacao-do-codigo-2.md) | planejada | `SetError` em 14 arquivos, leitura de arquivo em 8, `DrawScene` com 186 linhas; sem mudar comportamento | tarefas 1 a 4 já; a 5 depois da 26 e fora da 24 |
 
 ## Ordem e dependências
 
