@@ -284,6 +284,13 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 30; ++i) runtime.FixedUpdate(kDt);
             CHECK(glm::length(nav->GetVelocity(id)) < 1e-3f);
 
+            // A versão sobe a cada navmesh novo: o viewport do editor refaz o desenho só quando ela muda.
+            const uint64_t version = nav->Version();
+            CHECK(version > 0);
+            runtime.FixedUpdate(kDt);
+            CHECK(nav->Version() == version);
+            CHECK(nav->Rebuild() && nav->Version() == version + 1);
+
             CHECK(!nav->SetDestination(id, {80.0f, 0.0f, 0.0f}));  // longe do navmesh
             CHECK(nav->Warp(id, {7.0f, 3.0f, 7.0f}));
             CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(7.0f, 0.0f, 7.0f)) < 0.2f);

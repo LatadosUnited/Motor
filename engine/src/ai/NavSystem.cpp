@@ -79,6 +79,7 @@ bool NavSystem::LoadFromFile(const NavMeshSurface& surface) {
     const auto t0 = std::chrono::steady_clock::now();
     std::string error;
     m_navMesh = NavMesh::Load(surface.navMesh.file, &error);
+    ++m_version;
     if (!m_navMesh) {
         log::Warn("Navegação: {}; gerando um navmesh no Play", error);
         return false;
@@ -103,6 +104,7 @@ bool NavSystem::LoadFromFile(const NavMeshSurface& surface) {
 void NavSystem::OnStop(SceneRuntime&) {
     m_agents.clear();
     m_navMesh.reset();
+    ++m_version;
     m_scene = nullptr;
 }
 
@@ -112,10 +114,12 @@ bool NavSystem::Rebuild() {
     const NavMeshSurface* surface = FindSurface(*m_scene);
     if (!surface) {
         m_navMesh.reset();
+    ++m_version;
         return false;
     }
 
     m_navMesh = BuildSceneNavMesh(*m_scene, *surface, &m_stats);
+    ++m_version;
     if (!m_navMesh) {
         log::Warn("Navegação: navmesh não gerado: {}", m_stats.error);
         for (auto& [id, agent] : m_agents) agent.corners.clear();

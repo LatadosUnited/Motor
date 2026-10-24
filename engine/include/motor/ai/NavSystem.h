@@ -63,6 +63,8 @@ public:
     bool Rebuild();
     const NavMesh* GetNavMesh() const { return m_navMesh.get(); }
     const NavStats& Stats() const { return m_stats; }
+    // Sobe a cada navmesh novo (gerado, lido ou descartado): quem desenha o navmesh sabe quando refazer.
+    uint64_t Version() const { return m_version; }
 
     // --- Consultas (false/nullopt sem navmesh) ---
     bool FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners) const;
@@ -111,6 +113,7 @@ private:
     NavStats m_stats;
     std::unordered_map<EntityId, Agent> m_agents;
     uint32_t m_step = 0;
+    uint64_t m_version = 0;
     bool m_warnedNoNavMesh = false;
 };
 
