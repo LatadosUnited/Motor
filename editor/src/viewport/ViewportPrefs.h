@@ -21,6 +21,7 @@ struct ViewportPrefs {
     bool gridFine = false;      // também as linhas finas (célula = passo do mover); senão só as de 10 em 10
     float gridHeight = 0.0f;    // altura (Y) do plano da grade
     bool stats = false;         // painel dos contadores por quadro (botão Estatísticas)
+    bool navMesh = true;        // navmesh e caminhos dos agentes (botão Navmesh; só aparece se a cena tiver um)
 
     // Valores fora da faixa (editor.json editado à mão) voltam para dentro dela.
     void Clamp();

@@ -38,6 +38,19 @@ motor_add_test(test_script_list)  # Fase 22: lista de scripts do SceneRuntime
 motor_add_test(test_frame_stats)  # Fase 22: contadores por quadro e CSV do --perf
 motor_add_test(test_entities_with)  # Fase 25: listas por tipo de componente da cena
 motor_add_test(test_destroy_batch)  # Fase 25: destruir em lote
+motor_add_test(test_navigation)  # Fase 34: navmesh, caminhos e agentes
+# Fase 34: ferramentas de navegação do MCP (nav_bake, nav_path, nav_agents), sem janela como o test_mcp.
+motor_add_test(test_mcp_nav
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/NavMeshBake.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpNavTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
+target_include_directories(test_mcp_nav PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_mcp_nav PRIVATE nlohmann_json::nlohmann_json)
 motor_add_test(test_world_cache)  # Fase 25: cache da matriz de mundo
 
 # Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o

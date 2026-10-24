@@ -3,10 +3,11 @@
 //   modelos do editor (editor/templates/Scripts/), sem erros nem avisos.
 // - Roda os exemplos de verdade: o mini jogo do guia (andar, coletar, pontuar), a porta, o inimigo, o
 //   disparador e a bola, com a física, simulando as teclas no estado interno do Input; o HUD e o menu com a
-//   UI do jogo (UiSystem), simulando o mouse; os sons do menu com o áudio (AudioSystem) sem dispositivo.
+//   UI do jogo (UiSystem), simulando o mouse; os sons do menu com o áudio (AudioSystem) sem dispositivo; o
+//   guarda com a navegação (NavSystem).
 // - Cada bloco ```cpp do guia é um trecho de um arquivo de exemplo, e cada exemplo é citado no guia.
-// - A referência cita todos os métodos públicos de Script, de PhysicsSystem, de UiSystem, de AudioSystem e
-//   as opções de FieldOptions.
+// - A referência cita todos os métodos públicos de Script, de PhysicsSystem, de UiSystem, de AudioSystem, de
+//   NavSystem e as opções de FieldOptions.
 // Sem janela nem OpenGL. Demora alguns segundos (compila a DLL).
 #include "TestUtil.h"
 
@@ -14,6 +15,7 @@
 #include "scripts/ScriptHost.h"
 #include "scripts/ScriptProject.h"
 
+#include <motor/ai/NavSystem.h>
 #include <motor/assets/AssetLibrary.h>
 #include <motor/audio/AudioSystem.h>
 #include <motor/core/Input.h>
@@ -286,12 +288,15 @@ int main(int argc, char** argv) {
         const std::string audioH = ReadText(include / "audio" / "AudioSystem.h");
         const std::string optionsH = ReadText(include / "project" / "GameOptions.h");
         const std::string saveH = ReadText(include / "project" / "SaveData.h");
+        const std::string navH = ReadText(include / "ai" / "NavSystem.h");
 
         std::set<std::string> names = DeclaredFunctions(Between(scriptH, "class Script {", "private:"));
         for (const std::string& n : DeclaredFunctions(Between(physicsH, "class PhysicsSystem", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(uiH, "class UiSystem", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(audioH, "class AudioSystem", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(saveH, "class SaveData {", "private:"))) names.insert(n);
+        for (const std::string& n : DeclaredFunctions(Between(navH, "class NavSystem", "private:"))) names.insert(n);
+        names.erase("NavSystem");
         names.erase("SaveData");
         names.erase("Set");  // chamada dentro dos SetInt/SetFloat... (inline), não é método público
         names.erase("Script");
@@ -310,7 +315,7 @@ int main(int argc, char** argv) {
         const std::pair<const std::string*, const char*> structs[] = {
             {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"},
             {&uiH, "struct UiPointer {"}, {&audioH, "struct AudioSettings {"}, {&audioH, "struct AudioVoiceInfo {"},
-            {&optionsH, "struct GameOptions {"}};
+            {&optionsH, "struct GameOptions {"}, {&navH, "struct NavStats {"}};
         for (const auto& [header, type] : structs) {
             const std::string body = Between(*header, type, "};");
             CHECK(!body.empty());
@@ -363,7 +368,7 @@ int main(int argc, char** argv) {
     }
     for (const char* type : {"Flutuar", "ExemploCampos", "CicloDeVida", "Projetil", "Disparador", "Placar", "Moeda",
                              "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "SonsDoMenu", "Girar", "Jogador", "MoverWASD", "Seguir",
-                             "Lampada", "Interruptor", "Chuva"}) {
+                             "Lampada", "Interruptor", "Chuva", "Guarda"}) {
         const ComponentType* t = ComponentRegistry::Instance().Find(type);
         if (!t) std::printf("  não registrado: %s\n", type);
         CHECK(t && t->IsScript());
@@ -748,6 +753,67 @@ int main(int argc, char** argv) {
         CHECK(audio && audio->IsPlaying("Musica"));
         runtime.Stop();
         CHECK(runtime.GetSystem<AudioSystem>() == nullptr);
+    }
+
+    SECTION("Guarda: patrulha entre os pontos pelo navmesh, persegue o alvo que vê e volta a patrulhar");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        Entity& wall = scene.CreateEntity("Parede");  // de x = -6 a 6 em z = 0: a patrulha dá a volta por x = 8
+        wall.transform.position = {0.0f, 1.5f, 0.0f};
+        wall.Add<ColliderComponent>().size = {12.0f, 3.0f, 1.0f};
+        scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+        const glm::vec3 a{8.0f, 0.0f, -6.0f}, b{8.0f, 0.0f, 6.0f};
+        Entity& pointA = scene.CreateEntity("PontoA");
+        pointA.transform.position = a;
+        const EntityId pointAId = pointA.id;
+        Entity& pointB = scene.CreateEntity("PontoB");
+        pointB.transform.position = b;
+        const EntityId pointBId = pointB.id;
+        Entity& target = scene.CreateEntity("Alvo");
+        target.transform.position = {-8.0f, 0.0f, 8.0f};  // longe e atrás da parede
+        const EntityId targetId = target.id;
+        Entity& guard = scene.CreateEntity("Guarda");
+        guard.transform.position = {6.0f, 0.0f, -6.0f};
+        guard.Add<NavMeshAgent>();
+        AddScript(guard, "Guarda");
+        const EntityId guardId = guard.id;
+        if (auto* ref = ScriptField<EntityRef>(scene, guardId, "Guarda", "pontoA")) ref->id = pointAId;
+        if (auto* ref = ScriptField<EntityRef>(scene, guardId, "Guarda", "pontoB")) ref->id = pointBId;
+        if (auto* ref = ScriptField<EntityRef>(scene, guardId, "Guarda", "alvo")) ref->id = targetId;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->GetNavMesh());
+        auto where = [&] { return scene.Find(guardId)->transform.position; };
+
+        // Patrulha: vai até B e depois volta até A.
+        float nearB = 1e9f, nearAAfterB = 1e9f;
+        for (int i = 0; i < 120; ++i) {
+            Run(runtime, 0.1f);
+            nearB = std::min(nearB, glm::distance(where(), b));
+            if (nearB < 0.3f) nearAAfterB = std::min(nearAAfterB, glm::distance(where(), a));
+        }
+        std::printf("  patrulha: chegou a %.2f m de B e depois a %.2f m de A\n", nearB, nearAAfterB);
+        CHECK(nearB < 0.3f && nearAAfterB < 0.3f);
+
+        // O alvo aparece a 3 m, à vista: o guarda vai até ele.
+        for (int i = 0; i < 60 && std::abs(where().z) < 3.0f; ++i) Run(runtime, 0.1f);  // longe da parede
+        scene.Find(targetId)->transform.position = where() + glm::vec3(-3.0f, 0.0f, 0.0f);
+        Run(runtime, 1.5f);
+        const float chase = glm::distance(where(), scene.Find(targetId)->transform.position);
+        std::printf("  perseguição: a %.2f m do alvo\n", chase);
+        CHECK(chase < 0.5f);
+
+        // O alvo some atrás da parede: o guarda volta para um dos pontos da patrulha.
+        scene.Find(targetId)->transform.position = {-8.0f, 0.0f, 8.0f};
+        Run(runtime, 0.2f);
+        const std::vector<glm::vec3> path = nav ? nav->GetPath(guardId) : std::vector<glm::vec3>{};
+        CHECK(!path.empty());
+        CHECK(!path.empty() && std::min(glm::distance(path.back(), a), glm::distance(path.back(), b)) < 0.3f);
+        runtime.Stop();
     }
 
     loadedScenes.clear();

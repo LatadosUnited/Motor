@@ -43,3 +43,7 @@
 #include "motor/core/EngineAssets.h"
 #include "motor/audio/AudioSystem.h"
 #include "motor/scene/GameHost.h"
+
+// Fase 34: navegação (navmesh, agentes).
+#include "motor/ai/NavMesh.h"
+#include "motor/ai/NavSystem.h"
