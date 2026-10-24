@@ -66,7 +66,19 @@ struct InputAction {
     std::string name;
     std::vector<InputBinding> bindings;
     InputActionType type = InputActionType::Axis;
+    // Grupo de ações ("Jogo", "Menu") ligado e desligado pelos scripts (Script::SetInputContext): fora do contexto
+    // ativo, a ação fica solta/zero. Vazio: vale sempre.
+    std::string context{};
     bool operator==(const InputAction&) const = default;
+};
+
+// De onde e em que situação ler uma ação. Converte de um `device` (kAnyDevice, kKeyboardMouse, 0..3).
+struct InputFilter {
+    InputFilter(int device = kAnyDevice) : device(device) {}  // conversão de propósito: Value("Mover", 1)
+    int device = kAnyDevice;
+    // Contextos ativos; nullptr = todos (editor, testes). Ação com contexto fora da lista vale zero.
+    const std::vector<std::string>* contexts = nullptr;
+    bool uiHasMouse = false;  // a interface pegou o clique: o botão esquerdo do mouse fica solto para as ações
 };
 
 // Mapa de ações do projeto (Fase 21, v2 na alpha 4): os scripts perguntam por "Pular" ou "Mover" em vez de uma
@@ -80,30 +92,37 @@ class InputActions {
 public:
     std::vector<InputAction> actions;
 
-    // As do projeto novo (e de projeto sem mapa): Mover, Olhar, Horizontal, Vertical, Olhar X/Y, Pular, Correr,
-    // Interagir, Pausa.
+    // As do projeto novo (e de projeto sem mapa): no contexto Jogo, Mover, Olhar, Horizontal, Vertical, Olhar X/Y,
+    // Pular, Correr, Interagir e Pausa; no Menu, Navegar, Confirmar e Voltar.
     static InputActions Defaults();
 
     const InputAction* Find(std::string_view name) const;  // sem diferença de maiúsculas
 
-    // Lidos do motor::Input (o filtro de foco é de quem chama: Script). `device` escolhe de onde (um jogador):
-    // kAnyDevice tudo, kKeyboardMouse só teclado e mouse, 0..3 só aquele controle (motor/core/Input.h).
-    float Value(std::string_view name, int device = kAnyDevice) const;       // num Vector2, o comprimento
-    glm::vec2 Vector(std::string_view name, int device = kAnyDevice) const;  // num Botão ou Eixo, (valor, 0)
-    bool IsDown(std::string_view name, int device = kAnyDevice) const { return Value(name, device) > 0.5f; }
-    bool WasPressed(std::string_view name, int device = kAnyDevice) const;   // apertou neste frame
-    bool WasReleased(std::string_view name, int device = kAnyDevice) const;  // soltou neste frame
+    // O contexto ativo ao começar o jogo (Script::SetInputContext troca). Só importa se alguma ação tem contexto.
+    std::string startContext = "Jogo";
+
+    // Lidos do motor::Input (o filtro de foco é de quem chama: Script). `filter` escolhe de onde (um jogador:
+    // kAnyDevice tudo, kKeyboardMouse só teclado e mouse, 0..3 só aquele controle) e os contextos ativos.
+    float Value(std::string_view name, const InputFilter& filter = {}) const;       // num Vector2, o comprimento
+    glm::vec2 Vector(std::string_view name, const InputFilter& filter = {}) const;  // num Botão ou Eixo, (valor, 0)
+    bool IsDown(std::string_view name, const InputFilter& filter = {}) const { return Value(name, filter) > 0.5f; }
+    bool WasPressed(std::string_view name, const InputFilter& filter = {}) const;   // apertou neste frame
+    bool WasReleased(std::string_view name, const InputFilter& filter = {}) const;  // soltou neste frame
+    static bool IsContextActive(const InputAction& action, const InputFilter& filter);
 
     // Valor de uma ação que não está no mapa (prévia do editor).
     static glm::vec2 VectorOf(const InputAction& action);
 
-    // {"version": 2, "actions": [{"name": "Pular", "type": "button", "bindings": [{"key": "Space"}, {"gamepad": "A"}]}]}
+    // {"version": 2, "startContext": "Jogo", "actions": [{"name": "Pular", "type": "button", "context": "Jogo",
+    //  "bindings": [{"key": "Space"}, {"gamepad": "A"}]}]}
     std::string ToJson() const;
     // Lê também a versão 1 (sem "type": tudo eixo). Entradas com nome desconhecido são puladas (com a mensagem em
     // `error`, mas o resto é lido: devolve true).
     bool FromJson(std::string_view text, std::string* error = nullptr);
 
-    bool operator==(const InputActions& other) const { return actions == other.actions; }
+    bool operator==(const InputActions& other) const {
+        return actions == other.actions && startContext == other.startContext;
+    }
 
 private:
     const InputAction* FindOrWarn(std::string_view name) const;

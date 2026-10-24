@@ -7,11 +7,36 @@ namespace motor {
 
 MOTOR_RUNTIME_SYSTEM(Ui, UiSystem, kSystemOrderUi);
 
+namespace {
+// A parte da UI que roda antes dos scripts (um sistema tem uma ordem só; ver RuntimeSystem.h).
+class UiPointerSystem final : public RuntimeSystem {
+public:
+    void OnUpdate(SceneRuntime& runtime, float) override {
+        if (UiSystem* ui = runtime.GetSystem<UiSystem>()) ui->UpdatePointer(runtime);
+    }
+};
+} // namespace
+MOTOR_RUNTIME_SYSTEM(UiPonteiro, UiPointerSystem, kSystemOrderUiInput);
+
 void UiSystem::OnStart(SceneRuntime& runtime) {
     m_runtime = &runtime;
     m_layout.clear();
     m_hovered = m_pressed = 0;
     m_wasDown = false;
+    m_captured = m_captureWasDown = false;
+}
+
+void UiSystem::UpdatePointer(SceneRuntime& runtime) {
+    Scene& scene = runtime.GetScene();
+    // O layout é o do passo anterior (o desta vez sai no OnUpdate, depois dos scripts); no primeiro, calcula.
+    if (m_layout.empty()) m_layout = ComputeUiLayout(scene, m_pointer.screenSize);
+    const bool locked = runtime.GetCursorMode() == CursorMode::Locked;
+    const bool over = m_pointer.inside && !locked && UiHitTest(scene, m_layout, m_pointer.position) != kNullEntity;
+    const bool down = m_pointer.down;
+    if (down && !m_captureWasDown) m_captured = over;  // decide no aperto e vale até soltar
+    if (!down) m_captured = false;
+    m_captureWasDown = down;
+    runtime.SetUiPointer(over, m_captured);
 }
 
 void UiSystem::OnStop(SceneRuntime&) {

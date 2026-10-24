@@ -8,12 +8,15 @@
 #include <motor/core/Paths.h>
 #include <motor/project/InputActions.h>
 #include <motor/project/Project.h>
+#include <motor/scene/GameHost.h>
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneRuntime.h>
+#include <motor/ui/Ui.h>
 
 #include <cmath>
 #include <fstream>
 #include <string>
+#include <utility>
 
 using namespace motor;
 namespace fs = std::filesystem;
@@ -32,9 +35,18 @@ struct Leitor : Script {
     float analogico = 0.0f;
     glm::vec2 mover{0.0f};
     std::string texto;
+    std::string trocarPara;
+    bool menuAtivo = false, confirmar = false, pular = false, mouse = false, atirar = false, sobreUi = false;
     void OnUpdate(float) override {
         mover = GetVector("Mover");
         texto = TextInput();
+        if (!trocarPara.empty()) SetInputContext(std::exchange(trocarPara, {}));
+        menuAtivo = IsInputContextActive("menu");
+        confirmar = IsActionDown("Confirmar");
+        pular = IsActionDown("Pular");
+        mouse = IsMouseDown(MouseButton::Left);
+        atirar = IsActionDown("Atirar");
+        sobreUi = IsPointerOverUi();
         horizontal = GetAxis("Horizontal");
         pulou = WasActionPressed("Pular");
         botaoA = IsGamepadButtonDown(GamepadButton::A);
@@ -74,7 +86,7 @@ int main(int argc, char** argv) {
     const InputActions defaults = InputActions::Defaults();
     {
         for (const char* name : {"Mover", "Olhar", "Horizontal", "Vertical", "Olhar X", "Olhar Y", "Pular", "Correr",
-                                 "Interagir", "Pausa"}) {
+                                 "Interagir", "Pausa", "Navegar", "Confirmar", "Voltar"}) {
             CHECK(defaults.Find(name) != nullptr);
         }
         CHECK(defaults.Find("pular") == defaults.Find("Pular"));  // sem diferença de maiúsculas
@@ -300,6 +312,115 @@ int main(int argc, char** argv) {
         CHECK(back.actions[0].bindings[1].source == InputBinding::Source::MouseAxis);
         CHECK(back.actions[0].bindings[1].part == InputBinding::Part::Y);
         CHECK(ParseMouseAxis("mousex") == MouseAxis::X && std::string(MouseAxisName(MouseAxis::Scroll)) == "MouseScroll");
+    }
+
+    SECTION("Contextos: Jogo e Menu");
+    {
+        CHECK(defaults.startContext == "Jogo" && defaults.Find("Pular")->context == "Jogo");
+        CHECK(defaults.Find("Confirmar")->context == "Menu");
+        const std::vector<std::string> jogo{"Jogo"}, menu{"menu"};  // sem diferença de maiúsculas
+        InputFilter noJogo, noMenu;
+        noJogo.contexts = &jogo;
+        noMenu.contexts = &menu;
+        NextFrame();
+        NextFrame();
+        Input::SetKeyState(Key::Space, true);
+        CHECK(defaults.IsDown("Pular", noJogo) && !defaults.IsDown("Confirmar", noJogo));
+        CHECK(!defaults.IsDown("Pular", noMenu) && defaults.IsDown("Confirmar", noMenu));
+        CHECK(defaults.IsDown("Pular") && defaults.IsDown("Confirmar"));  // sem filtro (editor): todas
+        NextFrame();
+        // Espaço segurado desde o Jogo: abrir o menu agora não é um "Confirmar" novo.
+        CHECK(defaults.IsDown("Confirmar", noMenu) && !defaults.WasPressed("Confirmar", noMenu));
+        Input::SetKeyState(Key::Space, false);
+        NextFrame();
+
+        InputActions sem;  // ação sem contexto vale em qualquer um
+        sem.actions = {{"Sempre", {InputBinding::Of(Key::K)}, InputActionType::Button}};
+        Input::SetKeyState(Key::K, true);
+        CHECK(sem.IsDown("Sempre", noMenu) && sem.IsDown("Sempre", noJogo));
+        Input::SetKeyState(Key::K, false);
+        NextFrame();
+
+        InputActions back;
+        InputActions custom = defaults;
+        custom.startContext = "Menu";
+        CHECK(back.FromJson(custom.ToJson()) && back == custom && back.startContext == "Menu");
+        CHECK(back.FromJson(R"({"actions": []})") && back.startContext == "Jogo");  // sem o campo: o padrão
+    }
+
+    SECTION("Scripts: contextos e o clique da interface");
+    {
+        auto& registry = ComponentRegistry::Instance();
+        registry.Register<Leitor>("Leitor", "Leitor");
+        Scene scene;
+        scene.CreateEntity("L").Add<Leitor>();
+        Entity& botao = scene.CreateEntity("Jogar");
+        UiRect& rect = botao.Add<UiRect>();
+        rect.anchor = UiAnchor::Center;
+        rect.size = {320, 90};
+        botao.Add<UiButton>();
+        const glm::vec2 tela{1920, 1080}, sobre{960, 540}, fora{100, 100};
+        InputActions comAtirar = InputActions::Defaults();
+        comAtirar.actions.push_back({"Atirar", {InputBinding::Of(MouseButton::Left)}, InputActionType::Button, "Jogo"});
+        struct Host : GameHost {
+            InputActions actions;
+            SaveStore saves;
+            GameOptions Options() const override { return {}; }
+            void ApplyOptions(const GameOptions&) override {}
+            std::vector<Resolution> Resolutions() const override { return {}; }
+            SaveStore& Saves() override { return saves; }
+            const InputActions& Actions() const override { return actions; }
+            std::string GameVersion() const override { return {}; }
+            void QuitGame() override {}
+        } host;
+        host.actions = comAtirar;
+        SceneRuntime runtime(scene);
+        runtime.SetHost(&host);
+        runtime.Start();
+        Leitor* l = scene.FindByName("L")->Get<Leitor>();
+        UiSystem* ui = runtime.GetSystem<UiSystem>();
+        CHECK(ui != nullptr);
+        const auto frame = [&](glm::vec2 mouse, bool down) {
+            NextFrame();
+            Input::SetMouseButtonState(MouseButton::Left, down);
+            if (ui) ui->SetPointer({tela, mouse, true, down});
+            runtime.Update(0.016f);
+        };
+
+        Input::SetKeyState(Key::Space, true);
+        frame(fora, false);
+        CHECK(!l->menuAtivo && l->pular && !l->confirmar);  // começa no Jogo
+        l->trocarPara = "Menu";  // o script troca e já lê no contexto novo
+        frame(fora, false);
+        CHECK(l->menuAtivo && !l->pular && l->confirmar);
+        CHECK(runtime.InputContexts().size() == 1 && runtime.InputContexts()[0] == "Menu");
+        Input::SetKeyState(Key::Space, false);
+        l->trocarPara = "Jogo";
+        frame(fora, false);
+
+        // Clique que começa no botão é da interface: o jogo não atira, nem arrastando para fora.
+        frame(sobre, false);
+        CHECK(l->sobreUi && !l->mouse);
+        frame(sobre, true);
+        CHECK(!l->mouse && !l->atirar);
+        frame(fora, true);
+        CHECK(!l->mouse && !l->atirar && !l->sobreUi);
+        frame(fora, false);
+        // Clique fora da interface é do jogo, mesmo passando por cima dela depois.
+        frame(fora, true);
+        CHECK(l->mouse && l->atirar);
+        frame(sobre, true);
+        CHECK(l->mouse && l->atirar && l->sobreUi);
+        frame(sobre, false);
+        // Cursor preso (primeira pessoa): a mira no centro não é um clique na interface.
+        runtime.SetCursorMode(CursorMode::Locked);
+        frame(sobre, true);
+        CHECK(l->mouse && l->atirar && !l->sobreUi);
+        frame(sobre, false);
+
+        runtime.Stop();
+        registry.Unregister(registry.Find("Leitor"));
+        NextFrame();
     }
 
     return TestResult();

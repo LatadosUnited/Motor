@@ -49,10 +49,14 @@ bool FromKeyboardMouse(const InputBinding& b) {
 
 // Valor de uma entrada (sem o `scale`): 1/0 para teclas e botões, o eixo como está, o mouse na medida do analógico.
 // `device` filtra de onde (ver InputActions::Value).
-float RawValue(const InputBinding& b, bool lastFrame, int device) {
+float RawValue(const InputBinding& b, bool lastFrame, const InputFilter& filter) {
+    const int device = filter.device;
     const bool keyboardMouse = FromKeyboardMouse(b);
     if (device >= 0 && keyboardMouse) return 0.0f;
     if (device == kKeyboardMouse && !keyboardMouse) return 0.0f;
+    if (filter.uiHasMouse && b.source == InputBinding::Source::Mouse && b.code == static_cast<int>(MouseButton::Left)) {
+        return 0.0f;
+    }
     if (!WithHeld(b.with, lastFrame)) return 0.0f;
     switch (b.source) {
         case InputBinding::Source::Key: return KeyHeld(static_cast<Key>(b.code), lastFrame) ? 1.0f : 0.0f;
@@ -84,11 +88,12 @@ float RawValue(const InputBinding& b, bool lastFrame, int device) {
     return 0.0f;
 }
 
-glm::vec2 VectorAt(const InputAction& action, bool lastFrame, int device) {
+glm::vec2 VectorAt(const InputAction& action, bool lastFrame, const InputFilter& filter) {
+    if (!InputActions::IsContextActive(action, filter)) return glm::vec2{0.0f};
     glm::vec2 limited{0.0f};
     glm::vec2 relative{0.0f};
     for (const InputBinding& b : action.bindings) {
-        const float v = RawValue(b, lastFrame, device) * b.scale;
+        const float v = RawValue(b, lastFrame, filter) * b.scale;
         glm::vec2& sum = b.IsRelative() ? relative : limited;
         if (action.type == InputActionType::Vector2 && b.part == InputBinding::Part::Y) {
             sum.y += v;
@@ -108,8 +113,8 @@ glm::vec2 VectorAt(const InputAction& action, bool lastFrame, int device) {
     return {};
 }
 
-float ValueAt(const InputAction& action, bool lastFrame, int device) {
-    const glm::vec2 v = VectorAt(action, lastFrame, device);
+float ValueAt(const InputAction& action, bool lastFrame, const InputFilter& filter) {
+    const glm::vec2 v = VectorAt(action, lastFrame, filter);
     return action.type == InputActionType::Vector2 ? std::sqrt(v.x * v.x + v.y * v.y) : v.x;
 }
 
@@ -157,26 +162,38 @@ InputActions InputActions::Defaults() {
     using B = InputBinding;
     using T = InputActionType;
     InputActions a;
+    // Contexto Jogo: andar, olhar e agir. Contexto Menu: navegar nas telas (o script troca ao abrir e fechar).
+    InputAction mover{"Mover",
+                      {B::Of(Key::D), B::Of(Key::A, -1), B::Of(Key::W).Y(), B::Of(Key::S, -1).Y(), B::Of(Key::Right),
+                       B::Of(Key::Left, -1), B::Of(Key::Up).Y(), B::Of(Key::Down, -1).Y(), B::Of(GamepadAxis::LeftX),
+                       B::Of(GamepadAxis::LeftY).Y(), B::Of(GamepadButton::DpadRight), B::Of(GamepadButton::DpadLeft, -1),
+                       B::Of(GamepadButton::DpadUp).Y(), B::Of(GamepadButton::DpadDown, -1).Y()},
+                      T::Vector2, "Jogo"};
+    InputAction navegar = mover;
+    navegar.name = "Navegar";
+    navegar.context = "Menu";
     a.actions = {
-        {"Mover",
-         {B::Of(Key::D), B::Of(Key::A, -1), B::Of(Key::W).Y(), B::Of(Key::S, -1).Y(), B::Of(Key::Right),
-          B::Of(Key::Left, -1), B::Of(Key::Up).Y(), B::Of(Key::Down, -1).Y(), B::Of(GamepadAxis::LeftX),
-          B::Of(GamepadAxis::LeftY).Y(), B::Of(GamepadButton::DpadRight), B::Of(GamepadButton::DpadLeft, -1),
-          B::Of(GamepadButton::DpadUp).Y(), B::Of(GamepadButton::DpadDown, -1).Y()},
-         T::Vector2},
+        mover,
         {"Olhar",
          {B::Of(MouseAxis::X), B::Of(MouseAxis::Y).Y(), B::Of(GamepadAxis::RightX), B::Of(GamepadAxis::RightY).Y()},
-         T::Vector2},
-        {"Horizontal", {B::Of(Key::D), B::Of(Key::A, -1), B::Of(Key::Right), B::Of(Key::Left, -1),
-                        B::Of(GamepadAxis::LeftX), B::Of(GamepadButton::DpadRight), B::Of(GamepadButton::DpadLeft, -1)}},
-        {"Vertical", {B::Of(Key::W), B::Of(Key::S, -1), B::Of(Key::Up), B::Of(Key::Down, -1), B::Of(GamepadAxis::LeftY),
-                      B::Of(GamepadButton::DpadUp), B::Of(GamepadButton::DpadDown, -1)}},
-        {"Olhar X", {B::Of(MouseAxis::X), B::Of(GamepadAxis::RightX)}},
-        {"Olhar Y", {B::Of(MouseAxis::Y), B::Of(GamepadAxis::RightY)}},
-        {"Pular", {B::Of(Key::Space), B::Of(GamepadButton::A)}, T::Button},
-        {"Correr", {B::Of(Key::LeftShift), B::Of(Key::RightShift), B::Of(GamepadButton::LeftThumb)}, T::Button},
-        {"Interagir", {B::Of(Key::E), B::Of(GamepadButton::X)}, T::Button},
-        {"Pausa", {B::Of(Key::Escape), B::Of(GamepadButton::Start)}, T::Button},
+         T::Vector2, "Jogo"},
+        {"Horizontal",
+         {B::Of(Key::D), B::Of(Key::A, -1), B::Of(Key::Right), B::Of(Key::Left, -1), B::Of(GamepadAxis::LeftX),
+          B::Of(GamepadButton::DpadRight), B::Of(GamepadButton::DpadLeft, -1)},
+         T::Axis, "Jogo"},
+        {"Vertical",
+         {B::Of(Key::W), B::Of(Key::S, -1), B::Of(Key::Up), B::Of(Key::Down, -1), B::Of(GamepadAxis::LeftY),
+          B::Of(GamepadButton::DpadUp), B::Of(GamepadButton::DpadDown, -1)},
+         T::Axis, "Jogo"},
+        {"Olhar X", {B::Of(MouseAxis::X), B::Of(GamepadAxis::RightX)}, T::Axis, "Jogo"},
+        {"Olhar Y", {B::Of(MouseAxis::Y), B::Of(GamepadAxis::RightY)}, T::Axis, "Jogo"},
+        {"Pular", {B::Of(Key::Space), B::Of(GamepadButton::A)}, T::Button, "Jogo"},
+        {"Correr", {B::Of(Key::LeftShift), B::Of(Key::RightShift), B::Of(GamepadButton::LeftThumb)}, T::Button, "Jogo"},
+        {"Interagir", {B::Of(Key::E), B::Of(GamepadButton::X)}, T::Button, "Jogo"},
+        {"Pausa", {B::Of(Key::Escape), B::Of(GamepadButton::Start)}, T::Button, "Jogo"},
+        navegar,
+        {"Confirmar", {B::Of(Key::Enter), B::Of(Key::Space), B::Of(GamepadButton::A)}, T::Button, "Menu"},
+        {"Voltar", {B::Of(Key::Escape), B::Of(GamepadButton::B), B::Of(GamepadButton::Start)}, T::Button, "Menu"},
     };
     return a;
 }
@@ -198,27 +215,35 @@ const InputAction* InputActions::FindOrWarn(std::string_view name) const {
 }
 
 glm::vec2 InputActions::VectorOf(const InputAction& action) {
-    return VectorAt(action, false, kAnyDevice);
+    return VectorAt(action, false, {});
 }
 
-float InputActions::Value(std::string_view name, int device) const {
-    const InputAction* action = FindOrWarn(name);
-    return action ? ValueAt(*action, false, device) : 0.0f;
+bool InputActions::IsContextActive(const InputAction& action, const InputFilter& filter) {
+    if (action.context.empty() || !filter.contexts) return true;
+    return std::any_of(filter.contexts->begin(), filter.contexts->end(),
+                       [&](const std::string& c) { return SameName(c, action.context); });
 }
 
-glm::vec2 InputActions::Vector(std::string_view name, int device) const {
+float InputActions::Value(std::string_view name, const InputFilter& filter) const {
     const InputAction* action = FindOrWarn(name);
-    return action ? VectorAt(*action, false, device) : glm::vec2{0.0f};
+    return action ? ValueAt(*action, false, filter) : 0.0f;
 }
 
-bool InputActions::WasPressed(std::string_view name, int device) const {
+glm::vec2 InputActions::Vector(std::string_view name, const InputFilter& filter) const {
     const InputAction* action = FindOrWarn(name);
-    return action && ValueAt(*action, false, device) > 0.5f && ValueAt(*action, true, device) <= 0.5f;
+    return action ? VectorAt(*action, false, filter) : glm::vec2{0.0f};
 }
 
-bool InputActions::WasReleased(std::string_view name, int device) const {
+// O "antes" usa os contextos de agora: uma tecla segurada desde antes de o contexto ligar não vira um aperto
+// novo (o Espaço de Pular segurado não confirma o menu que acabou de abrir).
+bool InputActions::WasPressed(std::string_view name, const InputFilter& filter) const {
     const InputAction* action = FindOrWarn(name);
-    return action && ValueAt(*action, false, device) <= 0.5f && ValueAt(*action, true, device) > 0.5f;
+    return action && ValueAt(*action, false, filter) > 0.5f && ValueAt(*action, true, filter) <= 0.5f;
+}
+
+bool InputActions::WasReleased(std::string_view name, const InputFilter& filter) const {
+    const InputAction* action = FindOrWarn(name);
+    return action && ValueAt(*action, false, filter) <= 0.5f && ValueAt(*action, true, filter) > 0.5f;
 }
 
 std::string InputActions::ToJson() const {
@@ -243,14 +268,18 @@ std::string InputActions::ToJson() const {
             if (b.part == InputBinding::Part::Y) entry["part"] = "y";
             bindings.push_back(std::move(entry));
         }
-        list.push_back({{"name", action.name}, {"type", InputActionTypeName(action.type)}, {"bindings", std::move(bindings)}});
+        json entry{{"name", action.name}, {"type", InputActionTypeName(action.type)}};
+        if (!action.context.empty()) entry["context"] = action.context;
+        entry["bindings"] = std::move(bindings);
+        list.push_back(std::move(entry));
     }
-    return json{{"version", kFormatVersion}, {"actions", std::move(list)}}.dump(2, ' ', false,
-                                                                               json::error_handler_t::replace);
+    return json{{"version", kFormatVersion}, {"startContext", startContext}, {"actions", std::move(list)}}.dump(
+        2, ' ', false, json::error_handler_t::replace);
 }
 
 bool InputActions::FromJson(std::string_view text, std::string* error) {
     std::vector<InputAction> read;
+    std::string start = "Jogo";
     std::string problems;
     const auto problem = [&](std::string_view action, std::string_view what) {
         problems += std::format("{}{}: {}", problems.empty() ? "" : "; ", action, what);
@@ -262,10 +291,16 @@ bool InputActions::FromJson(std::string_view text, std::string* error) {
             if (error) *error = "o mapa de ações precisa de uma lista \"actions\"";
             return false;
         }
+        if (const auto value = root.find("startContext"); value != root.end() && value->is_string()) {
+            start = value->get<std::string>();
+        }
         for (const json& a : *list) {
             if (!a.is_object() || !a.contains("name") || !a["name"].is_string()) continue;
             InputAction action;
             action.name = a["name"].get<std::string>();
+            if (const auto context = a.find("context"); context != a.end() && context->is_string()) {
+                action.context = context->get<std::string>();
+            }
             if (action.name.empty() || std::any_of(read.begin(), read.end(), [&](const InputAction& o) {
                     return SameName(o.name, action.name);
                 })) {
@@ -330,6 +365,7 @@ bool InputActions::FromJson(std::string_view text, std::string* error) {
         return false;
     }
     actions = std::move(read);
+    startContext = std::move(start);
     m_warned.clear();
     if (error) *error = problems;
     return true;

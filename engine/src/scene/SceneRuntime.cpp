@@ -10,6 +10,7 @@
 #include "motor/scene/Scene.h"
 
 #include <algorithm>
+#include <cctype>
 #include <exception>
 #include <random>
 #include <format>
@@ -194,6 +195,20 @@ void SceneRuntime::RunSystems(bool beforeScripts, void (RuntimeSystem::*hook)(Sc
     }
 }
 
+const std::vector<std::string>& SceneRuntime::InputContexts() {
+    if (!m_inputContextsSet) {
+        m_inputContextsSet = true;
+        const std::string start = m_host ? m_host->Actions().startContext : InputActions::Defaults().startContext;
+        m_inputContexts = start.empty() ? std::vector<std::string>{} : std::vector<std::string>{start};
+    }
+    return m_inputContexts;
+}
+
+void SceneRuntime::SetInputContexts(std::vector<std::string> contexts) {
+    m_inputContexts = std::move(contexts);
+    m_inputContextsSet = true;
+}
+
 RuntimeSystem* SceneRuntime::FindSystem(const std::type_info& type) {
     for (SystemSlot& slot : m_systems) {
         if (*slot.info.cppType == type) return slot.system.get();
@@ -210,6 +225,9 @@ void SceneRuntime::Start() {
     m_hasNewError = false;
     m_errorCount = 0;
     m_timers.clear();
+    m_inputContexts.clear();
+    m_inputContextsSet = false;
+    m_pointerOverUi = m_uiHasMouse = false;
     m_random.seed(std::random_device{}());
     // Instâncias novas a cada Start: o estado dos sistemas é deste runtime e deste Play.
     for (RuntimeSystemInfo& info : RegisteredRuntimeSystems()) {
@@ -598,7 +616,11 @@ bool Script::InputEnabled() const {
 
 bool Script::IsKeyDown(Key key) const { return InputEnabled() && Input::IsKeyDown(key); }
 bool Script::WasKeyPressed(Key key) const { return InputEnabled() && Input::WasKeyPressed(key); }
-bool Script::IsMouseDown(MouseButton button) const { return InputEnabled() && Input::IsMouseDown(button); }
+bool Script::IsMouseDown(MouseButton button) const {
+    if (button == MouseButton::Left && m_runtime && m_runtime->UiHasMouse()) return false;  // clique na interface
+    return InputEnabled() && Input::IsMouseDown(button);
+}
+bool Script::IsPointerOverUi() const { return m_runtime && m_runtime->PointerOverUi(); }
 glm::vec2 Script::MouseDelta() const { return InputEnabled() ? Input::MouseDelta() : glm::vec2(0.0f); }
 void Script::SetCursorMode(CursorMode mode) {
     if (m_runtime) m_runtime->SetCursorMode(mode);
@@ -631,20 +653,51 @@ const InputActions& Script::Actions() const {
     GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
     return host ? host->Actions() : defaults;
 }
+InputFilter Script::ActionFilter(int device) const {
+    InputFilter filter(device);
+    if (m_runtime) {
+        filter.contexts = &m_runtime->InputContexts();
+        filter.uiHasMouse = m_runtime->UiHasMouse();
+    }
+    return filter;
+}
 bool Script::IsActionDown(std::string_view action, int device) const {
-    return InputEnabled() && Actions().IsDown(action, device);
+    return InputEnabled() && Actions().IsDown(action, ActionFilter(device));
 }
 bool Script::WasActionPressed(std::string_view action, int device) const {
-    return InputEnabled() && Actions().WasPressed(action, device);
+    return InputEnabled() && Actions().WasPressed(action, ActionFilter(device));
 }
 bool Script::WasActionReleased(std::string_view action, int device) const {
-    return InputEnabled() && Actions().WasReleased(action, device);
+    return InputEnabled() && Actions().WasReleased(action, ActionFilter(device));
 }
 float Script::GetAxis(std::string_view action, int device) const {
-    return InputEnabled() ? Actions().Value(action, device) : 0.0f;
+    return InputEnabled() ? Actions().Value(action, ActionFilter(device)) : 0.0f;
 }
 glm::vec2 Script::GetVector(std::string_view action, int device) const {
-    return InputEnabled() ? Actions().Vector(action, device) : glm::vec2(0.0f);
+    return InputEnabled() ? Actions().Vector(action, ActionFilter(device)) : glm::vec2(0.0f);
+}
+namespace {
+bool SameContext(std::string_view a, std::string_view b) {
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+               return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+           });
+}
+} // namespace
+void Script::SetInputContext(std::string_view context) {
+    if (!m_runtime) return;
+    m_runtime->SetInputContexts(context.empty() ? std::vector<std::string>{} : std::vector<std::string>{std::string(context)});
+}
+void Script::EnableInputContext(std::string_view context, bool enabled) {
+    if (!m_runtime || context.empty()) return;
+    std::vector<std::string> contexts = m_runtime->InputContexts();
+    std::erase_if(contexts, [&](const std::string& c) { return SameContext(c, context); });
+    if (enabled) contexts.emplace_back(context);
+    m_runtime->SetInputContexts(std::move(contexts));
+}
+bool Script::IsInputContextActive(std::string_view context) const {
+    if (!m_runtime) return true;
+    const auto& contexts = m_runtime->InputContexts();
+    return std::any_of(contexts.begin(), contexts.end(), [&](const std::string& c) { return SameContext(c, context); });
 }
 const std::string& Script::TextInput() const {
     static const std::string none;

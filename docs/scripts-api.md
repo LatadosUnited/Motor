@@ -152,6 +152,9 @@ controle:
 | `float GetAxis(std::string_view action) const` | valor da ação, -1 a 1: soma das entradas (tecla/botão = `scale`, eixo = valor x `scale`); Botão de 0 a 1; num Vetor 2D, o comprimento |
 | `glm::vec2 GetVector(std::string_view action) const` | X e Y de uma ação Vetor 2D (cada entrada vai no lado `part`), limitado ao círculo de raio 1; num Botão ou Eixo, `(valor, 0)` |
 | `const std::string& TextInput() const` | texto digitado neste frame, em UTF-8 (vazio sem o foco do jogo) |
+| `void SetInputContext(std::string_view context)` | deixa só este contexto ativo (`"Menu"`); `""` deixa só as ações sem contexto |
+| `void EnableInputContext(std::string_view context, bool enabled)`, `bool IsInputContextActive(std::string_view context) const` | liga ou desliga um contexto sem mexer nos outros; se está ativo |
+| `bool IsPointerOverUi() const` | o mouse está sobre um botão ou imagem da interface do jogo |
 | `bool IsActionDown(std::string_view action) const` | valor acima de 0,5 |
 | `bool WasActionPressed(std::string_view action) const`, `bool WasActionReleased(std::string_view action) const` | passou de 0,5 neste frame / voltou |
 | `bool IsGamepadConnected(int pad = kAnyDevice) const`, `int GamepadCount() const` | há um controle (ou o controle `pad`, de 0 a 3) reconhecido como gamepad; quantos estão ligados |
@@ -164,6 +167,15 @@ O movimento do mouse (`MouseX`, `MouseY`, `MouseScroll`) entra como eixo: X e Y 
 `motor::kMouseAxisPixelsPerSecond` (1000 px/s = 1, Y para cima +) e somam depois do limite de -1..1, então
 `GetVector("Olhar") * velocidade * dt` gira igual com mouse ou analógico; a roda vale os entalhes do frame.
 Uma entrada com `with` (Ctrl, Shift, Alt) só vale com essa tecla apertada junto, de qualquer lado.
+
+**Contextos.** Cada ação pode ter um contexto (`"Jogo"`, `"Menu"`): fora do contexto ativo ela fica
+solta/zero. O jogo começa no contexto inicial do mapa (`startContext`, padrão `"Jogo"`) e o script troca
+com `SetInputContext`. Ação sem contexto vale sempre. Uma tecla segurada desde antes de o contexto ligar não
+conta como `WasActionPressed` nele (o Espaço de Pular não confirma o menu que acabou de abrir).
+
+**Clique da interface.** Um clique que começa num botão ou imagem da interface do jogo é dela: até soltar,
+`IsMouseDown(MouseButton::Left)` e as ações ligadas ao botão esquerdo ficam soltos. Com o cursor preso
+(`CursorMode::Locked`) a interface não pega o mouse.
 
 Ação desconhecida devolve 0/falso e avisa uma vez no log. Controles no padrão do Xbox (a GLFW traduz
 PlayStation, Switch e outros: o `A` é o botão de baixo), até `motor::kMaxGamepads` (4). Cada um ganha um número
@@ -485,6 +497,7 @@ nome da entidade (a primeira com esse nome) ou pelo id. O sistema roda depois do
 | `EntityId HoveredButton() const` | o botão sob o mouse, ou 0 |
 | `bool ScreenRect(EntityId entity, UiBox& out) const` | retângulo do elemento na tela (pixels de verdade, `out.min`/`out.max`) no último passo; `false` se não estava visível |
 | `void SetPointer(const UiPointer& pointer)`, `const UiPointer& Pointer() const` | o mouse em relação à imagem do jogo; quem chama é o editor (ou o jogo exportado), não um script |
+| `void UpdatePointer(SceneRuntime& runtime)` | diz ao runtime, antes dos scripts, se o mouse está sobre a interface e se o clique é dela; quem chama é a própria engine, não um script |
 | `OnStart`, `OnUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 `motor::UiPointer`: `screenSize` (pixels da imagem do jogo), `position` (mouse, a partir do canto superior

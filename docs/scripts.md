@@ -313,7 +313,7 @@ Dentro do script:
 **Ações e controle.** Em vez de perguntar por uma tecla, pergunte pela ação: o mesmo script funciona no
 teclado e no controle (gamepad), e quem joga pode trocar as teclas. As ações ficam no projeto, em **Arquivo >
 Controles** (o padrão já traz `Mover`, `Olhar`, `Horizontal`, `Vertical`, `Olhar X`, `Olhar Y`, `Pular`,
-`Correr`, `Interagir` e `Pausa`, com teclado, mouse e controle). Cada ação tem um tipo: **Botão** (0 a 1),
+`Correr`, `Interagir`, `Pausa`, `Navegar`, `Confirmar` e `Voltar`, com teclado, mouse e controle). Cada ação tem um tipo: **Botão** (0 a 1),
 **Eixo** (-1 a 1) ou **Vetor 2D** (X e Y, para `GetVector`; W+D não anda mais rápido que W). Na janela,
 **Adicionar (aperte)** liga a próxima tecla ou botão apertado, e uma barra mostra o valor de cada ação na hora,
 para conferir sem dar Play. Em cada entrada: a **escala** (negativa empurra para o outro lado, como a tecla A em
@@ -334,6 +334,28 @@ segundo valem 1. Por isso `Olhar` serve aos dois do mesmo jeito: multiplique por
 | `LastInputDevice()` | `motor::InputDevice::KeyboardMouse` ou `Gamepad`: o último usado, para a tela mostrar "Espaço" ou "A" |
 | `IsGamepadButtonDown(motor::GamepadButton::A)`, `WasGamepadButtonPressed` | um botão do controle direto: `A`, `B`, `X`, `Y`, `LeftBumper`, `Start`, `DpadUp`... |
 | `GamepadAxisValue(motor::GamepadAxis::LeftX)` | analógico de -1 a 1 (Y para cima é positivo), com zona morta; gatilhos (`LeftTrigger`, `RightTrigger`) de 0 a 1 |
+
+**Contextos.** Cada ação pode ter um **contexto**: o padrão põe Mover, Olhar, Pular e as outras do jogo em
+`Jogo`, e `Navegar`, `Confirmar` e `Voltar` em `Menu`. Só valem as ações do contexto ativo (e as sem contexto),
+então ao abrir um menu o jogador não pula nem atira atrás dele
+([examples/MenuPausa.cpp](examples/MenuPausa.cpp)):
+
+```cpp
+    void AbrirPausa(motor::UiSystem* ui) {
+        pausado = true;
+        SetInputContext("Menu");  // Pular, Mover... ficam soltos; Navegar, Confirmar e Voltar passam a valer
+        if (ui) ui->SetVisible("PainelPausa", true);
+    }
+
+    void FecharPausa(motor::UiSystem* ui) {
+        pausado = false;
+        SetInputContext("Jogo");
+        if (ui) ui->SetVisible("PainelPausa", false);
+    }
+```
+
+E um clique num botão ou imagem da interface do jogo é da interface: o `IsMouseDown(Left)` e uma ação "Atirar"
+no botão esquerdo não veem esse clique. `IsPointerOverUi()` diz se o mouse está sobre a interface.
 
 Jogo de uma pessoa: qualquer controle serve, sem fazer nada. Duas ou mais pessoas na mesma tela: passe o
 número do jogador, `GetVector("Mover", 0)` para o controle 0, `GetVector("Mover", motor::kKeyboardMouse)` para

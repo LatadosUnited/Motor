@@ -171,6 +171,15 @@ protected:
     glm::vec2 GetVector(std::string_view action, int device = kAnyDevice) const;
     // Texto digitado neste frame (UTF-8, com acentos), para campos de texto.
     const std::string& TextInput() const;
+    // Contextos (Arquivo > Controles, coluna Contexto): grupos de ações que valem juntos. O jogo começa no
+    // contexto inicial do mapa ("Jogo"); ao abrir um menu, SetInputContext("Menu") desliga as ações do Jogo (Pular
+    // não pula atrás do menu) e liga as do Menu. Ações sem contexto valem sempre.
+    void SetInputContext(std::string_view context);  // só este fica ativo ("" = só as sem contexto)
+    void EnableInputContext(std::string_view context, bool enabled);  // liga/desliga um, sem mexer nos outros
+    bool IsInputContextActive(std::string_view context) const;
+    // O mouse está sobre um botão ou imagem da interface do jogo. Um clique que começa num deles é da interface:
+    // até soltar, IsMouseDown(Left) e as ações do botão esquerdo ficam soltos (atirar não dispara no "Jogar").
+    bool IsPointerOverUi() const;
     // Controle direto (padrão Xbox): botões, analógicos (-1 a 1, Y para cima +) e gatilhos (0 a 1). Sem `pad`,
     // qualquer controle; com `pad` (0 a 3), só aquele. Cada controle mantém o número enquanto estiver ligado.
     bool IsGamepadConnected(int pad = kAnyDevice) const;
@@ -258,6 +267,7 @@ private:
     void WriteLog(std::string_view fmt, const detail::LogArg* args, size_t count);
     bool InputEnabled() const;
     const InputActions& Actions() const;
+    InputFilter ActionFilter(int device) const;  // o jogador, os contextos ativos e o mouse da UI
     RuntimeSystem* FindSystem(const std::type_info& type);
 
     SceneRuntime* m_runtime = nullptr;

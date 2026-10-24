@@ -171,6 +171,15 @@ void SceneDocument::DrawControlsWindow() {
     } else {
         ImGui::TextDisabled("Nenhum controle conectado (os botões do controle podem ser escolhidos em \"Escolher\").");
     }
+    std::string start = actions.startContext;
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputText("Contexto inicial", &start);
+    if (ImGui::IsItemDeactivatedAfterEdit() && start != actions.startContext) {
+        actions.startContext = start;
+        changed = true;
+    }
+    ImGui::SetItemTooltip("O contexto ativo quando o jogo começa. As ações de outros contextos ficam soltas até o "
+                          "script ligá-los (SetInputContext, EnableInputContext).");
     ImGui::Separator();
 
     int removeAction = -1;
@@ -210,6 +219,16 @@ void SceneDocument::DrawControlsWindow() {
             }
             ImGui::SetItemTooltip("Botão: 0 a 1 (Pular). Eixo: -1 a 1, GetAxis (Horizontal). Vetor 2D: X e Y, "
                                   "GetVector, com a diagonal limitada (Mover, Olhar).");
+            ImGui::SameLine();
+            std::string context = action.context;
+            ImGui::SetNextItemWidth(90.0f);
+            ImGui::InputTextWithHint("Contexto", "sempre", &context);
+            if (ImGui::IsItemDeactivatedAfterEdit() && context != action.context) {
+                action.context = context;
+                changed = true;
+            }
+            ImGui::SetItemTooltip("Grupo da ação (Jogo, Menu): só vale com o contexto ativo, que o script troca com "
+                                  "SetInputContext(\"Menu\"). Vazio: vale sempre.");
             int removeBinding = -1;
             for (int j = 0; j < static_cast<int>(action.bindings.size()); ++j) {
                 InputBinding& b = action.bindings[static_cast<size_t>(j)];
@@ -272,8 +291,8 @@ void SceneDocument::DrawControlsWindow() {
         m_listeningAction = -1;
         changed = true;
     }
-    ImGui::SetItemTooltip("Mover, Olhar, Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa, com "
-                          "teclado, mouse e controle.");
+    ImGui::SetItemTooltip("Jogo: Mover, Olhar, Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa. "
+                          "Menu: Navegar, Confirmar e Voltar. Com teclado, mouse e controle.");
 
     if (changed && !(actions == m_project->Actions())) {
         std::string error;

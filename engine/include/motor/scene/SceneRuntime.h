@@ -51,6 +51,18 @@ public:
     // editor só com o jogo em foco (Esc solta).
     void SetCursorMode(CursorMode mode) { m_cursorMode = mode; }
     CursorMode GetCursorMode() const { return m_cursorMode; }
+    // Contextos de entrada ativos (Script::SetInputContext): começam com o startContext do mapa de ações e ficam
+    // ao trocar de cena.
+    const std::vector<std::string>& InputContexts();
+    void SetInputContexts(std::vector<std::string> contexts);
+    // A interface do jogo e o mouse, postos pela UI a cada passo, antes dos scripts: o mouse está sobre um botão
+    // ou imagem, e o clique começou num deles (até soltar, o botão esquerdo é dela, não das ações do jogo).
+    void SetUiPointer(bool overUi, bool uiHasMouse) {
+        m_pointerOverUi = overUi;
+        m_uiHasMouse = uiHasMouse;
+    }
+    bool PointerOverUi() const { return m_pointerOverUi; }
+    bool UiHasMouse() const { return m_uiHasMouse; }
 
     // Biblioteca de assets do projeto (opcional): usada por Instantiate para carregar os prefabs com as malhas,
     // texturas e materiais do projeto. Sem ela, Instantiate usa uma biblioteca local se `prefab.file` existir.
@@ -157,6 +169,10 @@ private:
     bool m_running = false;
     bool m_inputEnabled = true;
     CursorMode m_cursorMode = CursorMode::Normal;
+    std::vector<std::string> m_inputContexts;
+    bool m_inputContextsSet = false;  // lidos do mapa na primeira consulta (o host pode chegar depois do Start)
+    bool m_pointerOverUi = false;
+    bool m_uiHasMouse = false;
     std::string m_sceneRequest;
 
     struct Timer {
