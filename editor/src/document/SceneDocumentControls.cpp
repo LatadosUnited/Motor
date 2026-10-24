@@ -466,37 +466,45 @@ void SceneDocument::DrawControlsWindow() {
             ImGui::PushID(i);
             const std::vector<std::string> problems = ActionProblems(action);
 
-            // Cabeçalho da ação: nome, tipo, avisos, valor ao vivo e Excluir à direita.
-            const bool open = ImGui::TreeNodeEx("##acao", ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_SpanAvailWidth,
-                                                "%s", action.name.c_str());
-            ImGui::SameLine();
-            ImGui::TextDisabled("%s", kTypeLabels[static_cast<int>(action.type)]);
-            if (!problems.empty()) {
-                ImGui::SameLine();
-                WarningMark(Joined(problems, "\n"));
-            }
+            // Cabeçalho da ação numa tabela (nome e tipo | valor ao vivo | Excluir): a tabela cabe na largura
+            // da janela sozinha, sem posição calculada à mão que passava da borda.
+            bool open = false;
             const float previewWidth = 60.0f;
             const float deleteWidth = ImGui::CalcTextSize("Excluir").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            const float spacing = ImGui::GetStyle().ItemSpacing.x;
-            ImGui::SameLine();
-            const float right = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - previewWidth - deleteWidth - spacing;
-            ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), right));
-            ValuePreview(action, previewWidth);
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Excluir")) ImGui::OpenPopup("excluir");
-            if (ImGui::BeginPopupModal("Excluir a ação?###excluir", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-                ImGui::Text("Excluir \"%s\" e as %zu entradas dela?", action.name.c_str(), action.bindings.size());
-                ImGui::TextDisabled("Os scripts que perguntam por ela passam a receber 0 (e um aviso no log).");
-                if (ImGui::Button("Excluir")) {
-                    removeAction = i;
-                    ImGui::CloseCurrentPopup();
-                }
+            if (ImGui::BeginTable("cabecalho", 3, ImGuiTableFlags_SizingFixedFit)) {
+                ImGui::TableSetupColumn("acao", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("valor", ImGuiTableColumnFlags_WidthFixed, previewWidth);
+                ImGui::TableSetupColumn("excluir", ImGuiTableColumnFlags_WidthFixed, deleteWidth);
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                // Sem TreePush: o conteúdo aberto vem depois da tabela, com o recuo posto à mão.
+                open = ImGui::TreeNodeEx("##acao", ImGuiTreeNodeFlags_NoTreePushOnOpen, "%s", action.name.c_str());
                 ImGui::SameLine();
-                if (ImGui::Button("Cancelar")) ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
+                ImGui::TextDisabled("%s", kTypeLabels[static_cast<int>(action.type)]);
+                if (!problems.empty()) {
+                    ImGui::SameLine();
+                    WarningMark(Joined(problems, "\n"));
+                }
+                ImGui::TableNextColumn();
+                ValuePreview(action, previewWidth);
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton("Excluir")) ImGui::OpenPopup("excluir");
+                if (ImGui::BeginPopupModal("Excluir a ação?###excluir", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::Text("Excluir \"%s\" e as %zu entradas dela?", action.name.c_str(), action.bindings.size());
+                    ImGui::TextDisabled("Os scripts que perguntam por ela passam a receber 0 (e um aviso no log).");
+                    if (ImGui::Button("Excluir")) {
+                        removeAction = i;
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancelar")) ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                }
+                ImGui::EndTable();
             }
 
             if (open) {
+                ImGui::Indent();
                 const float fieldWidth = std::min(260.0f, ImGui::GetContentRegionAvail().x - labelWidth);
                 std::string name = action.name;
                 FieldLabel("Nome", labelWidth);
@@ -555,7 +563,7 @@ void SceneDocument::DrawControlsWindow() {
                     }
                 }
                 ImGui::Spacing();
-                ImGui::TreePop();
+                ImGui::Unindent();
             }
             ImGui::PopID();
         }
