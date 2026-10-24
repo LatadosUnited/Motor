@@ -1,57 +1,28 @@
 // Desenhador do Inspector para o navmesh salvo da Superfície de navegação (motor::NavMeshData, ver
-// motor/scene/NavMeshSurface.h): combo com os .mnav do projeto e o botão Gerar, que gera o navmesh da cena aberta e o
-// grava (no arquivo já ligado, ou num novo em Assets/Navegacao).
+// motor/scene/NavMeshSurface.h): combo com os .mnav do projeto e o botão Gerar (NavMeshBake.h), que gera o navmesh
+// da cena aberta e o grava (no arquivo já ligado, ou num novo em Assets/Navegacao).
 #include "drawers/FieldDrawers.h"
 
-#include <motor/ai/NavSystem.h>
+#include "NavMeshBake.h"
+
 #include <motor/assets/AssetLoaders.h>
-#include <motor/core/Log.h>
 #include <motor/scene/NavMeshSurface.h>
 
 #include <imgui.h>
 
 #include <algorithm>
-#include <format>
+#include <cctype>
 
 namespace {
 
 // A superfície dona deste campo (o desenhador só recebe o campo).
-const motor::NavMeshSurface* SurfaceOf(const editor::EditorContext& ctx, const motor::NavMeshData& data) {
+motor::NavMeshSurface* SurfaceOf(editor::EditorContext& ctx, const motor::NavMeshData& data) {
     for (motor::EntityId id : ctx.scene.EntitiesWith<motor::NavMeshSurface>()) {
-        const motor::Entity* e = ctx.scene.Find(id);
-        const motor::NavMeshSurface* surface = e ? e->Get<motor::NavMeshSurface>() : nullptr;
+        motor::Entity* e = ctx.scene.Find(id);
+        motor::NavMeshSurface* surface = e ? e->Get<motor::NavMeshSurface>() : nullptr;
         if (surface && &surface->navMesh == &data) return surface;
     }
     return nullptr;
-}
-
-void Bake(editor::EditorContext& ctx, motor::NavMeshData& data) {
-    const motor::NavMeshSurface* surface = SurfaceOf(ctx, data);
-    if (!surface) return;
-    std::filesystem::path file = data.file;
-    if (file.empty()) file = ctx.NewAssetPath("Navegacao", "Navmesh", motor::kNavMeshFileExtension);
-    if (file.empty()) {
-        ctx.pendingError = "Abra ou crie um projeto para gerar o navmesh.";
-        return;
-    }
-
-    motor::NavStats stats;
-    const auto nav = motor::BuildSceneNavMesh(ctx.scene, *surface, &stats);
-    if (!nav) {
-        ctx.pendingError = std::format("O navmesh não foi gerado: {}.", stats.error);
-        return;
-    }
-    std::string error;
-    if (!nav->Save(file, &error)) {
-        ctx.pendingError = std::format("Não foi possível gravar o navmesh: {}", error);
-        return;
-    }
-    // Arquivo novo: o GUID sai do .meta criado agora. O campo mudar é um passo de desfazer, como qualquer edição.
-    data.file = file;
-    data.guid = ctx.assets.Database().GuidFor(file);
-    data.path = ctx.assets.KeyForFile(file);
-    motor::log::Info("Navegação: navmesh {} gerado com {} polígonos ({} triângulos) em {:.0f} ms", data.path,
-                     stats.polygons, stats.triangles, stats.buildMs);
 }
 
 } // namespace
@@ -83,7 +54,16 @@ MOTOR_FIELD_DRAWER(NavMeshData) {
 
     ImGui::SameLine();
     ImGui::BeginDisabled(ctx.playing);
-    if (ImGui::Button(buttonLabel)) Bake(ctx, data);
+    if (ImGui::Button(buttonLabel)) {
+        if (motor::NavMeshSurface* surface = SurfaceOf(ctx, data)) {
+            const editor::NavBakeResult result = editor::BakeNavMesh(ctx, *surface);
+            if (!result.ok) {
+                std::string message = result.error;
+                if (!message.empty()) message[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(message[0])));
+                ctx.pendingError = message + ".";
+            }
+        }
+    }
     ImGui::EndDisabled();
     ImGui::SetItemTooltip(ctx.playing ? "Pare o Play para gerar o navmesh"
                                       : "Gera o navmesh dos Colliders estáticos da cena e grava no arquivo (ou num novo "
