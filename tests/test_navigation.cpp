@@ -1,17 +1,24 @@
 // Navegação (Fase 34): navmesh gerado pela Recast, caminhos pelo Detour, geometria tirada dos Colliders da cena e o
-// NavSystem movendo os NavMeshAgent no SceneRuntime. Não usa OpenGL nem janela.
+// NavSystem movendo os NavMeshAgent no SceneRuntime, e o navmesh salvo em .mnav (Tarefa 7). Não usa OpenGL nem
+// janela.
 #include "TestUtil.h"
 
 #include <motor/ai/NavMesh.h>
 #include <motor/ai/NavSystem.h>
+#include <motor/assets/AssetLibrary.h>
+#include <motor/core/Paths.h>
+#include <motor/project/Project.h>
 #include <motor/renderer/Mesh.h>
 #include <motor/scene/Components.h>
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneRuntime.h>
+#include <motor/scene/SceneSerializer.h>
 
 #include <glm/geometric.hpp>
 
 #include <cmath>
+#include <fstream>
+#include <iterator>
 #include <vector>
 
 using namespace motor;
@@ -84,7 +91,10 @@ Entity& AddAgent(Scene& scene, const glm::vec3& position) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    namespace fs = std::filesystem;
+    const fs::path base = fs::absolute(TestDir(argc, argv, "test_navigation_tmp")).lexically_normal();
+
     SECTION("Chão liso: navmesh, ponto mais perto e caminho reto");
     {
         NavGeometry g;
@@ -344,6 +354,183 @@ int main() {
         CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(0.0f, 0.5f, 0.0f)) < 1e-4f);
         CHECK(nav && !nav->Rebuild());
         runtime.Stop();
+    }
+
+    SECTION("Cantos: o agente não passa do canto embalado nem volta até ele");
+    {
+        // A cena que mostrou o problema no editor (chão e parede de cubos escalados, agente seguindo um alvo): o
+        // agente virava aos poucos, passava do canto da parede e voltava uns 70 cm até ele.
+        Scene scene;
+        Entity& floor = scene.CreateEntity("Chão");
+        floor.transform.scale = {40.0f, 1.0f, 40.0f};
+        floor.Add<ColliderComponent>().size = {1.0f, 0.02f, 1.0f};
+        Entity& wall = scene.CreateEntity("Parede");
+        wall.transform.position = {0.0f, 1.5f, 0.0f};
+        wall.transform.scale = {12.0f, 3.0f, 1.0f};
+        wall.Add<ColliderComponent>();
+        scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+        Entity& target = scene.CreateEntity("Alvo");
+        target.transform.position = {0.0f, 0.5f, 6.0f};
+        const EntityId targetId = target.id;
+        Entity& a = AddAgent(scene, {0.0f, 1.0f, -6.0f});
+        a.Get<NavMeshAgent>()->baseOffset = 1.0f;
+        a.Get<NavMeshAgent>()->stoppingDistance = 1.0f;
+        a.Get<NavMeshAgent>()->target = EntityRef(targetId);
+        const EntityId id = a.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        // O caminho até o alvo nasce no primeiro passo: compara a partir do segundo.
+        float previous = -1.0f;
+        float worstIncrease = 0.0f;
+        int steps = 0;
+        for (; steps < 60 * 10 && nav && !nav->HasArrived(id); ++steps) {
+            runtime.FixedUpdate(kDt);
+            const float remaining = nav->RemainingDistance(id);
+            if (nav->HasPath(id) && previous >= 0.0f) worstIncrease = std::max(worstIncrease, remaining - previous);
+            previous = nav->HasPath(id) ? remaining : -1.0f;
+        }
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(worstIncrease < 0.01f);  // o que falta só diminui
+        // ~17 m a 3,5 m/s: uns 5 s; com o vaivém nos cantos passava de 6,7 s.
+        CHECK(steps * kDt < 5.6f);
+        std::printf("  chegou em %.2f s (maior aumento do que falta: %.3f m)\n", steps * kDt, worstIncrease);
+        runtime.Stop();
+    }
+
+    SECTION("Arquivo .mnav: grava, lê e as consultas dão o mesmo resultado");
+    {
+        NavGeometry g;
+        AddFloor(g, 20.0f);
+        AddBox(g, {-6.0f, 0.0f, -0.5f}, {6.0f, 3.0f, 0.5f});
+        NavMeshBuildSettings settings;
+        settings.agentRadius = 0.4f;
+        auto built = NavMesh::Build(g, settings);
+        CHECK(built != nullptr);
+        const fs::path file = base / PathFromUtf8("Navegação ç") / "Parede.mnav";
+        fs::create_directories(file.parent_path());
+        std::string error;
+        CHECK(built && built->Save(file, &error));
+        auto loaded = NavMesh::Load(file, &error);
+        CHECK(loaded != nullptr);
+        if (built && loaded) {
+            CHECK(loaded->PolygonCount() == built->PolygonCount());
+            CHECK(loaded->Source() == built->Source());
+            CHECK(loaded->Source() == NavMesh::SourceHash(g, settings));
+            CHECK(Near(loaded->Settings().agentRadius, 0.4f, 1e-6f));
+            std::vector<glm::vec3> a, b;
+            CHECK(built->FindPath({0, 0, -5}, {0, 0, 5}, a) && loaded->FindPath({0, 0, -5}, {0, 0, 5}, b));
+            CHECK(a.size() == b.size() && Near(NavMesh::PathLength(a), NavMesh::PathLength(b), 1e-4f));
+        }
+
+        // Outra geometria ou outro parâmetro: outra impressão digital.
+        NavMeshBuildSettings other = settings;
+        other.agentRadius = 0.5f;
+        CHECK(NavMesh::SourceHash(g, other) != NavMesh::SourceHash(g, settings));
+        NavGeometry moved = g;
+        moved.vertices.back().x += 0.01f;
+        CHECK(NavMesh::SourceHash(moved, settings) != NavMesh::SourceHash(g, settings));
+
+        // Arquivos que não servem: não existe, não é .mnav, versão mais nova, cortado.
+        auto write = [&](const char* name, const std::string& bytes) {
+            std::ofstream(base / name, std::ios::binary) << bytes;
+            return base / name;
+        };
+        error.clear();
+        CHECK(NavMesh::Load(base / "nao-existe.mnav", &error) == nullptr && !error.empty());
+        error.clear();
+        CHECK(NavMesh::Load(write("texto.mnav", "isto nao e um navmesh"), &error) == nullptr && !error.empty());
+        std::string newer = "MNAV";
+        newer += static_cast<char>(99);  // versão 99, little-endian
+        newer.append(3, static_cast<char>(0));
+        error.clear();
+        CHECK(NavMesh::Load(write("nova.mnav", newer), &error) == nullptr);
+        CHECK(error.find("versão 99") != std::string::npos);
+        std::ifstream in(file, std::ios::binary);
+        const std::string whole((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        error.clear();
+        CHECK(NavMesh::Load(write("cortado.mnav", whole.substr(0, whole.size() / 2)), &error) == nullptr && !error.empty());
+    }
+
+    SECTION("Navmesh do projeto: GUID, cena salva, Play usa o arquivo e avisa quando fica velho");
+    {
+        std::string error;
+        auto project = Project::Create(base, "Jogo Ação", &error);
+        CHECK(project.has_value());
+        if (project) {
+            AssetLibrary assets;
+            assets.SetRoot(project->RootDir());
+            const fs::path assetsDir = project->AssetsDir();
+            CHECK(AssetTypeFromPath("x.MNAV") == AssetType::NavMesh);
+            CHECK(std::string(AssetTypeName(AssetType::NavMesh)) == "Navmesh");
+
+            // O que o botão "Gerar" do Inspector faz: gera da cena e grava no projeto.
+            Scene scene = MakeScene();
+            NavMeshSurface& surface = *scene.FindByName("Navegação")->Get<NavMeshSurface>();
+            NavStats stats;
+            auto nav = BuildSceneNavMesh(scene, surface, &stats);
+            CHECK(nav != nullptr && stats.polygons > 0 && stats.triangles == 24);
+            const fs::path file = assetsDir / "Navegacao" / "Navmesh.mnav";
+            fs::create_directories(file.parent_path());
+            CHECK(nav && nav->Save(file, &error));
+            surface.navMesh.file = file;
+            surface.navMesh.guid = assets.Database().GuidFor(file);
+            surface.navMesh.path = assets.KeyForFile(file);
+            CHECK(!surface.navMesh.guid.empty());
+            CHECK(surface.navMesh.path == "Assets/Navegacao/Navmesh.mnav");
+            CHECK(fs::exists(fs::path(file).concat(".meta")));
+
+            // A cena guarda GUID e caminho; ao ler, o arquivo vem do GUID (mesmo depois de mover o .mnav).
+            const fs::path sceneFile = assetsDir / "Inicio.mscene";
+            CHECK(SceneSerializer::Save(sceneFile, scene, assets, &error));
+            const fs::path movedFile = assetsDir / "Outra" / "Navmesh.mnav";
+            fs::create_directories(movedFile.parent_path());
+            fs::rename(file, movedFile);
+            fs::rename(fs::path(file).concat(".meta"), fs::path(movedFile).concat(".meta"));
+            assets.Database().Refresh();
+            Scene loaded;
+            CHECK(SceneSerializer::Load(sceneFile, loaded, assets, &error));
+            const Entity* loadedSurface = loaded.FindByName("Navegação");
+            const NavMeshData data = loadedSurface ? loadedSurface->Get<NavMeshSurface>()->navMesh : NavMeshData{};
+            CHECK(data.guid == surface.navMesh.guid);
+            CHECK(data.path == "Assets/Outra/Navmesh.mnav");
+            CHECK(!data.file.empty() && fs::equivalent(data.file, movedFile));
+
+            // No Play o navmesh vem do arquivo, e não está velho.
+            {
+                const EntityId agent = AddAgent(loaded, {0.0f, 0.0f, -5.0f}).id;
+                SceneRuntime runtime(loaded);
+                runtime.Start();
+                NavSystem* system = runtime.GetSystem<NavSystem>();
+                CHECK(system && system->GetNavMesh() && system->Stats().fromFile && !system->Stats().stale);
+                CHECK(system && system->SetDestination(agent, {0.0f, 0.0f, 5.0f}));
+                for (int i = 0; i < 60 * 10 && system && !system->HasArrived(agent); ++i) runtime.FixedUpdate(kDt);
+                CHECK(system && system->HasArrived(agent));
+                runtime.Stop();
+            }
+
+            // A parede mudou de lugar depois de gerar: continua usando o arquivo, mas avisa que está velho.
+            loaded.FindByName("Parede")->transform.position.x = 3.0f;
+            {
+                SceneRuntime runtime(loaded);
+                runtime.Start();
+                NavSystem* system = runtime.GetSystem<NavSystem>();
+                CHECK(system && system->Stats().fromFile && system->Stats().stale);
+                // Rebuild gera da cena de agora (sem o arquivo).
+                CHECK(system && system->Rebuild() && !system->Stats().fromFile);
+                runtime.Stop();
+            }
+
+            // Arquivo ligado que sumiu: gera no Play, como sem arquivo.
+            fs::remove(movedFile);
+            {
+                SceneRuntime runtime(loaded);
+                runtime.Start();
+                NavSystem* system = runtime.GetSystem<NavSystem>();
+                CHECK(system && system->GetNavMesh() && !system->Stats().fromFile);
+                runtime.Stop();
+            }
+        }
     }
 
     return TestResult();

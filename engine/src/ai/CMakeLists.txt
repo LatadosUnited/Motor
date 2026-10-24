@@ -3,6 +3,7 @@
 motor_add_layer(ai
     SOURCES
         NavMesh.cpp
+        NavMeshFile.cpp
         NavSceneGeometry.cpp
         NavSystem.cpp
     DEPENDS scene

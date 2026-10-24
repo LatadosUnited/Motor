@@ -1,8 +1,8 @@
 #include "motor/ai/NavMesh.h"
 
-#include <DetourNavMesh.h>
+#include "ai/NavMeshDetour.h"
+
 #include <DetourNavMeshBuilder.h>
-#include <DetourNavMeshQuery.h>
 #include <Recast.h>
 
 #include <glm/geometric.hpp>
@@ -18,7 +18,6 @@ namespace {
 // Todos os polígonos andáveis ganham esta marca; o filtro das consultas aceita qualquer marca.
 constexpr unsigned short kWalkableFlag = 1;
 constexpr int kMaxPathPolys = 512;
-constexpr int kMaxQueryNodes = 4096;
 
 // Os objetos da Recast são intermediários da geração: liberados ao sair do Build, dê certo ou não.
 struct RecastScratch {
@@ -42,8 +41,6 @@ bool Fail(std::string* error, const char* message) {
     return false;
 }
 
-glm::vec3 FromDetour(const float* v) { return {v[0], v[1], v[2]}; }
-
 } // namespace
 
 void NavGeometry::AddTriangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
@@ -51,24 +48,6 @@ void NavGeometry::AddTriangle(const glm::vec3& a, const glm::vec3& b, const glm:
     vertices.insert(vertices.end(), {a, b, c});
     indices.insert(indices.end(), {base, base + 1, base + 2});
 }
-
-struct NavMesh::Detour {
-    dtNavMesh* mesh = nullptr;
-    dtNavMeshQuery* query = nullptr;
-    dtQueryFilter filter;
-
-    ~Detour() {
-        dtFreeNavMeshQuery(query);
-        dtFreeNavMesh(mesh);
-    }
-
-    // Polígono mais perto de `p` (e o ponto nele). 0 se não há navmesh na caixa.
-    dtPolyRef Nearest(const glm::vec3& p, const glm::vec3& extents, float* out) const {
-        dtPolyRef ref = 0;
-        if (dtStatusFailed(query->findNearestPoly(&p.x, &extents.x, &filter, &ref, out))) return 0;
-        return ref;
-    }
-};
 
 NavMesh::NavMesh() : m_detour(std::make_unique<Detour>()) {}
 NavMesh::~NavMesh() = default;
@@ -203,6 +182,7 @@ std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMe
 
     std::unique_ptr<NavMesh> nav(new NavMesh());
     nav->m_settings = s;
+    nav->m_source = SourceHash(geometry, s);
     Detour& d = *nav->m_detour;
     d.mesh = dtAllocNavMesh();
     if (!d.mesh || dtStatusFailed(d.mesh->init(data, dataSize, DT_TILE_FREE_DATA))) {
@@ -210,13 +190,10 @@ std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMe
         Fail(error, "falha ao iniciar o navmesh");
         return nullptr;
     }
-    d.query = dtAllocNavMeshQuery();
-    if (!d.query || dtStatusFailed(d.query->init(d.mesh, kMaxQueryNodes))) {
+    if (!d.InitQuery()) {
         Fail(error, "falha ao iniciar as consultas do navmesh");
         return nullptr;
     }
-    d.filter.setIncludeFlags(0xffff);
-    d.filter.setExcludeFlags(0);
     return nav;
 }
 

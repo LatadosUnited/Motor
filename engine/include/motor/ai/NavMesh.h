@@ -13,6 +13,7 @@
 #include <glm/vec3.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -64,6 +65,17 @@ public:
     static std::unique_ptr<NavMesh> Build(const NavGeometry& geometry, const NavMeshBuildSettings& settings,
                                           std::string* error = nullptr);
 
+    // Arquivo .mnav (gerado no editor, lido no Play): os blocos do Detour, os parâmetros e a impressão digital da
+    // geometria de onde saiu. Binário: "MNAV", versão (uint32) e o resto em little-endian. Load devolve nullptr se o
+    // arquivo não abre, não é .mnav ou é de uma versão mais nova (`error` diz qual).
+    bool Save(const std::filesystem::path& file, std::string* error = nullptr) const;
+    static std::unique_ptr<NavMesh> Load(const std::filesystem::path& file, std::string* error = nullptr);
+
+    // Impressão digital da entrada (triângulos e parâmetros): mudou o cenário, muda o número. Serve para avisar que
+    // um navmesh salvo ficou velho.
+    static uint64_t SourceHash(const NavGeometry& geometry, const NavMeshBuildSettings& settings);
+    uint64_t Source() const { return m_source; }
+
     // Ponto do navmesh mais perto de `position`, procurando numa caixa de meia-medida `extents` em volta dele.
     std::optional<glm::vec3> SamplePosition(const glm::vec3& position,
                                             const glm::vec3& extents = glm::vec3(2.0f, 4.0f, 2.0f)) const;
@@ -90,6 +102,7 @@ private:
     struct Detour;
     std::unique_ptr<Detour> m_detour;
     NavMeshBuildSettings m_settings;
+    uint64_t m_source = 0;  // SourceHash da entrada
 };
 
 } // namespace motor

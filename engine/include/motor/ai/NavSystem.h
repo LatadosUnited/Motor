@@ -1,8 +1,8 @@
 #pragma once
 
-// Navegação do jogo (Fase 34). É um sistema do SceneRuntime (RuntimeSystem.h): no começo do Play gera o navmesh da
-// cena (se ela tem uma NavMeshSurface) e, a cada FixedUpdate, antes da física e dos scripts, move os agentes
-// (NavMeshAgent) pelo caminho até o destino.
+// Navegação do jogo (Fase 34). É um sistema do SceneRuntime (RuntimeSystem.h): no começo do Play carrega o navmesh
+// da cena (o .mnav da NavMeshSurface, gerado no editor) ou, sem arquivo, gera um na hora; a cada FixedUpdate, antes da
+// física e dos scripts, move os agentes (NavMeshAgent) pelo caminho até o destino.
 //
 // De onde vem o navmesh: os Colliders estáticos das entidades ativas (sem Rigidbody, sem trigger, sem agente e
 // sem CharacterController). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como cilindro.
@@ -16,6 +16,7 @@
 //   }
 
 #include "motor/ai/NavMesh.h"
+#include "motor/scene/NavMeshSurface.h"
 #include "motor/scene/RuntimeSystem.h"
 #include "motor/scene/Scene.h"
 
@@ -33,13 +34,20 @@ namespace motor {
 // Triângulos dos Colliders estáticos da cena, no mundo (o que o NavSystem usa para gerar o navmesh).
 NavGeometry CollectNavGeometry(const Scene& scene);
 
-// O que foi gerado no último Build/Rebuild (para o log, a barra de estatísticas e os testes).
+// O que foi gerado ou carregado por último (para o log, a barra de estatísticas e os testes).
 struct NavStats {
-    int triangles = 0;  // da geometria de entrada
+    int triangles = 0;  // da geometria de entrada (com o arquivo: da cena como está agora)
     int polygons = 0;   // do navmesh
     double buildMs = 0.0;
+    bool fromFile = false;  // veio do .mnav da superfície
+    bool stale = false;     // veio do .mnav, mas o cenário ou os parâmetros mudaram depois de gerá-lo
     std::string error;  // vazio se deu certo (ou se a cena não tem NavMeshSurface)
 };
+
+NavMeshBuildSettings NavSettingsFrom(const NavMeshSurface& surface);
+// Gera o navmesh da cena com os parâmetros da superfície: o que o NavSystem faz sem arquivo e o que o botão "Gerar
+// navmesh" do Inspector grava no .mnav. nullptr se falhar (`stats->error` diz por quê).
+std::unique_ptr<NavMesh> BuildSceneNavMesh(const Scene& scene, const NavMeshSurface& surface, NavStats* stats = nullptr);
 
 class NavSystem final : public RuntimeSystem {
 public:
@@ -50,8 +58,8 @@ public:
     void OnFixedUpdate(SceneRuntime& runtime, float dt) override;
     void OnStop(SceneRuntime& runtime) override;
 
-    // Gera o navmesh de novo a partir da cena como está agora. Os agentes refazem os caminhos. false se não há
-    // NavMeshSurface ativa ou se a geração falhou (Stats().error).
+    // Gera o navmesh de novo a partir da cena como está agora (sem ler nem gravar o .mnav). Os agentes refazem os
+    // caminhos. false se não há NavMeshSurface ativa ou se a geração falhou (Stats().error).
     bool Rebuild();
     const NavMesh* GetNavMesh() const { return m_navMesh.get(); }
     const NavStats& Stats() const { return m_stats; }
@@ -94,6 +102,8 @@ private:
     const Agent* FindAgent(EntityId id) const;
     Agent& AgentFor(EntityId id);
     bool PlanPath(Agent& agent, const glm::vec3& from, const glm::vec3& destination);
+    bool LoadFromFile(const NavMeshSurface& surface);
+    void ReplanAgents();
     void MoveAgent(EntityId id, Agent& agent, float dt);
 
     Scene* m_scene = nullptr;

@@ -21,13 +21,6 @@ constexpr float kCornerReach = 0.05f;
 
 glm::vec3 Flat(const glm::vec3& v) { return {v.x, 0.0f, v.z}; }
 
-glm::vec3 MoveTowards(const glm::vec3& from, const glm::vec3& to, float maxDelta) {
-    const glm::vec3 delta = to - from;
-    const float length = glm::length(delta);
-    if (length <= maxDelta || length < 1e-6f) return to;
-    return from + delta * (maxDelta / length);
-}
-
 // Primeira NavMeshSurface ativa da cena.
 const NavMeshSurface* FindSurface(const Scene& scene) {
     for (EntityId id : scene.EntitiesWith<NavMeshSurface>()) {
@@ -37,7 +30,9 @@ const NavMeshSurface* FindSurface(const Scene& scene) {
     return nullptr;
 }
 
-NavMeshBuildSettings SettingsFrom(const NavMeshSurface& s) {
+} // namespace
+
+NavMeshBuildSettings NavSettingsFrom(const NavMeshSurface& s) {
     NavMeshBuildSettings b;
     b.agentRadius = s.agentRadius;
     b.agentHeight = s.agentHeight;
@@ -49,14 +44,60 @@ NavMeshBuildSettings SettingsFrom(const NavMeshSurface& s) {
     return b;
 }
 
-} // namespace
+std::unique_ptr<NavMesh> BuildSceneNavMesh(const Scene& scene, const NavMeshSurface& surface, NavStats* stats) {
+    NavStats local;
+    NavStats& out = stats ? *stats : local;
+    out = {};
+    const auto t0 = std::chrono::steady_clock::now();
+    const NavGeometry geometry = CollectNavGeometry(scene);
+    out.triangles = static_cast<int>(geometry.TriangleCount());
+    auto nav = NavMesh::Build(geometry, NavSettingsFrom(surface), &out.error);
+    out.buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    if (nav) out.polygons = nav->PolygonCount();
+    return nav;
+}
 
 NavSystem::NavSystem() = default;
 NavSystem::~NavSystem() = default;
 
 void NavSystem::OnStart(SceneRuntime& runtime) {
     m_scene = &runtime.GetScene();
-    if (FindSurface(*m_scene)) Rebuild();
+    const NavMeshSurface* surface = FindSurface(*m_scene);
+    if (!surface) return;
+    // Com o .mnav, só lê; sem ele (ou se não abre), gera na hora, como antes de existir o botão do editor.
+    if (!surface->navMesh.IsEmpty() && LoadFromFile(*surface)) return;
+    Rebuild();
+}
+
+bool NavSystem::LoadFromFile(const NavMeshSurface& surface) {
+    m_stats = {};
+    const std::string name = surface.navMesh.path.empty() ? surface.navMesh.guid : surface.navMesh.path;
+    if (surface.navMesh.file.empty()) {
+        log::Warn("Navegação: o navmesh {} não foi encontrado no projeto; gerando um no Play", name);
+        return false;
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    std::string error;
+    m_navMesh = NavMesh::Load(surface.navMesh.file, &error);
+    if (!m_navMesh) {
+        log::Warn("Navegação: {}; gerando um navmesh no Play", error);
+        return false;
+    }
+    // A impressão digital da cena de agora contra a do arquivo: cenário ou parâmetros mudaram depois de gerar.
+    const NavGeometry geometry = CollectNavGeometry(*m_scene);
+    m_stats.fromFile = true;
+    m_stats.triangles = static_cast<int>(geometry.TriangleCount());
+    m_stats.polygons = m_navMesh->PolygonCount();
+    m_stats.stale = NavMesh::SourceHash(geometry, NavSettingsFrom(surface)) != m_navMesh->Source();
+    m_stats.buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    if (m_stats.stale) {
+        log::Warn("Navegação: o navmesh {} está desatualizado (o cenário ou a Superfície de navegação mudaram): "
+                  "gere de novo no Inspector", name);
+    } else {
+        log::Info("Navegação: navmesh {} com {} polígonos", name, m_stats.polygons);
+    }
+    ReplanAgents();
+    return true;
 }
 
 void NavSystem::OnStop(SceneRuntime&) {
@@ -74,21 +115,19 @@ bool NavSystem::Rebuild() {
         return false;
     }
 
-    const auto t0 = std::chrono::steady_clock::now();
-    const NavGeometry geometry = CollectNavGeometry(*m_scene);
-    m_stats.triangles = static_cast<int>(geometry.TriangleCount());
-    m_navMesh = NavMesh::Build(geometry, SettingsFrom(*surface), &m_stats.error);
-    m_stats.buildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-
+    m_navMesh = BuildSceneNavMesh(*m_scene, *surface, &m_stats);
     if (!m_navMesh) {
         log::Warn("Navegação: navmesh não gerado: {}", m_stats.error);
         for (auto& [id, agent] : m_agents) agent.corners.clear();
         return false;
     }
-    m_stats.polygons = m_navMesh->PolygonCount();
     log::Info("Navegação: navmesh com {} polígonos ({} triângulos de entrada) em {:.1f} ms", m_stats.polygons,
               m_stats.triangles, m_stats.buildMs);
+    ReplanAgents();
+    return true;
+}
 
+void NavSystem::ReplanAgents() {
     // O chão mudou: quem estava andando refaz o caminho até o mesmo destino.
     for (auto& [id, agent] : m_agents) {
         if (!agent.hasDestination || agent.arrived) continue;
@@ -97,7 +136,6 @@ bool NavSystem::Rebuild() {
             PlanPath(agent, position, agent.destination);
         }
     }
-    return true;
 }
 
 bool NavSystem::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners) const {
@@ -281,7 +319,14 @@ void NavSystem::MoveAgent(EntityId id, Agent& agent, float dt) {
             if (length > 1e-5f) desired = toCorner / length * speed;
         }
     }
-    agent.velocity = MoveTowards(agent.velocity, desired, s.acceleration * dt);
+    // A aceleração muda só a rapidez; a direção segue o caminho na hora. Virar aos poucos fazia o agente passar do
+    // canto embalado e voltar até ele (como o NavMeshAgent da Unity, quem vira suave é a rotação da entidade).
+    const float speed = glm::length(agent.velocity);
+    const float desiredSpeed = glm::length(desired);
+    const float newSpeed = desiredSpeed > speed ? std::min(desiredSpeed, speed + s.acceleration * dt)
+                                                : std::max(desiredSpeed, speed - s.acceleration * dt);
+    if (desiredSpeed > 1e-5f) agent.velocity = desired / desiredSpeed * newSpeed;
+    else if (speed > 1e-5f) agent.velocity *= newSpeed / speed;
     if (glm::length(agent.velocity) < 1e-4f) {
         agent.velocity = glm::vec3(0.0f);
         return;

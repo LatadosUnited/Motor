@@ -1,10 +1,61 @@
 #include "motor/scene/NavMeshSurface.h"
 
+#include "motor/assets/AssetLibrary.h"
+
+#include <nlohmann/json.hpp>
+
 namespace motor {
+
+// Na cena: {"guid": "...", "path": "Assets/Navegacao/x.mnav"}, ou null sem navmesh salvo. Ao ler, o GUID manda: o
+// caminho é atualizado se o arquivo mudou de lugar (com o .meta). GUID desconhecido: vale o caminho.
+CustomFieldType FieldTraits<NavMeshData>::Describe() {
+    return {"NavMeshData",
+            [](const void* a, const void* b) { return *static_cast<const NavMeshData*>(a) == *static_cast<const NavMeshData*>(b); },
+            [](const void* v, const AssetLibrary&) {
+                const auto& data = *static_cast<const NavMeshData*>(v);
+                if (data.IsEmpty()) return std::string("null");
+                return nlohmann::ordered_json{{"guid", data.guid}, {"path", data.path}}.dump();
+            },
+            [](std::string_view text, void* v, AssetLibrary& assets, std::string* error) {
+                const auto json = nlohmann::json::parse(text, nullptr, false);
+                auto& data = *static_cast<NavMeshData*>(v);
+                if (json.is_null()) {
+                    data = {};
+                    return true;
+                }
+                if (json.is_string()) {
+                    // Só o caminho ("Assets/..."), como escreve um agente pelo MCP: o GUID vem do .meta.
+                    data = {};
+                    data.path = json.get<std::string>();
+                    data.file = assets.FileForKey(data.path);
+                    std::error_code ec;
+                    if (!data.file.empty() && std::filesystem::is_regular_file(data.file, ec)) {
+                        data.guid = assets.Database().GuidFor(data.file);
+                    }
+                    return true;
+                }
+                if (!json.is_object() || (!json.contains("guid") && !json.contains("path"))) {
+                    if (error) *error = "esperado caminho \"Assets/...\", objeto {\"path\": \"Assets/...\"} ou null";
+                    return false;
+                }
+                data.guid = json.value("guid", std::string());
+                data.path = json.value("path", std::string());
+                data.file.clear();
+                if (!data.guid.empty()) data.file = assets.Database().PathFor(data.guid);
+                if (!data.file.empty()) {
+                    if (const std::string key = assets.KeyForFile(data.file); !key.empty()) data.path = key;
+                } else if (!data.path.empty()) {
+                    data.file = assets.FileForKey(data.path);
+                }
+                return true;
+            }};
+}
 
 // "Nav..." deixa os dois componentes de navegação juntos no menu "Adicionar componente".
 MOTOR_COMPONENT_MODULE(NavSurface) {
     registry.Register<NavMeshSurface>("NavMeshSurface", "Superfície de navegação")
+        .Field("navMesh", "Navmesh", &NavMeshSurface::navMesh,
+               {.tooltip = "Arquivo .mnav gerado pelo botão Gerar navmesh. Vazio: o navmesh é gerado a cada Play"})
         .Field("agentRadius", "Raio do agente", &NavMeshSurface::agentRadius,
                {.speed = 0.01f, .min = 0.05f, .max = 50.0f, .format = "%.2f m",
                 .tooltip = "Distância que o navmesh mantém das paredes"})
