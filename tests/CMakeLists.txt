@@ -246,3 +246,6 @@ target_compile_definitions(test_fbx PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_S
 # Entrada bruta: eventos do quadro (toque mais curto que um quadro), teclas e botões novos, texto digitado e zona
 # morta radial, vários controles (simulados). Sem janela.
 motor_add_test(test_input)
+
+# Ações no tempo (InputActionTracker): segurar, toque, toque duplo, buffer, e o buffer de pulo nos scripts.
+motor_add_test(test_input_interactions)

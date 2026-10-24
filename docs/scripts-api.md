@@ -152,6 +152,11 @@ controle:
 | `float GetAxis(std::string_view action) const` | valor da ação, -1 a 1: soma das entradas (tecla/botão = `scale`, eixo = valor x `scale`); Botão de 0 a 1; num Vetor 2D, o comprimento |
 | `glm::vec2 GetVector(std::string_view action) const` | X e Y de uma ação Vetor 2D (cada entrada vai no lado `part`), limitado ao círculo de raio 1; num Botão ou Eixo, `(valor, 0)` |
 | `const std::string& TextInput() const` | texto digitado neste frame, em UTF-8 (vazio sem o foco do jogo) |
+| `float GetActionHeldTime(std::string_view action, int device = kAnyDevice) const` | segundos com a ação apertada até agora (0 se solta) |
+| `bool WasActionHeld(std::string_view action, float seconds, int device = kAnyDevice) const` | a ação completou `seconds` apertada neste frame (uma vez por aperto e por limite) |
+| `bool WasActionTapped(std::string_view action, float maxSeconds = 0.25f, int device = kAnyDevice) const` | soltou neste frame depois de no máximo `maxSeconds` apertada |
+| `bool WasActionDoubleTapped(std::string_view action, float interval = 0.3f, int device = kAnyDevice) const` | apertou neste frame e o aperto anterior foi há no máximo `interval` s; um terceiro aperto rápido começa outra dupla |
+| `bool ConsumeBufferedAction(std::string_view action, float seconds = 0.15f, int device = kAnyDevice)` | apertou nos últimos `seconds` e o aperto ainda não foi usado: devolve true uma vez e o gasta (buffer de pulo) |
 | `void SetInputContext(std::string_view context)` | deixa só este contexto ativo (`"Menu"`); `""` deixa só as ações sem contexto |
 | `void EnableInputContext(std::string_view context, bool enabled)`, `bool IsInputContextActive(std::string_view context) const` | liga ou desliga um contexto sem mexer nos outros; se está ativo |
 | `bool IsPointerOverUi() const` | o mouse está sobre um botão ou imagem da interface do jogo |

@@ -228,6 +228,7 @@ void SceneRuntime::Start() {
     m_inputContexts.clear();
     m_inputContextsSet = false;
     m_pointerOverUi = m_uiHasMouse = false;
+    m_actionTracker.Clear();
     m_random.seed(std::random_device{}());
     // Instâncias novas a cada Start: o estado dos sistemas é deste runtime e deste Play.
     for (RuntimeSystemInfo& info : RegisteredRuntimeSystems()) {
@@ -254,6 +255,14 @@ void SceneRuntime::Update(float dt) {
     m_time.elapsed += dt;
     StartPending();
     RunSystems(true, &RuntimeSystem::OnUpdate, dt);
+    {
+        // Depois da UI dizer se pegou o mouse (sistema antes dos scripts), antes dos scripts lerem.
+        static const InputActions defaults = InputActions::Defaults();
+        InputFilter filter;
+        filter.contexts = &InputContexts();
+        filter.uiHasMouse = m_uiHasMouse;
+        m_actionTracker.Update(m_host ? m_host->Actions() : defaults, filter, m_inputEnabled, dt);
+    }
     RunTimers();
     {
         MOTOR_PROFILE_STAT("Scripts OnUpdate");
@@ -683,6 +692,21 @@ bool SameContext(std::string_view a, std::string_view b) {
            });
 }
 } // namespace
+float Script::GetActionHeldTime(std::string_view action, int device) const {
+    return InputEnabled() ? m_runtime->ActionTracker().HeldTime(action, device) : 0.0f;
+}
+bool Script::WasActionHeld(std::string_view action, float seconds, int device) const {
+    return InputEnabled() && m_runtime->ActionTracker().WasHeld(action, seconds, device);
+}
+bool Script::WasActionTapped(std::string_view action, float maxSeconds, int device) const {
+    return InputEnabled() && m_runtime->ActionTracker().WasTapped(action, maxSeconds, device);
+}
+bool Script::WasActionDoubleTapped(std::string_view action, float interval, int device) const {
+    return InputEnabled() && m_runtime->ActionTracker().WasDoubleTapped(action, interval, device);
+}
+bool Script::ConsumeBufferedAction(std::string_view action, float seconds, int device) {
+    return InputEnabled() && m_runtime->ActionTracker().ConsumeBuffered(action, seconds, device);
+}
 void Script::SetInputContext(std::string_view context) {
     if (!m_runtime) return;
     m_runtime->SetInputContexts(context.empty() ? std::vector<std::string>{} : std::vector<std::string>{std::string(context)});

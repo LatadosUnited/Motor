@@ -4,6 +4,7 @@
 // sistemas registrados (física, áudio..., ver RuntimeSystem.h, que documenta a ordem). Só existe enquanto
 // a cena está "rodando" (Play no editor, ou o jogo exportado). O editor nunca cria um fora do Play.
 
+#include "motor/project/InputActionTracker.h"
 #include "motor/scene/RuntimeSystem.h"
 #include "motor/scene/Script.h"
 
@@ -63,6 +64,8 @@ public:
     }
     bool PointerOverUi() const { return m_pointerOverUi; }
     bool UiHasMouse() const { return m_uiHasMouse; }
+    // Histórico das ações (segurar, toque, toque duplo, buffer), atualizado a cada Update antes dos scripts.
+    InputActionTracker& ActionTracker() { return m_actionTracker; }
 
     // Biblioteca de assets do projeto (opcional): usada por Instantiate para carregar os prefabs com as malhas,
     // texturas e materiais do projeto. Sem ela, Instantiate usa uma biblioteca local se `prefab.file` existir.
@@ -173,6 +176,7 @@ private:
     bool m_inputContextsSet = false;  // lidos do mapa na primeira consulta (o host pode chegar depois do Start)
     bool m_pointerOverUi = false;
     bool m_uiHasMouse = false;
+    InputActionTracker m_actionTracker;
     std::string m_sceneRequest;
 
     struct Timer {

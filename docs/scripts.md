@@ -357,6 +357,13 @@ então ao abrir um menu o jogador não pula nem atira atrás dele
 E um clique num botão ou imagem da interface do jogo é da interface: o `IsMouseDown(Left)` e uma ação "Atirar"
 no botão esquerdo não veem esse clique. `IsPointerOverUi()` diz se o mouse está sobre a interface.
 
+**No tempo.** Para o que um frame só não diz, as ações guardam um histórico: `WasActionHeld("Interagir", 1.0f)`
+vale no frame em que completou 1 s apertada (abrir uma porta trancada), `WasActionTapped("Correr")` num toque
+curto, `WasActionDoubleTapped("Correr")` em dois toques rápidos (esquiva), e `ConsumeBufferedAction("Pular")`
+diz se o pulo foi apertado até 0,15 s atrás e ainda não foi usado: chame quando o personagem toca o chão, e o
+pulo apertado um pouco antes não se perde. `GetActionHeldTime("Atirar")` dá quanto tempo está apertada (tiro
+carregado).
+
 Jogo de uma pessoa: qualquer controle serve, sem fazer nada. Duas ou mais pessoas na mesma tela: passe o
 número do jogador, `GetVector("Mover", 0)` para o controle 0, `GetVector("Mover", motor::kKeyboardMouse)` para
 quem joga no teclado. Os botões do controle direto também aceitam o número: `IsGamepadButtonDown(motor::GamepadButton::A, 1)`.

@@ -169,6 +169,16 @@ protected:
     bool WasActionReleased(std::string_view action, int device = kAnyDevice) const;
     float GetAxis(std::string_view action, int device = kAnyDevice) const;  // num Vector2, o comprimento
     glm::vec2 GetVector(std::string_view action, int device = kAnyDevice) const;
+    // No tempo: segurar, toque, toque duplo e buffer.
+    //   if (WasActionHeld("Interagir", 1.0f)) ...        segurou 1 s (abrir a porta trancada)
+    //   if (WasActionDoubleTapped("Correr")) ...         dois toques rápidos (esquiva)
+    //   if (noChao && ConsumeBufferedAction("Pular"))    apertou até 0,15 s antes de tocar o chão: pula assim mesmo
+    float GetActionHeldTime(std::string_view action, int device = kAnyDevice) const;  // 0 se solta
+    bool WasActionHeld(std::string_view action, float seconds, int device = kAnyDevice) const;  // completou agora
+    bool WasActionTapped(std::string_view action, float maxSeconds = 0.25f, int device = kAnyDevice) const;
+    bool WasActionDoubleTapped(std::string_view action, float interval = 0.3f, int device = kAnyDevice) const;
+    // Apertada nos últimos `seconds` e ainda não usada: true uma vez (o aperto é gasto).
+    bool ConsumeBufferedAction(std::string_view action, float seconds = 0.15f, int device = kAnyDevice);
     // Texto digitado neste frame (UTF-8, com acentos), para campos de texto.
     const std::string& TextInput() const;
     // Contextos (Arquivo > Controles, coluna Contexto): grupos de ações que valem juntos. O jogo começa no
