@@ -30,9 +30,10 @@ Sumário:
 12. [Mini jogo: andar, coletar, pontuar](#12-mini-jogo-andar-coletar-pontuar)
 13. [Interface do jogo (HUD e menus)](#13-interface-do-jogo-hud-e-menus)
 14. [Som](#14-som)
-15. [Recarga: o que é preservado](#15-recarga-o-que-é-preservado)
-16. [Componente "desconhecido" (script não carregado)](#16-componente-desconhecido-script-não-carregado)
-17. [Erros comuns](#17-erros-comuns)
+15. [Navegação (IA)](#15-navegação-ia)
+16. [Recarga: o que é preservado](#16-recarga-o-que-é-preservado)
+17. [Componente "desconhecido" (script não carregado)](#17-componente-desconhecido-script-não-carregado)
+18. [Erros comuns](#18-erros-comuns)
 
 ---
 
@@ -136,14 +137,14 @@ O que cada parte faz:
 |---|---|
 | `#include <motor/scene/ScriptModule.h>` | traz tudo de que um script precisa (Script, Scene, Transform, componentes, GLM) |
 | `struct Flutuar : motor::Script` | o script. Uma struct comum: campos com valor padrão e métodos |
-| `void OnUpdate(float) override` | métodos `On...` que a engine chama no Play. Sempre com `override` (ver [Erros comuns](#17-erros-comuns)) |
+| `void OnUpdate(float) override` | métodos `On...` que a engine chama no Play. Sempre com `override` (ver [Erros comuns](#18-erros-comuns)) |
 | `GetTransform()`, `Time()`, `Log(...)` | a API do script (seções 5 e 6, e a [referência](scripts-api.md)) |
 | `MOTOR_SCRIPT(Flutuar) { ... }` | o registro: roda quando a DLL é carregada |
 | `Register<Flutuar>("Flutuar", "Flutuar")` | o 1º nome é o **identificador** gravado na cena; o 2º é o que o editor mostra |
 | `.Field("altura", "Altura", &Flutuar::altura)` | campo no Inspector: chave no arquivo, rótulo, membro |
 
 O identificador do `Register` é o que liga a cena ao script. Pode renomear a struct à vontade; se renomear o
-identificador, as entidades que usavam o nome antigo ficam com um componente "desconhecido" (seção 16) até
+identificador, as entidades que usavam o nome antigo ficam com um componente "desconhecido" (seção 17) até
 o nome voltar.
 
 ## 3. Campos no Inspector
@@ -576,7 +577,7 @@ orbital que não deve bater no próprio jogador olha só as paredes, com
 
 ## 8. Sistemas do jogo (`GetSystem`)
 
-Partes da engine que rodam a cada passo do jogo (a física, a interface do jogo, o áudio) são **sistemas**. Um
+Partes da engine que rodam a cada passo do jogo (a física, a interface do jogo, o áudio, a navegação) são **sistemas**. Um
 script acha o sistema com `GetSystem<Tipo>()`:
 
 ```cpp
@@ -1004,7 +1005,64 @@ Para montar: crie uma entidade `SomClique` com **Fonte de áudio** (Clipe = o so
 iniciar desligados), outra `Musica` (Repetir ligado, Som 3D desligado), um **Botão** chamado `Jogar` e uma
 entidade vazia com **Scripts > Sons do menu**.
 
-## 15. Recarga: o que é preservado
+## 15. Navegação (IA)
+
+Inimigos e NPCs que andam sozinhos pelo cenário, dando a volta nas paredes, usam um **navmesh**: a malha das
+partes do chão por onde um personagem de um certo tamanho consegue andar. Ele é feito a partir dos **Colliders
+parados** da cena (sem Rigidbody nem Trigger): o chão, as paredes, as rampas. Para ligar:
+
+1. Crie uma entidade vazia (ex.: `Navegação`) com o componente **Superfície de navegação**. Os campos dizem o
+   tamanho do agente: **Raio** (distância que ele mantém das paredes), **Altura** (por baixo de algo mais baixo
+   ele não passa), **Altura do degrau** e **Inclinação máxima** (a rampa mais íngreme que ele sobe).
+2. Clique em **Gerar**, ao lado do campo **Navmesh**: o navmesh é gravado em `Assets/Navegacao/Navmesh.mnav`
+   e aparece em azul no viewport (botão **Navmesh** da barra). Mudou o cenário? Gere de novo; no Play, o
+   console avisa quando o navmesh ficou velho. Sem gerar, o navmesh é feito no começo de cada Play.
+3. Na entidade que vai andar, ponha o componente **Agente de navegação**: **Velocidade**, **Aceleração**,
+   **Distância de parada** e **Altura da base** (quanto a origem da entidade fica acima do chão: 1 numa cápsula
+   de 2 m com a origem no meio). Com o campo **Alvo** preenchido, o agente segue aquela entidade sem script
+   nenhum.
+
+Para decidir **para onde** ir, o script usa o sistema `motor::NavSystem` (`#include <motor/ai/NavSystem.h>`).
+Um guarda que patrulha entre dois pontos e persegue o jogador quando o vê
+([examples/Guarda.cpp](examples/Guarda.cpp)):
+
+```cpp
+        // Vê o alvo se ele está perto e o caminho reto até ele, pelo navmesh, não bate em parede.
+        if (GetEntity(alvo)) {
+            const glm::vec3 ele = Posicao(alvo);
+            const bool perto = glm::distance(eu, ele) < visao;
+            if (perto && !nav->Raycast(eu, ele)) {
+                // Refaz o caminho só quando o alvo andou: pedir a cada passo refaria à toa.
+                if (!m_perseguindo || glm::distance(ele, m_ultimoVisto) > 0.5f) {
+                    nav->SetDestination(GetId(), ele);
+                    m_ultimoVisto = ele;
+                }
+                m_perseguindo = true;
+                return;
+            }
+        }
+
+        // Patrulha: chegou num ponto (ou acabou de perder o alvo de vista), vai para o outro.
+        if (m_perseguindo || nav->HasArrived(GetId()) || !nav->HasPath(GetId())) {
+```
+
+- `SetDestination(id, ponto)` manda o agente andar até lá; devolve `false` se o ponto está longe do navmesh.
+  Destino numa parte do chão que não se liga à do agente (outra ilha): ele vai até onde dá (`IsPathPartial`).
+- `HasArrived(id)` fica `true` quando ele chega (até o próximo destino); `HasPath(id)`, enquanto anda.
+  `RemainingDistance(id)` diz quanto falta pelo caminho, e `Stop(id)` o faz frear e esquecer o destino.
+- `Raycast(de, ate)` anda em linha reta pelo navmesh: `nullopt` se chega sem bater em parede ou borda. É um
+  jeito barato de "ver" (para ver por cima de uma mesa baixa, use o `Raycast` da física).
+- `FindPath(de, ate, cantos)` só calcula o caminho, sem mover ninguém (ex.: para saber se dá para chegar);
+  `SamplePosition(ponto)` acha o ponto do navmesh mais perto, e `Warp(id, ponto)` teleporta o agente.
+- O agente mexe no Transform direto: por enquanto, use em entidades **sem** Rigidbody nem Controlador de
+  personagem, e ele não desvia de outros agentes.
+
+Para montar: o chão e as paredes com Collider, a **Superfície de navegação** (e **Gerar**), duas entidades
+vazias `PontoA` e `PontoB`, e o guarda com **Agente de navegação** e **Scripts > Guarda**, com Ponto A, Ponto B
+e Alvo escolhidos no Inspector. No Play, ligue **Cena e Jogo lado a lado** (menu Jogo) para ver no Viewport o
+caminho do guarda em amarelo.
+
+## 16. Recarga: o que é preservado
 
 Ao salvar um arquivo de script com o editor aberto:
 
@@ -1024,7 +1082,7 @@ Ao salvar um arquivo de script com o editor aberto:
 - Com **erro de compilação** nada muda: os scripts da última compilação boa continuam carregados, e a barra
   de menus mostra "Scripts: N erro(s)".
 
-## 16. Componente "desconhecido" (script não carregado)
+## 17. Componente "desconhecido" (script não carregado)
 
 Se uma cena usa um script que não está carregado (você apagou o arquivo, mudou o identificador do
 `Register`, ou abriu a cena antes de os scripts compilarem), o componente **não some**: o Inspector o mostra
@@ -1032,7 +1090,7 @@ como "script não carregado", com os dados guardados. Ele é salvo de volta igua
 sozinho quando um script com aquele identificador for carregado de novo. Para se livrar dele de vez, remova o
 componente no Inspector.
 
-## 17. Erros comuns
+## 18. Erros comuns
 
 O painel Scripts lista as mensagens do compilador (GCC, em inglês). As mais comuns:
 

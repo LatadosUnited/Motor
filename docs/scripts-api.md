@@ -555,6 +555,7 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `std::optional<motor::NavRaycastHit> Raycast(inicio, fim) const` | anda em linha reta pelo navmesh; `nullopt` se chega ao fim, senão onde parou (`point`, `normal`, `fraction`): "dá para ver/andar até lá sem dar a volta?" |
 | `bool Rebuild()` | gera o navmesh de novo com a cena como está (porta aberta, ponte construída); os agentes refazem os caminhos |
 | `const motor::NavMesh* GetNavMesh() const`, `const motor::NavStats& Stats() const` | o navmesh (nulo sem `NavMeshSurface` ou se a geração falhou) e os números da última geração ou leitura (`triangles`, `polygons`, `buildMs`, `fromFile`: veio do `.mnav`, `stale`: o `.mnav` ficou velho, `error`) |
+| `uint64_t Version() const` | sobe a cada navmesh novo (gerado, lido ou descartado): quem guarda algo feito do navmesh sabe quando refazer |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 Sem física por enquanto: o agente mexe no Transform direto, não desvia de outros agentes e não é empurrado.

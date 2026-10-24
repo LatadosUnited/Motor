@@ -780,8 +780,9 @@ componentes comuns (Inspector, cena, desfazer):
   entidade e refaz o caminho quando ela anda. Ele mexe no Transform direto: por enquanto, use em entidades sem
   física.
 - **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
-  `Warp`, `FindPath`, `SamplePosition`, `Raycast` e `Rebuild` (cenário mudou). Ver a referência em
-  [docs/scripts-api.md](docs/scripts-api.md).
+  `Warp`, `FindPath`, `SamplePosition`, `Raycast` e `Rebuild` (cenário mudou). Ver a seção 15 do
+  [guia de scripts](docs/scripts.md) (um guarda que patrulha e persegue, `docs/examples/Guarda.cpp`) e a
+  referência em [docs/scripts-api.md](docs/scripts-api.md).
 - **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
   Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando) e, no Play com a câmera do editor, o
   caminho de cada agente em amarelo.
