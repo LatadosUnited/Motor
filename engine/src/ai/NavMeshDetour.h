@@ -11,6 +11,7 @@
 namespace motor {
 
 inline constexpr int kNavMaxQueryNodes = 4096;
+inline constexpr int kNavMaxPathPolys = 512;  // polígonos de um caminho
 
 inline glm::vec3 FromDetour(const float* v) { return {v[0], v[1], v[2]}; }
 

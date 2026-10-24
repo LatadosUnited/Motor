@@ -2,6 +2,7 @@
 # sistema do SceneRuntime que move os NavMeshAgent. Recast e Detour não aparecem nos headers públicos.
 motor_add_layer(ai
     SOURCES
+        NavCrowd.cpp
         NavMesh.cpp
         NavMeshFile.cpp
         NavSceneGeometry.cpp

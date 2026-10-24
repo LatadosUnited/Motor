@@ -385,7 +385,7 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`, `AudioGroup group` (`Effects`, `Music`, `Interface`); tocar e parar na seção [Som](#som-motoraudiosystem) |
 | `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
 | `motor::NavMeshSurface` | Superfície de navegação | `NavMeshData navMesh` (`guid`, `path` e `file` do `.mnav` gerado no editor; vazio = gerado no Play), `agentRadius`, `agentHeight`, `agentMaxClimb`, `agentMaxSlope` (graus), `cellSize`, `cellHeight`, `minRegionArea` (m²); uma por cena, liga o navmesh (seção [Navegação](#navegação-motornavsystem)) |
-| `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance` |
+| `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance`, `radius` e `height` (tamanho para os outros agentes desviarem), `bool avoidOthers` |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
@@ -558,7 +558,10 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `uint64_t Version() const` | sobe a cada navmesh novo (gerado, lido ou descartado): quem guarda algo feito do navmesh sabe quando refazer |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
-Sem física por enquanto: o agente mexe no Transform direto, não desvia de outros agentes e não é empurrado.
+Os agentes andam como uma multidão (DetourCrowd, Fase 35): desviam uns dos outros e não se atravessam (com
+`avoidOthers` desligado, o agente vai reto, mas ainda é empurrado). Muitos indo ao mesmo ponto se espremem em volta
+dele: quem para encostado nos que já chegaram, ou perto do ponto sem conseguir avançar, conta como chegado
+(`HasArrived`). Sem física por enquanto: o agente mexe no Transform direto.
 
 ## Teclas
 

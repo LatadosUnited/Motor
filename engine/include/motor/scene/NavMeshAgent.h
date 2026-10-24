@@ -21,6 +21,11 @@ struct NavMeshAgent {
     bool updateRotation = true;     // vira a entidade (só em Y) para onde anda
     EntityRef target;               // segue esta entidade (vazio: só o destino dado por script)
     float repathDistance = 0.5f;    // o alvo andou mais que isso desde o último caminho: refaz
+    // Multidão (Fase 35): o tamanho com que os outros agentes desviam deste (o navmesh continua com o raio da
+    // superfície; até 2 m). Sem desviar, o agente vai reto, mas ainda não atravessa os outros.
+    float radius = 0.5f;
+    float height = 2.0f;
+    bool avoidOthers = true;
 
     bool operator==(const NavMeshAgent&) const = default;
 };

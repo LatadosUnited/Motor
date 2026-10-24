@@ -1,6 +1,6 @@
 // Navegação (Fase 34): navmesh gerado pela Recast, caminhos pelo Detour, geometria tirada dos Colliders da cena e o
 // NavSystem movendo os NavMeshAgent no SceneRuntime, e o navmesh salvo em .mnav (Tarefa 7). Não usa OpenGL nem
-// janela.
+// janela. Fase 35: a multidão (DetourCrowd), com agentes que desviam uns dos outros.
 #include "TestUtil.h"
 
 #include <motor/ai/NavMesh.h>
@@ -16,7 +16,9 @@
 
 #include <glm/geometric.hpp>
 
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <vector>
@@ -402,6 +404,100 @@ int main(int argc, char** argv) {
         // ~17 m a 3,5 m/s: uns 5 s; com o vaivém nos cantos passava de 6,7 s.
         CHECK(steps * kDt < 5.6f);
         std::printf("  chegou em %.2f s (maior aumento do que falta: %.3f m)\n", steps * kDt, worstIncrease);
+        runtime.Stop();
+    }
+
+    SECTION("Multidão: dois agentes se cruzam sem se atravessar");
+    {
+        // Lado a lado na mesma linha, trocando de lugar: sem desvio, um passaria por dentro do outro no meio.
+        Scene scene = MakeScene();
+        const EntityId a = AddAgent(scene, {-7.0f, 0.0f, 5.0f}).id;
+        const EntityId b = AddAgent(scene, {7.0f, 0.0f, 5.0f}).id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->SetDestination(a, {7.0f, 0.0f, 5.0f}) && nav->SetDestination(b, {-7.0f, 0.0f, 5.0f}));
+        float closest = 1e9f;
+        int steps = 0;
+        for (; steps < 60 * 15 && nav && !(nav->HasArrived(a) && nav->HasArrived(b)); ++steps) {
+            runtime.FixedUpdate(kDt);
+            closest = std::min(closest, glm::distance(scene.Find(a)->transform.position, scene.Find(b)->transform.position));
+        }
+        CHECK(nav && nav->HasArrived(a) && nav->HasArrived(b));
+        CHECK(closest > 0.9f);  // raios de 0,5 m: nunca mais perto que 1 m, com folga de 10 cm
+        CHECK(glm::distance(scene.Find(a)->transform.position, glm::vec3(7.0f, 0.0f, 5.0f)) < 0.3f);
+        std::printf("  cruzaram em %.2f s, a %.2f m um do outro no mais perto\n", steps * kDt, closest);
+        runtime.Stop();
+    }
+
+
+    SECTION("Multidão: muitos agentes, a multidão cresce e ninguém entra no outro");
+    {
+        // 50 agentes do lado de -Z vão todos para o mesmo ponto do outro lado da parede; depois que saem, nascem mais
+        // 60 onde eles estavam (a multidão começa com 100 lugares e dobra).
+        Scene scene = MakeScene();
+        std::vector<EntityId> agents;
+        for (int i = 0; i < 50; ++i) {
+            agents.push_back(AddAgent(scene, {-7.0f + (i % 10) * 1.5f, 0.0f, -3.0f - (i / 10) * 1.4f}).id);
+        }
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        const glm::vec3 goal(0.0f, 0.0f, 6.0f);
+        int planned = 0;
+        for (EntityId id : agents) planned += nav && nav->SetDestination(id, goal) ? 1 : 0;
+        CHECK(planned == 50);
+
+        double worstMs = 0.0;
+        for (int step = 0; step < 60 * 20 && nav; ++step) {
+            if (step == 150) {
+                for (int i = 0; i < 60; ++i) {
+                    Entity& late = AddAgent(scene, {-7.0f + (i % 10) * 1.5f, 0.0f, -3.0f - (i / 10) * 1.1f});
+                    late.Get<NavMeshAgent>()->target = EntityRef(agents[0]);  // os novos seguem o primeiro (fila)
+                    late.Get<NavMeshAgent>()->stoppingDistance = 2.0f;
+                    agents.push_back(late.id);
+                }
+            }
+            const auto t0 = std::chrono::steady_clock::now();
+            runtime.FixedUpdate(kDt);
+            worstMs = std::max(worstMs, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        }
+
+        // Ninguém dentro de ninguém (raios de 0,5 m; a colisão da multidão deixa entrar um pouco), e todos andaram.
+        float closest = 1e9f;
+        int moved = 0;
+        int behindWall = 0;
+        for (size_t i = 0; i < agents.size(); ++i) {
+            const glm::vec3 p = scene.Find(agents[i])->transform.position;
+            for (size_t j = i + 1; j < agents.size(); ++j) {
+                closest = std::min(closest, glm::distance(p, scene.Find(agents[j])->transform.position));
+            }
+            if (i < 50 && p.z > 0.5f) ++moved;
+            if (p.z < 0.0f) ++behindWall;
+        }
+        CHECK(agents.size() == 110);
+        CHECK(closest > 0.6f);
+        CHECK(moved == 50);           // os 50 primeiros passaram para o lado do ponto
+        CHECK(behindWall < 10);       // os 60 novos também deram a volta na parede atrás do primeiro
+        std::printf("  110 agentes: o mais perto a %.2f m, passo mais lento %.1f ms\n", closest, worstMs);
+        runtime.Stop();
+    }
+
+    SECTION("Multidão: agente que um script tirou do lugar continua de onde foi posto");
+    {
+        Scene scene = MakeScene();
+        const EntityId id = AddAgent(scene, {-8.0f, 0.0f, -8.0f}).id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, 8.0f}));
+        for (int i = 0; i < 30; ++i) runtime.FixedUpdate(kDt);
+        scene.Find(id)->transform.position = {8.0f, 0.0f, -8.0f};  // como um script faria
+        runtime.FixedUpdate(kDt);
+        CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(8.0f, 0.0f, -8.0f)) < 0.2f);
+        for (int i = 0; i < 60 * 10 && nav && !nav->HasArrived(id); ++i) runtime.FixedUpdate(kDt);
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(8.0f, 0.0f, 8.0f)) < 0.3f);
         runtime.Stop();
     }
 

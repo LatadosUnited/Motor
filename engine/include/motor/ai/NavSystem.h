@@ -4,6 +4,10 @@
 // da cena (o .mnav da NavMeshSurface, gerado no editor) ou, sem arquivo, gera um na hora; a cada FixedUpdate, antes da
 // física e dos scripts, move os agentes (NavMeshAgent) pelo caminho até o destino.
 //
+// Os agentes andam juntos, como uma multidão (DetourCrowd, Fase 35): desviam uns dos outros e não se atravessam.
+// SetDestination busca o caminho na hora; quem segue um alvo e os caminhos que a multidão refaz entram numa fila
+// dividida entre os passos, para muitos agentes não pesarem num passo só.
+//
 // De onde vem o navmesh: os Colliders estáticos das entidades ativas (sem Rigidbody, sem trigger, sem agente e
 // sem CharacterController). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como cilindro.
 // Mudou o cenário durante o jogo (porta aberta)? Rebuild() gera de novo; obstáculos que se mexem sem gerar tudo
@@ -30,6 +34,9 @@
 #include <vector>
 
 namespace motor {
+
+class NavCrowd;
+struct NavMeshAgent;
 
 // Triângulos dos Colliders estáticos da cena, no mundo (o que o NavSystem usa para gerar o navmesh).
 NavGeometry CollectNavGeometry(const Scene& scene);
@@ -88,14 +95,14 @@ public:
 
 private:
     struct Agent {
-        std::vector<glm::vec3> corners;  // caminho atual (pés do agente no navmesh)
-        size_t next = 0;                 // próximo canto
+        int crowd = -1;                  // índice na multidão (-1: ainda fora dela)
         glm::vec3 destination{0.0f};
-        glm::vec3 velocity{0.0f};
+        glm::vec3 written{0.0f};         // pés onde a entidade estava ou foi posta por último (mudou: teleporte)
         glm::vec3 targetSeen{0.0f};      // onde o alvo estava no último caminho
+        float closest = 0.0f;            // menor distância do destino desde o último caminho
+        float stalled = 0.0f;            // s sem chegar mais perto (encostado em outros: chegou)
         bool hasDestination = false;
         bool arrived = false;
-        bool partial = false;
         bool followingTarget = false;
         uint32_t seen = 0;               // passo em que o agente apareceu por último (some: o registro sai)
     };
@@ -103,15 +110,24 @@ private:
     Agent* FindAgent(EntityId id);
     const Agent* FindAgent(EntityId id) const;
     Agent& AgentFor(EntityId id);
-    bool PlanPath(Agent& agent, const glm::vec3& from, const glm::vec3& destination);
+    glm::vec3 FeetOf(EntityId id, const NavMeshAgent& settings) const;
     bool LoadFromFile(const NavMeshSurface& surface);
     void ReplanAgents();
-    void MoveAgent(EntityId id, Agent& agent, float dt);
+    void ResetCrowd();
+    void GrowCrowd();
+    bool AddToCrowd(EntityId id, Agent& agent, const glm::vec3& feet);
+    void PrepareAgent(EntityId id, Agent& agent, const NavMeshAgent& settings);
+    static void NewDestination(Agent& agent, const glm::vec3& destination);
+    bool PlanPath(Agent& agent, const glm::vec3& destination);
+    void FollowTarget(Agent& agent, const NavMeshAgent& settings);
+    void ApplyAgent(EntityId id, Agent& agent, const NavMeshAgent& settings, float dt);
 
     Scene* m_scene = nullptr;
     std::unique_ptr<NavMesh> m_navMesh;
+    std::unique_ptr<NavCrowd> m_crowd;  // depois do navmesh: sai antes dele
     NavStats m_stats;
     std::unordered_map<EntityId, Agent> m_agents;
+    int m_crowdCapacity = 32;
     uint32_t m_step = 0;
     uint64_t m_version = 0;
     bool m_warnedNoNavMesh = false;

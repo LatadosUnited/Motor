@@ -1054,8 +1054,10 @@ Um guarda que patrulha entre dois pontos e persegue o jogador quando o vê
   jeito barato de "ver" (para ver por cima de uma mesa baixa, use o `Raycast` da física).
 - `FindPath(de, ate, cantos)` só calcula o caminho, sem mover ninguém (ex.: para saber se dá para chegar);
   `SamplePosition(ponto)` acha o ponto do navmesh mais perto, e `Warp(id, ponto)` teleporta o agente.
+- Vários agentes desviam uns dos outros sozinhos (o **Raio** do agente é o tamanho com que os outros o veem). Muitos
+  indo ao mesmo ponto param em volta dele, e cada um conta como chegado quando não consegue mais avançar.
 - O agente mexe no Transform direto: por enquanto, use em entidades **sem** Rigidbody nem Controlador de
-  personagem, e ele não desvia de outros agentes.
+  personagem.
 
 Para montar: o chão e as paredes com Collider, a **Superfície de navegação** (e **Gerar**), duas entidades
 vazias `PontoA` e `PontoB`, e o guarda com **Agente de navegação** e **Scripts > Guarda**, com Ponto A, Ponto B

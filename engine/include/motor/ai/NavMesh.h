@@ -99,6 +99,7 @@ public:
 
 private:
     NavMesh();
+    friend class NavCrowd;  // a multidão do NavSystem anda sobre o mesmo navmesh do Detour
     struct Detour;
     std::unique_ptr<Detour> m_detour;
     NavMeshBuildSettings m_settings;

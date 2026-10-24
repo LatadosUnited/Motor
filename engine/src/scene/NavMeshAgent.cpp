@@ -21,7 +21,14 @@ MOTOR_COMPONENT_MODULE(NavAgent) {
                {.tooltip = "Segue esta entidade pelo navmesh (vazio: o destino vem de um script)"})
         .Field("repathDistance", "Refazer caminho a cada", &NavMeshAgent::repathDistance,
                {.speed = 0.05f, .min = 0.05f, .max = 1000.0f, .format = "%.2f m",
-                .tooltip = "Com alvo: quanto ele precisa andar para o caminho ser refeito"});
+                .tooltip = "Com alvo: quanto ele precisa andar para o caminho ser refeito"})
+        .Field("radius", "Raio", &NavMeshAgent::radius,
+               {.speed = 0.01f, .min = 0.01f, .max = 2.0f, .format = "%.2f m",
+                .tooltip = "Tamanho com que os outros agentes desviam deste"})
+        .Field("height", "Altura", &NavMeshAgent::height,
+               {.speed = 0.01f, .min = 0.01f, .max = 100.0f, .format = "%.2f m"})
+        .Field("avoidOthers", "Desviar dos outros", &NavMeshAgent::avoidOthers,
+               {.tooltip = "Desvia dos outros agentes no caminho (desligado: vai reto, mas não os atravessa)"});
 }
 
 } // namespace motor

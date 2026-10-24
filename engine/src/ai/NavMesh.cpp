@@ -17,7 +17,6 @@ namespace {
 
 // Todos os polígonos andáveis ganham esta marca; o filtro das consultas aceita qualquer marca.
 constexpr unsigned short kWalkableFlag = 1;
-constexpr int kMaxPathPolys = 512;
 
 // Os objetos da Recast são intermediários da geração: liberados ao sair do Build, dê certo ou não.
 struct RecastScratch {
@@ -213,9 +212,9 @@ bool NavMesh::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector
     const dtPolyRef endRef = d.Nearest(end, extents, &to.x);
     if (!startRef || !endRef) return false;
 
-    dtPolyRef polys[kMaxPathPolys];
+    dtPolyRef polys[kNavMaxPathPolys];
     int polyCount = 0;
-    const dtStatus status = d.query->findPath(startRef, endRef, &from.x, &to.x, &d.filter, polys, &polyCount, kMaxPathPolys);
+    const dtStatus status = d.query->findPath(startRef, endRef, &from.x, &to.x, &d.filter, polys, &polyCount, kNavMaxPathPolys);
     if (dtStatusFailed(status) || polyCount == 0) return false;
 
     // Fim fora de alcance: o Detour para no polígono mais perto dele; o caminho termina no ponto mais perto lá.
@@ -226,10 +225,10 @@ bool NavMesh::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector
         *partial = true;
     }
 
-    float straight[kMaxPathPolys * 3];
+    float straight[kNavMaxPathPolys * 3];
     int straightCount = 0;
     if (dtStatusFailed(d.query->findStraightPath(&from.x, &to.x, polys, polyCount, straight, nullptr, nullptr,
-                                                 &straightCount, kMaxPathPolys))) {
+                                                 &straightCount, kNavMaxPathPolys))) {
         return false;
     }
     corners.reserve(static_cast<size_t>(straightCount));
@@ -245,10 +244,10 @@ std::optional<NavRaycastHit> NavMesh::Raycast(const glm::vec3& start, const glm:
 
     float t = 0.0f;
     glm::vec3 normal(0.0f);
-    dtPolyRef visited[kMaxPathPolys];
+    dtPolyRef visited[kNavMaxPathPolys];
     int visitedCount = 0;
     if (dtStatusFailed(d.query->raycast(startRef, &from.x, &end.x, &d.filter, &t, &normal.x, visited, &visitedCount,
-                                        kMaxPathPolys))) {
+                                        kNavMaxPathPolys))) {
         return std::nullopt;
     }
     if (t >= 1.0f || t == FLT_MAX) return std::nullopt;  // chegou ao fim sem sair do navmesh
