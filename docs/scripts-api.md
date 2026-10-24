@@ -29,6 +29,7 @@ recompilar os scripts).
 | `<motor/physics/PhysicsSystem.h>` | `motor::PhysicsSystem` (forças, personagem, raios) |
 | `<motor/ui/UiSystem.h>` | `motor::UiSystem` (texto, mostrar/esconder, botões) e os componentes de UI |
 | `<motor/audio/AudioSystem.h>` | `motor::AudioSystem` (tocar, parar e volume dos sons) |
+| `<motor/ai/NavSystem.h>` | `motor::NavSystem` (navegação: destino dos agentes, caminhos, navmesh) |
 | `<motor/scene/Animator.h>` | `motor::Animator` (já vem com o `ScriptModule.h`; inclua para deixar claro) |
 | `<glm/geometric.hpp>` | `glm::length`, `glm::normalize`, `glm::dot`, `glm::cross` (inclua para não depender de includes indiretos) |
 | `<glm/gtc/quaternion.hpp>` | `glm::angleAxis`, `glm::quatLookAt` |
@@ -383,6 +384,8 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass`, `bool useGravity`, `CollisionLayer layer` |
 | `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`, `AudioGroup group` (`Effects`, `Music`, `Interface`); tocar e parar na seção [Som](#som-motoraudiosystem) |
 | `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
+| `motor::NavMeshSurface` | Superfície de navegação | `agentRadius`, `agentHeight`, `agentMaxClimb`, `agentMaxSlope` (graus), `cellSize`, `cellHeight`, `minRegionArea` (m²); uma por cena, liga o navmesh (seção [Navegação](#navegação-motornavsystem)) |
+| `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance` |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
@@ -521,6 +524,39 @@ testes, não para scripts.
 
 Som 3D: o volume cai com a distância pelo modelo inverso (`minDistance / distância`, cheio até
 `minDistance`, constante depois de `maxDistance`) e o lado vem da direção do ouvinte (a frente é o -Z dele).
+
+## Navegação: `motor::NavSystem`
+
+`#include <motor/ai/NavSystem.h>` e `auto* nav = GetSystem<motor::NavSystem>();`. No começo do Play o sistema gera
+o navmesh a partir dos Colliders estáticos da cena (se ela tem uma `NavMeshSurface` ativa) e, a cada passo fixo,
+antes da física e dos scripts (ordem `kSystemOrderNavigation`), move os `NavMeshAgent`. Posições são no mundo; a
+de um agente é a dos pés (a origem da entidade menos `baseOffset`).
+
+```cpp
+// Guarda que vai até o jogador quando ele chega perto e volta para o posto quando ele se afasta.
+if (auto* nav = GetSystem<motor::NavSystem>()) {
+    const glm::vec3 jogador = glm::vec3(GetScene().WorldMatrix(alvo)[3]);
+    const glm::vec3 eu = glm::vec3(GetScene().WorldMatrix(GetId())[3]);
+    if (glm::distance(jogador, eu) < 10.0f) nav->SetDestination(GetId(), jogador);
+    else if (!nav->HasPath(GetId()) && !nav->HasArrived(GetId())) nav->SetDestination(GetId(), posto);
+}
+```
+
+| Método | Efeito |
+|---|---|
+| `bool SetDestination(EntityId agente, glm::vec3 destino)` | o agente vai até o ponto do navmesh mais perto do destino; `false` sem `NavMeshAgent`, sem navmesh ou longe dele. Destino noutra ilha do navmesh: vai até o ponto alcançável mais perto (`IsPathPartial`). Chamar a cada passo com o mesmo destino refaz o caminho à toa: chame quando o destino mudar |
+| `void Stop(EntityId agente)` | esquece o destino e freia |
+| `bool HasPath(agente) const`, `bool HasArrived(agente) const`, `bool IsPathPartial(agente) const` | anda para um destino; chegou ao último destino pedido (até o próximo `SetDestination`); o caminho não chega ao destino |
+| `float RemainingDistance(agente) const`, `glm::vec3 GetVelocity(agente) const`, `std::vector<glm::vec3> GetPath(agente) const` | quanto falta pelo caminho, velocidade atual, cantos que faltam |
+| `bool Warp(EntityId agente, glm::vec3 posicao)` | teleporta o agente para o navmesh perto da posição e esquece o caminho |
+| `bool FindPath(inicio, fim, std::vector<glm::vec3>& cantos) const` | só o caminho (cantos do começo ao fim), sem mover ninguém |
+| `std::optional<glm::vec3> SamplePosition(posicao, float distanciaMaxima = 2) const` | ponto do navmesh mais perto, se estiver a essa distância |
+| `std::optional<motor::NavRaycastHit> Raycast(inicio, fim) const` | anda em linha reta pelo navmesh; `nullopt` se chega ao fim, senão onde parou (`point`, `normal`, `fraction`): "dá para ver/andar até lá sem dar a volta?" |
+| `bool Rebuild()` | gera o navmesh de novo com a cena como está (porta aberta, ponte construída); os agentes refazem os caminhos |
+| `const motor::NavMesh* GetNavMesh() const`, `const motor::NavStats& Stats() const` | o navmesh (nulo sem `NavMeshSurface` ou se a geração falhou) e os números da última geração (`triangles`, `polygons`, `buildMs`, `error`) |
+| `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
+
+Sem física por enquanto: o agente mexe no Transform direto, não desvia de outros agentes e não é empurrado.
 
 ## Teclas
 

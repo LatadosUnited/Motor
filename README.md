@@ -80,6 +80,7 @@ engine/            camadas, de baixo para cima (cada uma só usa as de baixo; co
     physics/       PhysicsSystem (Jolt Physics): corpos, personagem, eventos, raios; contorno dos colliders
     ui/            interface do jogo: componentes Ui*, layout com âncoras, fontes SDF, UiRenderer, UiSystem
     audio/         AudioSystem (miniaudio): toca as Fontes de áudio no Play, som 3D pelo Ouvinte
+    ai/            NavMesh e NavSystem (Recast/Detour): navmesh, caminhos e agentes de navegação
   src/<camada>/    implementação + CMakeLists.txt da camada (+ renderer/GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine (skinned.vert: malhas animadas)
   assets/fonts/    fonte padrão da UI do jogo (Roboto Medium, Apache 2.0)
@@ -755,6 +756,30 @@ componentes comuns (Inspector, cena, desfazer):
 - **Clipes de uma cena** (para exportar o jogo): `motor::CollectAudioClips(scene)` (`motor/scene/AudioSource.h`)
   lista os clipes das Fontes de áudio; no `.mscene`, cada um é o campo `"clip"` do componente `"AudioSource"`,
   `{"guid": ..., "path": "Assets/..."}`.
+
+## Navegação (IA)
+
+Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fase 34). Dois
+componentes comuns (Inspector, cena, desfazer):
+
+| Componente | Campos |
+|---|---|
+| **Superfície de navegação** (`NavMeshSurface`) | Raio, Altura, Altura do degrau e Inclinação máxima do agente; Tamanho e Altura da célula; Área mínima. Uma por cena: liga o navmesh |
+| **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada |
+
+- **De onde vem o navmesh:** no começo do Play, dos **Colliders estáticos** das entidades ativas (sem Rigidbody,
+  sem trigger, sem agente, sem Controlador de personagem). Caixa, esfera, cilindro e malha entram como são; a
+  cápsula entra como cilindro. Só a face virada para cima de cada triângulo vira chão. O log diz quantos polígonos
+  saíram e quanto tempo levou, ou por que não saiu nenhum.
+- **Agente:** anda pelo caminho até o destino, acelerando e freando a tempo de parar, vira em Y para onde anda (a
+  frente é o -Z) e mantém os pés no navmesh (a origem fica **Altura da base** acima). Com **Alvo**, segue a
+  entidade e refaz o caminho quando ela anda. Ele mexe no Transform direto: por enquanto, use em entidades sem
+  física.
+- **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
+  `Warp`, `FindPath`, `SamplePosition`, `Raycast` e `Rebuild` (cenário mudou). Ver a referência em
+  [docs/scripts-api.md](docs/scripts-api.md).
+- **Ainda não:** navmesh salvo e desenhado no editor, multidão, obstáculos que se mexem (roteiro em
+  `docs/roadmap/alpha-6.md`).
 
 ## Servidor MCP (agentes no editor)
 
