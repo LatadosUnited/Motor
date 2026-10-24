@@ -52,8 +52,32 @@ Key ParseKey(std::string name) {
     for (const auto& [text, key] : named) {
         if (name == text) return key;
     }
+    if (const auto key = ParseKeyName(name)) return *key;  // os nomes da engine: numpad5, leftbracket, f13...
     throw ToolError("tecla desconhecida: " + name + " (use letras, dígitos, space, enter, escape, tab, up, down, "
-                    "left, right, shift, ctrl, alt, f1..f12)");
+                    "left, right, shift, ctrl, alt, f1..f24 ou os nomes da engine, como numpad5)");
+}
+
+// Botão do mouse: "left", "right", "middle", "back", "forward" (ou os nomes da engine, "MouseLeft"...).
+MouseButton ParseMouse(std::string name) {
+    static const std::pair<const char*, MouseButton> named[] = {{"left", MouseButton::Left},
+                                                                {"right", MouseButton::Right},
+                                                                {"middle", MouseButton::Middle},
+                                                                {"back", MouseButton::Back},
+                                                                {"forward", MouseButton::Forward}};
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    for (const auto& [text, button] : named) {
+        if (name == text) return button;
+    }
+    if (const auto button = ParseMouseButton(name)) return *button;
+    throw ToolError("botão do mouse desconhecido: " + name + " (use left, right, middle, back, forward)");
+}
+
+// Quando soltar uma tecla/botão de "tap" (segurada `seconds`) ou nunca (press: até pedirem release).
+std::chrono::steady_clock::time_point ReleaseTime(const Json& args, const std::string& action) {
+    if (action != "tap") return std::chrono::steady_clock::time_point::max();
+    const double seconds = std::clamp(args.value("seconds", 0.1), 0.0, 30.0);
+    return std::chrono::steady_clock::now() +
+           std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(seconds + 0.02));
 }
 // Momento em que a espera de uma ferramenta com wait desiste.
 std::chrono::steady_clock::time_point Deadline(double seconds) {
@@ -151,7 +175,8 @@ void McpController::AddPlayTools() {
                        "como se o jogador apertasse. tap = aperta e solta depois de 'seconds'; press/release = "
                        "segura até soltar. Ex.: tap 'space' para pular, press 'w' + release 'w' para andar.",
         .inputSchema = Schema({{"key", Prop("string", "a..z, 0..9, space, enter, escape, tab, up, down, left, right, "
-                                                      "shift, ctrl, alt, f1..f12")},
+                                                      "shift, ctrl, alt, f1..f24, ou um nome da engine (numpad5, "
+                                                      "leftbracket...)")},
                                {"action", {{"type", "string"}, {"enum", {"tap", "press", "release"}}}},
                                {"seconds", Prop("number", "tap: quanto tempo segurar (padrão 0.1)")}},
                               {"key"}),
@@ -163,13 +188,8 @@ void McpController::AddPlayTools() {
             if (action == "release") {
                 m_pendingKeys.emplace_back(key, false);
             } else {
-                const double seconds = action == "tap" ? std::clamp(args.value("seconds", 0.1), 0.0, 30.0) : -1.0;
-                const auto releaseAt = seconds < 0 ? std::chrono::steady_clock::time_point::max()
-                                                   : std::chrono::steady_clock::now() +
-                                                         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                                                             std::chrono::duration<double>(seconds + 0.02));
                 m_pendingKeys.emplace_back(key, true);
-                m_heldKeys.push_back({key, releaseAt});
+                m_heldKeys.push_back({key, ReleaseTime(args, action)});
             }
             m_host.play.SetExternalInput(true);
             return ToolResult::Text(std::format("tecla {}: {}", args.value("key", ""), action));
@@ -178,15 +198,20 @@ void McpController::AddPlayTools() {
 
     m_protocol.AddTool({
         .name = "game_gamepad",
-        .description = "Simula um controle (gamepad, padrão Xbox) no jogo durante o Play, sem um controle de verdade: "
-                       "botões (tap/press/release, como game_key) e eixos (value fica até mudar). Enquanto simulado, o "
-                       "controle de verdade é ignorado; disconnect (ou parar o Play) volta a ele. Ex.: tap 'A' para "
-                       "pular, axis 'LeftX' value 1 para andar para a direita.",
+        .description = "Simula controles (gamepad, padrão Xbox) no jogo durante o Play, sem um controle de verdade: "
+                       "botões (tap/press/release, como game_key) e eixos (value fica até mudar). pad escolhe o "
+                       "controle (0 a 3) e count quantos estão ligados (jogo de vários jogadores; mudar o count avisa "
+                       "WasGamepadConnected/Disconnected). Enquanto simulado, os de verdade são ignorados; disconnect "
+                       "(ou parar o Play) volta a eles. Ex.: tap 'A' para pular, axis 'LeftX' value 1 para andar para a "
+                       "direita, count 2 e pad 1 para o segundo jogador.",
         .inputSchema = Schema({{"button", Prop("string", "A, B, X, Y, LeftBumper, RightBumper, Back, Start, LeftThumb, "
                                                          "RightThumb, DpadUp, DpadRight, DpadDown, DpadLeft")},
                                {"axis", Prop("string", "LeftX, LeftY, RightX, RightY (-1 a 1, Y para cima +), "
                                                        "LeftTrigger, RightTrigger (0 a 1)")},
                                {"value", Prop("number", "valor do eixo")},
+                               {"pad", Prop("integer", "controle, 0 a 3 (padrão 0)")},
+                               {"count", Prop("integer", "quantos controles simulados, 1 a 4 (padrão: os de agora, "
+                                                         "pelo menos pad + 1)")},
                                {"action", {{"type", "string"}, {"enum", {"tap", "press", "release", "disconnect"}}}},
                                {"seconds", Prop("number", "tap: quanto tempo segurar (padrão 0.1)")}}),
         .run = [this](const Json& args) {
@@ -195,34 +220,111 @@ void McpController::AddPlayTools() {
             if (action == "disconnect") {
                 m_heldPad.clear();
                 m_pendingPad.clear();
-                Input::SetGamepadSimulated(false);
+                m_pendingAxes.clear();
+                m_pendingPadCount = 0;
                 return ToolResult::Text("controle simulado desligado");
             }
-            Input::SetGamepadSimulated(true);
+            const int pad = args.value("pad", 0);
+            if (pad < 0 || pad >= kMaxGamepads) throw ToolError(std::format("pad vai de 0 a {}", kMaxGamepads - 1));
+            // A contagem que vai valer: a pedida antes neste quadro, ou a de agora.
+            const int current = m_pendingPadCount >= 0     ? m_pendingPadCount
+                                : Input::IsGamepadSimulated() ? Input::GamepadCount()
+                                                              : 0;
+            const int count = std::clamp(args.value("count", std::max(current, pad + 1)), pad + 1, kMaxGamepads);
+            if (count != current) m_pendingPadCount = count;
+            std::erase_if(m_heldPad, [&](const HeldPadButton& h) { return h.pad >= count; });
             m_host.play.SetExternalInput(true);
             if (args.contains("axis")) {
                 const auto axis = ParseGamepadAxis(args["axis"].get<std::string>());
                 if (!axis) throw ToolError("eixo desconhecido: " + args["axis"].get<std::string>());
                 const float value = action == "release" ? 0.0f : args.value("value", 1.0f);
-                Input::SetGamepadAxisState(*axis, value);
-                return ToolResult::Text(std::format("eixo {} = {:.2f}", GamepadAxisName(*axis), Input::GamepadAxisValue(*axis)));
+                m_pendingAxes.push_back({*axis, value, pad});
+                return ToolResult::Text(std::format("controle {}: eixo {} = {:.2f}", pad, GamepadAxisName(*axis), value));
             }
-            if (!args.contains("button")) throw ToolError("diga 'button' ou 'axis'");
+            if (!args.contains("button")) {
+                if (args.contains("count")) return ToolResult::Text(std::format("{} controle(s) simulado(s)", count));
+                throw ToolError("diga 'button', 'axis' ou 'count'");
+            }
             const auto button = ParseGamepadButton(args["button"].get<std::string>());
             if (!button) throw ToolError("botão desconhecido: " + args["button"].get<std::string>());
-            std::erase_if(m_heldPad, [&](const HeldPadButton& h) { return h.button == *button; });
+            std::erase_if(m_heldPad, [&](const HeldPadButton& h) { return h.button == *button && h.pad == pad; });
             if (action == "release") {
-                m_pendingPad.emplace_back(*button, false);
+                m_pendingPad.push_back({*button, false, pad});
             } else {
-                const double seconds = action == "tap" ? std::clamp(args.value("seconds", 0.1), 0.0, 30.0) : -1.0;
-                const auto releaseAt = seconds < 0 ? std::chrono::steady_clock::time_point::max()
-                                                   : std::chrono::steady_clock::now() +
-                                                         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                                                             std::chrono::duration<double>(seconds + 0.02));
-                m_pendingPad.emplace_back(*button, true);
-                m_heldPad.push_back({*button, releaseAt});
+                m_pendingPad.push_back({*button, true, pad});
+                m_heldPad.push_back({*button, ReleaseTime(args, action), pad});
             }
-            return ToolResult::Text(std::format("botão {}: {}", GamepadButtonName(*button), action));
+            return ToolResult::Text(std::format("controle {}: botão {}: {}", pad, GamepadButtonName(*button), action));
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "game_mouse",
+        .description = "Mexe o mouse do jogo durante o Play, sem mexer no mouse do sistema: move (dx, dy em pixels, "
+                       "Y para baixo como a tela) espalhado em 'seconds' (sem seconds, num quadro só), botões "
+                       "(tap/press/release, como game_key) e a roda (scroll, em entalhes, + para cima). O jogo vê "
+                       "MouseDelta, IsMouseDown e as ações ligadas ao mouse (MouseX/MouseY de Olhar, um botão de "
+                       "Atirar). Ex.: move [200, 0] seconds 0.5 para virar a câmera; tap 'left' para atirar. Para "
+                       "botões da interface do jogo, use ui_click.",
+        .inputSchema = Schema({{"move", {{"type", "array"},
+                                         {"items", {{"type", "number"}}},
+                                         {"description", "[dx, dy] em pixels"}}},
+                               {"button", Prop("string", "left, right, middle, back, forward")},
+                               {"action", {{"type", "string"}, {"enum", {"tap", "press", "release"}}}},
+                               {"scroll", Prop("number", "entalhes da roda (+ para cima)")},
+                               {"seconds", Prop("number", "move: em quanto tempo (padrão: um quadro); tap: quanto "
+                                                          "tempo segurar (padrão 0.1)")}}),
+        .run = [this](const Json& args) {
+            if (!m_host.play.IsActive()) throw ToolError("o jogo não está rodando (use play)");
+            std::vector<std::string> done;
+            if (args.contains("move")) {
+                const Json& move = args["move"];
+                if (!move.is_array() || move.size() != 2 || !move[0].is_number() || !move[1].is_number()) {
+                    throw ToolError("move é [dx, dy]");
+                }
+                const glm::vec2 delta{move[0].get<float>(), move[1].get<float>()};
+                const double seconds = args.contains("button") ? 0.0 : std::clamp(args.value("seconds", 0.0), 0.0, 30.0);
+                m_mouseMoves.push_back({delta, std::chrono::steady_clock::now(), seconds});
+                done.push_back(std::format("move ({:.0f}, {:.0f}) em {:.2f} s", delta.x, delta.y, seconds));
+            }
+            if (args.contains("button")) {
+                const MouseButton button = ParseMouse(args["button"].get<std::string>());
+                const std::string action = args.value("action", std::string("tap"));
+                std::erase_if(m_heldMouse, [&](const HeldMouseButton& h) { return h.button == button; });
+                if (action == "release") {
+                    m_pendingMouse.emplace_back(button, false);
+                } else {
+                    m_pendingMouse.emplace_back(button, true);
+                    m_heldMouse.push_back({button, ReleaseTime(args, action)});
+                }
+                done.push_back(std::format("botão {}: {}", MouseButtonName(button), action));
+            }
+            if (args.contains("scroll")) {
+                const float notches = args.value("scroll", 0.0f);
+                m_pendingScroll += notches;
+                done.push_back(std::format("roda {:+.0f}", notches));
+            }
+            if (done.empty()) throw ToolError("diga 'move', 'button' ou 'scroll'");
+            m_host.play.SetExternalInput(true);
+            std::string text = "mouse:";
+            for (const std::string& d : done) text += " " + d + ";";
+            text.pop_back();
+            return ToolResult::Text(text);
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "game_text",
+        .description = "Digita texto no jogo durante o Play (Script::TextInput, campos de texto), em UTF-8 com "
+                       "acentos, sem mexer no teclado do sistema. Só o texto: para Enter ou Backspace, use game_key.",
+        .inputSchema = Schema({{"text", Prop("string", "o texto, ex.: \"Olá, mundo\"")}}, {"text"}),
+        .run = [this](const Json& args) {
+            if (!m_host.play.IsActive()) throw ToolError("o jogo não está rodando (use play)");
+            const std::string text = args.value("text", std::string());
+            if (text.empty()) throw ToolError("text vazio");
+            m_pendingText += text;
+            m_host.play.SetExternalInput(true);
+            return ToolResult::Text(std::format("texto: \"{}\"", text));
         },
     });
 

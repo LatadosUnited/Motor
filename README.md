@@ -724,7 +724,8 @@ Exportado/
   do `opcoes.json`, por cima do mapa do projeto. Até 4 controles, cada um
   com seu número, aviso de ligar/desligar, ações por jogador (`GetVector("Mover", 1)`) e o último dispositivo
   usado. Controle direto: `IsGamepadButtonDown`, `GamepadAxisValue`. Os modelos Jogador e MoverWASD andam com o
-  teclado ou o analógico. O MCP `game_gamepad` simula um controle no Play.
+  teclado ou o analógico. No Play, o MCP simula controles (`game_gamepad`, até 4), o mouse (`game_mouse`:
+  movimento, botões e roda) e texto (`game_text`), só para o jogo.
 - **Progresso salvo** (Fase 21): os scripts guardam chave/valor em "slots" com `SaveSlot()` (`motor::SaveData`:
   `GetInt`/`SetInt`, `GetString`, `GetVec3`... e `Save()`), `HasSave`, `DeleteSave` e `SaveFolder`. No jogo
   exportado ficam em `%APPDATA%\<Jogo>\saves\<slot>.json`; no Play do editor, em `<projeto>/.motor/saves/`
@@ -784,7 +785,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Situação | `editor_status`, `scene_tree`, `entity_get` (no Play, também o estado do jogo: clipe do Animator, no chão, velocidade), `component_types`, `log_read`, `events_read` (o que mudou no editor: seleção, cena, Play, scripts), `docs_read` (documentação de scripts desta versão; o `editor_status` mostra em `script_reference` as pastas da documentação e dos headers do SDK) |
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
-  | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
+  | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `game_mouse` (movimento, botões e roda), `game_text` (texto digitado), `game_gamepad` (até 4 controles), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
   | Scripts | `scripts_build` (`wait` responde quando a compilação termina), `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD, desenhado na hora; vistas scene, game e editor), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |

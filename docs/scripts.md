@@ -386,8 +386,9 @@ Jogo de uma pessoa: qualquer controle serve, sem fazer nada. Duas ou mais pessoa
 número do jogador, `GetVector("Mover", 0)` para o controle 0, `GetVector("Mover", motor::kKeyboardMouse)` para
 quem joga no teclado. Os botões do controle direto também aceitam o número: `IsGamepadButtonDown(motor::GamepadButton::A, 1)`.
 
-Ação com nome errado devolve zero e avisa uma vez no log. No editor, a ferramenta MCP `game_gamepad` simula um
-controle (para testar sem ter um).
+Ação com nome errado devolve zero e avisa uma vez no log. No editor, as ferramentas MCP `game_mouse`
+(movimento, botões e roda) e `game_text` simulam o mouse e o texto, e `game_gamepad` (com `pad` e `count` para
+vários) simula um controle (para testar sem ter um).
 
 Teclas: `motor::Key::A` a `Z`, `D0` a `D9` (números), `Space`, `Enter`, `Escape`, `Tab`, `Backspace`,
 `Up`/`Down`/`Left`/`Right` (setas), `LeftShift`, `LeftControl`, `LeftAlt` (e os `Right...`), `F1` a `F24`,

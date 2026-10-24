@@ -289,6 +289,10 @@ void Input::SetMouseButtonState(MouseButton button, bool down) {
     g.buttons.Set(b, down);
 }
 
+void Input::AddScroll(float notches) {
+    OnScroll(nullptr, 0.0, notches);
+}
+
 void Input::AddTextInput(std::string_view utf8) {
     g.text += utf8;
 }

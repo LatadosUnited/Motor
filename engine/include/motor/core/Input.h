@@ -138,6 +138,7 @@ public:
     static void SetKeyState(Key key, bool down);
     static void SetMouseButtonState(MouseButton button, bool down);
     static void AddTextInput(std::string_view utf8);
+    static void AddScroll(float notches);  // como o evento da roda (positivo = para cima)
     static void PollGamepads();  // depois dos eventos do frame (Window::PollEvents)
     // Controles simulados (testes, MCP): enquanto ligado, os de verdade são ignorados e vale o estado posto aqui.
     // Ligar simula `count` controles nas vagas 0 em diante (cada um avisa WasGamepadConnected); desligar volta aos

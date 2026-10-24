@@ -122,8 +122,9 @@ ctest --test-dir build --output-on-failure
 - **Prefira o servidor MCP do editor** para ver e testar: abra `MotorEditor.exe "<projeto>" --mcp` (porta
   47800) e chame as ferramentas por HTTP (`POST http://127.0.0.1:47800/mcp`, JSON-RPC `tools/call`), ou pelo
   Claude Code se o servidor `motor` estiver configurado. `viewport_capture` substitui o PrintWindow; `play`,
-  `game_key`, `ui_click` e `log_read` testam o jogo sem entrada sintética global. Recurso novo do editor que
-  um agente precise usar ganha ferramenta em `McpController` (ou `McpSceneTools`, se for só cena).
+  `game_key`, `game_mouse`, `game_text`, `game_gamepad`, `ui_click` e `log_read` testam o jogo sem entrada
+  sintética global. Recurso novo do editor que um agente precise usar ganha ferramenta em `McpController` (ou
+  `McpSceneTools`, se for só cena).
 - **Nunca simule teclado ou mouse globais** (SendKeys, keybd_event, SetCursorPos...) para testar o editor:
   o foco pode ir para outra janela e o texto vai parar em outro lugar (já aconteceu). Peça confirmação
   explícita antes de qualquer entrada sintética.
