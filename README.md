@@ -765,7 +765,7 @@ componentes comuns (Inspector, cena, desfazer):
 | Componente | Campos |
 |---|---|
 | **Superfície de navegação** (`NavMeshSurface`) | Navmesh (arquivo `.mnav` e o botão Gerar), Raio, Altura, Altura do degrau e Inclinação máxima do agente; Tamanho e Altura da célula; Área mínima. Uma por cena: liga o navmesh |
-| **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada |
+| **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada, Raio, Altura, Desviar dos outros |
 
 - **De onde vem o navmesh:** dos **Colliders estáticos** das entidades ativas (sem Rigidbody, sem trigger, sem
   agente, sem Controlador de personagem). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como
@@ -779,6 +779,8 @@ componentes comuns (Inspector, cena, desfazer):
   frente é o -Z) e mantém os pés no navmesh (a origem fica **Altura da base** acima). Com **Alvo**, segue a
   entidade e refaz o caminho quando ela anda. Ele mexe no Transform direto: por enquanto, use em entidades sem
   física.
+- **Multidão:** os agentes desviam uns dos outros e não se atravessam (DetourCrowd, Fase 35); **Raio** é o tamanho
+  com que os outros o veem. Os caminhos de quem segue um alvo entram numa fila dividida entre os passos.
 - **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
   `Warp`, `FindPath`, `SamplePosition`, `Raycast` e `Rebuild` (cenário mudou). Ver a seção 15 do
   [guia de scripts](docs/scripts.md) (um guarda que patrulha e persegue, `docs/examples/Guarda.cpp`) e a
@@ -786,7 +788,7 @@ componentes comuns (Inspector, cena, desfazer):
 - **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
   Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando) e, no Play com a câmera do editor, o
   caminho de cada agente em amarelo.
-- **Ainda não:** multidão, obstáculos que se mexem (roteiro em
+- **Ainda não:** agente com física, pulos, áreas com custo, obstáculos que se mexem (roteiro em
   `docs/roadmap/alpha-6.md`).
 
 ## Servidor MCP (agentes no editor)
