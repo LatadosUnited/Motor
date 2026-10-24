@@ -142,6 +142,7 @@ AssetType AssetTypeFromPath(const fs::path& path) {
     if (ext == ".gltf" || ext == ".glb" || ext == ".fbx") return AssetType::Model;
     if (ext == ".hdr") return AssetType::EnvironmentMap;  // céu equirretangular (Fase 7)
     if (ext == ".wav" || ext == ".ogg" || ext == ".mp3") return AssetType::Audio;  // clipes de som (Fase 8)
+    if (ext == kNavMeshFileExtension) return AssetType::NavMesh;  // navmesh gerado no editor (Fase 34)
     return AssetType::Unknown;
 }
 
@@ -156,6 +157,7 @@ const char* AssetTypeName(AssetType type) {
         case AssetType::Model: return "Modelo";
         case AssetType::EnvironmentMap: return "Céu HDR";
         case AssetType::Audio: return "Som";
+        case AssetType::NavMesh: return "Navmesh";
         case AssetType::Unknown: break;
     }
     return "Arquivo";
