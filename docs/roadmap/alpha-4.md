@@ -57,5 +57,5 @@ o número da fase sai quando a alpha 4 for numerada de novo.
 - [x] Tarefa 3: Ler vários controles, avisar quando ligam e desligam e saber o último dispositivo usado — 971031e
 - [x] Tarefa 4: Contextos de entrada (Jogo, Menu) e a interface consumindo o clique — a0beb1d
 - [x] Tarefa 5: Segurar, toque, toque duplo e buffer nas ações — f527117
-- [ ] Tarefa 6: Remapear as ações no jogo exportado, salvo com as opções do jogador
+- [x] Tarefa 6: Remapear as ações no jogo exportado, salvo com as opções do jogador — 436de33
 - [ ] Tarefa 7: Mandar mouse, eixos e texto pelo MCP
