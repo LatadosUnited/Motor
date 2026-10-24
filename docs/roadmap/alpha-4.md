@@ -53,7 +53,7 @@ pede olhar com o mouse e mover na diagonal sem correr mais. Começou antes da al
 o número da fase sai quando a alpha 4 for numerada de novo.
 
 - [x] Tarefa 1: Contar os eventos do quadro, teclas e botões que faltam, texto digitado e zona morta radial — b4b3e0b
-- [ ] Tarefa 2: Ações de botão, eixo e vetor 2D, com o mouse como eixo e combinações (formato 2 do `"input"`)
+- [x] Tarefa 2: Ações de botão, eixo e vetor 2D, com o mouse como eixo e combinações (formato 2 do `"input"`) — dc7de78
 - [ ] Tarefa 3: Ler vários controles, avisar quando ligam e desligam e saber o último dispositivo usado
 - [ ] Tarefa 4: Contextos de entrada (Jogo, Menu) e a interface consumindo o clique
 - [ ] Tarefa 5: Segurar, toque, toque duplo e buffer nas ações
