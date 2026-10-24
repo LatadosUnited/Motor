@@ -707,6 +707,47 @@ bool Script::WasActionDoubleTapped(std::string_view action, float interval, int 
 bool Script::ConsumeBufferedAction(std::string_view action, float seconds, int device) {
     return InputEnabled() && m_runtime->ActionTracker().ConsumeBuffered(action, seconds, device);
 }
+std::vector<InputBinding> Script::GetActionBindings(std::string_view action) const {
+    const InputAction* found = Actions().Find(action);
+    return found ? found->bindings : std::vector<InputBinding>{};
+}
+bool Script::RebindAction(std::string_view action, int index, const InputBinding& binding) {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    const InputAction* current = host ? host->Actions().Find(action) : nullptr;
+    if (!current || index < 0 || index >= static_cast<int>(current->bindings.size())) return false;
+    InputAction mine = *current;
+    InputBinding& b = mine.bindings[static_cast<size_t>(index)];
+    // Só a tecla/botão muda: W em "Mover" continua no Y, A continua negativa. Um analógico escolhido traz o
+    // sentido em que foi empurrado (sobre o da entrada antiga).
+    const float sign = binding.source == InputBinding::Source::GamepadAxis && binding.scale < 0.0f ? -1.0f : 1.0f;
+    b.source = binding.source;
+    b.code = binding.code;
+    b.scale *= sign;
+    InputActions player = host->PlayerBindings();
+    std::erase_if(player.actions, [&](const InputAction& a) { return a.name == mine.name; });
+    player.actions.push_back({mine.name, mine.bindings, mine.type, mine.context});
+    host->SetPlayerBindings(player);
+    return true;
+}
+void Script::ResetActionBindings(std::string_view action) {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    if (!host) return;
+    InputActions player = host->PlayerBindings();
+    if (action.empty()) {
+        player.actions.clear();
+    } else {
+        const InputAction* found = host->Actions().Find(action);
+        if (!found) return;
+        std::erase_if(player.actions, [&](const InputAction& a) { return a.name == found->name; });
+    }
+    host->SetPlayerBindings(player);
+}
+std::optional<InputBinding> Script::GetPressedBinding() const {
+    return InputEnabled() ? InputActions::FirstPressed() : std::nullopt;
+}
+std::vector<std::string> Script::GetBindingConflicts(std::string_view action, const InputBinding& binding) const {
+    return Actions().Conflicts(action, binding);
+}
 void Script::SetInputContext(std::string_view context) {
     if (!m_runtime) return;
     m_runtime->SetInputContexts(context.empty() ? std::vector<std::string>{} : std::vector<std::string>{std::string(context)});

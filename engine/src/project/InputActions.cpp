@@ -1,6 +1,8 @@
 #include "motor/project/InputActions.h"
 
+#include "motor/common/FileWrite.h"
 #include "motor/core/Log.h"
+#include "motor/core/Paths.h"
 
 #include <nlohmann/json.hpp>
 
@@ -8,6 +10,8 @@
 #include <cctype>
 #include <cmath>
 #include <format>
+#include <fstream>
+#include <sstream>
 
 namespace motor {
 
@@ -244,6 +248,75 @@ bool InputActions::WasPressed(std::string_view name, const InputFilter& filter) 
 bool InputActions::WasReleased(std::string_view name, const InputFilter& filter) const {
     const InputAction* action = FindOrWarn(name);
     return action && ValueAt(*action, false, filter) <= 0.5f && ValueAt(*action, true, filter) > 0.5f;
+}
+
+InputActions InputActions::WithPlayerBindings(const InputActions& player) const {
+    InputActions out = *this;
+    out.m_warned.clear();
+    for (const InputAction& mine : player.actions) {
+        for (InputAction& action : out.actions) {
+            if (SameName(action.name, mine.name)) action.bindings = mine.bindings;
+        }
+    }
+    return out;
+}
+
+std::vector<std::string> InputActions::Conflicts(std::string_view action, const InputBinding& binding) const {
+    const InputAction* self = Find(action);
+    std::vector<std::string> out;
+    for (const InputAction& other : actions) {
+        if (&other == self) continue;
+        const bool together = !self || self->context.empty() || other.context.empty() ||
+                              SameName(self->context, other.context);
+        if (!together) continue;
+        const bool same = std::any_of(other.bindings.begin(), other.bindings.end(), [&](const InputBinding& b) {
+            return b.source == binding.source && b.code == binding.code && b.with == binding.with;
+        });
+        if (same) out.push_back(other.name);
+    }
+    return out;
+}
+
+std::optional<InputBinding> InputActions::FirstPressed(bool includeMouse) {
+    for (int k = static_cast<int>(kFirstKey); k <= static_cast<int>(kLastKey); ++k) {
+        const Key key = static_cast<Key>(k);
+        if (*KeyName(key) && Input::WasKeyPressed(key)) return InputBinding::Of(key);
+    }
+    if (includeMouse) {
+        for (int b = 0; b < kMouseButtonCount; ++b) {
+            if (Input::WasMousePressed(static_cast<MouseButton>(b))) return InputBinding::Of(static_cast<MouseButton>(b));
+        }
+    }
+    for (int b = 0; b < kGamepadButtonCount; ++b) {
+        const GamepadButton button = static_cast<GamepadButton>(b);
+        if (Input::WasGamepadButtonPressed(button)) return InputBinding::Of(button);
+    }
+    for (int a = 0; a < kGamepadAxisCount; ++a) {
+        const GamepadAxis axis = static_cast<GamepadAxis>(a);
+        const float v = Input::GamepadAxisValue(axis);
+        const float before = Input::GamepadAxisValueLastFrame(axis);
+        // Só quando passa da metade agora (segurado empurrado não se repete a cada quadro).
+        if (std::abs(v) > 0.5f && std::abs(before) <= 0.5f) return InputBinding::Of(axis, v < 0.0f ? -1.0f : 1.0f);
+    }
+    return std::nullopt;
+}
+
+bool LoadPlayerBindings(const std::filesystem::path& file, InputActions& player, std::string* error) {
+    player.actions.clear();
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        if (error) *error = std::format("'{}' não existe", ToUtf8(file));
+        return false;
+    }
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return player.FromJson(ss.str(), error);
+}
+
+bool SavePlayerBindings(const std::filesystem::path& file, const InputActions& player, std::string* error) {
+    std::error_code ec;
+    std::filesystem::create_directories(file.parent_path(), ec);
+    return WriteFileAtomic(file, player.ToJson(), error);
 }
 
 std::string InputActions::ToJson() const {

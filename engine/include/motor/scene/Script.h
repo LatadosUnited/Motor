@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -179,6 +180,17 @@ protected:
     bool WasActionDoubleTapped(std::string_view action, float interval = 0.3f, int device = kAnyDevice) const;
     // Apertada nos últimos `seconds` e ainda não usada: true uma vez (o aperto é gasto).
     bool ConsumeBufferedAction(std::string_view action, float seconds = 0.15f, int device = kAnyDevice);
+    // Menu de controles: o jogador troca as teclas. A troca fica por cima do mapa do projeto e é gravada pelo
+    // jogo exportado (controles.json, ao lado das opções); no editor vale só neste Play.
+    //   if (auto b = GetPressedBinding()) RebindAction("Pular", 0, *b);   // "aperte a nova tecla"
+    std::vector<InputBinding> GetActionBindings(std::string_view action) const;  // as entradas de agora
+    // Troca a tecla/botão da entrada `index` (escala, lado do vetor e tecla de junto ficam). false se a ação ou o
+    // índice não existe, ou se não há quem rode o jogo.
+    bool RebindAction(std::string_view action, int index, const InputBinding& binding);
+    void ResetActionBindings(std::string_view action = {});  // volta às do projeto ("" = todas)
+    std::optional<InputBinding> GetPressedBinding() const;   // o primeiro apertado neste frame, ou nada
+    // Outras ações que já usam essa entrada no mesmo contexto ("Espaço já é Pular").
+    std::vector<std::string> GetBindingConflicts(std::string_view action, const InputBinding& binding) const;
     // Texto digitado neste frame (UTF-8, com acentos), para campos de texto.
     const std::string& TextInput() const;
     // Contextos (Arquivo > Controles, coluna Contexto): grupos de ações que valem juntos. O jogo começa no

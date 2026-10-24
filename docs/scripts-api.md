@@ -157,6 +157,11 @@ controle:
 | `bool WasActionTapped(std::string_view action, float maxSeconds = 0.25f, int device = kAnyDevice) const` | soltou neste frame depois de no máximo `maxSeconds` apertada |
 | `bool WasActionDoubleTapped(std::string_view action, float interval = 0.3f, int device = kAnyDevice) const` | apertou neste frame e o aperto anterior foi há no máximo `interval` s; um terceiro aperto rápido começa outra dupla |
 | `bool ConsumeBufferedAction(std::string_view action, float seconds = 0.15f, int device = kAnyDevice)` | apertou nos últimos `seconds` e o aperto ainda não foi usado: devolve true uma vez e o gasta (buffer de pulo) |
+| `std::vector<InputBinding> GetActionBindings(std::string_view action) const` | as entradas da ação agora (as do projeto, ou as trocadas pelo jogador); `InputBinding::Label()` dá o texto ("Tecla Space") |
+| `bool RebindAction(std::string_view action, int index, const InputBinding& binding)` | troca a tecla/botão da entrada `index` (escala, lado do vetor e tecla de junto ficam); grava no `controles.json` do jogo exportado; no editor vale só neste Play. false se a ação ou o índice não existe |
+| `void ResetActionBindings(std::string_view action = {})` | volta às entradas do projeto (`""` = todas as ações) |
+| `std::optional<InputBinding> GetPressedBinding() const` | a primeira tecla, botão do mouse ou do controle, ou analógico empurrado mais da metade, apertado neste frame ("aperte a nova tecla") |
+| `std::vector<std::string> GetBindingConflicts(std::string_view action, const InputBinding& binding) const` | outras ações que já usam essa entrada e valem junto (mesmo contexto ou sem contexto) |
 | `void SetInputContext(std::string_view context)` | deixa só este contexto ativo (`"Menu"`); `""` deixa só as ações sem contexto |
 | `void EnableInputContext(std::string_view context, bool enabled)`, `bool IsInputContextActive(std::string_view context) const` | liga ou desliga um contexto sem mexer nos outros; se está ativo |
 | `bool IsPointerOverUi() const` | o mouse está sobre um botão ou imagem da interface do jogo |

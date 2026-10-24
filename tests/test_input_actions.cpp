@@ -423,5 +423,133 @@ int main(int argc, char** argv) {
         NextFrame();
     }
 
+    SECTION("Teclas do jogador por cima do mapa");
+    {
+        InputActions player;
+        player.actions = {{"Pular", {InputBinding::Of(Key::J), InputBinding::Of(GamepadButton::B)}},
+                          {"Ação que saiu do mapa", {InputBinding::Of(Key::K)}}};
+        const InputActions mixed = defaults.WithPlayerBindings(player);
+        CHECK(mixed.Find("Pular")->bindings == player.actions[0].bindings);
+        CHECK(mixed.Find("Pular")->type == InputActionType::Button && mixed.Find("Pular")->context == "Jogo");
+        CHECK(mixed.Find("Correr")->bindings == defaults.Find("Correr")->bindings);  // as outras não mudam
+        CHECK(!mixed.Find("Ação que saiu do mapa") && mixed.actions.size() == defaults.actions.size());
+
+        // Conflitos: só no mesmo contexto (ou sem contexto).
+        const auto space = defaults.Conflicts("Interagir", InputBinding::Of(Key::Space));
+        CHECK(space.size() == 1 && space[0] == "Pular");  // Confirmar também é Espaço, mas no Menu
+        CHECK(defaults.Conflicts("Confirmar", InputBinding::Of(Key::Space)).empty());
+        CHECK(defaults.Conflicts("Interagir", InputBinding::Of(Key::Space).With(Key::LeftControl)).empty());
+        CHECK(defaults.Conflicts("Pular", InputBinding::Of(Key::Space)).empty());  // ela mesma não conta
+
+        // Arquivo controles.json.
+        const fs::path file = dir / "Jogador" / "controles.json";
+        CHECK(SavePlayerBindings(file, player));
+        InputActions back;
+        CHECK(LoadPlayerBindings(file, back) && back.actions == player.actions);
+        CHECK(!LoadPlayerBindings(dir / "nada.json", back) && back.actions.empty());
+    }
+
+    SECTION("Aperte a nova tecla");
+    {
+        NextFrame();
+        NextFrame();
+        CHECK(!InputActions::FirstPressed());
+        Input::SetKeyState(Key::G, true);
+        CHECK(InputActions::FirstPressed() == InputBinding::Of(Key::G));
+        NextFrame();
+        CHECK(!InputActions::FirstPressed());  // segurada não se repete
+        Input::SetKeyState(Key::G, false);
+        Input::SetMouseButtonState(MouseButton::Right, true);
+        CHECK(InputActions::FirstPressed() == InputBinding::Of(MouseButton::Right));
+        CHECK(!InputActions::FirstPressed(false));  // sem o mouse (editor)
+        Input::SetMouseButtonState(MouseButton::Right, false);
+        NextFrame();
+        Input::SetGamepadSimulated(true);
+        Input::SetGamepadAxisState(GamepadAxis::RightY, -0.9f);
+        CHECK(InputActions::FirstPressed() == InputBinding::Of(GamepadAxis::RightY, -1.0f));
+        NextFrame();
+        CHECK(!InputActions::FirstPressed());  // continua empurrado: não é um aperto novo
+        Input::SetGamepadSimulated(false);
+        NextFrame();
+    }
+
+    SECTION("Scripts: trocar e restaurar as teclas");
+    {
+        struct Trocador : Script {
+            bool trocou = false;
+            std::vector<InputBinding> pular;
+            std::vector<std::string> conflitos;
+            void OnUpdate(float) override {
+                if (auto nova = GetPressedBinding()) {
+                    conflitos = GetBindingConflicts("Mover", *nova);
+                    trocou = RebindAction("Mover", 2, *nova);  // W (no Y de Mover)
+                }
+                pular = GetActionBindings("Pular");
+            }
+            // De fora do OnUpdate (o teste chama direto).
+            bool Trocar(std::string_view action, int index, const InputBinding& b) { return RebindAction(action, index, b); }
+            void Restaurar(std::string_view action = {}) { ResetActionBindings(action); }
+        };
+        struct Host : GameHost {
+            InputActions project = InputActions::Defaults();
+            InputActions player;
+            InputActions actions = InputActions::Defaults();
+            SaveStore saves;
+            GameOptions Options() const override { return {}; }
+            void ApplyOptions(const GameOptions&) override {}
+            std::vector<Resolution> Resolutions() const override { return {}; }
+            SaveStore& Saves() override { return saves; }
+            const InputActions& Actions() const override { return actions; }
+            InputActions PlayerBindings() const override { return player; }
+            void SetPlayerBindings(const InputActions& p) override {
+                player = p;
+                actions = project.WithPlayerBindings(player);
+            }
+            std::string GameVersion() const override { return {}; }
+            void QuitGame() override {}
+        } host;
+        auto& registry = ComponentRegistry::Instance();
+        registry.Register<Trocador>("Trocador", "Trocador");
+        Scene scene;
+        scene.CreateEntity("T").Add<Trocador>();
+        SceneRuntime runtime(scene);
+        runtime.SetHost(&host);
+        runtime.Start();
+        Trocador* t = scene.FindByName("T")->Get<Trocador>();
+
+        NextFrame();
+        Input::SetKeyState(Key::I, true);  // o jogador escolhe I no lugar de W
+        runtime.Update(0.016f);
+        CHECK(t->trocou && t->conflitos.empty());
+        const InputBinding& w = host.Actions().Find("Mover")->bindings[2];
+        CHECK(w.source == InputBinding::Source::Key && w.code == static_cast<int>(Key::I));
+        CHECK(w.part == InputBinding::Part::Y && w.scale == 1.0f);  // o lado e o sentido ficam
+        CHECK(host.player.actions.size() == 1 && host.player.actions[0].name == "Mover");
+        CHECK(Near(host.Actions().Vector("Mover").y, 1.0f));  // I anda para a frente
+        Input::SetKeyState(Key::I, false);
+        NextFrame();
+
+        Input::SetKeyState(Key::Space, true);  // Espaço já é Pular, que está no mesmo contexto
+        runtime.Update(0.016f);
+        CHECK(t->conflitos.size() == 1 && t->conflitos[0] == "Pular");
+        Input::SetKeyState(Key::Space, false);
+        NextFrame();
+
+        CHECK(!t->Trocar("Mover", 99, InputBinding::Of(Key::K)) && !t->Trocar("Nada", 0, InputBinding::Of(Key::K)));
+        t->Restaurar("mover");
+        CHECK(host.player.actions.empty() && host.Actions() == host.project);
+        t->Trocar("Pular", 0, InputBinding::Of(Key::K));
+        t->Trocar("Correr", 0, InputBinding::Of(Key::L));
+        CHECK(host.player.actions.size() == 2);
+        t->Restaurar();
+        CHECK(host.player.actions.empty());
+        runtime.Update(0.016f);
+        CHECK(t->pular == defaults.Find("Pular")->bindings);
+
+        runtime.Stop();
+        registry.Unregister(registry.Find("Trocador"));
+        NextFrame();
+    }
+
     return TestResult();
 }

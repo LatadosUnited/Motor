@@ -16,6 +16,17 @@ void PlayHost::Reset(const GameOptions& defaults, std::string version, std::file
     m_warnedDisplay = false;
 }
 
+void PlayHost::SetActions(const InputActions& actions) {
+    m_projectActions = actions;
+    m_player = {};
+    m_actions = actions;
+}
+
+void PlayHost::SetPlayerBindings(const InputActions& player) {
+    m_player = player;
+    m_actions = m_projectActions.WithPlayerBindings(m_player);
+}
+
 void PlayHost::ApplyOptions(const GameOptions& options) {
     const GameOptions before = m_options;
     m_options = options;

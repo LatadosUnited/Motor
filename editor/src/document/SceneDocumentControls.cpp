@@ -11,7 +11,6 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
-#include <cmath>
 #include <format>
 #include <optional>
 #include <string>
@@ -21,22 +20,6 @@ namespace editor {
 using namespace motor;
 
 namespace {
-
-// Primeira entrada apertada neste frame (tecla, botão do controle ou eixo empurrado), para "aperte para ligar".
-std::optional<InputBinding> PressedBinding() {
-    for (int k = static_cast<int>(kFirstKey); k <= static_cast<int>(kLastKey); ++k) {
-        const Key key = static_cast<Key>(k);
-        if (*KeyName(key) && Input::WasKeyPressed(key)) return InputBinding::Of(key);
-    }
-    for (int b = 0; b < kGamepadButtonCount; ++b) {
-        if (Input::WasGamepadButtonPressed(static_cast<GamepadButton>(b))) return InputBinding::Of(static_cast<GamepadButton>(b));
-    }
-    for (int a = 0; a < kGamepadAxisCount; ++a) {
-        const float v = Input::GamepadAxisValue(static_cast<GamepadAxis>(a));
-        if (std::abs(v) > 0.6f) return InputBinding::Of(static_cast<GamepadAxis>(a), v < 0.0f ? -1.0f : 1.0f);
-    }
-    return std::nullopt;
-}
 
 // Menu "Escolher": todas as entradas por tipo (sem controle conectado, é o jeito de ligar um botão dele).
 std::optional<InputBinding> ChooseBindingMenu() {
@@ -249,7 +232,8 @@ void SceneDocument::DrawControlsWindow() {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Aperte uma tecla ou um botão do controle...");
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Cancelar")) m_listeningAction = -1;
-                if (const auto pressed = PressedBinding()) {
+                // Sem o mouse: o clique em "Cancelar" não pode virar a entrada.
+                if (const auto pressed = InputActions::FirstPressed(false)) {
                     if (std::find(action.bindings.begin(), action.bindings.end(), *pressed) == action.bindings.end()) {
                         action.bindings.push_back(*pressed);
                         changed = true;

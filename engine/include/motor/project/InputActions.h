@@ -4,6 +4,8 @@
 
 #include <glm/vec2.hpp>
 
+#include <filesystem>
+
 #include <optional>
 #include <set>
 #include <string>
@@ -113,6 +115,17 @@ public:
     // Valor de uma ação que não está no mapa (prévia do editor).
     static glm::vec2 VectorOf(const InputAction& action);
 
+    // --- Teclas trocadas pelo jogador (menu de controles do jogo) ---
+    // O mapa com as trocas do jogador por cima: cada ação de `player` (só as que ele mudou, com todas as entradas
+    // dela) substitui as entradas da ação de mesmo nome; as que não estão no mapa são ignoradas.
+    InputActions WithPlayerBindings(const InputActions& player) const;
+    // Outras ações que usam a mesma entrada (mesma tecla/botão e tecla de junto) e podem valer ao mesmo tempo
+    // (mesmo contexto, ou uma delas sem contexto). Para avisar "Espaço já é Pular".
+    std::vector<std::string> Conflicts(std::string_view action, const InputBinding& binding) const;
+    // A primeira entrada apertada neste quadro (tecla, botão do controle, analógico empurrado mais da metade e,
+    // com `includeMouse`, botão do mouse), para "aperte a nova tecla". Sem nada apertado, nullopt.
+    static std::optional<InputBinding> FirstPressed(bool includeMouse = true);
+
     // {"version": 2, "startContext": "Jogo", "actions": [{"name": "Pular", "type": "button", "context": "Jogo",
     //  "bindings": [{"key": "Space"}, {"gamepad": "A"}]}]}
     std::string ToJson() const;
@@ -128,5 +141,10 @@ private:
     const InputAction* FindOrWarn(std::string_view name) const;
     mutable std::set<std::string, std::less<>> m_warned;
 };
+
+// Arquivo das trocas do jogador (controles.json, ao lado do opcoes.json): só as ações que ele mudou. Load
+// devolve false (e `player` vazio) se o arquivo não existe ou é inválido.
+bool LoadPlayerBindings(const std::filesystem::path& file, InputActions& player, std::string* error = nullptr);
+bool SavePlayerBindings(const std::filesystem::path& file, const InputActions& player, std::string* error = nullptr);
 
 } // namespace motor

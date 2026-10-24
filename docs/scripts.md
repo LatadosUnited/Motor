@@ -364,6 +364,24 @@ diz se o pulo foi apertado até 0,15 s atrás e ainda não foi usado: chame quan
 pulo apertado um pouco antes não se perde. `GetActionHeldTime("Atirar")` dá quanto tempo está apertada (tiro
 carregado).
 
+**Trocar as teclas.** Um menu de controles no jogo deixa o jogador escolher as próprias teclas
+([examples/MenuControles.cpp](examples/MenuControles.cpp)): `GetPressedBinding()` devolve a primeira tecla ou
+botão apertado no frame, `RebindAction("Pular", 0, nova)` troca a primeira entrada de Pular (o lado num vetor e
+o sentido ficam), `GetBindingConflicts` diz quais outras ações já usam essa tecla e `ResetActionBindings()`
+volta às do projeto. No jogo exportado a troca fica gravada em `controles.json`, ao lado das opções; no editor
+vale só até parar o Play.
+
+```cpp
+        if (esperando) {
+            if (auto nova = GetPressedBinding()) {
+                for (const std::string& outra : GetBindingConflicts("Pular", *nova)) {
+                    Log("aviso: {} já usa {}", outra, nova->Label());
+                }
+                RebindAction("Pular", 0, *nova);
+                esperando = false;
+            }
+```
+
 Jogo de uma pessoa: qualquer controle serve, sem fazer nada. Duas ou mais pessoas na mesma tela: passe o
 número do jogador, `GetVector("Mover", 0)` para o controle 0, `GetVector("Mover", motor::kKeyboardMouse)` para
 quem joga no teclado. Os botões do controle direto também aceitam o número: `IsGamepadButtonDown(motor::GamepadButton::A, 1)`.

@@ -719,7 +719,9 @@ Exportado/
   junto (Ctrl+S) e o mouse na medida do analógico. O padrão traz Mover, Olhar, Horizontal, Vertical, Olhar X/Y,
   Pular, Correr, Interagir e Pausa (contexto Jogo) e Navegar, Confirmar e Voltar (contexto Menu); o script troca
   com `SetInputContext("Menu")`, e um clique na interface do jogo não chega às ações. No tempo: segurar,
-  toque, toque duplo e buffer (`WasActionHeld`, `WasActionDoubleTapped`, `ConsumeBufferedAction("Pular")`). Até 4 controles, cada um
+  toque, toque duplo e buffer (`WasActionHeld`, `WasActionDoubleTapped`, `ConsumeBufferedAction("Pular")`).
+  O jogador troca as teclas no jogo (`RebindAction`, `GetPressedBinding`), gravadas em `controles.json` ao lado
+  do `opcoes.json`, por cima do mapa do projeto. Até 4 controles, cada um
   com seu número, aviso de ligar/desligar, ações por jogador (`GetVector("Mover", 1)`) e o último dispositivo
   usado. Controle direto: `IsGamepadButtonDown`, `GamepadAxisValue`. Os modelos Jogador e MoverWASD andam com o
   teclado ou o analógico. O MCP `game_gamepad` simula um controle no Play.
