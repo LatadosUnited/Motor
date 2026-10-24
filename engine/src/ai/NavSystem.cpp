@@ -3,6 +3,7 @@
 #include "NavCrowd.h"
 
 #include "motor/core/Log.h"
+#include "motor/physics/PhysicsSystem.h"
 #include "motor/scene/Components.h"
 #include "motor/scene/SceneRuntime.h"
 
@@ -82,6 +83,7 @@ NavSystem::~NavSystem() = default;
 
 void NavSystem::OnStart(SceneRuntime& runtime) {
     m_scene = &runtime.GetScene();
+    m_physics = runtime.GetSystem<PhysicsSystem>();
     // Folga para os agentes que nascerem no jogo; passou disso, a multidão dobra (GrowCrowd).
     m_crowdCapacity = std::max(32, static_cast<int>(m_scene->EntitiesWith<NavMeshAgent>().size()) * 2);
     const NavMeshSurface* surface = FindSurface(*m_scene);
@@ -130,6 +132,7 @@ void NavSystem::OnStop(SceneRuntime&) {
     m_navMesh.reset();
     ++m_version;
     m_scene = nullptr;
+    m_physics = nullptr;
 }
 
 bool NavSystem::Rebuild() {
@@ -200,14 +203,32 @@ bool NavSystem::AddToCrowd(EntityId id, Agent& agent, const glm::vec3& feet) {
     return agent.crowd >= 0;
 }
 
+float NavSystem::LiftOf(EntityId id, const NavMeshAgent& settings) const {
+    // Com corpo físico a origem é o centro da cápsula: os pés ficam meia altura abaixo.
+    const Entity* e = m_scene->Find(id);
+    const CharacterControllerComponent* body = e ? e->Get<CharacterControllerComponent>() : nullptr;
+    return body ? body->height * 0.5f : settings.baseOffset;
+}
+
 glm::vec3 NavSystem::FeetOf(EntityId id, const NavMeshAgent& settings) const {
-    return glm::vec3(m_scene->WorldMatrix(id)[3]) - glm::vec3(0.0f, settings.baseOffset, 0.0f);
+    return glm::vec3(m_scene->WorldMatrix(id)[3]) - glm::vec3(0.0f, LiftOf(id, settings), 0.0f);
+}
+
+bool NavSystem::IsPhysical(EntityId id) const {
+    const Entity* e = m_scene->Find(id);
+    return m_physics && e && e->Has<CharacterControllerComponent>();
 }
 
 void NavSystem::PrepareAgent(EntityId id, Agent& agent, const NavMeshAgent& settings) {
     if (!m_crowd) return;
     const glm::vec3 feet = FeetOf(id, settings);
-    if (agent.crowd >= 0 && glm::distance(feet, agent.written) > kMovedOutside) {
+    if (agent.crowd >= 0 && IsPhysical(id)) {
+        // Quem anda é o corpo: a multidão vai para onde ele chegou (pelo navmesh). Longe demais: teleporte.
+        if (!m_crowd->MoveTo(agent.crowd, feet)) {
+            m_crowd->Remove(agent.crowd);
+            agent.crowd = -1;
+        }
+    } else if (agent.crowd >= 0 && glm::distance(feet, agent.written) > kMovedOutside) {
         // Alguém mexeu na entidade: a multidão a põe no lugar novo, e o caminho recomeça de lá.
         m_crowd->Remove(agent.crowd);
         agent.crowd = -1;
@@ -327,7 +348,7 @@ bool NavSystem::Warp(EntityId id, const glm::vec3& position) {
     const auto point = m_navMesh->SamplePosition(position);
     if (!point) return false;
     glm::mat4 world = m_scene->WorldMatrix(id);
-    world[3] = glm::vec4(*point + glm::vec3(0.0f, settings->baseOffset, 0.0f), 1.0f);
+    world[3] = glm::vec4(*point + glm::vec3(0.0f, LiftOf(id, *settings), 0.0f), 1.0f);
     m_scene->SetWorldMatrix(id, world);
     Agent& agent = AgentFor(id);
     if (m_crowd && agent.crowd >= 0) m_crowd->Remove(agent.crowd);
@@ -408,30 +429,57 @@ void NavSystem::ApplyAgent(EntityId id, Agent& agent, const NavMeshAgent& s, flo
         }
     }
 
-    // Parado e sem empurrão de ninguém: não mexe no Transform (nem para encostar a altura no navmesh).
     const glm::vec3 feet = m_crowd->Position(agent.crowd);
     const glm::vec3 velocity = m_crowd->Velocity(agent.crowd);
-    if (glm::length(velocity) < 1e-4f && glm::length(Flat(feet - agent.written)) < 1e-4f) return;
-
-    // Vira só em Y, no máximo angularSpeed por segundo. A frente das entidades é -Z.
-    glm::mat4 world = m_scene->WorldMatrix(id);
-    glm::vec3 scale(glm::length(glm::vec3(world[0])), glm::length(glm::vec3(world[1])), glm::length(glm::vec3(world[2])));
-    scale = glm::max(scale, glm::vec3(1e-6f));
-    glm::quat rotation = glm::quat_cast(glm::mat3(glm::vec3(world[0]) / scale.x, glm::vec3(world[1]) / scale.y,
-                                                  glm::vec3(world[2]) / scale.z));
-    const glm::vec3 flatVelocity = Flat(velocity);
-    if (s.updateRotation && glm::length(flatVelocity) > 0.01f) {
-        const glm::quat facing =
-            glm::angleAxis(std::atan2(-flatVelocity.x, -flatVelocity.z), glm::vec3(0.0f, 1.0f, 0.0f));
-        const float angle = glm::angle(rotation * glm::inverse(facing));
-        const float maxTurn = glm::radians(s.angularSpeed) * dt;
-        rotation = angle <= maxTurn || angle < 1e-4f ? facing : glm::slerp(rotation, facing, maxTurn / angle);
+    if (IsPhysical(id)) {
+        // Com corpo físico quem anda é a Jolt: o agente pede a velocidade que leva o corpo até onde a multidão o
+        // pôs (o desvio dos outros e a volta para o navmesh entram nela) e a física empurra caixas e para em
+        // paredes. A altura é da física (gravidade, degraus); a multidão volta para o corpo no próximo passo.
+        glm::vec3 walk = Flat(feet - FeetOf(id, s)) / std::max(dt, 1e-4f);
+        const float limit = std::max(s.speed * 1.5f, 0.5f);
+        if (glm::length(walk) > limit) walk *= limit / glm::length(walk);
+        m_physics->MoveCharacter(id, walk);
+        Turn(id, s, velocity, dt, false);
+        return;
     }
 
-    const glm::vec3 lift(0.0f, s.baseOffset, 0.0f);
-    world = glm::translate(glm::mat4(1.0f), feet + lift) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), scale);
+    // Parado e sem empurrão de ninguém: não mexe no Transform (nem para encostar a altura no navmesh).
+    if (glm::length(velocity) < 1e-4f && glm::length(Flat(feet - agent.written)) < 1e-4f) return;
+    glm::mat4 world = m_scene->WorldMatrix(id);
+    world[3] = glm::vec4(feet + glm::vec3(0.0f, LiftOf(id, s), 0.0f), 1.0f);
     m_scene->SetWorldMatrix(id, world);
+    Turn(id, s, velocity, dt, true);
     agent.written = feet;
+}
+
+void NavSystem::Turn(EntityId id, const NavMeshAgent& s, const glm::vec3& velocity, float dt, bool moved) {
+    const glm::vec3 flatVelocity = Flat(velocity);
+    if (!s.updateRotation || glm::length(flatVelocity) <= 0.01f) return;
+    // Vira só em Y, no máximo angularSpeed por segundo. A frente das entidades é -Z.
+    const glm::mat4 world = m_scene->WorldMatrix(id);
+    const glm::vec3 scale = glm::max(glm::vec3(glm::length(glm::vec3(world[0])), glm::length(glm::vec3(world[1])),
+                                               glm::length(glm::vec3(world[2]))),
+                                     glm::vec3(1e-6f));
+    const glm::quat current = glm::quat_cast(glm::mat3(glm::vec3(world[0]) / scale.x, glm::vec3(world[1]) / scale.y,
+                                                       glm::vec3(world[2]) / scale.z));
+    const glm::quat facing = glm::angleAxis(std::atan2(-flatVelocity.x, -flatVelocity.z), glm::vec3(0.0f, 1.0f, 0.0f));
+    const float angle = glm::angle(current * glm::inverse(facing));
+    const float maxTurn = glm::radians(s.angularSpeed) * dt;
+    const glm::quat rotation = angle <= maxTurn || angle < 1e-4f ? facing : glm::slerp(current, facing, maxTurn / angle);
+    if (moved) {
+        m_scene->SetWorldMatrix(id, glm::translate(glm::mat4(1.0f), glm::vec3(world[3])) * glm::mat4_cast(rotation) *
+                                        glm::scale(glm::mat4(1.0f), scale));
+        return;
+    }
+    // Só a rotação local: a posição do mundo fica exatamente a que a física escreveu (mudá-la seria um teleporte).
+    Entity* e = m_scene->Find(id);
+    glm::quat parent(1.0f, 0.0f, 0.0f, 0.0f);
+    if (e->parent != kNullEntity) {
+        const glm::mat4 p = m_scene->WorldMatrix(e->parent);
+        parent = glm::quat_cast(glm::mat3(glm::normalize(glm::vec3(p[0])), glm::normalize(glm::vec3(p[1])),
+                                          glm::normalize(glm::vec3(p[2]))));
+    }
+    e->transform.rotation = glm::normalize(glm::inverse(parent) * rotation);
 }
 
 MOTOR_RUNTIME_SYSTEM(Navegacao, NavSystem, kSystemOrderNavigation);

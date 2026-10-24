@@ -128,6 +128,17 @@ bool NavCrowd::RequestDestination(int index, const glm::vec3& destination) {
 
 void NavCrowd::Stop(int index) { m_crowd->resetMoveTarget(index); }
 
+bool NavCrowd::MoveTo(int index, const glm::vec3& feet) {
+    dtCrowdAgent* ag = m_crowd->getEditableAgent(index);
+    if (!ag || !ag->active || ag->state != DT_CROWDAGENT_STATE_WALKING) return false;
+    constexpr float kTooFar = 2.0f;  // m: mais que isso num passo não é andar
+    if (dtVdist2DSqr(ag->npos, &feet.x) > kTooFar * kTooFar) return false;
+    const NavMesh::Detour& d = *m_navMesh->m_detour;
+    ag->corridor.movePosition(&feet.x, d.query, &d.filter);
+    dtVcopy(ag->npos, ag->corridor.getPos());
+    return true;
+}
+
 void NavCrowd::Update(float dt) {
     m_crowd->update(dt, nullptr);
     SeparateOverlaps();

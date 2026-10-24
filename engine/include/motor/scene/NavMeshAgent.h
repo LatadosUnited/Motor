@@ -4,8 +4,9 @@
 // caminho que o Detour acha. Só dados: quem move é o NavSystem (motor/ai/NavSystem.h), antes da física e dos
 // scripts. O destino vem do campo `target` (segue a entidade) ou de um script (NavSystem::SetDestination).
 //
-// O agente mexe no Transform direto (a origem fica `baseOffset` acima do navmesh). Com corpo físico (Rigidbody,
-// CharacterController) o encaixe com a física é a Fase 35; até lá, use o agente em entidades sem física.
+// Sem corpo físico o agente mexe no Transform direto (a origem fica `baseOffset` acima do navmesh). Com um
+// CharacterController na mesma entidade, anda pela física (Fase 35): empurra caixas e cai, e os pés ficam na base
+// da cápsula. Rigidbody no agente não é suportado (os dois brigariam pelo Transform).
 
 #include "motor/scene/Component.h"
 #include "motor/scene/EntityRef.h"

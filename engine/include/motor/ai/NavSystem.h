@@ -8,6 +8,11 @@
 // SetDestination busca o caminho na hora; quem segue um alvo e os caminhos que a multidão refaz entram numa fila
 // dividida entre os passos, para muitos agentes não pesarem num passo só.
 //
+// Agente com Controlador de personagem (CharacterController): quem anda é a física. O NavSystem pede a velocidade
+// ao PhysicsSystem (MoveCharacter) e a Jolt empurra caixas, para em paredes e cuida da gravidade; a multidão volta
+// para onde o corpo chegou a cada passo, presa ao navmesh, e a velocidade pedida leva o corpo de volta a ele. Os pés
+// ficam na base da cápsula (a altura da base do agente não conta).
+//
 // De onde vem o navmesh: os Colliders estáticos das entidades ativas (sem Rigidbody, sem trigger, sem agente e
 // sem CharacterController). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como cilindro.
 // Mudou o cenário durante o jogo (porta aberta)? Rebuild() gera de novo; obstáculos que se mexem sem gerar tudo
@@ -36,6 +41,7 @@
 namespace motor {
 
 class NavCrowd;
+class PhysicsSystem;
 struct NavMeshAgent;
 
 // Triângulos dos Colliders estáticos da cena, no mundo (o que o NavSystem usa para gerar o navmesh).
@@ -110,7 +116,9 @@ private:
     Agent* FindAgent(EntityId id);
     const Agent* FindAgent(EntityId id) const;
     Agent& AgentFor(EntityId id);
+    float LiftOf(EntityId id, const NavMeshAgent& settings) const;  // da origem da entidade aos pés
     glm::vec3 FeetOf(EntityId id, const NavMeshAgent& settings) const;
+    bool IsPhysical(EntityId id) const;  // tem CharacterController: anda pela física
     bool LoadFromFile(const NavMeshSurface& surface);
     void ReplanAgents();
     void ResetCrowd();
@@ -121,8 +129,10 @@ private:
     bool PlanPath(Agent& agent, const glm::vec3& destination);
     void FollowTarget(Agent& agent, const NavMeshAgent& settings);
     void ApplyAgent(EntityId id, Agent& agent, const NavMeshAgent& settings, float dt);
+    void Turn(EntityId id, const NavMeshAgent& settings, const glm::vec3& velocity, float dt, bool moved);
 
     Scene* m_scene = nullptr;
+    PhysicsSystem* m_physics = nullptr;  // corpo dos agentes com CharacterController
     std::unique_ptr<NavMesh> m_navMesh;
     std::unique_ptr<NavCrowd> m_crowd;  // depois do navmesh: sai antes dele
     NavStats m_stats;

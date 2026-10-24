@@ -561,7 +561,13 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 Os agentes andam como uma multidão (DetourCrowd, Fase 35): desviam uns dos outros e não se atravessam (com
 `avoidOthers` desligado, o agente vai reto, mas ainda é empurrado). Muitos indo ao mesmo ponto se espremem em volta
 dele: quem para encostado nos que já chegaram, ou perto do ponto sem conseguir avançar, conta como chegado
-(`HasArrived`). Sem física por enquanto: o agente mexe no Transform direto.
+(`HasArrived`).
+
+Sem corpo físico, o agente mexe no Transform direto. Com um `CharacterControllerComponent` na mesma entidade, anda
+pela física: o `NavSystem` chama `MoveCharacter` com a velocidade do caminho, a Jolt empurra caixas, para em paredes
+e cuida da gravidade, e os pés ficam na base da cápsula (`baseOffset` não conta). Empurrado para fora do navmesh, o
+agente volta para ele. Não chame `MoveCharacter` num agente: o `NavSystem` sobrescreve a cada passo. Rigidbody num
+agente não é suportado.
 
 ## Teclas
 

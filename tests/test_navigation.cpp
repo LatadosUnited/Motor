@@ -7,6 +7,7 @@
 #include <motor/ai/NavSystem.h>
 #include <motor/assets/AssetLibrary.h>
 #include <motor/core/Paths.h>
+#include <motor/physics/PhysicsSystem.h>
 #include <motor/project/Project.h>
 #include <motor/renderer/Mesh.h>
 #include <motor/scene/Components.h>
@@ -15,6 +16,7 @@
 #include <motor/scene/SceneSerializer.h>
 
 #include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
 
 #include <chrono>
 #include <cmath>
@@ -498,6 +500,51 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 60 * 10 && nav && !nav->HasArrived(id); ++i) runtime.FixedUpdate(kDt);
         CHECK(nav && nav->HasArrived(id));
         CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(8.0f, 0.0f, 8.0f)) < 0.3f);
+        runtime.Stop();
+    }
+
+    SECTION("Agente com Controlador de personagem: anda pela física, empurra a caixa e não sai do navmesh");
+    {
+        // A caixa tem Rigidbody: não entra no navmesh, e o caminho passa por ela. Quem a tira do caminho é a física.
+        Scene scene = MakeScene();
+        Entity& box = scene.CreateEntity("Caixa");
+        box.transform.position = {0.0f, 0.5f, 5.25f};
+        box.Add<ColliderComponent>();
+        box.Add<RigidbodyComponent>().mass = 5.0f;
+        const EntityId boxId = box.id;
+        Entity& agentEntity = AddAgent(scene, {-6.0f, 0.9f, 5.0f});  // centro da cápsula de 1,8 m
+        agentEntity.Add<CharacterControllerComponent>();
+        const EntityId id = agentEntity.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        PhysicsSystem* physics = runtime.GetSystem<PhysicsSystem>();
+        CHECK(nav && physics && nav->SetDestination(id, {6.0f, 0.0f, 5.0f}));
+        float worstOff = 0.0f;
+        int steps = 0;
+        for (; steps < 60 * 12 && nav && !nav->HasArrived(id); ++steps) {
+            runtime.FixedUpdate(kDt);
+            const glm::vec3 feet = scene.Find(id)->transform.position - glm::vec3(0.0f, 0.9f, 0.0f);
+            const auto onMesh = nav->SamplePosition(feet, 1.0f);
+            worstOff = std::max(worstOff, onMesh ? glm::length(glm::vec2(onMesh->x - feet.x, onMesh->z - feet.z)) : 9.0f);
+        }
+        const glm::vec3 end = scene.Find(id)->transform.position;
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(glm::length(glm::vec2(end.x - 6.0f, end.z - 5.0f)) < 0.5f);
+        CHECK(Near(end.y, 0.9f, 0.1f) && physics && physics->IsGrounded(id));  // em pé no chão, pela física
+        CHECK(worstOff < 0.15f);                                               // os pés sempre no navmesh
+        const glm::vec3 boxEnd = scene.Find(boxId)->transform.position;
+        CHECK(glm::distance(boxEnd, glm::vec3(0.0f, 0.5f, 5.25f)) > 0.2f);    // a caixa foi empurrada
+        std::printf("  com física: chegou em %.2f s; caixa em (%.2f, %.2f); fora do navmesh no máximo %.3f m\n",
+                    steps * kDt, boxEnd.x, boxEnd.z, worstOff);
+
+        // Empurrado para fora (como por uma explosão): volta para o navmesh e continua.
+        CHECK(nav && nav->SetDestination(id, {-6.0f, 0.0f, 5.0f}));
+        scene.Find(id)->transform.position = {0.0f, 0.9f, 9.9f};  // além da borda (navmesh vai até ~9,5)
+        for (int i = 0; i < 60 * 12 && nav && !nav->HasArrived(id); ++i) runtime.FixedUpdate(kDt);
+        const glm::vec3 back = scene.Find(id)->transform.position;
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(glm::length(glm::vec2(back.x + 6.0f, back.z - 5.0f)) < 0.5f);
         runtime.Stop();
     }
 

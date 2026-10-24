@@ -1056,8 +1056,9 @@ Um guarda que patrulha entre dois pontos e persegue o jogador quando o vê
   `SamplePosition(ponto)` acha o ponto do navmesh mais perto, e `Warp(id, ponto)` teleporta o agente.
 - Vários agentes desviam uns dos outros sozinhos (o **Raio** do agente é o tamanho com que os outros o veem). Muitos
   indo ao mesmo ponto param em volta dele, e cada um conta como chegado quando não consegue mais avançar.
-- O agente mexe no Transform direto: por enquanto, use em entidades **sem** Rigidbody nem Controlador de
-  personagem.
+- Sem física, o agente mexe no Transform direto. Com um **Controlador de personagem** na mesma entidade ele anda
+  pela física: empurra caixas, cai e não atravessa paredes, e volta para o navmesh se for empurrado para fora dele.
+  Rigidbody num agente não funciona.
 
 Para montar: o chão e as paredes com Collider, a **Superfície de navegação** (e **Gerar**), duas entidades
 vazias `PontoA` e `PontoB`, e o guarda com **Agente de navegação** e **Scripts > Guarda**, com Ponto A, Ponto B

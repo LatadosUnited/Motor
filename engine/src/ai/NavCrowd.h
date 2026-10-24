@@ -50,6 +50,9 @@ public:
     // O mesmo, pela fila (o caminho chega em alguns passos). false se o destino está longe do navmesh.
     bool RequestDestination(int index, const glm::vec3& destination);
     void Stop(int index);  // esquece o destino: a multidão freia o agente
+    // Põe o agente onde o corpo físico dele está, pelo navmesh (fica preso nele se o corpo saiu). false se está
+    // longe demais para ir pelo corredor (teleporte): quem chama tira e põe o agente de novo.
+    bool MoveTo(int index, const glm::vec3& feet);
 
     void Update(float dt);
 
