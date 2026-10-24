@@ -169,9 +169,11 @@ void McpController::AddSceneFileTools() {
     m_protocol.AddTool({
         .name = "input_actions",
         .description = "Lê ou muda o mapa de ações do projeto (como Arquivo > Controles): cada ação (\"Pular\", "
-                       "\"Horizontal\") com as entradas (key, mouse, gamepad ou axis, e scale -1 para o lado "
-                       "negativo de um eixo). Os scripts usam IsActionDown/WasActionPressed/GetAxis. Sem argumentos, só "
-                       "lê. actions substitui o mapa inteiro; reset volta ao padrão. Grava o .mproject.",
+                       "\"Mover\") com type (button, axis ou vector2) e as entradas (key, mouse com botão ou "
+                       "MouseX/MouseY/MouseScroll, gamepad ou axis; scale -1 para o lado negativo, part \"y\" no Y de "
+                       "um vector2, with \"LeftControl\" para Ctrl+tecla). Os scripts usam IsActionDown/"
+                       "WasActionPressed/GetAxis/GetVector. Sem argumentos, só lê. actions substitui o mapa inteiro; "
+                       "reset volta ao padrão. Grava o .mproject.",
         .inputSchema = Schema({{"actions", Prop("array", "[{\"name\": \"Pular\", \"bindings\": [{\"key\": \"Space\"}, "
                                                          "{\"gamepad\": \"A\"}]}, {\"name\": \"Horizontal\", "
                                                          "\"bindings\": [{\"key\": \"A\", \"scale\": -1}, "

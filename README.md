@@ -712,10 +712,12 @@ Exportado/
   **Configurações do jogo > Tela de carregamento** (MCP `game_settings`, `loading_scene`), uma cena do projeto
   feita no editor com UI (imagem, texto) e, se quiser, câmera e objetos. Ela é só desenhada: scripts e física
   não rodam nela. No Play do editor a troca de cena não mostra a tela.
-- **Controle e ações** (Fase 21): os scripts perguntam por ações (`GetAxis("Horizontal")`,
-  `WasActionPressed("Pular")`) do mapa do projeto (**Arquivo > Controles**, `.mproject` em `"input"`, MCP
-  `input_actions`), que liga teclas, mouse e o controle (gamepad, padrão Xbox, pela GLFW). O padrão traz
-  Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa. Controle direto: `IsGamepadButtonDown`,
+- **Controle e ações** (Fase 21; v2 na alpha 4): os scripts perguntam por ações (`GetVector("Mover")`,
+  `GetAxis("Horizontal")`, `WasActionPressed("Pular")`) do mapa do projeto (**Arquivo > Controles**, `.mproject`
+  em `"input"` versão 2, MCP `input_actions`), que liga teclas, botões e movimento do mouse e o controle
+  (gamepad, padrão Xbox, pela GLFW). Ações de botão, eixo ou vetor 2D (diagonal limitada), com escala, tecla de
+  junto (Ctrl+S) e o mouse na medida do analógico. O padrão traz Mover, Olhar, Horizontal, Vertical, Olhar X/Y,
+  Pular, Correr, Interagir e Pausa. Controle direto: `IsGamepadButtonDown`,
   `GamepadAxisValue`. Os modelos Jogador e MoverWASD andam com o teclado ou o analógico. O MCP `game_gamepad`
   simula um controle no Play.
 - **Progresso salvo** (Fase 21): os scripts guardam chave/valor em "slots" com `SaveSlot()` (`motor::SaveData`:

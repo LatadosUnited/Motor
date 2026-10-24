@@ -15,19 +15,38 @@ using json = nlohmann::ordered_json;
 
 namespace {
 
+constexpr int kFormatVersion = 2;
+
 bool SameName(std::string_view a, std::string_view b) {
     return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
                return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
            });
 }
 
-// Valor de uma entrada (sem o `scale`): 1/0 para teclas e botões, o eixo como está.
+constexpr const char* kMouseAxisNames[kMouseAxisCount] = {"MouseX", "MouseY", "MouseScroll"};
+constexpr InputActionType kTypes[] = {InputActionType::Button, InputActionType::Axis, InputActionType::Vector2};
+
+bool KeyHeld(Key key, bool lastFrame) {
+    return lastFrame ? Input::WasKeyDownLastFrame(key) : Input::IsKeyDown(key);
+}
+
+// A tecla de junto: Left* aceita também o lado direito (Ctrl é Ctrl dos dois lados).
+bool WithHeld(int with, bool lastFrame) {
+    if (with == 0) return true;
+    const Key key = static_cast<Key>(with);
+    if (KeyHeld(key, lastFrame)) return true;
+    constexpr int kLeftToRight = static_cast<int>(Key::RightShift) - static_cast<int>(Key::LeftShift);
+    if (with >= static_cast<int>(Key::LeftShift) && with <= static_cast<int>(Key::LeftSuper)) {
+        return KeyHeld(static_cast<Key>(with + kLeftToRight), lastFrame);
+    }
+    return false;
+}
+
+// Valor de uma entrada (sem o `scale`): 1/0 para teclas e botões, o eixo como está, o mouse na medida do analógico.
 float RawValue(const InputBinding& b, bool lastFrame) {
+    if (!WithHeld(b.with, lastFrame)) return 0.0f;
     switch (b.source) {
-        case InputBinding::Source::Key: {
-            const Key key = static_cast<Key>(b.code);
-            return (lastFrame ? Input::WasKeyDownLastFrame(key) : Input::IsKeyDown(key)) ? 1.0f : 0.0f;
-        }
+        case InputBinding::Source::Key: return KeyHeld(static_cast<Key>(b.code), lastFrame) ? 1.0f : 0.0f;
         case InputBinding::Source::Mouse: {
             const MouseButton button = static_cast<MouseButton>(b.code);
             return (lastFrame ? Input::WasMouseDownLastFrame(button) : Input::IsMouseDown(button)) ? 1.0f : 0.0f;
@@ -41,39 +60,111 @@ float RawValue(const InputBinding& b, bool lastFrame) {
             const GamepadAxis axis = static_cast<GamepadAxis>(b.code);
             return lastFrame ? Input::GamepadAxisValueLastFrame(axis) : Input::GamepadAxisValue(axis);
         }
+        case InputBinding::Source::MouseAxis: {
+            if (b.code == static_cast<int>(MouseAxis::Scroll)) {
+                return lastFrame ? Input::ScrollDeltaLastFrame() : Input::ScrollDelta();
+            }
+            const glm::vec2 v = lastFrame ? Input::MouseVelocityLastFrame() : Input::MouseVelocity();
+            // Y da tela é para baixo; nas ações, como nos analógicos, para cima é positivo.
+            return (b.code == static_cast<int>(MouseAxis::X) ? v.x : -v.y) / kMouseAxisPixelsPerSecond;
+        }
     }
     return 0.0f;
 }
 
-} // namespace
-
-std::string InputBinding::Label() const {
-    const char* sign = scale < 0.0f ? " (-)" : "";
-    switch (source) {
-        case Source::Key: return std::format("Tecla {}{}", KeyName(static_cast<Key>(code)), sign);
-        case Source::Mouse: return std::format("Mouse {}{}", MouseButtonName(static_cast<MouseButton>(code)), sign);
-        case Source::GamepadButton:
-            return std::format("Controle {}{}", GamepadButtonName(static_cast<GamepadButton>(code)), sign);
-        case Source::GamepadAxis:
-            return std::format("Analógico {}{}", GamepadAxisName(static_cast<GamepadAxis>(code)), sign);
+glm::vec2 VectorAt(const InputAction& action, bool lastFrame) {
+    glm::vec2 limited{0.0f};
+    glm::vec2 relative{0.0f};
+    for (const InputBinding& b : action.bindings) {
+        const float v = RawValue(b, lastFrame) * b.scale;
+        glm::vec2& sum = b.IsRelative() ? relative : limited;
+        if (action.type == InputActionType::Vector2 && b.part == InputBinding::Part::Y) {
+            sum.y += v;
+        } else {
+            sum.x += v;
+        }
+    }
+    switch (action.type) {
+        case InputActionType::Button: return {std::clamp(limited.x + relative.x, 0.0f, 1.0f), 0.0f};
+        case InputActionType::Axis: return {std::clamp(limited.x, -1.0f, 1.0f) + relative.x, 0.0f};
+        case InputActionType::Vector2: {
+            const float length = std::sqrt(limited.x * limited.x + limited.y * limited.y);
+            if (length > 1.0f) limited /= length;
+            return limited + relative;
+        }
     }
     return {};
 }
 
+float ValueAt(const InputAction& action, bool lastFrame) {
+    const glm::vec2 v = VectorAt(action, lastFrame);
+    return action.type == InputActionType::Vector2 ? std::sqrt(v.x * v.x + v.y * v.y) : v.x;
+}
+
+} // namespace
+
+const char* MouseAxisName(MouseAxis axis) {
+    const int a = static_cast<int>(axis);
+    return a >= 0 && a < kMouseAxisCount ? kMouseAxisNames[a] : "";
+}
+
+std::optional<MouseAxis> ParseMouseAxis(std::string_view name) {
+    for (int a = 0; a < kMouseAxisCount; ++a) {
+        if (SameName(kMouseAxisNames[a], name)) return static_cast<MouseAxis>(a);
+    }
+    return std::nullopt;
+}
+
+const char* InputActionTypeName(InputActionType type) {
+    switch (type) {
+        case InputActionType::Button: return "button";
+        case InputActionType::Axis: return "axis";
+        case InputActionType::Vector2: return "vector2";
+    }
+    return "";
+}
+
+std::string InputBinding::Label() const {
+    std::string text = with != 0 ? std::format("{} + ", KeyName(static_cast<Key>(with))) : std::string();
+    switch (source) {
+        case Source::Key: text += std::format("Tecla {}", KeyName(static_cast<Key>(code))); break;
+        case Source::Mouse: text += std::format("Mouse {}", MouseButtonName(static_cast<MouseButton>(code))); break;
+        case Source::GamepadButton:
+            text += std::format("Controle {}", GamepadButtonName(static_cast<GamepadButton>(code)));
+            break;
+        case Source::GamepadAxis:
+            text += std::format("Analógico {}", GamepadAxisName(static_cast<GamepadAxis>(code)));
+            break;
+        case Source::MouseAxis: text += std::format("Mouse {}", MouseAxisName(static_cast<MouseAxis>(code))); break;
+    }
+    if (scale < 0.0f) text += " (-)";
+    return text;
+}
+
 InputActions InputActions::Defaults() {
     using B = InputBinding;
+    using T = InputActionType;
     InputActions a;
     a.actions = {
+        {"Mover",
+         {B::Of(Key::D), B::Of(Key::A, -1), B::Of(Key::W).Y(), B::Of(Key::S, -1).Y(), B::Of(Key::Right),
+          B::Of(Key::Left, -1), B::Of(Key::Up).Y(), B::Of(Key::Down, -1).Y(), B::Of(GamepadAxis::LeftX),
+          B::Of(GamepadAxis::LeftY).Y(), B::Of(GamepadButton::DpadRight), B::Of(GamepadButton::DpadLeft, -1),
+          B::Of(GamepadButton::DpadUp).Y(), B::Of(GamepadButton::DpadDown, -1).Y()},
+         T::Vector2},
+        {"Olhar",
+         {B::Of(MouseAxis::X), B::Of(MouseAxis::Y).Y(), B::Of(GamepadAxis::RightX), B::Of(GamepadAxis::RightY).Y()},
+         T::Vector2},
         {"Horizontal", {B::Of(Key::D), B::Of(Key::A, -1), B::Of(Key::Right), B::Of(Key::Left, -1),
                         B::Of(GamepadAxis::LeftX), B::Of(GamepadButton::DpadRight), B::Of(GamepadButton::DpadLeft, -1)}},
         {"Vertical", {B::Of(Key::W), B::Of(Key::S, -1), B::Of(Key::Up), B::Of(Key::Down, -1), B::Of(GamepadAxis::LeftY),
                       B::Of(GamepadButton::DpadUp), B::Of(GamepadButton::DpadDown, -1)}},
-        {"Olhar X", {B::Of(GamepadAxis::RightX)}},
-        {"Olhar Y", {B::Of(GamepadAxis::RightY)}},
-        {"Pular", {B::Of(Key::Space), B::Of(GamepadButton::A)}},
-        {"Correr", {B::Of(Key::LeftShift), B::Of(Key::RightShift), B::Of(GamepadButton::LeftThumb)}},
-        {"Interagir", {B::Of(Key::E), B::Of(GamepadButton::X)}},
-        {"Pausa", {B::Of(Key::Escape), B::Of(GamepadButton::Start)}},
+        {"Olhar X", {B::Of(MouseAxis::X), B::Of(GamepadAxis::RightX)}},
+        {"Olhar Y", {B::Of(MouseAxis::Y), B::Of(GamepadAxis::RightY)}},
+        {"Pular", {B::Of(Key::Space), B::Of(GamepadButton::A)}, T::Button},
+        {"Correr", {B::Of(Key::LeftShift), B::Of(Key::RightShift), B::Of(GamepadButton::LeftThumb)}, T::Button},
+        {"Interagir", {B::Of(Key::E), B::Of(GamepadButton::X)}, T::Button},
+        {"Pausa", {B::Of(Key::Escape), B::Of(GamepadButton::Start)}, T::Button},
     };
     return a;
 }
@@ -85,43 +176,37 @@ const InputAction* InputActions::Find(std::string_view name) const {
     return nullptr;
 }
 
-void InputActions::WarnUnknown(std::string_view name) const {
-    if (m_warned.contains(name)) return;
-    m_warned.emplace(name);
-    log::Warn("Ação de entrada desconhecida: \"{}\" (veja Arquivo > Controles)", name);
+const InputAction* InputActions::FindOrWarn(std::string_view name) const {
+    const InputAction* action = Find(name);
+    if (!action && !m_warned.contains(name)) {
+        m_warned.emplace(name);
+        log::Warn("Ação de entrada desconhecida: \"{}\" (veja Arquivo > Controles)", name);
+    }
+    return action;
 }
 
-float InputActions::ValueOf(const InputAction& action, bool lastFrame) const {
-    float sum = 0.0f;
-    for (const InputBinding& b : action.bindings) sum += RawValue(b, lastFrame) * b.scale;
-    return std::clamp(sum, -1.0f, 1.0f);
+glm::vec2 InputActions::VectorOf(const InputAction& action) {
+    return VectorAt(action, false);
 }
 
 float InputActions::Value(std::string_view name) const {
-    const InputAction* action = Find(name);
-    if (!action) {
-        WarnUnknown(name);
-        return 0.0f;
-    }
-    return ValueOf(*action, false);
+    const InputAction* action = FindOrWarn(name);
+    return action ? ValueAt(*action, false) : 0.0f;
+}
+
+glm::vec2 InputActions::Vector(std::string_view name) const {
+    const InputAction* action = FindOrWarn(name);
+    return action ? VectorAt(*action, false) : glm::vec2{0.0f};
 }
 
 bool InputActions::WasPressed(std::string_view name) const {
-    const InputAction* action = Find(name);
-    if (!action) {
-        WarnUnknown(name);
-        return false;
-    }
-    return ValueOf(*action, false) > 0.5f && ValueOf(*action, true) <= 0.5f;
+    const InputAction* action = FindOrWarn(name);
+    return action && ValueAt(*action, false) > 0.5f && ValueAt(*action, true) <= 0.5f;
 }
 
 bool InputActions::WasReleased(std::string_view name) const {
-    const InputAction* action = Find(name);
-    if (!action) {
-        WarnUnknown(name);
-        return false;
-    }
-    return ValueOf(*action, false) <= 0.5f && ValueOf(*action, true) > 0.5f;
+    const InputAction* action = FindOrWarn(name);
+    return action && ValueAt(*action, false) <= 0.5f && ValueAt(*action, true) > 0.5f;
 }
 
 std::string InputActions::ToJson() const {
@@ -139,18 +224,25 @@ std::string InputActions::ToJson() const {
                 case InputBinding::Source::GamepadAxis:
                     entry["axis"] = GamepadAxisName(static_cast<GamepadAxis>(b.code));
                     break;
+                case InputBinding::Source::MouseAxis: entry["mouse"] = MouseAxisName(static_cast<MouseAxis>(b.code)); break;
             }
             if (b.scale != 1.0f) entry["scale"] = b.scale;
+            if (b.with != 0) entry["with"] = KeyName(static_cast<Key>(b.with));
+            if (b.part == InputBinding::Part::Y) entry["part"] = "y";
             bindings.push_back(std::move(entry));
         }
-        list.push_back({{"name", action.name}, {"bindings", std::move(bindings)}});
+        list.push_back({{"name", action.name}, {"type", InputActionTypeName(action.type)}, {"bindings", std::move(bindings)}});
     }
-    return json{{"actions", std::move(list)}}.dump(2, ' ', false, json::error_handler_t::replace);
+    return json{{"version", kFormatVersion}, {"actions", std::move(list)}}.dump(2, ' ', false,
+                                                                               json::error_handler_t::replace);
 }
 
 bool InputActions::FromJson(std::string_view text, std::string* error) {
     std::vector<InputAction> read;
     std::string problems;
+    const auto problem = [&](std::string_view action, std::string_view what) {
+        problems += std::format("{}{}: {}", problems.empty() ? "" : "; ", action, what);
+    };
     try {
         const json root = json::parse(text);
         const auto list = root.find("actions");
@@ -167,32 +259,57 @@ bool InputActions::FromJson(std::string_view text, std::string* error) {
                 })) {
                 continue;  // sem nome ou repetida
             }
+            if (const auto type = a.find("type"); type != a.end() && type->is_string()) {
+                const std::string name = type->get<std::string>();
+                const auto* found = std::find_if(std::begin(kTypes), std::end(kTypes),
+                                                 [&](InputActionType t) { return SameName(InputActionTypeName(t), name); });
+                if (found != std::end(kTypes)) {
+                    action.type = *found;
+                } else {
+                    problem(action.name, std::format("tipo desconhecido '{}' (lida como eixo)", name));
+                }
+            }
             for (const json& b : a.value("bindings", json::array())) {
                 if (!b.is_object()) continue;
                 InputBinding binding;
-                binding.scale = b.value("scale", 1.0f);
-                if (!std::isfinite(binding.scale)) binding.scale = 1.0f;
                 bool ok = false;
                 std::string what;
                 if (b.contains("key") && b["key"].is_string()) {
                     what = b["key"].get<std::string>();
-                    if (const auto k = ParseKeyName(what)) binding = InputBinding::Of(*k, binding.scale), ok = true;
+                    if (const auto k = ParseKeyName(what)) binding = InputBinding::Of(*k), ok = true;
                 } else if (b.contains("mouse") && b["mouse"].is_string()) {
                     what = b["mouse"].get<std::string>();
-                    if (const auto m = ParseMouseButton(what)) binding = InputBinding::Of(*m, binding.scale), ok = true;
+                    if (const auto m = ParseMouseButton(what)) {
+                        binding = InputBinding::Of(*m), ok = true;
+                    } else if (const auto m2 = ParseMouseAxis(what)) {
+                        binding = InputBinding::Of(*m2), ok = true;
+                    }
                 } else if (b.contains("gamepad") && b["gamepad"].is_string()) {
                     what = b["gamepad"].get<std::string>();
-                    if (const auto g = ParseGamepadButton(what)) binding = InputBinding::Of(*g, binding.scale), ok = true;
+                    if (const auto g = ParseGamepadButton(what)) binding = InputBinding::Of(*g), ok = true;
                 } else if (b.contains("axis") && b["axis"].is_string()) {
                     what = b["axis"].get<std::string>();
-                    if (const auto x = ParseGamepadAxis(what)) binding = InputBinding::Of(*x, binding.scale), ok = true;
+                    if (const auto x = ParseGamepadAxis(what)) binding = InputBinding::Of(*x), ok = true;
                 }
-                if (ok) {
-                    action.bindings.push_back(binding);
-                } else {
-                    problems += std::format("{}{}: entrada desconhecida '{}'", problems.empty() ? "" : "; ", action.name,
-                                            what.empty() ? b.dump() : what);
+                if (!ok) {
+                    problem(action.name, std::format("entrada desconhecida '{}'", what.empty() ? b.dump() : what));
+                    continue;
                 }
+                binding.scale = b.value("scale", 1.0f);
+                if (!std::isfinite(binding.scale)) binding.scale = 1.0f;
+                if (const auto part = b.find("part"); part != b.end() && part->is_string() && SameName(part->get<std::string>(), "y")) {
+                    binding.part = InputBinding::Part::Y;
+                }
+                if (const auto with = b.find("with"); with != b.end() && with->is_string()) {
+                    if (const auto k = ParseKeyName(with->get<std::string>())) {
+                        binding.with = static_cast<int>(*k);
+                    } else {
+                        // Sem a tecla de junto, a entrada valeria sozinha (Ctrl+S viraria S): fica de fora.
+                        problem(action.name, std::format("tecla de junto desconhecida '{}'", with->get<std::string>()));
+                        continue;
+                    }
+                }
+                action.bindings.push_back(binding);
             }
             read.push_back(std::move(action));
         }

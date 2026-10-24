@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 16 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 17 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -149,12 +149,19 @@ controle:
 
 | Método | Devolve |
 |---|---|
-| `float GetAxis(std::string_view action) const` | valor da ação, -1 a 1: soma das entradas (tecla/botão = `scale`, eixo = valor x `scale`) |
+| `float GetAxis(std::string_view action) const` | valor da ação, -1 a 1: soma das entradas (tecla/botão = `scale`, eixo = valor x `scale`); Botão de 0 a 1; num Vetor 2D, o comprimento |
+| `glm::vec2 GetVector(std::string_view action) const` | X e Y de uma ação Vetor 2D (cada entrada vai no lado `part`), limitado ao círculo de raio 1; num Botão ou Eixo, `(valor, 0)` |
+| `const std::string& TextInput() const` | texto digitado neste frame, em UTF-8 (vazio sem o foco do jogo) |
 | `bool IsActionDown(std::string_view action) const` | valor acima de 0,5 |
 | `bool WasActionPressed(std::string_view action) const`, `bool WasActionReleased(std::string_view action) const` | passou de 0,5 neste frame / voltou |
 | `bool IsGamepadConnected() const` | há um controle reconhecido como gamepad |
 | `bool IsGamepadButtonDown(GamepadButton button) const`, `bool WasGamepadButtonPressed(GamepadButton button) const` | botão do controle: `motor::GamepadButton::A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft` |
 | `float GamepadAxisValue(GamepadAxis axis) const` | `motor::GamepadAxis::LeftX`, `LeftY`, `RightX`, `RightY` (-1 a 1, Y para cima +, zona morta radial de 0,2: a diagonal fraca não some) e `LeftTrigger`, `RightTrigger` (0 a 1) |
+
+O movimento do mouse (`MouseX`, `MouseY`, `MouseScroll`) entra como eixo: X e Y valem a velocidade sobre
+`motor::kMouseAxisPixelsPerSecond` (1000 px/s = 1, Y para cima +) e somam depois do limite de -1..1, então
+`GetVector("Olhar") * velocidade * dt` gira igual com mouse ou analógico; a roda vale os entalhes do frame.
+Uma entrada com `with` (Ctrl, Shift, Alt) só vale com essa tecla apertada junto, de qualquer lado.
 
 Ação desconhecida devolve 0/falso e avisa uma vez no log. O controle é o primeiro conectado, no padrão do
 Xbox (a GLFW traduz PlayStation, Switch e outros: o `A` é o botão de baixo).

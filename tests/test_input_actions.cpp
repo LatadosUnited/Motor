@@ -1,6 +1,7 @@
-// Controle e mapa de ações (Fase 21) sem janela: nomes de teclas e botões (ida e volta), mapa padrão, JSON (com
-// entradas desconhecidas), valor das ações com teclas e um controle simulado (soma, limite, sentido, apertou/
-// soltou), o mapa no .mproject e a API dos scripts (com e sem o foco do jogo).
+// Controle e mapa de ações (Fase 21, v2 na alpha 4) sem janela: nomes de teclas e botões (ida e volta), mapa
+// padrão, JSON (com entradas desconhecidas e a versão 1), valor das ações com teclas e um controle simulado (soma,
+// limite, sentido, apertou/soltou), tipos (botão, eixo, vetor 2D), o mouse como eixo, teclas de junto, o mapa no
+// .mproject e a API dos scripts (com e sem o foco do jogo).
 #include "TestUtil.h"
 
 #include <motor/core/Input.h>
@@ -29,7 +30,11 @@ struct Leitor : Script {
     bool pulou = false;
     bool botaoA = false;
     float analogico = 0.0f;
+    glm::vec2 mover{0.0f};
+    std::string texto;
     void OnUpdate(float) override {
+        mover = GetVector("Mover");
+        texto = TextInput();
         horizontal = GetAxis("Horizontal");
         pulou = WasActionPressed("Pular");
         botaoA = IsGamepadButtonDown(GamepadButton::A);
@@ -68,7 +73,8 @@ int main(int argc, char** argv) {
     SECTION("Mapa padrão e JSON");
     const InputActions defaults = InputActions::Defaults();
     {
-        for (const char* name : {"Horizontal", "Vertical", "Olhar X", "Olhar Y", "Pular", "Correr", "Interagir", "Pausa"}) {
+        for (const char* name : {"Mover", "Olhar", "Horizontal", "Vertical", "Olhar X", "Olhar Y", "Pular", "Correr",
+                                 "Interagir", "Pausa"}) {
             CHECK(defaults.Find(name) != nullptr);
         }
         CHECK(defaults.Find("pular") == defaults.Find("Pular"));  // sem diferença de maiúsculas
@@ -172,16 +178,128 @@ int main(int argc, char** argv) {
         Input::SetKeyState(Key::Right, true);
         Input::SetGamepadButtonState(GamepadButton::A, true);
         Input::SetGamepadAxisState(GamepadAxis::LeftX, -0.5f);
+        Input::AddTextInput("olá");
         runtime.Update(0.016f);
         const Leitor* l = scene.FindByName("L")->Get<Leitor>();
         CHECK(Near(l->horizontal, 0.5f) && l->pulou && l->botaoA && Near(l->analogico, -0.5f));
+        CHECK(Near(l->mover.x, 0.5f) && Near(l->mover.y, 0.0f) && l->texto == "olá");
         runtime.SetInputEnabled(false);  // digitando no editor
         runtime.Update(0.016f);
         CHECK(l->horizontal == 0.0f && !l->pulou && !l->botaoA && l->analogico == 0.0f);
+        CHECK(l->mover == glm::vec2(0.0f) && l->texto.empty());
         runtime.Stop();
         Input::SetKeyState(Key::Right, false);
         Input::SetGamepadSimulated(false);
         registry.Unregister(registry.Find("Leitor"));
+    }
+
+    SECTION("Vetor 2D: a diagonal não passa de 1");
+    {
+        NextFrame();  // a seta solta no fim da seção anterior ainda conta naquele quadro
+        NextFrame();
+        Input::SetKeyState(Key::D, true);
+        CHECK(Near(defaults.Vector("Mover").x, 1.0f) && Near(defaults.Vector("Mover").y, 0.0f));
+        CHECK(defaults.WasPressed("Mover"));
+        Input::SetKeyState(Key::W, true);
+        const glm::vec2 diagonal = defaults.Vector("Mover");
+        CHECK(Near(diagonal.x, 0.70710677f) && Near(diagonal.y, 0.70710677f));
+        CHECK(Near(defaults.Value("Mover"), 1.0f));  // o comprimento
+        CHECK(Near(defaults.Vector("Horizontal").x, 1.0f) && defaults.Vector("Horizontal").y == 0.0f);
+        Input::SetKeyState(Key::D, false);
+        Input::SetKeyState(Key::W, false);
+        NextFrame();
+        Input::SetGamepadSimulated(true);
+        Input::SetGamepadAxisState(GamepadAxis::LeftX, 0.3f);
+        Input::SetGamepadAxisState(GamepadAxis::LeftY, -0.4f);
+        CHECK(Near(defaults.Vector("Mover").x, 0.3f) && Near(defaults.Vector("Mover").y, -0.4f));  // dentro: como veio
+        Input::SetGamepadSimulated(false);
+        NextFrame();
+    }
+
+    SECTION("Botão fica entre 0 e 1");
+    {
+        InputActions mine;
+        mine.actions = {{"Atirar", {InputBinding::Of(Key::F), InputBinding::Of(Key::G), InputBinding::Of(Key::H, -1)},
+                         InputActionType::Button}};
+        Input::SetKeyState(Key::F, true);
+        Input::SetKeyState(Key::G, true);
+        CHECK(Near(mine.Value("Atirar"), 1.0f));
+        Input::SetKeyState(Key::F, false);
+        Input::SetKeyState(Key::G, false);
+        NextFrame();
+        Input::SetKeyState(Key::H, true);
+        CHECK(mine.Value("Atirar") == 0.0f);
+        Input::SetKeyState(Key::H, false);
+        NextFrame();
+    }
+
+    SECTION("Mouse como eixo, na medida do analógico");
+    {
+        NextFrame();
+        Input::SetMousePosition({100.0f, 100.0f});
+        Input::BeginFrame(0.01f);
+        Input::SetMousePosition({110.0f, 95.0f});  // 10 px à direita e 5 para cima em 0,01 s
+        CHECK(Near(Input::MouseVelocity().x, 1000.0f) && Near(Input::MouseVelocity().y, -500.0f));
+        const glm::vec2 olhar = defaults.Vector("Olhar");
+        CHECK(Near(olhar.x, 1.0f) && Near(olhar.y, 0.5f));  // Y para cima positivo
+        CHECK(Near(defaults.Value("Olhar X"), 1.0f) && Near(defaults.Value("Olhar Y"), 0.5f));
+        // Valor * dt é o giro: 10 px dão o mesmo giro num quadro de 0,01 s ou de 0,02 s.
+        const float giro = olhar.x * 0.01f;
+        Input::BeginFrame(0.02f);
+        Input::SetMousePosition({120.0f, 95.0f});
+        CHECK(Near(defaults.Vector("Olhar").x * 0.02f, giro));
+        Input::BeginFrame(0.01f);
+        Input::SetMousePosition({150.0f, 95.0f});  // rápido: 3000 px/s
+        Input::SetGamepadSimulated(true);
+        Input::SetGamepadAxisState(GamepadAxis::RightX, 1.0f);
+        CHECK(Near(defaults.Value("Olhar X"), 4.0f));  // o mouse soma depois do limite do analógico
+        Input::SetGamepadSimulated(false);
+        Input::BeginFrame(0.01f);
+        CHECK(Near(Input::MouseVelocityLastFrame().x, 3000.0f) && defaults.Vector("Olhar") == glm::vec2(0.0f));
+        NextFrame();
+    }
+
+    SECTION("Tecla de junto (Ctrl+S)");
+    {
+        InputActions mine;
+        mine.actions = {{"Salvar", {InputBinding::Of(Key::S).With(Key::LeftControl)}, InputActionType::Button}};
+        CHECK(mine.actions[0].bindings[0].Label() == "LeftControl + Tecla S");
+        Input::SetKeyState(Key::S, true);
+        CHECK(!mine.IsDown("Salvar"));
+        Input::SetKeyState(Key::RightControl, true);  // o lado direito também vale
+        CHECK(mine.IsDown("Salvar") && mine.WasPressed("Salvar"));
+        Input::SetKeyState(Key::RightControl, false);
+        NextFrame();
+        Input::SetKeyState(Key::S, false);
+        NextFrame();
+        Input::SetKeyState(Key::LeftControl, true);
+        Input::SetKeyState(Key::S, true);
+        CHECK(mine.IsDown("Salvar"));
+        Input::SetKeyState(Key::LeftControl, false);
+        Input::SetKeyState(Key::S, false);
+        NextFrame();
+    }
+
+    SECTION("JSON v2 e v1");
+    {
+        InputActions back;
+        CHECK(back.FromJson(defaults.ToJson()) && back == defaults);  // tipos, part e mouse vão e voltam
+        InputActions combo;
+        combo.actions = {{"Salvar", {InputBinding::Of(Key::S, 0.5f).With(Key::LeftControl)}, InputActionType::Button}};
+        CHECK(back.FromJson(combo.ToJson()) && back == combo);
+        CHECK(combo.ToJson().find(R"("version": 2)") != std::string::npos);
+
+        std::string problems;
+        CHECK(back.FromJson(R"({"actions": [{"name": "Velha", "bindings": [{"key": "A", "scale": -1}]}]})", &problems));
+        CHECK(problems.empty() && back.actions[0].type == InputActionType::Axis);  // v1: tudo eixo
+        CHECK(back.FromJson(R"({"version": 2, "actions": [
+            {"name": "X", "type": "gatilho", "bindings": [{"key": "S", "with": "Tecla Nova"}, {"key": "D", "part": 3},
+                                                         {"mouse": "MouseScroll", "part": "Y"}]}]})", &problems));
+        CHECK(back.actions[0].type == InputActionType::Axis && back.actions[0].bindings.size() == 2);
+        CHECK(problems.find("gatilho") != std::string::npos && problems.find("Tecla Nova") != std::string::npos);
+        CHECK(back.actions[0].bindings[1].source == InputBinding::Source::MouseAxis);
+        CHECK(back.actions[0].bindings[1].part == InputBinding::Part::Y);
+        CHECK(ParseMouseAxis("mousex") == MouseAxis::X && std::string(MouseAxisName(MouseAxis::Scroll)) == "MouseScroll");
     }
 
     return TestResult();

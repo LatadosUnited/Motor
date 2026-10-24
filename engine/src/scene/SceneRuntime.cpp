@@ -635,6 +635,13 @@ bool Script::IsActionDown(std::string_view action) const { return InputEnabled()
 bool Script::WasActionPressed(std::string_view action) const { return InputEnabled() && Actions().WasPressed(action); }
 bool Script::WasActionReleased(std::string_view action) const { return InputEnabled() && Actions().WasReleased(action); }
 float Script::GetAxis(std::string_view action) const { return InputEnabled() ? Actions().Value(action) : 0.0f; }
+glm::vec2 Script::GetVector(std::string_view action) const {
+    return InputEnabled() ? Actions().Vector(action) : glm::vec2(0.0f);
+}
+const std::string& Script::TextInput() const {
+    static const std::string none;
+    return InputEnabled() ? Input::TextInput() : none;
+}
 bool Script::IsGamepadConnected() const { return Input::IsGamepadConnected(); }
 bool Script::IsGamepadButtonDown(GamepadButton button) const {
     return InputEnabled() && Input::IsGamepadButtonDown(button);

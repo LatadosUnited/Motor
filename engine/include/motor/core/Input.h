@@ -77,6 +77,10 @@ public:
     static glm::vec2 MousePosition();
     static glm::vec2 MouseDelta();
     static float ScrollDelta();
+    // Velocidade do mouse no quadro (pixels por segundo, Y da tela para baixo): MouseDelta / tempo do quadro. É o
+    // que as ações usam para pôr o mouse e o analógico na mesma medida.
+    static glm::vec2 MouseVelocity();
+    static float FrameTime();  // segundos desde o BeginFrame anterior
 
     // Texto digitado neste quadro, em UTF-8, já com o layout e os acentos do sistema ("ç", "ã"). Para campos de
     // texto; para comandos, use as teclas.
@@ -100,10 +104,15 @@ public:
     static bool WasMouseDownLastFrame(MouseButton button);
     static bool WasGamepadButtonDownLastFrame(GamepadButton button);
     static float GamepadAxisValueLastFrame(GamepadAxis axis);
+    static glm::vec2 MouseVelocityLastFrame();
+    static float ScrollDeltaLastFrame();
 
     // --- Uso interno da engine ---
     static void Attach(GLFWwindow* window);
-    static void BeginFrame();  // chamar antes de processar os eventos do frame
+    // Chamar antes de processar os eventos do frame. `frameSeconds` > 0 fixa o tempo do quadro (testes); sem ele,
+    // é medido no relógio.
+    static void BeginFrame(float frameSeconds = 0.0f);
+    static void SetMousePosition(glm::vec2 position);  // testes e MCP: como o evento da janela
     static void IgnoreNextMouseDelta();
     // Testes e MCP: simulam no estado interno, não no sistema, como os eventos da janela (contam no quadro).
     static void SetKeyState(Key key, bool down);

@@ -1,6 +1,7 @@
-// Documento do editor: mapa de ações do projeto (Arquivo > Controles, Fase 21). Cada ação ("Pular", "Horizontal")
-// tem as suas entradas (teclas, mouse, botões e eixos do controle); os scripts perguntam pela ação
-// (Script::IsActionDown, GetAxis). Gravado no .mproject ("input"); vale a partir do próximo Play.
+// Documento do editor: mapa de ações do projeto (Arquivo > Controles, Fase 21; v2 na alpha 4). Cada ação ("Pular",
+// "Mover") tem um tipo (botão, eixo, vetor 2D) e as suas entradas (teclas, mouse, botões e eixos do controle), com
+// escala, lado do vetor e tecla de junto; os scripts perguntam pela ação (Script::IsActionDown, GetAxis,
+// GetVector). Gravado no .mproject ("input"); vale a partir do próximo Play.
 
 #include "document/SceneDocument.h"
 
@@ -61,6 +62,12 @@ std::optional<InputBinding> ChooseBindingMenu() {
         }
         ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Movimento do mouse")) {
+        for (int a = 0; a < kMouseAxisCount; ++a) {
+            if (ImGui::MenuItem(MouseAxisName(static_cast<MouseAxis>(a)))) chosen = InputBinding::Of(static_cast<MouseAxis>(a));
+        }
+        ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("Eixo do controle")) {
         for (int a = 0; a < kGamepadAxisCount; ++a) {
             if (ImGui::MenuItem(GamepadAxisName(static_cast<GamepadAxis>(a)))) chosen = InputBinding::Of(static_cast<GamepadAxis>(a));
@@ -68,6 +75,53 @@ std::optional<InputBinding> ChooseBindingMenu() {
         ImGui::EndMenu();
     }
     return chosen;
+}
+
+constexpr const char* kTypeLabels[] = {"Botão", "Eixo", "Vetor 2D"};
+
+// Teclas de junto que o menu oferece (Left* vale pelos dois lados).
+struct WithOption {
+    int key;
+    const char* label;
+};
+constexpr WithOption kWithOptions[] = {{0, "Sozinha"},
+                                       {static_cast<int>(Key::LeftControl), "Ctrl +"},
+                                       {static_cast<int>(Key::LeftShift), "Shift +"},
+                                       {static_cast<int>(Key::LeftAlt), "Alt +"}};
+
+// Escala, lado do vetor e tecla de junto de uma entrada. Devolve se mudou.
+bool DrawBindingOptions(InputBinding& b, InputActionType type) {
+    bool changed = false;
+    ImGui::SetNextItemWidth(70.0f);
+    if (ImGui::DragFloat("##escala", &b.scale, 0.01f, -10.0f, 10.0f, "%.2f")) changed = true;
+    ImGui::SetItemTooltip("Escala: negativa empurra para o lado negativo (A em Horizontal); no mouse e nos "
+                          "analógicos é a sensibilidade.");
+    if (type == InputActionType::Vector2) {
+        ImGui::SameLine();
+        int part = b.part == InputBinding::Part::Y ? 1 : 0;
+        ImGui::SetNextItemWidth(50.0f);
+        if (ImGui::Combo("##lado", &part, "X\0Y\0")) {
+            b.part = part == 1 ? InputBinding::Part::Y : InputBinding::Part::X;
+            changed = true;
+        }
+        ImGui::SetItemTooltip("Lado do vetor: em Mover, A e D vão no X, W e S no Y.");
+    }
+    ImGui::SameLine();
+    const auto current = std::find_if(std::begin(kWithOptions), std::end(kWithOptions),
+                                      [&](const WithOption& o) { return o.key == b.with; });
+    const char* preview = current != std::end(kWithOptions) ? current->label : KeyName(static_cast<Key>(b.with));
+    ImGui::SetNextItemWidth(80.0f);
+    if (ImGui::BeginCombo("##junto", preview)) {
+        for (const WithOption& o : kWithOptions) {
+            if (ImGui::Selectable(o.label, o.key == b.with)) {
+                b.with = o.key;
+                changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("Tecla que precisa estar apertada junto (Ctrl+S). Vale o lado esquerdo ou o direito.");
+    return changed;
 }
 
 } // namespace
@@ -105,8 +159,8 @@ void SceneDocument::DrawControlsWindow() {
     InputActions actions = m_project->Actions();
     bool changed = false;
 
-    ImGui::TextWrapped("Os scripts perguntam pela ação, não pela tecla: IsActionDown(\"Pular\"), "
-                       "WasActionPressed(\"Pular\"), GetAxis(\"Horizontal\"). Vale a partir do próximo Play.");
+    ImGui::TextWrapped("Os scripts perguntam pela ação, não pela tecla: WasActionPressed(\"Pular\"), "
+                       "GetVector(\"Mover\"), GetAxis(\"Horizontal\"). Vale a partir do próximo Play.");
     if (Input::IsGamepadConnected()) {
         ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Controle conectado: %s", Input::GamepadName().c_str());
     } else {
@@ -118,19 +172,18 @@ void SceneDocument::DrawControlsWindow() {
     for (int i = 0; i < static_cast<int>(actions.actions.size()); ++i) {
         InputAction& action = actions.actions[static_cast<size_t>(i)];
         ImGui::PushID(i);
-        // Valor agora (teclado e controle), para conferir o mapa sem dar Play.
-        float value = 0.0f;
-        for (const InputBinding& b : action.bindings) {
-            InputActions single;
-            single.actions = {{action.name, {b}}};
-            value += single.Value(action.name);
-        }
-        value = std::clamp(value, -1.0f, 1.0f);
+        // Valor agora (teclado, mouse e controle), para conferir o mapa sem dar Play.
+        const glm::vec2 value = InputActions::VectorOf(action);
         const bool open = ImGui::TreeNodeEx("##acao", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap,
                                             "%s", action.name.c_str());
-        ImGui::SameLine(ImGui::GetContentRegionMax().x - 150.0f);
-        ImGui::ProgressBar((value + 1.0f) * 0.5f, ImVec2(80.0f, 0.0f), std::format("{:+.2f}", value).c_str());
-        ImGui::SameLine();
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - 190.0f);
+        if (action.type == InputActionType::Vector2) {
+            ImGui::Text("%+.2f, %+.2f", value.x, value.y);
+        } else {
+            const float bar = action.type == InputActionType::Button ? value.x : (value.x + 1.0f) * 0.5f;
+            ImGui::ProgressBar(std::clamp(bar, 0.0f, 1.0f), ImVec2(120.0f, 0.0f), std::format("{:+.2f}", value.x).c_str());
+        }
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - 55.0f);
         if (ImGui::SmallButton("Excluir")) removeAction = i;
         if (open) {
             std::string name = action.name;
@@ -143,18 +196,23 @@ void SceneDocument::DrawControlsWindow() {
                     changed = true;
                 }
             }
+            ImGui::SameLine();
+            int type = static_cast<int>(action.type);
+            ImGui::SetNextItemWidth(100.0f);
+            if (ImGui::Combo("Tipo", &type, kTypeLabels, IM_ARRAYSIZE(kTypeLabels))) {
+                action.type = static_cast<InputActionType>(type);
+                changed = true;
+            }
+            ImGui::SetItemTooltip("Botão: 0 a 1 (Pular). Eixo: -1 a 1, GetAxis (Horizontal). Vetor 2D: X e Y, "
+                                  "GetVector, com a diagonal limitada (Mover, Olhar).");
             int removeBinding = -1;
             for (int j = 0; j < static_cast<int>(action.bindings.size()); ++j) {
                 InputBinding& b = action.bindings[static_cast<size_t>(j)];
                 ImGui::PushID(j);
-                ImGui::BulletText("%s", b.Label().c_str());
+                ImGui::Bullet();
+                if (DrawBindingOptions(b, action.type)) changed = true;
                 ImGui::SameLine();
-                bool negative = b.scale < 0.0f;
-                if (ImGui::Checkbox("Negativo", &negative)) {
-                    b.scale = -b.scale;
-                    changed = true;
-                }
-                ImGui::SetItemTooltip("Em eixos (Horizontal, Vertical): esta entrada empurra para o lado negativo.");
+                ImGui::TextUnformatted(b.Label().c_str());
                 ImGui::SameLine();
                 if (ImGui::SmallButton("x")) removeBinding = j;
                 ImGui::PopID();
@@ -209,7 +267,8 @@ void SceneDocument::DrawControlsWindow() {
         m_listeningAction = -1;
         changed = true;
     }
-    ImGui::SetItemTooltip("Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa, com teclado e controle.");
+    ImGui::SetItemTooltip("Mover, Olhar, Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa, com "
+                          "teclado, mouse e controle.");
 
     if (changed && !(actions == m_project->Actions())) {
         std::string error;

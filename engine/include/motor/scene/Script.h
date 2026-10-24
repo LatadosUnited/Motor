@@ -157,13 +157,18 @@ protected:
     bool WasKeyPressed(Key key) const;
     bool IsMouseDown(MouseButton button) const;
     glm::vec2 MouseDelta() const;
-    // Ações do projeto (Arquivo > Controles): o mesmo código no teclado e no controle.
+    // Ações do projeto (Arquivo > Controles): o mesmo código no teclado, no mouse e no controle.
+    //   GetVector("Mover")     X e Y, -1 a 1, diagonal limitada ao círculo (WASD, setas, analógico esquerdo)
+    //   GetVector("Olhar")     mouse e analógico direito, na mesma medida: multiplique por velocidade * dt
     //   GetAxis("Horizontal")  -1 a 1 (A/D, setas, analógico esquerdo, direcional)
     //   if (WasActionPressed("Pular")) ...   (Espaço ou botão A)
     bool IsActionDown(std::string_view action) const;
     bool WasActionPressed(std::string_view action) const;
     bool WasActionReleased(std::string_view action) const;
-    float GetAxis(std::string_view action) const;
+    float GetAxis(std::string_view action) const;  // num Vector2, o comprimento
+    glm::vec2 GetVector(std::string_view action) const;
+    // Texto digitado neste frame (UTF-8, com acentos), para campos de texto.
+    const std::string& TextInput() const;
     // Controle direto (o primeiro conectado; padrão Xbox): botões, analógicos (-1 a 1, Y para cima +) e gatilhos (0 a 1).
     bool IsGamepadConnected() const;
     bool IsGamepadButtonDown(GamepadButton button) const;

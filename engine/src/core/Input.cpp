@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <utility>
 
@@ -45,6 +46,10 @@ struct State {
     glm::vec2 mousePos{0.0f};
     glm::vec2 prevMousePos{0.0f};
     float scroll = 0.0f;
+    float prevScroll = 0.0f;
+    glm::vec2 prevVelocity{0.0f};
+    float frameTime = 1.0f / 60.0f;
+    std::chrono::steady_clock::time_point frameStart = std::chrono::steady_clock::now();
     bool hasMousePos = false;
     bool ignoreDeltaRequested = false;
     bool ignoreDeltaThisFrame = false;
@@ -186,7 +191,15 @@ void Input::Attach(GLFWwindow* window) {
     glfwSetWindowFocusCallback(window, OnFocus);
 }
 
-void Input::BeginFrame() {
+void Input::BeginFrame(float frameSeconds) {
+    g.prevVelocity = MouseVelocity();
+    g.prevScroll = g.scroll;
+    const auto now = std::chrono::steady_clock::now();
+    const float measured = std::chrono::duration<float>(now - g.frameStart).count();
+    g.frameStart = now;
+    // Limitado como o dt da Application: um travamento não vira uma velocidade quase zero, nem dois quadros
+    // seguidos (testes) uma velocidade infinita.
+    g.frameTime = std::clamp(frameSeconds > 0.0f ? frameSeconds : measured, 1e-4f, 0.25f);
     g.keys.BeginFrame();
     g.buttons.BeginFrame();
     g.prevPad = g.pad;
@@ -261,6 +274,26 @@ glm::vec2 Input::MouseDelta() {
 
 float Input::ScrollDelta() {
     return g.scroll;
+}
+
+glm::vec2 Input::MouseVelocity() {
+    return MouseDelta() / g.frameTime;
+}
+
+float Input::FrameTime() {
+    return g.frameTime;
+}
+
+glm::vec2 Input::MouseVelocityLastFrame() {
+    return g.prevVelocity;
+}
+
+float Input::ScrollDeltaLastFrame() {
+    return g.prevScroll;
+}
+
+void Input::SetMousePosition(glm::vec2 position) {
+    OnCursorPos(nullptr, position.x, position.y);
 }
 
 // --- Controle -------------------------------------------------------------------------------------------
