@@ -15,3 +15,5 @@
 #include "motor/scene/AudioListener.h"
 #include "motor/scene/EntityRef.h"
 #include "motor/scene/PrefabNested.h"
+#include "motor/scene/NavMeshSurface.h"
+#include "motor/scene/NavMeshAgent.h"

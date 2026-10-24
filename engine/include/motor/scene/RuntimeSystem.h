@@ -53,6 +53,7 @@ inline constexpr int kSystemOrderPhysics = -100;  // física avança antes do On
 inline constexpr int kSystemOrderAudio = 100;     // áudio lê as posições depois que os scripts as mudaram
 inline constexpr int kSystemOrderUi = 200;        // HUD por último
 inline constexpr int kSystemOrderAnimation = 50;  // animação depois dos scripts (que trocam os clipes)
+inline constexpr int kSystemOrderNavigation = -150;  // agentes andam antes da física (que lê os Transforms)
 
 class RuntimeSystem {
 public:
