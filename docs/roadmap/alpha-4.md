@@ -54,7 +54,7 @@ o número da fase sai quando a alpha 4 for numerada de novo.
 
 - [x] Tarefa 1: Contar os eventos do quadro, teclas e botões que faltam, texto digitado e zona morta radial — b4b3e0b
 - [x] Tarefa 2: Ações de botão, eixo e vetor 2D, com o mouse como eixo e combinações (formato 2 do `"input"`) — dc7de78
-- [ ] Tarefa 3: Ler vários controles, avisar quando ligam e desligam e saber o último dispositivo usado
+- [x] Tarefa 3: Ler vários controles, avisar quando ligam e desligam e saber o último dispositivo usado — 971031e
 - [ ] Tarefa 4: Contextos de entrada (Jogo, Menu) e a interface consumindo o clique
 - [ ] Tarefa 5: Segurar, toque, toque duplo e buffer nas ações
 - [ ] Tarefa 6: Remapear as ações no jogo exportado, salvo com as opções do jogador
