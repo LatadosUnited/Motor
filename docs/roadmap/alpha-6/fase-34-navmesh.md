@@ -28,7 +28,7 @@ navmesh é gerado no editor e salvo num `.mnav` do projeto; sem arquivo, é gera
 - [x] Tarefa 5: `NavSystem` no `SceneRuntime`: gera no Play, move os agentes, segue um alvo — 7370316
 - [x] Tarefa 6: `test_navigation` — 7370316
 - [x] Tarefa 7: Salvar o navmesh como asset `.mnav` (com GUID) e gerar no editor — 29ddb1e
-- [ ] Tarefa 8: Desenhar o navmesh e os caminhos no viewport
+- [x] Tarefa 8: Desenhar o navmesh e os caminhos no viewport — 18ed748
 - [ ] Tarefa 9: Ferramentas MCP `nav_bake`, `nav_path` e `nav_agents`
 - [ ] Tarefa 10: Seção de navegação no guia de scripts, com exemplo compilado
 
@@ -44,13 +44,19 @@ agente posto nela anda até o destino no Play, conferido pelo MCP.
   navmesh em ~20 ms (14 polígonos). Ao conferir no editor, o agente passava do canto da parede embalado e voltava
   ~70 cm até ele (chegava em 6,8 s); com a direção seguindo o caminho na hora, chega em 5,1 s sem recuar
   (`test_navigation`, seção "Cantos").
+- Tarefa 8: conferido no editor de teste pelo MCP: fora do Play, o `.mnav` ligado à Superfície aparece em azul com
+  as arestas, escondido atrás da parede (`viewport_capture`); no Play, com Cena e Jogo lado a lado, a linha amarela
+  sai do agente, contorna a ponta da parede e termina no alvo (captura da janela).
 
 ## Limitações
 
-- O navmesh não aparece no editor até a Tarefa 8. Gerar roda na thread do editor (trava numa cena grande; segundo
+- Gerar roda na thread do editor (trava numa cena grande; segundo
   plano é da Fase 36), e o botão Gerar não foi clicado no teste do editor: a geração e a gravação que ele faz são
   testadas no `test_navigation`.
 - Navmesh salvo desatualizado (cenário ou Superfície mudaram depois de gerar) continua sendo usado, com aviso no log.
+- Fora do Play, sem `.mnav` (navmesh gerado só no Play), o viewport não mostra nada: é preciso clicar em Gerar.
+- Os caminhos só aparecem no Viewport com a câmera do editor (F8 ou Cena e Jogo lado a lado), como os colliders;
+  a captura do MCP (`viewport_capture`) mostra o navmesh, mas não as linhas, que são desenhadas por cima no ImGui.
 - Um bloco só: navmesh com mais de 65535 vértices falha (blocos vêm com o TileCache, Fase 36).
 - O agente mexe no Transform direto: não usa a física nem desvia de outros agentes (Fase 35).
 - A cápsula entra no navmesh como o cilindro que a contém.

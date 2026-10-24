@@ -782,7 +782,10 @@ componentes comuns (Inspector, cena, desfazer):
 - **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
   `Warp`, `FindPath`, `SamplePosition`, `Raycast` e `Rebuild` (cenário mudou). Ver a referência em
   [docs/scripts-api.md](docs/scripts-api.md).
-- **Ainda não:** navmesh desenhado no editor, multidão, obstáculos que se mexem (roteiro em
+- **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
+  Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando) e, no Play com a câmera do editor, o
+  caminho de cada agente em amarelo.
+- **Ainda não:** multidão, obstáculos que se mexem (roteiro em
   `docs/roadmap/alpha-6.md`).
 
 ## Servidor MCP (agentes no editor)
