@@ -29,7 +29,7 @@ navmesh é gerado no editor e salvo num `.mnav` do projeto; sem arquivo, é gera
 - [x] Tarefa 6: `test_navigation` — 7370316
 - [x] Tarefa 7: Salvar o navmesh como asset `.mnav` (com GUID) e gerar no editor — 29ddb1e
 - [x] Tarefa 8: Desenhar o navmesh e os caminhos no viewport — 18ed748
-- [ ] Tarefa 9: Ferramentas MCP `nav_bake`, `nav_path` e `nav_agents`
+- [x] Tarefa 9: Ferramentas MCP `nav_bake`, `nav_path` e `nav_agents` — 865df81
 - [ ] Tarefa 10: Seção de navegação no guia de scripts, com exemplo compilado
 
 ## Pronto quando
@@ -47,12 +47,16 @@ agente posto nela anda até o destino no Play, conferido pelo MCP.
 - Tarefa 8: conferido no editor de teste pelo MCP: fora do Play, o `.mnav` ligado à Superfície aparece em azul com
   as arestas, escondido atrás da parede (`viewport_capture`); no Play, com Cena e Jogo lado a lado, a linha amarela
   sai do agente, contorna a ponta da parede e termina no alvo (captura da janela).
+- Tarefa 9: no editor de teste, `nav_bake` gerou o navmesh do chão de 40 m em 51 ms (14 polígonos), gravou
+  `Assets/Navegacao/Navmesh.mnav` e o ligou à Superfície; o viewport passou a mostrá-lo; `nav_path` deu o mesmo
+  caminho (18,2 m, cinco cantos) gerado na hora e lido do arquivo; no Play, `nav_agents` mostrou o agente com os
+  cantos que faltavam e o navmesh vindo do arquivo, não desatualizado. É a mesma função do botão Gerar.
 
 ## Limitações
 
 - Gerar roda na thread do editor (trava numa cena grande; segundo
-  plano é da Fase 36), e o botão Gerar não foi clicado no teste do editor: a geração e a gravação que ele faz são
-  testadas no `test_navigation`.
+  plano é da Fase 36). O botão Gerar não foi clicado no teste do editor; a função que ele chama foi usada pelo
+  `nav_bake`.
 - Navmesh salvo desatualizado (cenário ou Superfície mudaram depois de gerar) continua sendo usado, com aviso no log.
 - Fora do Play, sem `.mnav` (navmesh gerado só no Play), o viewport não mostra nada: é preciso clicar em Gerar.
 - Os caminhos só aparecem no Viewport com a câmera do editor (F8 ou Cena e Jogo lado a lado), como os colliders;
