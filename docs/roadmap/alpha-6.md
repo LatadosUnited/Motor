@@ -22,7 +22,7 @@ testado no `ctest` sem janela.
 
 | Fase | Assunto | Status |
 |---|---|---|
-| 34 | [Navmesh e agentes](alpha-6/fase-34-navmesh.md) | em andamento |
+| 34 | [Navmesh e agentes](alpha-6/fase-34-navmesh.md) | pronta (branch `fase-34-navmesh`, falta o merge) |
 | 35 | Multidão e física | planejada |
 | 36 | Mundo que muda | planejada |
 | 37 | Percepção | planejada |

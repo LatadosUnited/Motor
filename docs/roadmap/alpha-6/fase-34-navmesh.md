@@ -3,11 +3,12 @@ tipo: fase
 alpha: 6
 fase: 34
 titulo: Navmesh e agentes
-status: em andamento
+status: pronta
 prioridade: 1
 areas: [ai, scene]
 branch: fase-34-navmesh
 inicio: 2026-10-24
+fim: 2026-10-24
 ---
 
 # Fase 34 — Navmesh e agentes
@@ -30,7 +31,7 @@ navmesh é gerado no editor e salvo num `.mnav` do projeto; sem arquivo, é gera
 - [x] Tarefa 7: Salvar o navmesh como asset `.mnav` (com GUID) e gerar no editor — 29ddb1e
 - [x] Tarefa 8: Desenhar o navmesh e os caminhos no viewport — 18ed748
 - [x] Tarefa 9: Ferramentas MCP `nav_bake`, `nav_path` e `nav_agents` — 865df81
-- [ ] Tarefa 10: Seção de navegação no guia de scripts, com exemplo compilado
+- [x] Tarefa 10: Seção de navegação no guia de scripts, com exemplo compilado — 8fd0bdd
 
 ## Pronto quando
 
@@ -51,6 +52,10 @@ agente posto nela anda até o destino no Play, conferido pelo MCP.
   `Assets/Navegacao/Navmesh.mnav` e o ligou à Superfície; o viewport passou a mostrá-lo; `nav_path` deu o mesmo
   caminho (18,2 m, cinco cantos) gerado na hora e lido do arquivo; no Play, `nav_agents` mostrou o agente com os
   cantos que faltavam e o navmesh vindo do arquivo, não desatualizado. É a mesma função do botão Gerar.
+
+- Tarefa 10: seção 15 do guia de scripts, com `docs/examples/Guarda.cpp`. No `test_script_docs` o guarda chega a
+  0,15 m do ponto B e depois a 0,19 m do A, alcança o alvo que aparece à vista (0,03 m) e volta à patrulha quando o
+  perde; a referência é conferida contra toda a API pública do `NavSystem`.
 
 ## Limitações
 
