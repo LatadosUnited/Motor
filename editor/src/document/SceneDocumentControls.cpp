@@ -23,7 +23,7 @@ namespace {
 
 // Primeira entrada apertada neste frame (tecla, botão do controle ou eixo empurrado), para "aperte para ligar".
 std::optional<InputBinding> PressedBinding() {
-    for (int k = static_cast<int>(Key::Space); k <= static_cast<int>(Key::RightSuper); ++k) {
+    for (int k = static_cast<int>(kFirstKey); k <= static_cast<int>(kLastKey); ++k) {
         const Key key = static_cast<Key>(k);
         if (*KeyName(key) && Input::WasKeyPressed(key)) return InputBinding::Of(key);
     }
@@ -41,14 +41,14 @@ std::optional<InputBinding> PressedBinding() {
 std::optional<InputBinding> ChooseBindingMenu() {
     std::optional<InputBinding> chosen;
     if (ImGui::BeginMenu("Teclado")) {
-        for (int k = static_cast<int>(Key::Space); k <= static_cast<int>(Key::RightSuper); ++k) {
+        for (int k = static_cast<int>(kFirstKey); k <= static_cast<int>(kLastKey); ++k) {
             const char* name = KeyName(static_cast<Key>(k));
             if (*name && ImGui::MenuItem(name)) chosen = InputBinding::Of(static_cast<Key>(k));
         }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Mouse")) {
-        for (int b = 0; b < 3; ++b) {
+        for (int b = 0; b < kMouseButtonCount; ++b) {
             if (ImGui::MenuItem(MouseButtonName(static_cast<MouseButton>(b)))) chosen = InputBinding::Of(static_cast<MouseButton>(b));
         }
         ImGui::EndMenu();

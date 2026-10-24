@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
             const auto back = ParseKeyName(name);
             CHECK(back && static_cast<int>(*back) == k);
         }
-        CHECK(named == 78);  // letras, dígitos, F1 a F12 e as 30 com nome
+        CHECK(named == 119);  // letras, dígitos, F1 a F24, Numpad0 a 9 e as 49 com nome
         CHECK(std::string(KeyName(Key::F11)) == "F11" && std::string(KeyName(Key::F2)) == "F2");
         CHECK(ParseKeyName("space") == Key::Space && ParseKeyName("leftshift") == Key::LeftShift);
         CHECK(!ParseKeyName("Tecla de mentira"));

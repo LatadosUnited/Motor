@@ -242,3 +242,7 @@ motor_add_test(test_loading_screen)
 motor_add_test(test_fbx)
 target_compile_definitions(test_fbx PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_SOURCE_DIR}/engine/assets"
                                             MOTOR_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+# Entrada bruta: eventos do quadro (toque mais curto que um quadro), teclas e botões novos, texto digitado e zona
+# morta radial. Sem janela.
+motor_add_test(test_input)
