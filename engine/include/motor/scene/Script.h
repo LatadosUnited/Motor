@@ -162,18 +162,26 @@ protected:
     //   GetVector("Olhar")     mouse e analógico direito, na mesma medida: multiplique por velocidade * dt
     //   GetAxis("Horizontal")  -1 a 1 (A/D, setas, analógico esquerdo, direcional)
     //   if (WasActionPressed("Pular")) ...   (Espaço ou botão A)
-    bool IsActionDown(std::string_view action) const;
-    bool WasActionPressed(std::string_view action) const;
-    bool WasActionReleased(std::string_view action) const;
-    float GetAxis(std::string_view action) const;  // num Vector2, o comprimento
-    glm::vec2 GetVector(std::string_view action) const;
+    // `device` separa os jogadores na mesma tela: motor::kAnyDevice (padrão: tudo), motor::kKeyboardMouse ou o
+    // controle 0..3 (GetVector("Mover", 1) é o jogador do controle 2).
+    bool IsActionDown(std::string_view action, int device = kAnyDevice) const;
+    bool WasActionPressed(std::string_view action, int device = kAnyDevice) const;
+    bool WasActionReleased(std::string_view action, int device = kAnyDevice) const;
+    float GetAxis(std::string_view action, int device = kAnyDevice) const;  // num Vector2, o comprimento
+    glm::vec2 GetVector(std::string_view action, int device = kAnyDevice) const;
     // Texto digitado neste frame (UTF-8, com acentos), para campos de texto.
     const std::string& TextInput() const;
-    // Controle direto (o primeiro conectado; padrão Xbox): botões, analógicos (-1 a 1, Y para cima +) e gatilhos (0 a 1).
-    bool IsGamepadConnected() const;
-    bool IsGamepadButtonDown(GamepadButton button) const;
-    bool WasGamepadButtonPressed(GamepadButton button) const;
-    float GamepadAxisValue(GamepadAxis axis) const;
+    // Controle direto (padrão Xbox): botões, analógicos (-1 a 1, Y para cima +) e gatilhos (0 a 1). Sem `pad`,
+    // qualquer controle; com `pad` (0 a 3), só aquele. Cada controle mantém o número enquanto estiver ligado.
+    bool IsGamepadConnected(int pad = kAnyDevice) const;
+    int GamepadCount() const;
+    bool WasGamepadConnected(int pad) const;     // ligou neste frame (ex.: "Jogador 2 entrou")
+    bool WasGamepadDisconnected(int pad) const;  // desligou neste frame (ex.: pausar o jogo)
+    bool IsGamepadButtonDown(GamepadButton button, int pad = kAnyDevice) const;
+    bool WasGamepadButtonPressed(GamepadButton button, int pad = kAnyDevice) const;
+    float GamepadAxisValue(GamepadAxis axis, int pad = kAnyDevice) const;
+    // O último usado (teclado/mouse ou controle), para mostrar "Espaço" ou "A" na tela.
+    InputDevice LastInputDevice() const;
     // Cursor do jogo: Locked (preso e escondido, para olhar com MouseDelta), Hidden ou Normal (menus). No editor
     // vale com o jogo em foco e Esc solta o cursor; ao parar o Play ele volta ao normal.
     void SetCursorMode(CursorMode mode);

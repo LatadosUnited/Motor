@@ -631,25 +631,42 @@ const InputActions& Script::Actions() const {
     GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
     return host ? host->Actions() : defaults;
 }
-bool Script::IsActionDown(std::string_view action) const { return InputEnabled() && Actions().IsDown(action); }
-bool Script::WasActionPressed(std::string_view action) const { return InputEnabled() && Actions().WasPressed(action); }
-bool Script::WasActionReleased(std::string_view action) const { return InputEnabled() && Actions().WasReleased(action); }
-float Script::GetAxis(std::string_view action) const { return InputEnabled() ? Actions().Value(action) : 0.0f; }
-glm::vec2 Script::GetVector(std::string_view action) const {
-    return InputEnabled() ? Actions().Vector(action) : glm::vec2(0.0f);
+bool Script::IsActionDown(std::string_view action, int device) const {
+    return InputEnabled() && Actions().IsDown(action, device);
+}
+bool Script::WasActionPressed(std::string_view action, int device) const {
+    return InputEnabled() && Actions().WasPressed(action, device);
+}
+bool Script::WasActionReleased(std::string_view action, int device) const {
+    return InputEnabled() && Actions().WasReleased(action, device);
+}
+float Script::GetAxis(std::string_view action, int device) const {
+    return InputEnabled() ? Actions().Value(action, device) : 0.0f;
+}
+glm::vec2 Script::GetVector(std::string_view action, int device) const {
+    return InputEnabled() ? Actions().Vector(action, device) : glm::vec2(0.0f);
 }
 const std::string& Script::TextInput() const {
     static const std::string none;
     return InputEnabled() ? Input::TextInput() : none;
 }
-bool Script::IsGamepadConnected() const { return Input::IsGamepadConnected(); }
-bool Script::IsGamepadButtonDown(GamepadButton button) const {
-    return InputEnabled() && Input::IsGamepadButtonDown(button);
+bool Script::IsGamepadConnected(int pad) const {
+    return pad == kAnyDevice ? Input::IsGamepadConnected() : Input::IsGamepadConnected(pad);
 }
-bool Script::WasGamepadButtonPressed(GamepadButton button) const {
-    return InputEnabled() && Input::WasGamepadButtonPressed(button);
+int Script::GamepadCount() const { return Input::GamepadCount(); }
+// Ligar e desligar não dependem do foco: o jogo precisa saber mesmo com o editor em outro painel.
+bool Script::WasGamepadConnected(int pad) const { return Input::WasGamepadConnected(pad); }
+bool Script::WasGamepadDisconnected(int pad) const { return Input::WasGamepadDisconnected(pad); }
+bool Script::IsGamepadButtonDown(GamepadButton button, int pad) const {
+    return InputEnabled() && Input::IsGamepadButtonDown(button, pad);
 }
-float Script::GamepadAxisValue(GamepadAxis axis) const { return InputEnabled() ? Input::GamepadAxisValue(axis) : 0.0f; }
+bool Script::WasGamepadButtonPressed(GamepadButton button, int pad) const {
+    return InputEnabled() && Input::WasGamepadButtonPressed(button, pad);
+}
+float Script::GamepadAxisValue(GamepadAxis axis, int pad) const {
+    return InputEnabled() ? Input::GamepadAxisValue(axis, pad) : 0.0f;
+}
+InputDevice Script::LastInputDevice() const { return Input::LastDevice(); }
 
 SaveData& Script::SaveSlot(std::string_view slot) {
     GameHost* host = m_runtime ? m_runtime->Host() : nullptr;

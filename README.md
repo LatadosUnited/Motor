@@ -717,7 +717,8 @@ Exportado/
   em `"input"` versão 2, MCP `input_actions`), que liga teclas, botões e movimento do mouse e o controle
   (gamepad, padrão Xbox, pela GLFW). Ações de botão, eixo ou vetor 2D (diagonal limitada), com escala, tecla de
   junto (Ctrl+S) e o mouse na medida do analógico. O padrão traz Mover, Olhar, Horizontal, Vertical, Olhar X/Y,
-  Pular, Correr, Interagir e Pausa. Controle direto: `IsGamepadButtonDown`,
+  Pular, Correr, Interagir e Pausa. Até 4 controles, cada um com seu número, aviso de
+  ligar/desligar, ações por jogador (`GetVector("Mover", 1)`) e o último dispositivo usado. Controle direto: `IsGamepadButtonDown`,
   `GamepadAxisValue`. Os modelos Jogador e MoverWASD andam com o teclado ou o analógico. O MCP `game_gamepad`
   simula um controle no Play.
 - **Progresso salvo** (Fase 21): os scripts guardam chave/valor em "slots" com `SaveSlot()` (`motor::SaveData`:

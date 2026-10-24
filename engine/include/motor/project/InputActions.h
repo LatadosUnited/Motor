@@ -86,12 +86,13 @@ public:
 
     const InputAction* Find(std::string_view name) const;  // sem diferença de maiúsculas
 
-    // Lidos do motor::Input (o filtro de foco é de quem chama: Script).
-    float Value(std::string_view name) const;       // num Vector2, o comprimento
-    glm::vec2 Vector(std::string_view name) const;  // num Botão ou Eixo, (valor, 0)
-    bool IsDown(std::string_view name) const { return Value(name) > 0.5f; }
-    bool WasPressed(std::string_view name) const;   // apertou neste frame
-    bool WasReleased(std::string_view name) const;  // soltou neste frame
+    // Lidos do motor::Input (o filtro de foco é de quem chama: Script). `device` escolhe de onde (um jogador):
+    // kAnyDevice tudo, kKeyboardMouse só teclado e mouse, 0..3 só aquele controle (motor/core/Input.h).
+    float Value(std::string_view name, int device = kAnyDevice) const;       // num Vector2, o comprimento
+    glm::vec2 Vector(std::string_view name, int device = kAnyDevice) const;  // num Botão ou Eixo, (valor, 0)
+    bool IsDown(std::string_view name, int device = kAnyDevice) const { return Value(name, device) > 0.5f; }
+    bool WasPressed(std::string_view name, int device = kAnyDevice) const;   // apertou neste frame
+    bool WasReleased(std::string_view name, int device = kAnyDevice) const;  // soltou neste frame
 
     // Valor de uma ação que não está no mapa (prévia do editor).
     static glm::vec2 VectorOf(const InputAction& action);

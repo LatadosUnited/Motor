@@ -244,5 +244,5 @@ target_compile_definitions(test_fbx PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_S
                                             MOTOR_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
 # Entrada bruta: eventos do quadro (toque mais curto que um quadro), teclas e botões novos, texto digitado e zona
-# morta radial. Sem janela.
+# morta radial, vários controles (simulados). Sem janela.
 motor_add_test(test_input)

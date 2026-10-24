@@ -54,6 +54,17 @@ std::optional<GamepadAxis> ParseGamepadAxis(std::string_view name);
 const char* MouseButtonName(MouseButton button);
 std::optional<MouseButton> ParseMouseButton(std::string_view name);
 
+// Vários controles: cada um ganha uma vaga (0 a kMaxGamepads - 1) ao ligar e a mantém até desligar, então o
+// controle 1 continua sendo o 1 quando o 0 cai. Nas funções e ações que recebem `device`: kAnyDevice é tudo junto
+// (jogo de uma pessoa: qualquer controle serve), kKeyboardMouse só o teclado e o mouse, e 0..3 só aquele controle.
+inline constexpr int kMaxGamepads = 4;
+inline constexpr int kAnyDevice = -1;
+inline constexpr int kKeyboardMouse = -2;
+
+// O último usado: para a tela mostrar "Espaço" ou "A". Muda ao apertar uma tecla ou botão, mover o mouse ou
+// empurrar um analógico mais da metade.
+enum class InputDevice { KeyboardMouse, Gamepad };
+
 // Cursor do mouse: Normal; Hidden (escondido sobre a janela, mas anda e sai dela); Locked (escondido e preso no
 // centro: o mouse só gera MouseDelta, para olhar em volta).
 enum class CursorMode { Normal, Hidden, Locked };
@@ -86,15 +97,24 @@ public:
     // texto; para comandos, use as teclas.
     static const std::string& TextInput();
 
-    // Controle: o primeiro conectado que a GLFW reconhece como gamepad. Sem controle, tudo solto/zero.
+    // Controles que a GLFW reconhece como gamepad. Sem `pad`: todos juntos (botão apertado em qualquer um; eixo do
+    // que estiver mais empurrado). Com `pad` (0 a kMaxGamepads - 1): só aquele. Sem controle, tudo solto/zero.
     static bool IsGamepadConnected();
-    static std::string GamepadName();
-    static bool IsGamepadButtonDown(GamepadButton button);
-    static bool WasGamepadButtonPressed(GamepadButton button);
-    static bool WasGamepadButtonReleased(GamepadButton button);
+    static bool IsGamepadConnected(int pad);
+    static int GamepadCount();
+    static bool WasGamepadConnected(int pad);     // ligou neste frame
+    static bool WasGamepadDisconnected(int pad);  // desligou neste frame
+    static std::string GamepadName();  // o do último usado (ou o primeiro ligado)
+    static std::string GamepadName(int pad);
+    static bool IsGamepadButtonDown(GamepadButton button, int pad = kAnyDevice);
+    static bool WasGamepadButtonPressed(GamepadButton button, int pad = kAnyDevice);
+    static bool WasGamepadButtonReleased(GamepadButton button, int pad = kAnyDevice);
     // Com zona morta nos analógicos (radial, ver ShapeStick): o controle parado dá 0, e o valor vai de 0 a 1
     // depois dela. Os gatilhos não têm zona morta.
-    static float GamepadAxisValue(GamepadAxis axis);
+    static float GamepadAxisValue(GamepadAxis axis, int pad = kAnyDevice);
+
+    static InputDevice LastDevice();
+    static int LastGamepad();  // vaga do último controle usado; -1 se nenhum foi usado
     static constexpr float kGamepadDeadZone = 0.2f;  // o padrão
     static void SetGamepadDeadZone(float deadZone);  // limitada a 0..0.9; vale a partir da próxima leitura
     static float GamepadDeadZone();
@@ -102,8 +122,8 @@ public:
     // Estado do frame anterior (mapa de ações: "apertou neste frame").
     static bool WasKeyDownLastFrame(Key key);
     static bool WasMouseDownLastFrame(MouseButton button);
-    static bool WasGamepadButtonDownLastFrame(GamepadButton button);
-    static float GamepadAxisValueLastFrame(GamepadAxis axis);
+    static bool WasGamepadButtonDownLastFrame(GamepadButton button, int pad = kAnyDevice);
+    static float GamepadAxisValueLastFrame(GamepadAxis axis, int pad = kAnyDevice);
     static glm::vec2 MouseVelocityLastFrame();
     static float ScrollDeltaLastFrame();
 
@@ -119,11 +139,13 @@ public:
     static void SetMouseButtonState(MouseButton button, bool down);
     static void AddTextInput(std::string_view utf8);
     static void PollGamepads();  // depois dos eventos do frame (Window::PollEvents)
-    // Controle simulado (testes, MCP): enquanto ligado, o controle de verdade é ignorado e vale o estado posto aqui.
-    static void SetGamepadSimulated(bool simulated);
+    // Controles simulados (testes, MCP): enquanto ligado, os de verdade são ignorados e vale o estado posto aqui.
+    // Ligar simula `count` controles nas vagas 0 em diante (cada um avisa WasGamepadConnected); desligar volta aos
+    // de verdade.
+    static void SetGamepadSimulated(bool simulated, int count = 1);
     static bool IsGamepadSimulated();
-    static void SetGamepadButtonState(GamepadButton button, bool down);
-    static void SetGamepadAxisState(GamepadAxis axis, float value);  // já no sentido da engine (Y para cima +)
+    static void SetGamepadButtonState(GamepadButton button, bool down, int pad = 0);
+    static void SetGamepadAxisState(GamepadAxis axis, float value, int pad = 0);  // já no sentido da engine (Y para cima +)
 };
 
 } // namespace motor

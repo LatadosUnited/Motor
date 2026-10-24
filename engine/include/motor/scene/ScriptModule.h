@@ -48,7 +48,8 @@ namespace motor {
 //     controle (GamepadButton/GamepadAxis).
 // 15: campo shadows (ShadowCasting: com sombra, sem sombra, só sombra) no MeshRenderer.
 // 16: Fase 25: Entity::cache (matriz de mundo guardada pela Scene) muda o tamanho de Entity.
-// 17: entrada v2: Script::GetVector e TextInput; InputAction e InputBinding com campos novos (tipo, part, with).
+// 17: entrada v2: Script::GetVector e TextInput; InputAction e InputBinding com campos novos (tipo, part, with);
+//     vários controles (pad e device nas funções de entrada, GamepadCount, LastInputDevice...).
 inline constexpr int kScriptApiVersion = 17;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).

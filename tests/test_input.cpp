@@ -1,5 +1,6 @@
 // Entrada bruta sem janela: eventos do quadro (toque mais curto que um quadro não se perde, em teclas, botões do
-// mouse e ações), teclas e botões novos com nome, texto digitado e a zona morta radial dos analógicos.
+// mouse e ações), teclas e botões novos com nome, texto digitado, a zona morta radial dos analógicos e vários
+// controles (vagas, ligar e desligar, ações por jogador, último dispositivo usado).
 #include "TestUtil.h"
 
 #include <motor/core/Input.h>
@@ -120,6 +121,78 @@ int main() {
         CHECK(Near(Input::GamepadDeadZone(), 0.9f));
         Input::SetGamepadDeadZone(std::numeric_limits<float>::quiet_NaN());
         CHECK(Near(Input::GamepadDeadZone(), Input::kGamepadDeadZone));
+    }
+
+    SECTION("Vários controles: vagas, ligar e desligar");
+    {
+        Input::BeginFrame();
+        Input::SetGamepadSimulated(true, 2);
+        CHECK(Input::GamepadCount() == 2 && Input::IsGamepadConnected(0) && Input::IsGamepadConnected(1));
+        CHECK(!Input::IsGamepadConnected(2) && !Input::IsGamepadConnected(-1) && !Input::IsGamepadConnected(9));
+        CHECK(Input::WasGamepadConnected(0) && Input::WasGamepadConnected(1) && !Input::WasGamepadConnected(2));
+        CHECK(Input::GamepadName(0) != Input::GamepadName(1) && Input::GamepadName(3).empty());
+        Input::BeginFrame();
+        CHECK(!Input::WasGamepadConnected(0) && !Input::WasGamepadConnected(1));
+
+        Input::SetGamepadButtonState(GamepadButton::A, true, 1);
+        CHECK(Input::IsGamepadButtonDown(GamepadButton::A));  // qualquer um
+        CHECK(!Input::IsGamepadButtonDown(GamepadButton::A, 0) && Input::IsGamepadButtonDown(GamepadButton::A, 1));
+        CHECK(Input::WasGamepadButtonPressed(GamepadButton::A, 1) && !Input::WasGamepadButtonPressed(GamepadButton::A, 0));
+        CHECK(Input::LastDevice() == InputDevice::Gamepad && Input::LastGamepad() == 1);
+        CHECK(Input::GamepadName() == Input::GamepadName(1));  // o último usado
+
+        Input::SetGamepadAxisState(GamepadAxis::LeftX, 0.3f, 0);
+        Input::SetGamepadAxisState(GamepadAxis::LeftX, -0.8f, 1);
+        CHECK(Near(Input::GamepadAxisValue(GamepadAxis::LeftX), -0.8f));  // o mais empurrado, sem somar
+        CHECK(Near(Input::GamepadAxisValue(GamepadAxis::LeftX, 0), 0.3f));
+        Input::SetGamepadButtonState(GamepadButton::A, true, 5);  // vaga que não existe: nada
+        Input::SetGamepadAxisState(GamepadAxis::LeftX, 0.0f, 0);
+        Input::SetGamepadAxisState(GamepadAxis::LeftX, 0.0f, 1);
+    }
+
+    SECTION("Ações por jogador");
+    {
+        InputActions duo;
+        duo.actions = {{"Pular", {InputBinding::Of(Key::J), InputBinding::Of(GamepadButton::A)}, InputActionType::Button}};
+        CHECK(duo.IsDown("Pular") && duo.IsDown("Pular", 1));  // o A do controle 2 ainda está apertado
+        CHECK(!duo.IsDown("Pular", 0) && !duo.IsDown("Pular", kKeyboardMouse));
+        Input::SetKeyState(Key::J, true);
+        CHECK(duo.IsDown("Pular", kKeyboardMouse) && !duo.IsDown("Pular", 0));
+        CHECK(Input::LastDevice() == InputDevice::KeyboardMouse);
+        Input::BeginFrame();
+        Input::SetGamepadButtonState(GamepadButton::A, true, 0);
+        CHECK(duo.WasPressed("Pular", 0) && !duo.WasPressed("Pular", 1) && !duo.WasPressed("Pular"));
+        Input::SetKeyState(Key::J, false);
+        Input::SetGamepadButtonState(GamepadButton::A, false, 0);
+        Input::BeginFrame();
+    }
+
+    SECTION("Controle desligado solta o que estava apertado");
+    {
+        CHECK(Input::IsGamepadButtonDown(GamepadButton::A, 1));
+        Input::SetGamepadSimulated(true, 1);  // o controle 2 sai
+        CHECK(Input::WasGamepadDisconnected(1) && !Input::IsGamepadConnected(1) && Input::IsGamepadConnected(0));
+        CHECK(Input::WasGamepadButtonReleased(GamepadButton::A, 1) && !Input::IsGamepadButtonDown(GamepadButton::A));
+        CHECK(Input::LastGamepad() == 0 && Input::GamepadCount() == 1);  // o último usado foi o 1, não o 2
+        Input::BeginFrame();
+        CHECK(!Input::WasGamepadDisconnected(1) && !Input::WasGamepadButtonReleased(GamepadButton::A, 1));
+        Input::SetGamepadSimulated(false);
+        CHECK(Input::GamepadCount() == 0 && Input::WasGamepadDisconnected(0) && !Input::IsGamepadSimulated());
+        Input::BeginFrame();
+    }
+
+    SECTION("Último dispositivo: o mouse só conta andando de verdade");
+    {
+        Input::SetGamepadSimulated(true);
+        Input::SetGamepadButtonState(GamepadButton::B, true);
+        CHECK(Input::LastDevice() == InputDevice::Gamepad && Input::LastGamepad() == 0);
+        Input::SetMousePosition({300.0f, 300.0f});
+        Input::SetMousePosition({302.0f, 301.0f});  // esbarrão
+        CHECK(Input::LastDevice() == InputDevice::Gamepad);
+        Input::SetMousePosition({340.0f, 310.0f});
+        CHECK(Input::LastDevice() == InputDevice::KeyboardMouse && Input::LastGamepad() == 0);
+        Input::SetGamepadSimulated(false);
+        Input::BeginFrame();
     }
 
     return TestResult();

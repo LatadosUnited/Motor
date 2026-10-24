@@ -154,17 +154,23 @@ controle:
 | `const std::string& TextInput() const` | texto digitado neste frame, em UTF-8 (vazio sem o foco do jogo) |
 | `bool IsActionDown(std::string_view action) const` | valor acima de 0,5 |
 | `bool WasActionPressed(std::string_view action) const`, `bool WasActionReleased(std::string_view action) const` | passou de 0,5 neste frame / voltou |
-| `bool IsGamepadConnected() const` | há um controle reconhecido como gamepad |
-| `bool IsGamepadButtonDown(GamepadButton button) const`, `bool WasGamepadButtonPressed(GamepadButton button) const` | botão do controle: `motor::GamepadButton::A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft` |
-| `float GamepadAxisValue(GamepadAxis axis) const` | `motor::GamepadAxis::LeftX`, `LeftY`, `RightX`, `RightY` (-1 a 1, Y para cima +, zona morta radial de 0,2: a diagonal fraca não some) e `LeftTrigger`, `RightTrigger` (0 a 1) |
+| `bool IsGamepadConnected(int pad = kAnyDevice) const`, `int GamepadCount() const` | há um controle (ou o controle `pad`, de 0 a 3) reconhecido como gamepad; quantos estão ligados |
+| `bool WasGamepadConnected(int pad) const`, `bool WasGamepadDisconnected(int pad) const` | o controle `pad` ligou / desligou neste frame (valem mesmo sem o foco do jogo) |
+| `InputDevice LastInputDevice() const` | o último usado: `motor::InputDevice::KeyboardMouse` ou `Gamepad` (para mostrar "Espaço" ou "A") |
+| `bool IsGamepadButtonDown(GamepadButton button, int pad = kAnyDevice) const`, `bool WasGamepadButtonPressed(...)` | botão do controle: `motor::GamepadButton::A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft` |
+| `float GamepadAxisValue(GamepadAxis axis, int pad = kAnyDevice) const` | `motor::GamepadAxis::LeftX`, `LeftY`, `RightX`, `RightY` (-1 a 1, Y para cima +, zona morta radial de 0,2: a diagonal fraca não some) e `LeftTrigger`, `RightTrigger` (0 a 1) |
 
 O movimento do mouse (`MouseX`, `MouseY`, `MouseScroll`) entra como eixo: X e Y valem a velocidade sobre
 `motor::kMouseAxisPixelsPerSecond` (1000 px/s = 1, Y para cima +) e somam depois do limite de -1..1, então
 `GetVector("Olhar") * velocidade * dt` gira igual com mouse ou analógico; a roda vale os entalhes do frame.
 Uma entrada com `with` (Ctrl, Shift, Alt) só vale com essa tecla apertada junto, de qualquer lado.
 
-Ação desconhecida devolve 0/falso e avisa uma vez no log. O controle é o primeiro conectado, no padrão do
-Xbox (a GLFW traduz PlayStation, Switch e outros: o `A` é o botão de baixo).
+Ação desconhecida devolve 0/falso e avisa uma vez no log. Controles no padrão do Xbox (a GLFW traduz
+PlayStation, Switch e outros: o `A` é o botão de baixo), até `motor::kMaxGamepads` (4). Cada um ganha um número
+(0 a 3) ao ligar e o mantém até desligar. Sem número, as funções valem para qualquer controle (o botão de
+qualquer um; o eixo do mais empurrado). As de ação também recebem `device` para separar os jogadores na mesma
+tela: `motor::kAnyDevice` (padrão), `motor::kKeyboardMouse` ou o número do controle, como em
+`GetVector("Mover", 1)`.
 
 As de entrada (teclado, mouse, ações e controle) devolvem falso/zero quando o jogo não tem o foco. `motor::Input` (`motor/core/Input.h`)
 tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`, `TextInput` com o texto digitado no frame, `SetGamepadDeadZone`...),

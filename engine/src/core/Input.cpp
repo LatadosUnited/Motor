@@ -1,5 +1,7 @@
 #include "motor/core/Input.h"
 
+#include "motor/core/Log.h"
+
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
@@ -7,6 +9,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <utility>
 
 namespace motor {
@@ -54,19 +57,66 @@ struct State {
     bool ignoreDeltaRequested = false;
     bool ignoreDeltaThisFrame = false;
     std::string text;
-    // Controle
-    std::array<bool, kGamepadButtonCount> pad{};
-    std::array<bool, kGamepadButtonCount> prevPad{};
-    std::array<float, kGamepadAxisCount> axes{};
-    std::array<float, kGamepadAxisCount> prevAxes{};
-    bool padConnected = false;
+    InputDevice lastDevice = InputDevice::KeyboardMouse;
+    int lastGamepad = -1;
+    // Controles, um por vaga
+    struct Pad {
+        bool connected = false;
+        int jid = -1;  // joystick da GLFW; -1 no simulado
+        std::string name;
+        std::array<bool, kGamepadButtonCount> buttons{};
+        std::array<bool, kGamepadButtonCount> prevButtons{};
+        std::array<float, kGamepadAxisCount> axes{};
+        std::array<float, kGamepadAxisCount> prevAxes{};
+        bool justConnected = false;
+        bool justDisconnected = false;
+    };
+    std::array<Pad, kMaxGamepads> pads;
     bool padSimulated = false;
-    std::string padName;
     float deadZone = Input::kGamepadDeadZone;
 } g;
 
 bool ValidPadButton(int b) { return b >= 0 && b < kGamepadButtonCount; }
 bool ValidPadAxis(int a) { return a >= 0 && a < kGamepadAxisCount; }
+bool ValidPad(int pad) { return pad >= 0 && pad < kMaxGamepads; }
+
+void UseKeyboardMouse() { g.lastDevice = InputDevice::KeyboardMouse; }
+
+// Botão apertado ou analógico empurrado mais da metade: o controle passa a ser o último usado.
+void NoteGamepadUse(int pad) {
+    const State::Pad& p = g.pads[static_cast<size_t>(pad)];
+    bool used = false;
+    for (int b = 0; b < kGamepadButtonCount; ++b) used = used || (p.buttons[b] && !p.prevButtons[b]);
+    for (int a = 0; a < kGamepadAxisCount; ++a) used = used || std::abs(p.axes[a]) > 0.5f;
+    if (used) {
+        g.lastDevice = InputDevice::Gamepad;
+        g.lastGamepad = pad;
+    }
+}
+
+void ConnectPad(int pad, int jid, std::string name) {
+    State::Pad& p = g.pads[static_cast<size_t>(pad)];
+    p = State::Pad{};
+    p.connected = true;
+    p.jid = jid;
+    p.name = std::move(name);
+    p.justConnected = true;
+    log::Info("Controle {} conectado: {}", pad + 1, p.name);
+}
+
+void DisconnectPad(int pad) {
+    State::Pad& p = g.pads[static_cast<size_t>(pad)];
+    if (!p.connected) return;
+    log::Info("Controle {} desconectado: {}", pad + 1, p.name);
+    // O que estava apertado no quadro anterior solta neste (WasGamepadButtonReleased vale).
+    const auto prevButtons = p.prevButtons;
+    const auto prevAxes = p.prevAxes;
+    p = State::Pad{};
+    p.justDisconnected = true;
+    p.prevButtons = prevButtons;
+    p.prevAxes = prevAxes;
+    if (g.lastGamepad == pad) g.lastGamepad = -1;
+}
 
 std::string Lower(std::string_view text) {
     std::string out(text);
@@ -142,6 +192,7 @@ const std::array<std::string, kMaxKeys>& KeyNames() {
 
 void OnKey(GLFWwindow*, int key, int, int action, int) {
     if (!ValidKey(key) || action == GLFW_REPEAT) return;
+    if (action == GLFW_PRESS) UseKeyboardMouse();
     g.keys.Set(key, action == GLFW_PRESS);
 }
 
@@ -151,11 +202,15 @@ void OnChar(GLFWwindow*, unsigned int codepoint) {
 
 void OnMouseButton(GLFWwindow*, int button, int action, int) {
     if (!ValidButton(button)) return;
+    if (action == GLFW_PRESS) UseKeyboardMouse();
     g.buttons.Set(button, action == GLFW_PRESS);
 }
 
 void OnCursorPos(GLFWwindow*, double x, double y) {
-    g.mousePos = {static_cast<float>(x), static_cast<float>(y)};
+    const glm::vec2 pos{static_cast<float>(x), static_cast<float>(y)};
+    // Só um movimento de verdade troca o dispositivo (esbarrar no mouse jogando de controle, não).
+    if (g.hasMousePos && std::abs(pos.x - g.mousePos.x) + std::abs(pos.y - g.mousePos.y) > 4.0f) UseKeyboardMouse();
+    g.mousePos = pos;
     if (!g.hasMousePos) {
         g.prevMousePos = g.mousePos;
         g.hasMousePos = true;
@@ -163,6 +218,7 @@ void OnCursorPos(GLFWwindow*, double x, double y) {
 }
 
 void OnScroll(GLFWwindow*, double, double yOffset) {
+    UseKeyboardMouse();
     g.scroll += static_cast<float>(yOffset);
 }
 
@@ -202,8 +258,12 @@ void Input::BeginFrame(float frameSeconds) {
     g.frameTime = std::clamp(frameSeconds > 0.0f ? frameSeconds : measured, 1e-4f, 0.25f);
     g.keys.BeginFrame();
     g.buttons.BeginFrame();
-    g.prevPad = g.pad;
-    g.prevAxes = g.axes;
+    for (State::Pad& p : g.pads) {
+        p.prevButtons = p.buttons;
+        p.prevAxes = p.axes;
+        p.justConnected = false;
+        p.justDisconnected = false;
+    }
     g.prevMousePos = g.mousePos;
     g.scroll = 0.0f;
     g.text.clear();
@@ -217,12 +277,16 @@ void Input::IgnoreNextMouseDelta() {
 
 void Input::SetKeyState(Key key, bool down) {
     const int k = static_cast<int>(key);
-    if (ValidKey(k)) g.keys.Set(k, down);
+    if (!ValidKey(k)) return;
+    if (down) UseKeyboardMouse();
+    g.keys.Set(k, down);
 }
 
 void Input::SetMouseButtonState(MouseButton button, bool down) {
     const int b = static_cast<int>(button);
-    if (ValidButton(b)) g.buttons.Set(b, down);
+    if (!ValidButton(b)) return;
+    if (down) UseKeyboardMouse();
+    g.buttons.Set(b, down);
 }
 
 void Input::AddTextInput(std::string_view utf8) {
@@ -298,56 +362,106 @@ void Input::SetMousePosition(glm::vec2 position) {
 
 // --- Controle -------------------------------------------------------------------------------------------
 
+namespace {
+
+// Botão em um controle (`pad` >= 0) ou em qualquer um (kAnyDevice); `prev` lê o quadro anterior.
+bool PadButton(int b, int pad, bool prev) {
+    if (!ValidPadButton(b)) return false;
+    const auto read = [&](const State::Pad& p) { return prev ? p.prevButtons[b] : p.buttons[b]; };
+    if (pad >= 0) return ValidPad(pad) && read(g.pads[static_cast<size_t>(pad)]);
+    if (pad != kAnyDevice) return false;
+    return std::any_of(g.pads.begin(), g.pads.end(), read);
+}
+
+// Eixo de um controle, ou o mais empurrado entre todos (dois jogando "juntos" não se somam nem se anulam).
+float PadAxis(int a, int pad, bool prev) {
+    if (!ValidPadAxis(a)) return 0.0f;
+    const auto read = [&](const State::Pad& p) { return prev ? p.prevAxes[a] : p.axes[a]; };
+    if (pad >= 0) return ValidPad(pad) ? read(g.pads[static_cast<size_t>(pad)]) : 0.0f;
+    if (pad != kAnyDevice) return 0.0f;
+    float best = 0.0f;
+    for (const State::Pad& p : g.pads) {
+        if (std::abs(read(p)) > std::abs(best)) best = read(p);
+    }
+    return best;
+}
+
+} // namespace
+
 void Input::PollGamepads() {
     if (g.padSimulated) return;
+    // Quem caiu libera a vaga; quem chegou pega a primeira livre (as outras não mudam de número).
+    for (int pad = 0; pad < kMaxGamepads; ++pad) {
+        const State::Pad& p = g.pads[static_cast<size_t>(pad)];
+        if (p.connected && !glfwJoystickIsGamepad(p.jid)) DisconnectPad(pad);
+    }
     for (int jid = GLFW_JOYSTICK_1; jid <= GLFW_JOYSTICK_LAST; ++jid) {
+        if (!glfwJoystickIsGamepad(jid)) continue;
+        const bool known = std::any_of(g.pads.begin(), g.pads.end(),
+                                       [&](const State::Pad& p) { return p.connected && p.jid == jid; });
+        if (known) continue;
+        const auto free = std::find_if(g.pads.begin(), g.pads.end(), [](const State::Pad& p) { return !p.connected; });
+        if (free == g.pads.end()) break;  // mais controles que vagas: os de sobra ficam de fora
+        const char* name = glfwGetGamepadName(jid);
+        ConnectPad(static_cast<int>(free - g.pads.begin()), jid, name ? name : "Controle");
+    }
+    for (int pad = 0; pad < kMaxGamepads; ++pad) {
+        State::Pad& p = g.pads[static_cast<size_t>(pad)];
         GLFWgamepadstate state;
-        if (!glfwJoystickIsGamepad(jid) || !glfwGetGamepadState(jid, &state)) continue;
-        if (!g.padConnected) {
-            const char* name = glfwGetGamepadName(jid);
-            g.padName = name ? name : "Controle";
-        }
-        g.padConnected = true;
-        for (int b = 0; b < kGamepadButtonCount; ++b) g.pad[b] = state.buttons[b] == GLFW_PRESS;
+        if (!p.connected || !glfwGetGamepadState(p.jid, &state)) continue;
+        for (int b = 0; b < kGamepadButtonCount; ++b) p.buttons[b] = state.buttons[b] == GLFW_PRESS;
         // Analógicos aos pares (a zona morta é radial), com Y para cima positivo; gatilhos de -1..1 para 0..1.
         for (const auto [ax, ay] : {std::pair{GLFW_GAMEPAD_AXIS_LEFT_X, GLFW_GAMEPAD_AXIS_LEFT_Y},
                                     std::pair{GLFW_GAMEPAD_AXIS_RIGHT_X, GLFW_GAMEPAD_AXIS_RIGHT_Y}}) {
             const glm::vec2 stick = ShapeStick({state.axes[ax], -state.axes[ay]}, g.deadZone);
-            g.axes[ax] = stick.x;
-            g.axes[ay] = stick.y;
+            p.axes[ax] = stick.x;
+            p.axes[ay] = stick.y;
         }
         for (const int t : {GLFW_GAMEPAD_AXIS_LEFT_TRIGGER, GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER}) {
-            g.axes[t] = std::clamp((state.axes[t] + 1.0f) * 0.5f, 0.0f, 1.0f);
+            p.axes[t] = std::clamp((state.axes[t] + 1.0f) * 0.5f, 0.0f, 1.0f);
         }
-        return;
+        NoteGamepadUse(pad);
     }
-    g.padConnected = false;
-    g.padName.clear();
-    g.pad.fill(false);
-    g.axes.fill(0.0f);
 }
 
-void Input::SetGamepadSimulated(bool simulated) {
-    if (g.padSimulated == simulated) return;
-    g.padSimulated = simulated;
-    g.padConnected = simulated;
-    g.padName = simulated ? "Controle simulado" : "";
-    g.pad.fill(false);
-    g.axes.fill(0.0f);
+void Input::SetGamepadSimulated(bool simulated, int count) {
+    count = simulated ? std::clamp(count, 1, kMaxGamepads) : 0;
+    const int current = g.padSimulated ? static_cast<int>(std::count_if(g.pads.begin(), g.pads.end(),
+                                                                        [](const State::Pad& p) { return p.connected; }))
+                                       : -1;
+    if (simulated == g.padSimulated && count == current) return;
+    if (simulated != g.padSimulated) {
+        // Troca de verdade por simulado (ou o contrário): os de antes saem.
+        for (int pad = 0; pad < kMaxGamepads; ++pad) DisconnectPad(pad);
+        g.padSimulated = simulated;
+    }
+    for (int pad = 0; pad < kMaxGamepads; ++pad) {
+        const bool wanted = pad < count;
+        if (wanted && !g.pads[static_cast<size_t>(pad)].connected) {
+            ConnectPad(pad, -1, count == 1 ? "Controle simulado" : std::format("Controle simulado {}", pad + 1));
+        } else if (!wanted) {
+            DisconnectPad(pad);
+        }
+    }
 }
 
 bool Input::IsGamepadSimulated() {
     return g.padSimulated;
 }
 
-void Input::SetGamepadButtonState(GamepadButton button, bool down) {
+void Input::SetGamepadButtonState(GamepadButton button, bool down, int pad) {
     const int b = static_cast<int>(button);
-    if (ValidPadButton(b)) g.pad[b] = down;
+    if (!ValidPadButton(b) || !ValidPad(pad) || !g.pads[static_cast<size_t>(pad)].connected) return;
+    g.pads[static_cast<size_t>(pad)].buttons[b] = down;
+    NoteGamepadUse(pad);
 }
 
-void Input::SetGamepadAxisState(GamepadAxis axis, float value) {
+void Input::SetGamepadAxisState(GamepadAxis axis, float value, int pad) {
     const int a = static_cast<int>(axis);
-    if (ValidPadAxis(a)) g.axes[a] = std::clamp(value, a >= static_cast<int>(GamepadAxis::LeftTrigger) ? 0.0f : -1.0f, 1.0f);
+    if (!ValidPadAxis(a) || !ValidPad(pad) || !g.pads[static_cast<size_t>(pad)].connected) return;
+    g.pads[static_cast<size_t>(pad)].axes[a] =
+        std::clamp(value, a >= static_cast<int>(GamepadAxis::LeftTrigger) ? 0.0f : -1.0f, 1.0f);
+    NoteGamepadUse(pad);
 }
 
 void Input::SetGamepadDeadZone(float deadZone) {
@@ -359,31 +473,61 @@ float Input::GamepadDeadZone() {
 }
 
 bool Input::IsGamepadConnected() {
-    return g.padConnected;
+    return GamepadCount() > 0;
+}
+
+bool Input::IsGamepadConnected(int pad) {
+    return ValidPad(pad) && g.pads[static_cast<size_t>(pad)].connected;
+}
+
+int Input::GamepadCount() {
+    return static_cast<int>(std::count_if(g.pads.begin(), g.pads.end(), [](const State::Pad& p) { return p.connected; }));
+}
+
+bool Input::WasGamepadConnected(int pad) {
+    return ValidPad(pad) && g.pads[static_cast<size_t>(pad)].justConnected;
+}
+
+bool Input::WasGamepadDisconnected(int pad) {
+    return ValidPad(pad) && g.pads[static_cast<size_t>(pad)].justDisconnected;
 }
 
 std::string Input::GamepadName() {
-    return g.padName;
+    if (IsGamepadConnected(g.lastGamepad)) return g.pads[static_cast<size_t>(g.lastGamepad)].name;
+    for (const State::Pad& p : g.pads) {
+        if (p.connected) return p.name;
+    }
+    return {};
 }
 
-bool Input::IsGamepadButtonDown(GamepadButton button) {
+std::string Input::GamepadName(int pad) {
+    return IsGamepadConnected(pad) ? g.pads[static_cast<size_t>(pad)].name : std::string();
+}
+
+bool Input::IsGamepadButtonDown(GamepadButton button, int pad) {
+    return PadButton(static_cast<int>(button), pad, false);
+}
+
+bool Input::WasGamepadButtonPressed(GamepadButton button, int pad) {
     const int b = static_cast<int>(button);
-    return ValidPadButton(b) && g.pad[b];
+    return PadButton(b, pad, false) && !PadButton(b, pad, true);
 }
 
-bool Input::WasGamepadButtonPressed(GamepadButton button) {
+bool Input::WasGamepadButtonReleased(GamepadButton button, int pad) {
     const int b = static_cast<int>(button);
-    return ValidPadButton(b) && g.pad[b] && !g.prevPad[b];
+    return !PadButton(b, pad, false) && PadButton(b, pad, true);
 }
 
-bool Input::WasGamepadButtonReleased(GamepadButton button) {
-    const int b = static_cast<int>(button);
-    return ValidPadButton(b) && !g.pad[b] && g.prevPad[b];
+float Input::GamepadAxisValue(GamepadAxis axis, int pad) {
+    return PadAxis(static_cast<int>(axis), pad, false);
 }
 
-float Input::GamepadAxisValue(GamepadAxis axis) {
-    const int a = static_cast<int>(axis);
-    return ValidPadAxis(a) ? g.axes[a] : 0.0f;
+InputDevice Input::LastDevice() {
+    return g.lastDevice;
+}
+
+int Input::LastGamepad() {
+    return g.lastGamepad;
 }
 
 bool Input::WasKeyDownLastFrame(Key key) {
@@ -396,14 +540,12 @@ bool Input::WasMouseDownLastFrame(MouseButton button) {
     return ValidButton(b) && g.buttons.prevHeld[b];
 }
 
-bool Input::WasGamepadButtonDownLastFrame(GamepadButton button) {
-    const int b = static_cast<int>(button);
-    return ValidPadButton(b) && g.prevPad[b];
+bool Input::WasGamepadButtonDownLastFrame(GamepadButton button, int pad) {
+    return PadButton(static_cast<int>(button), pad, true);
 }
 
-float Input::GamepadAxisValueLastFrame(GamepadAxis axis) {
-    const int a = static_cast<int>(axis);
-    return ValidPadAxis(a) ? g.prevAxes[a] : 0.0f;
+float Input::GamepadAxisValueLastFrame(GamepadAxis axis, int pad) {
+    return PadAxis(static_cast<int>(axis), pad, true);
 }
 
 // --- Nomes ----------------------------------------------------------------------------------------------

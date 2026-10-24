@@ -162,7 +162,12 @@ void SceneDocument::DrawControlsWindow() {
     ImGui::TextWrapped("Os scripts perguntam pela ação, não pela tecla: WasActionPressed(\"Pular\"), "
                        "GetVector(\"Mover\"), GetAxis(\"Horizontal\"). Vale a partir do próximo Play.");
     if (Input::IsGamepadConnected()) {
-        ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Controle conectado: %s", Input::GamepadName().c_str());
+        for (int pad = 0; pad < kMaxGamepads; ++pad) {
+            if (!Input::IsGamepadConnected(pad)) continue;
+            ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Controle %d conectado: %s%s", pad + 1,
+                               Input::GamepadName(pad).c_str(),
+                               Input::LastDevice() == InputDevice::Gamepad && Input::LastGamepad() == pad ? " (em uso)" : "");
+        }
     } else {
         ImGui::TextDisabled("Nenhum controle conectado (os botões do controle podem ser escolhidos em \"Escolher\").");
     }

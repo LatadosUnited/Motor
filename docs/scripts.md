@@ -329,9 +329,15 @@ segundo valem 1. Por isso `Olhar` serve aos dois do mesmo jeito: multiplique por
 | `GetAxis("Vertical")` | -1 a 1: a soma das entradas (W = +1, S = -1, analógico para a frente = até +1); num Vetor 2D, o comprimento |
 | `TextInput()` | o texto digitado neste frame (UTF-8, com acentos), para campos de texto |
 | `IsActionDown("Pular")`, `WasActionPressed`, `WasActionReleased` | apertada (valor acima de 0,5), apertou ou soltou neste frame |
-| `IsGamepadConnected()` | há um controle (o primeiro conectado; Xbox, PlayStation e outros, no padrão Xbox) |
+| `IsGamepadConnected()`, `GamepadCount()` | há um controle (Xbox, PlayStation e outros, no padrão Xbox); quantos, até 4 |
+| `WasGamepadConnected(1)`, `WasGamepadDisconnected(0)` | o controle 1 ligou / o 0 desligou neste frame ("Jogador 2 entrou", pausar) |
+| `LastInputDevice()` | `motor::InputDevice::KeyboardMouse` ou `Gamepad`: o último usado, para a tela mostrar "Espaço" ou "A" |
 | `IsGamepadButtonDown(motor::GamepadButton::A)`, `WasGamepadButtonPressed` | um botão do controle direto: `A`, `B`, `X`, `Y`, `LeftBumper`, `Start`, `DpadUp`... |
 | `GamepadAxisValue(motor::GamepadAxis::LeftX)` | analógico de -1 a 1 (Y para cima é positivo), com zona morta; gatilhos (`LeftTrigger`, `RightTrigger`) de 0 a 1 |
+
+Jogo de uma pessoa: qualquer controle serve, sem fazer nada. Duas ou mais pessoas na mesma tela: passe o
+número do jogador, `GetVector("Mover", 0)` para o controle 0, `GetVector("Mover", motor::kKeyboardMouse)` para
+quem joga no teclado. Os botões do controle direto também aceitam o número: `IsGamepadButtonDown(motor::GamepadButton::A, 1)`.
 
 Ação com nome errado devolve zero e avisa uma vez no log. No editor, a ferramenta MCP `game_gamepad` simula um
 controle (para testar sem ter um).

@@ -42,8 +42,17 @@ bool WithHeld(int with, bool lastFrame) {
     return false;
 }
 
+bool FromKeyboardMouse(const InputBinding& b) {
+    return b.source == InputBinding::Source::Key || b.source == InputBinding::Source::Mouse ||
+           b.source == InputBinding::Source::MouseAxis;
+}
+
 // Valor de uma entrada (sem o `scale`): 1/0 para teclas e botões, o eixo como está, o mouse na medida do analógico.
-float RawValue(const InputBinding& b, bool lastFrame) {
+// `device` filtra de onde (ver InputActions::Value).
+float RawValue(const InputBinding& b, bool lastFrame, int device) {
+    const bool keyboardMouse = FromKeyboardMouse(b);
+    if (device >= 0 && keyboardMouse) return 0.0f;
+    if (device == kKeyboardMouse && !keyboardMouse) return 0.0f;
     if (!WithHeld(b.with, lastFrame)) return 0.0f;
     switch (b.source) {
         case InputBinding::Source::Key: return KeyHeld(static_cast<Key>(b.code), lastFrame) ? 1.0f : 0.0f;
@@ -53,12 +62,15 @@ float RawValue(const InputBinding& b, bool lastFrame) {
         }
         case InputBinding::Source::GamepadButton: {
             const GamepadButton button = static_cast<GamepadButton>(b.code);
-            return (lastFrame ? Input::WasGamepadButtonDownLastFrame(button) : Input::IsGamepadButtonDown(button)) ? 1.0f
-                                                                                                                 : 0.0f;
+            const int pad = device >= 0 ? device : kAnyDevice;
+            return (lastFrame ? Input::WasGamepadButtonDownLastFrame(button, pad) : Input::IsGamepadButtonDown(button, pad))
+                       ? 1.0f
+                       : 0.0f;
         }
         case InputBinding::Source::GamepadAxis: {
             const GamepadAxis axis = static_cast<GamepadAxis>(b.code);
-            return lastFrame ? Input::GamepadAxisValueLastFrame(axis) : Input::GamepadAxisValue(axis);
+            const int pad = device >= 0 ? device : kAnyDevice;
+            return lastFrame ? Input::GamepadAxisValueLastFrame(axis, pad) : Input::GamepadAxisValue(axis, pad);
         }
         case InputBinding::Source::MouseAxis: {
             if (b.code == static_cast<int>(MouseAxis::Scroll)) {
@@ -72,11 +84,11 @@ float RawValue(const InputBinding& b, bool lastFrame) {
     return 0.0f;
 }
 
-glm::vec2 VectorAt(const InputAction& action, bool lastFrame) {
+glm::vec2 VectorAt(const InputAction& action, bool lastFrame, int device) {
     glm::vec2 limited{0.0f};
     glm::vec2 relative{0.0f};
     for (const InputBinding& b : action.bindings) {
-        const float v = RawValue(b, lastFrame) * b.scale;
+        const float v = RawValue(b, lastFrame, device) * b.scale;
         glm::vec2& sum = b.IsRelative() ? relative : limited;
         if (action.type == InputActionType::Vector2 && b.part == InputBinding::Part::Y) {
             sum.y += v;
@@ -96,8 +108,8 @@ glm::vec2 VectorAt(const InputAction& action, bool lastFrame) {
     return {};
 }
 
-float ValueAt(const InputAction& action, bool lastFrame) {
-    const glm::vec2 v = VectorAt(action, lastFrame);
+float ValueAt(const InputAction& action, bool lastFrame, int device) {
+    const glm::vec2 v = VectorAt(action, lastFrame, device);
     return action.type == InputActionType::Vector2 ? std::sqrt(v.x * v.x + v.y * v.y) : v.x;
 }
 
@@ -186,27 +198,27 @@ const InputAction* InputActions::FindOrWarn(std::string_view name) const {
 }
 
 glm::vec2 InputActions::VectorOf(const InputAction& action) {
-    return VectorAt(action, false);
+    return VectorAt(action, false, kAnyDevice);
 }
 
-float InputActions::Value(std::string_view name) const {
+float InputActions::Value(std::string_view name, int device) const {
     const InputAction* action = FindOrWarn(name);
-    return action ? ValueAt(*action, false) : 0.0f;
+    return action ? ValueAt(*action, false, device) : 0.0f;
 }
 
-glm::vec2 InputActions::Vector(std::string_view name) const {
+glm::vec2 InputActions::Vector(std::string_view name, int device) const {
     const InputAction* action = FindOrWarn(name);
-    return action ? VectorAt(*action, false) : glm::vec2{0.0f};
+    return action ? VectorAt(*action, false, device) : glm::vec2{0.0f};
 }
 
-bool InputActions::WasPressed(std::string_view name) const {
+bool InputActions::WasPressed(std::string_view name, int device) const {
     const InputAction* action = FindOrWarn(name);
-    return action && ValueAt(*action, false) > 0.5f && ValueAt(*action, true) <= 0.5f;
+    return action && ValueAt(*action, false, device) > 0.5f && ValueAt(*action, true, device) <= 0.5f;
 }
 
-bool InputActions::WasReleased(std::string_view name) const {
+bool InputActions::WasReleased(std::string_view name, int device) const {
     const InputAction* action = FindOrWarn(name);
-    return action && ValueAt(*action, false) <= 0.5f && ValueAt(*action, true) > 0.5f;
+    return action && ValueAt(*action, false, device) <= 0.5f && ValueAt(*action, true, device) > 0.5f;
 }
 
 std::string InputActions::ToJson() const {
