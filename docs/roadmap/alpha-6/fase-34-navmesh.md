@@ -16,8 +16,8 @@ inicio: 2026-10-24
 
 Dar ao Motor o equivalente ao NavMesh da Unity: um navmesh gerado a partir do cenário, busca de caminho e um
 agente que anda até um destino contornando paredes. Base de todas as outras fases da [alpha 6](../alpha-6.md). Usa a
-Recast/Detour ([decisão](../../decisoes/2026-10-23-recast-detour.md)) numa camada nova, `ai/`, acima de `scene`;
-nesta fase o navmesh é gerado no começo do Play, sem asset salvo, para ter algo andando antes do editor.
+Recast/Detour ([decisão](../../decisoes/2026-10-23-recast-detour.md)) numa camada nova, `ai/`, acima de `scene`. O
+navmesh é gerado no editor e salvo num `.mnav` do projeto; sem arquivo, é gerado no começo do Play.
 
 ## Tarefas
 
@@ -27,7 +27,7 @@ nesta fase o navmesh é gerado no começo do Play, sem asset salvo, para ter alg
 - [x] Tarefa 4: Componentes `NavMeshSurface` e `NavMeshAgent` — 7370316
 - [x] Tarefa 5: `NavSystem` no `SceneRuntime`: gera no Play, move os agentes, segue um alvo — 7370316
 - [x] Tarefa 6: `test_navigation` — 7370316
-- [ ] Tarefa 7: Salvar o navmesh como asset `.mnav` (com GUID) e gerar no editor
+- [x] Tarefa 7: Salvar o navmesh como asset `.mnav` (com GUID) e gerar no editor — 29ddb1e
 - [ ] Tarefa 8: Desenhar o navmesh e os caminhos no viewport
 - [ ] Tarefa 9: Ferramentas MCP `nav_bake`, `nav_path` e `nav_agents`
 - [ ] Tarefa 10: Seção de navegação no guia de scripts, com exemplo compilado
@@ -38,9 +38,19 @@ O `test_navigation` passa (navmesh de chão com parede, rampa suave e íngreme, 
 a parede e chega, agente que segue um alvo), uma cena de teste aberta no editor mostra o navmesh no viewport, e um
 agente posto nela anda até o destino no Play, conferido pelo MCP.
 
+## Feito
+
+- Tarefa 7: no Play, a cena de teste do editor (chão de 40 m, parede de 12 m, agente seguindo uma esfera) gera o
+  navmesh em ~20 ms (14 polígonos). Ao conferir no editor, o agente passava do canto da parede embalado e voltava
+  ~70 cm até ele (chegava em 6,8 s); com a direção seguindo o caminho na hora, chega em 5,1 s sem recuar
+  (`test_navigation`, seção "Cantos").
+
 ## Limitações
 
-- O navmesh é gerado a cada Play (custo no começo do jogo numa cena grande) e não aparece no editor até a Tarefa 8.
+- O navmesh não aparece no editor até a Tarefa 8. Gerar roda na thread do editor (trava numa cena grande; segundo
+  plano é da Fase 36), e o botão Gerar não foi clicado no teste do editor: a geração e a gravação que ele faz são
+  testadas no `test_navigation`.
+- Navmesh salvo desatualizado (cenário ou Superfície mudaram depois de gerar) continua sendo usado, com aviso no log.
 - Um bloco só: navmesh com mais de 65535 vértices falha (blocos vêm com o TileCache, Fase 36).
 - O agente mexe no Transform direto: não usa a física nem desvia de outros agentes (Fase 35).
 - A cápsula entra no navmesh como o cilindro que a contém.

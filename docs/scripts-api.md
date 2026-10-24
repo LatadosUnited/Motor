@@ -384,7 +384,7 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::CharacterControllerComponent` | Controlador de personagem | `height`, `radius`, `maxSlope` (graus), `stepHeight`, `mass`, `bool useGravity`, `CollisionLayer layer` |
 | `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`, `AudioGroup group` (`Effects`, `Music`, `Interface`); tocar e parar na seção [Som](#som-motoraudiosystem) |
 | `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
-| `motor::NavMeshSurface` | Superfície de navegação | `agentRadius`, `agentHeight`, `agentMaxClimb`, `agentMaxSlope` (graus), `cellSize`, `cellHeight`, `minRegionArea` (m²); uma por cena, liga o navmesh (seção [Navegação](#navegação-motornavsystem)) |
+| `motor::NavMeshSurface` | Superfície de navegação | `NavMeshData navMesh` (`guid`, `path` e `file` do `.mnav` gerado no editor; vazio = gerado no Play), `agentRadius`, `agentHeight`, `agentMaxClimb`, `agentMaxSlope` (graus), `cellSize`, `cellHeight`, `minRegionArea` (m²); uma por cena, liga o navmesh (seção [Navegação](#navegação-motornavsystem)) |
 | `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance` |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
@@ -527,8 +527,9 @@ Som 3D: o volume cai com a distância pelo modelo inverso (`minDistance / distâ
 
 ## Navegação: `motor::NavSystem`
 
-`#include <motor/ai/NavSystem.h>` e `auto* nav = GetSystem<motor::NavSystem>();`. No começo do Play o sistema gera
-o navmesh a partir dos Colliders estáticos da cena (se ela tem uma `NavMeshSurface` ativa) e, a cada passo fixo,
+`#include <motor/ai/NavSystem.h>` e `auto* nav = GetSystem<motor::NavSystem>();`. No começo do Play o sistema lê o
+navmesh do `.mnav` da `NavMeshSurface` ativa (gerado pelo botão Gerar do Inspector) ou, sem arquivo, gera um a partir
+dos Colliders estáticos da cena, e a cada passo fixo,
 antes da física e dos scripts (ordem `kSystemOrderNavigation`), move os `NavMeshAgent`. Posições são no mundo; a
 de um agente é a dos pés (a origem da entidade menos `baseOffset`).
 
@@ -553,7 +554,7 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `std::optional<glm::vec3> SamplePosition(posicao, float distanciaMaxima = 2) const` | ponto do navmesh mais perto, se estiver a essa distância |
 | `std::optional<motor::NavRaycastHit> Raycast(inicio, fim) const` | anda em linha reta pelo navmesh; `nullopt` se chega ao fim, senão onde parou (`point`, `normal`, `fraction`): "dá para ver/andar até lá sem dar a volta?" |
 | `bool Rebuild()` | gera o navmesh de novo com a cena como está (porta aberta, ponte construída); os agentes refazem os caminhos |
-| `const motor::NavMesh* GetNavMesh() const`, `const motor::NavStats& Stats() const` | o navmesh (nulo sem `NavMeshSurface` ou se a geração falhou) e os números da última geração (`triangles`, `polygons`, `buildMs`, `error`) |
+| `const motor::NavMesh* GetNavMesh() const`, `const motor::NavStats& Stats() const` | o navmesh (nulo sem `NavMeshSurface` ou se a geração falhou) e os números da última geração ou leitura (`triangles`, `polygons`, `buildMs`, `fromFile`: veio do `.mnav`, `stale`: o `.mnav` ficou velho, `error`) |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 Sem física por enquanto: o agente mexe no Transform direto, não desvia de outros agentes e não é empurrado.
