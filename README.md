@@ -787,8 +787,9 @@ componentes comuns (Inspector, cena, desfazer):
 - **Multidão:** os agentes desviam uns dos outros e não se atravessam (DetourCrowd, Fase 35); **Raio** é o tamanho
   com que os outros o veem. Os caminhos de quem segue um alvo entram numa fila dividida entre os passos.
 - **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
-  `Warp`, `FindPath`, `SamplePosition`, `Raycast` e `Rebuild` (cenário mudou). Ver a seção 15 do
-  [guia de scripts](docs/scripts.md) (um guarda que patrulha e persegue, `docs/examples/Guarda.cpp`) e a
+  `Warp`, `FindPath`, `SamplePosition`, `Raycast`, `RandomPoint` (vagar), `FleePoint` (fugir) e `Rebuild`
+  (cenário mudou). Ver a seção 15 do [guia de scripts](docs/scripts.md) (um guarda que patrulha e persegue,
+  `docs/examples/Guarda.cpp`) e a
   referência em [docs/scripts-api.md](docs/scripts-api.md).
 - **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
   Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando), o raio de cada agente em verde, as
