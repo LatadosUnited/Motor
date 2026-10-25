@@ -548,6 +548,117 @@ int main(int argc, char** argv) {
         runtime.Stop();
     }
 
+    SECTION("Ligação de navegação: pulo sobre o vão até a plataforma mais alta");
+    {
+        // Plataforma A (topo em y = 0, x de -9 a -1) e B (topo em y = 1, x de 1 a 9): 2 m de vão, só pulando.
+        auto makeScene = [](bool withLink, bool bothWays) {
+            Scene scene;
+            Entity& a = scene.CreateEntity("A");
+            a.transform.position = {-5.0f, -0.5f, 0.0f};
+            a.Add<ColliderComponent>().size = {8.0f, 1.0f, 8.0f};
+            Entity& b = scene.CreateEntity("B");
+            b.transform.position = {5.0f, 0.5f, 0.0f};
+            b.Add<ColliderComponent>().size = {8.0f, 1.0f, 8.0f};
+            scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+            if (withLink) {
+                Entity& link = scene.CreateEntity("Pulo");
+                link.transform.position = {0.0f, 0.0f, 1.0f};  // pontas relativas à entidade
+                NavMeshLink& l = link.Add<NavMeshLink>();
+                l.start = {-1.6f, 0.0f, -1.0f};
+                l.end = {1.6f, 1.0f, -1.0f};
+                l.bidirectional = bothWays;
+            }
+            return scene;
+        };
+
+        // Sem a ligação, o outro lado é outra ilha: caminho parcial até a borda.
+        {
+            Scene scene = makeScene(false, true);
+            const EntityId id = AddAgent(scene, {-6.0f, 0.0f, 0.0f}).id;
+            SceneRuntime runtime(scene);
+            runtime.Start();
+            NavSystem* nav = runtime.GetSystem<NavSystem>();
+            CHECK(nav && nav->SetDestination(id, {6.0f, 1.0f, 0.0f}) && nav->IsPathPartial(id));
+            runtime.Stop();
+        }
+
+        Scene scene = makeScene(true, false);
+        CHECK(CollectNavGeometry(scene).links.size() == 1);
+        const EntityId id = AddAgent(scene, {-6.0f, 0.0f, 0.0f}).id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->GetNavMesh() && nav->GetNavMesh()->Links().size() == 1);
+        CHECK(nav && nav->SetDestination(id, {6.0f, 1.0f, 0.0f}) && !nav->IsPathPartial(id));
+        bool jumped = false;
+        float top = 0.0f;
+        int steps = 0;
+        for (; steps < 60 * 10 && nav && !nav->HasArrived(id); ++steps) {
+            runtime.FixedUpdate(kDt);
+            if (nav->IsOnLink(id)) {
+                jumped = true;
+                CHECK(nav->HasPath(id));
+            }
+            const glm::vec3 p = scene.Find(id)->transform.position;
+            if (p.x > -1.0f && p.x < 1.0f) top = std::max(top, p.y);  // em cima do vão
+        }
+        const glm::vec3 end = scene.Find(id)->transform.position;
+        CHECK(nav && nav->HasArrived(id) && jumped);
+        CHECK(glm::distance(end, glm::vec3(6.0f, 1.0f, 0.0f)) < 0.3f);
+        CHECK(top > 1.3f);  // arco de 1 m acima da linha entre as pontas (no meio dela, y = 0,5)
+        std::printf("  pulou e chegou em %.2f s, no alto do vão a y = %.2f\n", steps * kDt, top);
+
+        // Só de A para B: a volta não tem caminho (parcial até a borda de B).
+        CHECK(nav && nav->SetDestination(id, {-6.0f, 0.0f, 0.0f}) && nav->IsPathPartial(id));
+        runtime.Stop();
+
+        // Com corpo físico, a física segue o arco e o personagem cai em pé do outro lado.
+        Scene physical = makeScene(true, true);
+        Entity& body = AddAgent(physical, {-6.0f, 0.9f, 0.0f});
+        body.Add<CharacterControllerComponent>();
+        const EntityId bodyId = body.id;
+        SceneRuntime physicalRuntime(physical);
+        physicalRuntime.Start();
+        NavSystem* nav2 = physicalRuntime.GetSystem<NavSystem>();
+        CHECK(nav2 && nav2->SetDestination(bodyId, {6.0f, 1.0f, 0.0f}));
+        for (int i = 0; i < 60 * 10 && nav2 && !nav2->HasArrived(bodyId); ++i) physicalRuntime.FixedUpdate(kDt);
+        const glm::vec3 landed = physical.Find(bodyId)->transform.position;
+        CHECK(nav2 && nav2->HasArrived(bodyId));
+        CHECK(glm::distance(landed, glm::vec3(6.0f, 1.9f, 0.0f)) < 0.5f);
+        physicalRuntime.Stop();
+
+        // Altura do arco 0 (escada): vai reto de uma ponta à outra, sem passar acima da linha entre elas.
+        Scene ladder = makeScene(true, true);
+        ladder.FindByName("Pulo")->Get<NavMeshLink>()->arcHeight = 0.0f;
+        const EntityId climber = AddAgent(ladder, {-6.0f, 0.0f, 0.0f}).id;
+        SceneRuntime ladderRuntime(ladder);
+        ladderRuntime.Start();
+        NavSystem* nav3 = ladderRuntime.GetSystem<NavSystem>();
+        CHECK(nav3 && nav3->SetDestination(climber, {6.0f, 1.0f, 0.0f}));
+        float above = -1.0f;
+        for (int i = 0; i < 60 * 10 && nav3 && !nav3->HasArrived(climber); ++i) {
+            ladderRuntime.FixedUpdate(kDt);
+            const glm::vec3 p = ladder.Find(climber)->transform.position;
+            if (nav3->IsOnLink(climber) && p.x > -1.6f && p.x < 1.6f) {
+                above = std::max(above, p.y - (p.x + 1.6f) / 3.2f);  // acima da linha (y de 0 a 1 entre as pontas)
+            }
+        }
+        CHECK(nav3 && nav3->HasArrived(climber));
+        CHECK(above >= 0.0f && above < 0.05f);
+        ladderRuntime.Stop();
+
+        // A ligação entra na impressão digital e vai junto no .mnav.
+        const NavGeometry withLink = CollectNavGeometry(makeScene(true, true));
+        NavGeometry withoutLink = withLink;
+        withoutLink.links.clear();
+        CHECK(NavMesh::SourceHash(withLink, {}) != NavMesh::SourceHash(withoutLink, {}));
+        auto built = NavMesh::Build(withLink, {});
+        const fs::path file = base / "ligacao.mnav";
+        CHECK(built && built->Save(file));
+        auto loaded = NavMesh::Load(file);
+        CHECK(loaded && loaded->Links().size() == 1 && loaded->Links()[0].bidirectional);
+    }
+
     SECTION("Arquivo .mnav: grava, lê e as consultas dão o mesmo resultado");
     {
         NavGeometry g;

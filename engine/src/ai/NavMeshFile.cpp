@@ -91,6 +91,13 @@ uint64_t NavMesh::SourceHash(const NavGeometry& geometry, const NavMeshBuildSett
     Mix(hash, geometry.vertices.data(), geometry.vertices.size() * sizeof(glm::vec3));
     Mix(hash, geometry.indices.data(), geometry.indices.size() * sizeof(uint32_t));
     for (auto field : kSettingFields) Mix(hash, &(settings.*field), sizeof(float));
+    // Só com ligações: navmesh sem elas guarda a mesma impressão digital de antes da Fase 35.
+    for (const NavLink& link : geometry.links) {
+        const float values[7] = {link.start.x, link.start.y, link.start.z, link.end.x, link.end.y, link.end.z, link.radius};
+        Mix(hash, values, sizeof(values));
+        const unsigned char both = link.bidirectional ? 1 : 0;
+        Mix(hash, &both, 1);
+    }
     return hash;
 }
 

@@ -386,6 +386,7 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
 | `motor::NavMeshSurface` | Superfície de navegação | `NavMeshData navMesh` (`guid`, `path` e `file` do `.mnav` gerado no editor; vazio = gerado no Play), `agentRadius`, `agentHeight`, `agentMaxClimb`, `agentMaxSlope` (graus), `cellSize`, `cellHeight`, `minRegionArea` (m²); uma por cena, liga o navmesh (seção [Navegação](#navegação-motornavsystem)) |
 | `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance`, `radius` e `height` (tamanho para os outros agentes desviarem), `bool avoidOthers` |
+| `motor::NavMeshLink` | Ligação de navegação | `glm::vec3 start`, `end` (pontas, relativas à entidade), `radius` (quão longe do navmesh as pontas podem ficar), `bool bidirectional`, `arcHeight` (altura do pulo; 0 = reto, escada) |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
@@ -548,6 +549,7 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `bool SetDestination(EntityId agente, glm::vec3 destino)` | o agente vai até o ponto do navmesh mais perto do destino; `false` sem `NavMeshAgent`, sem navmesh ou longe dele. Destino noutra ilha do navmesh: vai até o ponto alcançável mais perto (`IsPathPartial`). Chamar a cada passo com o mesmo destino refaz o caminho à toa: chame quando o destino mudar |
 | `void Stop(EntityId agente)` | esquece o destino e freia |
 | `bool HasPath(agente) const`, `bool HasArrived(agente) const`, `bool IsPathPartial(agente) const` | anda para um destino; chegou ao último destino pedido (até o próximo `SetDestination`); o caminho não chega ao destino |
+| `bool IsOnLink(agente) const` | atravessando uma ligação (`NavMeshLink`: pulo, escada), para tocar a animação de pulo ou de subir |
 | `float RemainingDistance(agente) const`, `glm::vec3 GetVelocity(agente) const`, `std::vector<glm::vec3> GetPath(agente) const` | quanto falta pelo caminho, velocidade atual, cantos que faltam |
 | `bool Warp(EntityId agente, glm::vec3 posicao)` | teleporta o agente para o navmesh perto da posição e esquece o caminho |
 | `bool FindPath(inicio, fim, std::vector<glm::vec3>& cantos) const` | só o caminho (cantos do começo ao fim), sem mover ninguém |

@@ -150,7 +150,29 @@ std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMe
         Fail(error, "navmesh grande demais para um bloco só (mais de 65535 vértices)");
         return nullptr;
     }
+    // Ligações (off-mesh connections do Detour): mesma marca e área do chão, para as consultas aceitarem.
+    const size_t linkCount = geometry.links.size();
+    std::vector<float> linkVerts(linkCount * 6), linkRadius(linkCount);
+    std::vector<unsigned char> linkDir(linkCount), linkArea(linkCount, RC_WALKABLE_AREA);
+    std::vector<unsigned short> linkFlags(linkCount, kWalkableFlag);
+    std::vector<unsigned int> linkIds(linkCount);
+    for (size_t i = 0; i < linkCount; ++i) {
+        const NavLink& link = geometry.links[i];
+        rcVcopy(&linkVerts[i * 6], &link.start.x);
+        rcVcopy(&linkVerts[i * 6 + 3], &link.end.x);
+        linkRadius[i] = std::max(link.radius, 0.01f);
+        linkDir[i] = link.bidirectional ? DT_OFFMESH_CON_BIDIR : 0;
+        linkIds[i] = static_cast<unsigned int>(i);
+    }
+
     dtNavMeshCreateParams params{};
+    params.offMeshConVerts = linkVerts.data();
+    params.offMeshConRad = linkRadius.data();
+    params.offMeshConDir = linkDir.data();
+    params.offMeshConAreas = linkArea.data();
+    params.offMeshConFlags = linkFlags.data();
+    params.offMeshConUserID = linkIds.data();
+    params.offMeshConCount = static_cast<int>(linkCount);
     params.verts = pm.verts;
     params.vertCount = pm.nverts;
     params.polys = pm.polys;
@@ -277,6 +299,30 @@ int NavMesh::PolygonCount() const {
         if (tile && tile->header) count += tile->header->polyCount;
     }
     return count;
+}
+
+std::vector<NavLink> NavMesh::Links() const {
+    std::vector<NavLink> out;
+    const dtNavMesh& mesh = *m_detour->mesh;
+    for (int i = 0; i < mesh.getMaxTiles(); ++i) {
+        const dtMeshTile* tile = mesh.getTile(i);
+        if (!tile || !tile->header) continue;
+        for (int c = 0; c < tile->header->offMeshConCount; ++c) {
+            const dtOffMeshConnection& con = tile->offMeshCons[c];
+            // Uma das pontas longe de todo polígono: o Detour guarda a ligação, mas ninguém consegue usá-la (a ligação
+            // ligada tem duas conexões, uma em cada ponta).
+            int connected = 0;
+            for (unsigned int l = tile->polys[con.poly].firstLink; l != DT_NULL_LINK; l = tile->links[l].next) ++connected;
+            if (connected < 2) continue;
+            NavLink link;
+            link.start = FromDetour(&con.pos[0]);
+            link.end = FromDetour(&con.pos[3]);
+            link.radius = con.rad;
+            link.bidirectional = (con.flags & DT_OFFMESH_CON_BIDIR) != 0;
+            out.push_back(link);
+        }
+    }
+    return out;
 }
 
 NavGeometry NavMesh::DebugTriangles() const {

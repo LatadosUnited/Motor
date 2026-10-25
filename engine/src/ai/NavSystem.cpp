@@ -41,11 +41,12 @@ const NavMeshSurface* FindSurface(const Scene& scene) {
     return nullptr;
 }
 
-NavCrowd::AgentParams CrowdParams(const NavMeshAgent& s) {
+// `frozen`: parado no lugar (atravessando uma ligação; quem move o agente é o NavSystem).
+NavCrowd::AgentParams CrowdParams(const NavMeshAgent& s, bool frozen = false) {
     NavCrowd::AgentParams p;
     p.radius = s.radius;
     p.height = s.height;
-    p.speed = s.speed;
+    p.speed = frozen ? 0.0f : s.speed;
     p.acceleration = s.acceleration;
     p.avoidOthers = s.avoidOthers;
     return p;
@@ -176,7 +177,11 @@ void NavSystem::ReplanAgents() {
     for (auto& [id, agent] : m_agents) {
         const Entity* e = m_scene->Find(id);
         if (!e || !e->Has<NavMeshAgent>() || !AddToCrowd(id, agent, FeetOf(id, *e->Get<NavMeshAgent>()))) continue;
-        if (agent.hasDestination && !agent.arrived) PlanPath(agent, agent.destination);
+        if (agent.crossing.active) {
+            m_crowd->SetParams(agent.crowd, CrowdParams(*e->Get<NavMeshAgent>(), true));
+        } else if (agent.hasDestination && !agent.arrived) {
+            PlanPath(agent, agent.destination);
+        }
     }
 }
 
@@ -191,7 +196,12 @@ void NavSystem::GrowCrowd() {
     if (!m_crowd) return;
     for (const auto& [id, feet] : where) {
         Agent& agent = m_agents[id];
-        if (AddToCrowd(id, agent, feet) && agent.hasDestination && !agent.arrived) PlanPath(agent, agent.destination);
+        if (!AddToCrowd(id, agent, feet)) continue;
+        if (agent.crossing.active) {
+            m_crowd->SetParams(agent.crowd, CrowdParams(*m_scene->Find(id)->Get<NavMeshAgent>(), true));
+        } else if (agent.hasDestination && !agent.arrived) {
+            PlanPath(agent, agent.destination);
+        }
     }
 }
 
@@ -311,6 +321,7 @@ void NavSystem::Stop(EntityId id) {
 
 bool NavSystem::HasPath(EntityId id) const {
     const Agent* agent = FindAgent(id);
+    if (agent && agent->crossing.active) return agent->hasDestination && !agent->arrived;
     return agent && agent->hasDestination && !agent->arrived && m_crowd && agent->crowd >= 0 &&
            (m_crowd->HasPath(agent->crowd) || m_crowd->PathPending(agent->crowd));
 }
@@ -326,16 +337,24 @@ bool NavSystem::IsPathPartial(EntityId id) const {
 }
 
 float NavSystem::RemainingDistance(EntityId id) const {
-    return HasPath(id) ? NavMesh::PathLength(m_crowd->Corners(FindAgent(id)->crowd)) : 0.0f;
+    const Agent* agent = FindAgent(id);
+    if (!HasPath(id) || agent->crossing.active) return 0.0f;
+    return NavMesh::PathLength(m_crowd->Corners(agent->crowd));
 }
 
 glm::vec3 NavSystem::GetVelocity(EntityId id) const {
     const Agent* agent = FindAgent(id);
+    if (agent && agent->crossing.active) return agent->crossing.velocity;
     return agent && m_crowd && agent->crowd >= 0 ? m_crowd->Velocity(agent->crowd) : glm::vec3(0.0f);
 }
 
+bool NavSystem::IsOnLink(EntityId id) const {
+    const Agent* agent = FindAgent(id);
+    return agent && agent->crossing.active;
+}
+
 std::vector<glm::vec3> NavSystem::GetPath(EntityId id) const {
-    if (!HasPath(id)) return {};
+    if (!HasPath(id) || FindAgent(id)->crossing.active) return {};
     std::vector<glm::vec3> corners = m_crowd->Corners(FindAgent(id)->crowd);
     if (!corners.empty()) corners.erase(corners.begin());  // o primeiro é onde o agente já está
     return corners;
@@ -372,6 +391,7 @@ void NavSystem::OnFixedUpdate(SceneRuntime&, float dt) {
         if (!m_scene->IsActiveInHierarchy(id)) continue;
         Agent& agent = AgentFor(id);
         const NavMeshAgent& settings = *m_scene->Find(id)->Get<NavMeshAgent>();
+        if (agent.crossing.active) continue;  // fora da multidão até o fim da ligação
         PrepareAgent(id, agent, settings);
         FollowTarget(agent, settings);
     }
@@ -405,7 +425,16 @@ void NavSystem::FollowTarget(Agent& agent, const NavMeshAgent& s) {
 }
 
 void NavSystem::ApplyAgent(EntityId id, Agent& agent, const NavMeshAgent& s, float dt) {
+    if (agent.crossing.active) {
+        AdvanceCrossing(id, agent, s, dt);
+        return;
+    }
     if (!m_crowd || agent.crowd < 0 || !m_crowd->OnNavMesh(agent.crowd)) return;
+    if (const auto link = m_crowd->TakeLinkCrossing(agent.crowd)) {
+        StartCrossing(id, agent, s, link->start, link->end);
+        AdvanceCrossing(id, agent, s, dt);
+        return;
+    }
 
     // Chegou: a multidão esquece o destino e freia o agente com a aceleração dele. Vale também parar encostado em
     // quem já parou, sem chegar mais perto (muitos indo ao mesmo ponto): sem isso os de trás empurram para sempre e
@@ -480,6 +509,86 @@ void NavSystem::Turn(EntityId id, const NavMeshAgent& s, const glm::vec3& veloci
                                           glm::normalize(glm::vec3(p[2]))));
     }
     e->transform.rotation = glm::normalize(glm::inverse(parent) * rotation);
+}
+
+float NavSystem::ArcOf(const glm::vec3& start, const glm::vec3& end) const {
+    // A ligação do navmesh guarda só as pontas: o arco vem do NavMeshLink da cena com essas pontas (nos dois
+    // sentidos). Sem ele (removido depois de gerar o .mnav), um pulo baixo.
+    constexpr float kSame = 0.05f;
+    for (EntityId id : m_scene->EntitiesWith<NavMeshLink>()) {
+        const glm::mat4 world = m_scene->WorldMatrix(id);
+        const NavMeshLink& l = *m_scene->Find(id)->Get<NavMeshLink>();
+        const glm::vec3 a = glm::vec3(world * glm::vec4(l.start, 1.0f)), b = glm::vec3(world * glm::vec4(l.end, 1.0f));
+        if ((glm::distance(a, start) < kSame && glm::distance(b, end) < kSame) ||
+            (glm::distance(a, end) < kSame && glm::distance(b, start) < kSame)) {
+            return std::max(l.arcHeight, 0.0f);
+        }
+    }
+    return 0.5f;
+}
+
+void NavSystem::StartCrossing(EntityId id, Agent& agent, const NavMeshAgent& s, const glm::vec3& start,
+                              const glm::vec3& end) {
+    Crossing& c = agent.crossing;
+    c = Crossing{};
+    c.active = true;
+    c.from = IsPhysical(id) ? FeetOf(id, s) : m_crowd->Position(agent.crowd);
+    c.start = start;
+    c.end = end;
+    c.arc = ArcOf(start, end);
+    // Na velocidade do agente: até a ponta de saída, e a ligação pelo comprimento no plano mais a subida (uma
+    // escada de 3 m leva o mesmo que andar 3 m).
+    const float speed = std::max(s.speed, 0.1f);
+    c.approach = glm::distance(c.from, start) / speed;
+    const float length = glm::length(Flat(end - start)) + std::abs(end.y - start.y);
+    c.duration = c.approach + std::max(length / speed, 0.25f);
+    // O agente fica na multidão, parado: a travessia dela (sem arco, e instantânea numa escada) termina na ponta de
+    // chegada e ele espera lá. Tirá-lo e pô-lo de volta não serve: o DetourCrowd guarda a travessia no lugar dele na
+    // multidão, e o agente que entrasse depois no mesmo lugar voltaria para a ponta de saída.
+    m_crowd->SetParams(agent.crowd, CrowdParams(s, true));
+}
+
+void NavSystem::AdvanceCrossing(EntityId id, Agent& agent, const NavMeshAgent& s, float dt) {
+    Crossing& c = agent.crossing;
+    c.time = std::min(c.time + dt, c.duration);
+    glm::vec3 feet;
+    if (c.time < c.approach) {
+        feet = glm::mix(c.from, c.start, c.time / c.approach);
+    } else {
+        const float span = c.duration - c.approach;
+        const float u = span > 0.0f ? (c.time - c.approach) / span : 1.0f;
+        feet = glm::mix(c.start, c.end, u) + glm::vec3(0.0f, c.arc * 4.0f * u * (1.0f - u), 0.0f);
+    }
+    const glm::vec3 previous = FeetOf(id, s);
+    c.velocity = (feet - previous) / std::max(dt, 1e-4f);
+    if (IsPhysical(id)) {
+        // A física segue o arco: a velocidade inteira do passo (com a vertical), sem andar nem pular.
+        m_physics->SetCharacterVelocity(id, c.velocity);
+        Turn(id, s, c.end - c.start, dt, false);
+    } else {
+        glm::mat4 world = m_scene->WorldMatrix(id);
+        world[3] = glm::vec4(feet + glm::vec3(0.0f, LiftOf(id, s), 0.0f), 1.0f);
+        m_scene->SetWorldMatrix(id, world);
+        Turn(id, s, c.end - c.start, dt, true);
+        agent.written = feet;
+    }
+    if (c.time < c.duration) return;
+
+    // Do outro lado: anda de novo com a multidão, e o caminho até o destino recomeça de lá.
+    c.active = false;
+    c.velocity = glm::vec3(0.0f);
+    if (!m_crowd) return;
+    if (agent.crowd >= 0 && !m_crowd->MoveTo(agent.crowd, c.end)) {
+        m_crowd->Remove(agent.crowd);  // a multidão o perdeu de vista: entra de novo na ponta de chegada
+        agent.crowd = -1;
+    }
+    if (agent.crowd < 0 && !AddToCrowd(id, agent, c.end)) {
+        GrowCrowd();
+        if (agent.crowd < 0 && !AddToCrowd(id, agent, c.end)) return;
+    }
+    m_crowd->SetParams(agent.crowd, CrowdParams(s));
+    agent.written = c.end;
+    if (agent.hasDestination && !agent.arrived) PlanPath(agent, agent.destination);
 }
 
 MOTOR_RUNTIME_SYSTEM(Navegacao, NavSystem, kSystemOrderNavigation);

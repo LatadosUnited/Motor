@@ -1059,6 +1059,10 @@ Um guarda que patrulha entre dois pontos e persegue o jogador quando o vê
 - Sem física, o agente mexe no Transform direto. Com um **Controlador de personagem** na mesma entidade ele anda
   pela física: empurra caixas, cai e não atravessa paredes, e volta para o navmesh se for empurrado para fora dele.
   Rigidbody num agente não funciona.
+- **Pulos e escadas:** a **Ligação de navegação** (`NavMeshLink`) liga dois pontos do navmesh que não se alcançam
+  andando (o vão entre duas plataformas, o alto de um muro). As pontas são relativas à entidade e precisam cair perto
+  do navmesh; gere o navmesh de novo depois de pôr ou mudar uma. O agente vai em arco (**Altura do arco**) ou reto
+  (0, escada), na velocidade dele, e `IsOnLink(id)` diz quando ele está no meio do pulo.
 
 Para montar: o chão e as paredes com Collider, a **Superfície de navegação** (e **Gerar**), duas entidades
 vazias `PontoA` e `PontoB`, e o guarda com **Agente de navegação** e **Scripts > Guarda**, com Ponto A, Ponto B

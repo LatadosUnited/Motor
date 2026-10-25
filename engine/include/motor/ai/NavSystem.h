@@ -92,6 +92,7 @@ public:
     bool HasPath(EntityId id) const;      // tem destino e ainda não chegou
     bool HasArrived(EntityId id) const;   // recebeu um destino e chegou (até o próximo SetDestination)
     bool IsPathPartial(EntityId id) const;
+    bool IsOnLink(EntityId id) const;     // atravessando uma ligação (NavMeshLink: pulo, escada)
     float RemainingDistance(EntityId id) const;  // pelo caminho; 0 sem caminho
     glm::vec3 GetVelocity(EntityId id) const;
     // Cantos do caminho ainda por andar, começando no próximo (vazio sem caminho).
@@ -100,6 +101,20 @@ public:
     bool Warp(EntityId id, const glm::vec3& position);
 
 private:
+    // Travessia de uma ligação (NavMeshLink): parado na multidão, o agente vai até a ponta de saída, atravessa (em
+    // arco ou reto) e volta a andar com a multidão na ponta de chegada.
+    struct Crossing {
+        bool active = false;
+        glm::vec3 from{0.0f};   // pés quando entrou
+        glm::vec3 start{0.0f};
+        glm::vec3 end{0.0f};
+        float arc = 0.0f;       // altura do arco (0 = reto)
+        float approach = 0.0f;  // s até a ponta de saída
+        float duration = 0.0f;  // s da travessia inteira
+        float time = 0.0f;
+        glm::vec3 velocity{0.0f};
+    };
+
     struct Agent {
         int crowd = -1;                  // índice na multidão (-1: ainda fora dela)
         glm::vec3 destination{0.0f};
@@ -110,6 +125,7 @@ private:
         bool hasDestination = false;
         bool arrived = false;
         bool followingTarget = false;
+        Crossing crossing;
         uint32_t seen = 0;               // passo em que o agente apareceu por último (some: o registro sai)
     };
 
@@ -130,6 +146,10 @@ private:
     void FollowTarget(Agent& agent, const NavMeshAgent& settings);
     void ApplyAgent(EntityId id, Agent& agent, const NavMeshAgent& settings, float dt);
     void Turn(EntityId id, const NavMeshAgent& settings, const glm::vec3& velocity, float dt, bool moved);
+    float ArcOf(const glm::vec3& start, const glm::vec3& end) const;
+    void StartCrossing(EntityId id, Agent& agent, const NavMeshAgent& settings, const glm::vec3& start,
+                       const glm::vec3& end);
+    void AdvanceCrossing(EntityId id, Agent& agent, const NavMeshAgent& settings, float dt);
 
     Scene* m_scene = nullptr;
     PhysicsSystem* m_physics = nullptr;  // corpo dos agentes com CharacterController

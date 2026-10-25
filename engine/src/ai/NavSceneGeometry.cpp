@@ -128,6 +128,18 @@ NavGeometry CollectNavGeometry(const Scene& scene) {
             }
         }
     }
+    for (EntityId id : scene.EntitiesWith<NavMeshLink>()) {
+        const Entity* e = scene.Find(id);
+        if (!e || !scene.IsActiveInHierarchy(id)) continue;
+        const NavMeshLink& l = *e->Get<NavMeshLink>();
+        const glm::mat4 world = scene.WorldMatrix(id);
+        NavLink link;
+        link.start = glm::vec3(world * glm::vec4(l.start, 1.0f));
+        link.end = glm::vec3(world * glm::vec4(l.end, 1.0f));
+        link.radius = l.radius;
+        link.bidirectional = l.bidirectional;
+        out.links.push_back(link);
+    }
     return out;
 }
 

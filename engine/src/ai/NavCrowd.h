@@ -10,7 +10,9 @@
 
 #include <glm/vec3.hpp>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class dtCrowd;
@@ -21,6 +23,12 @@ class NavMesh;
 
 class NavCrowd {
 public:
+    // Ligação (NavMeshLink) em que o agente acabou de entrar, já no sentido em que vai atravessar.
+    struct LinkCrossing {
+        glm::vec3 start{0.0f};
+        glm::vec3 end{0.0f};
+    };
+
     struct AgentParams {
         float radius = 0.5f;
         float height = 2.0f;
@@ -55,6 +63,10 @@ public:
     bool MoveTo(int index, const glm::vec3& feet);
 
     void Update(float dt);
+    // O agente chegou a uma ligação no último Update (o DetourCrowd começou a atravessá-la): quem atravessa de
+    // verdade é quem chama (com a velocidade do agente zerada, a travessia do DetourCrowd só o leva para a ponta de
+    // chegada). nullopt se não entrou em nenhuma.
+    std::optional<LinkCrossing> TakeLinkCrossing(int index);
 
     bool OnNavMesh(int index) const;
     bool PathPending(int index) const;  // pedido na fila, sem caminho ainda
@@ -82,6 +94,7 @@ private:
     dtCrowd* m_crowd = nullptr;
     int m_capacity = 0;
     std::vector<unsigned char> m_touching;  // por índice: kTouching, kTouchingIdle
+    std::vector<uint64_t> m_nextLink;       // por índice: ligação à frente antes do Update (0: nenhuma)
 };
 
 } // namespace motor

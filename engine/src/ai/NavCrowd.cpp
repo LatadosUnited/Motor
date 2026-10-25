@@ -49,6 +49,7 @@ std::unique_ptr<NavCrowd> NavCrowd::Create(const NavMesh& navMesh, int capacity)
     crowd->m_navMesh = &navMesh;
     crowd->m_capacity = std::max(capacity, 1);
     crowd->m_touching.assign(static_cast<size_t>(crowd->m_capacity), 0);
+    crowd->m_nextLink.assign(static_cast<size_t>(crowd->m_capacity), 0);
     crowd->m_crowd = dtAllocCrowd();
     if (!crowd->m_crowd || !crowd->m_crowd->init(crowd->m_capacity, kMaxAgentRadius, navMesh.m_detour->mesh)) {
         return nullptr;
@@ -140,8 +141,37 @@ bool NavCrowd::MoveTo(int index, const glm::vec3& feet) {
 }
 
 void NavCrowd::Update(float dt) {
+    // A ligação à frente de cada um: se o DetourCrowd o fizer entrar nela, é por esta que ele vai (o caminho já
+    // terá passado dela depois do update).
+    for (int i = 0; i < m_capacity; ++i) {
+        const dtCrowdAgent* ag = m_crowd->getAgent(i);
+        const bool link = ag && ag->active && ag->ncorners > 0 &&
+                          (ag->cornerFlags[ag->ncorners - 1] & DT_STRAIGHTPATH_OFFMESH_CONNECTION);
+        m_nextLink[static_cast<size_t>(i)] = link ? ag->cornerPolys[ag->ncorners - 1] : 0;
+    }
     m_crowd->update(dt, nullptr);
     SeparateOverlaps();
+}
+
+std::optional<NavCrowd::LinkCrossing> NavCrowd::TakeLinkCrossing(int index) {
+    const dtCrowdAgent* ag = m_crowd->getAgent(index);
+    if (!ag || !ag->active || ag->state != DT_CROWDAGENT_STATE_OFFMESH) return std::nullopt;
+    const dtPolyRef ref = static_cast<dtPolyRef>(m_nextLink[static_cast<size_t>(index)]);
+    m_nextLink[static_cast<size_t>(index)] = 0;
+    const dtOffMeshConnection* con = ref ? m_navMesh->m_detour->mesh->getOffMeshConnectionByRef(ref) : nullptr;
+    LinkCrossing crossing;
+    if (!con) {
+        // Sem a ligação (não deveria acontecer): atravessa parado, e o caminho recomeça de onde está.
+        crossing.start = crossing.end = FromDetour(ag->npos);
+        return crossing;
+    }
+    // Começa pela ponta mais perto (ligação nos dois sentidos pode ser usada de trás para a frente).
+    const glm::vec3 a = FromDetour(&con->pos[0]), b = FromDetour(&con->pos[3]);
+    const glm::vec3 at = FromDetour(ag->npos);
+    const bool reverse = glm::distance(at, b) < glm::distance(at, a);
+    crossing.start = reverse ? b : a;
+    crossing.end = reverse ? a : b;
+    return crossing;
 }
 
 bool NavCrowd::OnNavMesh(int index) const {

@@ -38,11 +38,22 @@ struct NavMeshBuildSettings {
     float detailMaxError = 1.0f;        // células
 };
 
+// Ligação entre dois pontos do navmesh que não se ligam andando (pulo, escada; componente NavMeshLink), no mundo.
+struct NavLink {
+    glm::vec3 start{0.0f};
+    glm::vec3 end{0.0f};
+    float radius = 0.5f;        // as pontas podem ficar até essa distância do navmesh
+    bool bidirectional = true;
+
+    bool operator==(const NavLink&) const = default;
+};
+
 // Triângulos no mundo de onde o navmesh nasce (chão, paredes, rampas). Sentido anti-horário visto de fora, como
 // nas malhas do Motor: a normal cross(b - a, c - a) aponta para fora, e só a face virada para cima vira chão.
 struct NavGeometry {
     std::vector<glm::vec3> vertices;
     std::vector<uint32_t> indices;  // três por triângulo
+    std::vector<NavLink> links;     // ligações (pontas a mais de `radius` do navmesh ficam de fora)
 
     void AddTriangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c);
     bool Empty() const { return indices.size() < 3; }
@@ -93,6 +104,8 @@ public:
     static float PathLength(const std::vector<glm::vec3>& corners);
 
     int PolygonCount() const;
+    // Ligações que entraram no navmesh (as de pontas longe dele ficam de fora).
+    std::vector<NavLink> Links() const;
     // Triângulos dos polígonos (com o detalhe de altura), para desenhar o navmesh no editor.
     NavGeometry DebugTriangles() const;
     const NavMeshBuildSettings& Settings() const { return m_settings; }
