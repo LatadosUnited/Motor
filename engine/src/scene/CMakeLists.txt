@@ -28,5 +28,6 @@ motor_add_layer(scene
         NavMeshAgent.cpp
         NavMeshLink.cpp
         NavMeshArea.cpp
+        NavMeshAgentAnimation.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)
