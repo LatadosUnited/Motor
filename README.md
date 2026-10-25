@@ -770,7 +770,7 @@ componentes comuns (Inspector, cena, desfazer):
 | **Animação do agente** (`NavMeshAgentAnimation`) | Clipes parado, andando, correndo e pulando; Velocidade do andar e da corrida, Parado abaixo de, Acompanhar a velocidade, Mistura. Troca os clipes do Animator pela velocidade do agente |
 | **Área de navegação** (`NavMeshArea`) | Tamanho e Centro (caixa), Área (1 a 15), Nome, Custo. Água, lama: o agente dá a volta quando sai mais curto; o agente escolhe por quais áreas anda (**Áreas por onde anda**) |
 | **Percepção** (`Perception`) | Alcance e Ângulo da visão, Percebe em volta até, Altura dos olhos, Audição, Memória, Percebe os grupos. Os sentidos do agente (Fase 37) |
-| **Alvo de percepção** (`PerceptionTarget`) | Grupo, Altura do ponto olhado, Visibilidade, Sons são ouvidos. Quem os agentes podem ver e ouvir |
+| **Alvo de percepção** (`PerceptionTarget`) | Grupo, Altura do ponto olhado, Visibilidade, Alcance dos sons. Quem os agentes podem ver e ouvir |
 
 - **De onde vem o navmesh:** dos **Colliders estáticos** das entidades ativas (sem Rigidbody, sem trigger, sem
   agente, sem Controlador de personagem). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como
