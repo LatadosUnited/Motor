@@ -31,7 +31,8 @@ inline constexpr EntityId kNullEntity = 0;
 // Remove) e cena copiada. Quem guarda algo derivado da estrutura das cenas (a lista de scripts do SceneRuntime, as
 // listas por tipo de Scene::EntitiesWith) o compara para saber se precisa refazer, sem percorrer a cena.
 uint64_t SceneStructureVersion();
-// Para quem mexe direto em Entity::components (prefabs, serializador, editor) em vez de usar Add e Remove.
+// Para quem mexe direto em Entity::components (prefabs, serializador, editor) em vez de usar Add e Remove: além do
+// contador, faz os índices de todas as cenas (tipos, filhos, nomes) serem refeitos na próxima consulta.
 void MarkSceneStructureChanged();
 
 struct Entity;
@@ -52,13 +53,14 @@ struct EntityCache {
     uint64_t parentStamp = 0;              // `stamp` do pai quando foi calculado
     uint64_t stamp = 0;                    // sobe (contador global) a cada vez que `world` é recalculado
     glm::mat4 world{1.0f};
+    Scene* owner = nullptr;                // cena que guarda a entidade: Add e Remove avisam os índices dela
 };
 
 struct Entity {
     EntityId id = kNullEntity;
     std::string name;
     bool active = true;
-    EntityId parent = kNullEntity;
+    EntityId parent = kNullEntity;  // troque com Scene::SetParent (o índice de filhos da cena não vê a escrita direta)
     Transform transform;  // relativo ao pai; toda entidade tem
 
     // No máximo um componente de cada tipo, na ordem em que foram adicionados (é a ordem do Inspector).
@@ -99,8 +101,8 @@ public:
     // desfazer do editor e para guardar o estado da cena antes do modo Play.
     Scene(const Scene& other);
     Scene& operator=(const Scene& other);
-    Scene(Scene&&) noexcept = default;
-    Scene& operator=(Scene&&) noexcept = default;
+    Scene(Scene&& other) noexcept;  // as entidades passam a apontar para a cena nova (EntityCache::owner)
+    Scene& operator=(Scene&& other) noexcept;
 
     // Mesmo conteúdo: entidades (na mesma ordem, com os mesmos ids e valores) e ambiente.
     bool operator==(const Scene& other) const;
@@ -117,7 +119,11 @@ public:
 
     Entity* Find(EntityId id);
     const Entity* Find(EntityId id) const;
-    Entity* FindByName(std::string_view name);  // a primeira com esse nome, na ordem da cena
+    // Uma entidade com esse nome, pelo índice de nomes: a primeira na ordem da cena, salvo quando há nomes repetidos e
+    // uma entidade foi renomeada direto (o nome é campo livre, sem aviso) para o nome de outra que vem depois; aí pode
+    // vir a de depois, até o índice ser refeito (como o GameObject.Find da Unity, que não garante qual). Quem foi
+    // renomeada é achada procurando na cena (e entra no índice). Nome que não existe percorre a cena.
+    Entity* FindByName(std::string_view name);
 
     // Câmera do jogo: a primeira entidade ativa com Câmera marcada como principal (senão, a primeira ativa
     // com Câmera). kNullEntity se não houver.
@@ -126,24 +132,28 @@ public:
     bool ApplyCamera(EntityId id, Camera& camera) const;
 
     const std::vector<std::unique_ptr<Entity>>& Entities() const { return m_entities; }
-    // Ids das entidades com o componente, na ordem da cena (ativas ou não), sem percorrer a cena: as listas de todos
-    // os tipos são montadas numa passada só e refeitas quando a estrutura muda (SceneStructureVersion). A lista
-    // muda na próxima chamada depois de criar ou destruir entidades e de adicionar ou remover componentes: quem faz
-    // isso dentro do laço (ou chama código do jogo) percorre uma cópia.
+    // Ids das entidades com o componente, na ordem da cena (ativas ou não), sem percorrer a cena. Os índices (tipos,
+    // filhos, nomes) são montados numa passada na primeira consulta e depois só acompanham as mudanças (criar,
+    // destruir, Add, Remove, SetParent), aplicadas na próxima consulta; MarkSceneStructureChanged os refaz. A lista
+    // muda na próxima chamada (desta ou de Children/FindByName) depois de criar ou destruir entidades e de adicionar
+    // ou remover componentes: quem faz isso dentro do laço (ou chama código do jogo) percorre uma cópia.
     const std::vector<EntityId>& EntitiesWith(const ComponentType* type) const;
     template <class T> const std::vector<EntityId>& EntitiesWith() const {
         return EntitiesWith(ComponentRegistry::TypeOf<T>());
     }
-    std::vector<EntityId> Children(EntityId parent) const;  // kNullEntity => raízes
+    std::vector<EntityId> Children(EntityId parent) const;  // kNullEntity => raízes; na ordem da cena, pelo índice
 
     bool IsDescendantOf(EntityId id, EntityId ancestor) const;
     bool IsActiveInHierarchy(EntityId id) const;
+    bool IsActiveInHierarchy(const Entity& e) const;  // sem a busca pelo id
 
     // Falha (retorna false) se criar um ciclo. keepWorldTransform preserva a posição no mundo.
     bool SetParent(EntityId id, EntityId newParent, bool keepWorldTransform = true);
 
     // Com cache por entidade: recalcula só quando o transform, o pai ou o mundo do pai mudaram.
     glm::mat4 WorldMatrix(EntityId id) const;
+    // O mesmo sem a busca pelo id (a entidade precisa ser desta cena); a referência vale até a próxima consulta.
+    const glm::mat4& WorldMatrix(const Entity& e) const { return CachedWorld(e); }
     // Ajusta o Transform local para que a entidade fique com esta matriz no mundo.
     void SetWorldMatrix(EntityId id, const glm::mat4& world);
 
@@ -162,9 +172,24 @@ public:
     Environment environment;
 
 private:
+    friend struct Entity;  // Add e Remove avisam o índice
+
     const Entity* ParentOf(const Entity& e) const;  // Find(e.parent) sem a busca, se a estrutura não mudou
-    bool IsActiveInHierarchy(const Entity& e) const;
     const glm::mat4& CachedWorld(const Entity& e) const;
+
+    // Mudança guardada para o índice, aplicada na próxima consulta (UpdateIndex). As listas ficam ordenadas por id,
+    // que é a ordem da cena: as entidades só entram no fim e os ids só crescem (a cópia preserva os dois).
+    struct IndexChange {
+        enum Kind : uint8_t { AddType, RemoveType, AddChild, RemoveChild, AddName, RemoveName } kind;
+        EntityId id;
+        const ComponentType* type = nullptr;  // AddType, RemoveType
+        EntityId parent = kNullEntity;        // AddChild, RemoveChild
+        size_t nameHash = 0;                  // AddName, RemoveName
+    };
+    bool Indexed() const;  // o índice está montado e acompanha as mudanças (senão, a próxima consulta o monta)
+    void Record(const IndexChange& change) { if (Indexed()) m_pending.push_back(change); }
+    void RecordEntity(const Entity& e, bool added);  // filho, nome e tipos de uma entidade que entra ou sai
+    void UpdateIndex() const;
 
     // `copies`: pares (original, cópia) de cada entidade copiada, para ajustar as EntityRef.
     EntityId CloneRecursive(const Entity& source, EntityId newParent,
@@ -174,9 +199,13 @@ private:
     std::unordered_map<EntityId, Entity*> m_byId;
     EntityId m_nextId = 1;
 
-    // EntitiesWith: listas por tipo, válidas enquanto SceneStructureVersion() == m_byTypeVersion.
+    // Índices de EntitiesWith, Children e FindByName (por hash do nome, conferido na busca). Montados enquanto
+    // m_indexVersion é a versão global dos índices (MarkSceneStructureChanged a sobe).
     mutable std::unordered_map<const ComponentType*, std::vector<EntityId>> m_byType;
-    mutable uint64_t m_byTypeVersion = UINT64_MAX;
+    mutable std::unordered_map<EntityId, std::vector<EntityId>> m_children;
+    mutable std::unordered_map<size_t, std::vector<EntityId>> m_byName;
+    mutable std::vector<IndexChange> m_pending;
+    mutable uint64_t m_indexVersion = UINT64_MAX;
 };
 
 } // namespace motor

@@ -143,6 +143,46 @@ std::map<std::string, double> Run(AssetLibrary& assets, size_t& entidades) {
     MontarArvores(arvores, 200, 10);
     r["mundo_hierarquia"] = Measure(21, [&] { soma = soma + MundoDeTodas(arvores); });
 
+    // A árvore inteira pelos filhos, como a Hierarquia do editor e o scene_tree do MCP: nas duas cenas.
+    size_t visitadas = 0;
+    std::function<void(const Scene&, EntityId)> visitar = [&](const Scene& s, EntityId pai) {
+        for (EntityId filho : s.Children(pai)) {
+            ++visitadas;
+            visitar(s, filho);
+        }
+    };
+    r["cena_filhos"] = Measure(5, [&] {
+        visitadas = 0;
+        visitar(scene, kNullEntity);
+        visitar(arvores, kNullEntity);
+    });
+    CHECK(visitadas == scene.Entities().size() + arvores.Entities().size());
+
+    // FindEntity dos scripts: 100 buscas por quadro, de nomes do fim da cena e de um que não existe.
+    const char* nomes[] = {"Botão", "Som 10", "Câmera", "Jogador"};
+    size_t achadas = 0;
+    r["cena_nomes"] = Measure(21, [&] {
+        achadas = 0;
+        for (int i = 0; i < 100; ++i) achadas += scene.FindByName(nomes[i % 4]) ? 1 : 0;
+    });
+    CHECK(achadas == 75);
+
+    // Criar e destruir 200 entidades por quadro (o spawn200 do bench), com os sistemas pedindo as listas por tipo
+    // depois de cada mudança.
+    size_t comMalha = 0;
+    r["cena_estrutura"] = Measure(21, [&] {
+        std::vector<EntityId> criadas;
+        for (int i = 0; i < 200; ++i) {
+            Entity& e = scene.CreateEntity("Tiro");
+            e.Add<MeshRenderer>();
+            criadas.push_back(e.id);
+        }
+        comMalha = scene.EntitiesWith<MeshRenderer>().size();
+        scene.DestroyEntities(criadas);
+        comMalha -= scene.EntitiesWith<MeshRenderer>().size();
+    });
+    CHECK(comMalha == 200);
+
     // O passo do jogo: 1 FixedUpdate + 1 Update por quadro, depois de 2 s (as caixas caem, empilham e dormem).
     SceneRuntime runtime(scene);
     runtime.SetAssets(&assets);

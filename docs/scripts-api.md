@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 18 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 19 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -124,7 +124,7 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 
 | Método | Efeito |
 |---|---|
-| `Entity* FindEntity(std::string_view name)` | a primeira entidade com esse nome, ou `nullptr` |
+| `Entity* FindEntity(std::string_view name)` | uma entidade com esse nome (a primeira da cena, salvo nomes repetidos depois de renomear), ou `nullptr`; rápido, por um índice |
 | `Entity* GetEntity(EntityId id)` | a entidade com esse id, ou `nullptr` se não existe (foi destruída; id 0). Aceita um campo `EntityRef`: `GetEntity(alvo)` |
 | `template <class T> T* GetComponent(EntityId id)` | o componente do tipo `T` de outra entidade (id ou `EntityRef`), ou `nullptr` se ela não existe ou não tem um |
 | `Entity& CreateEntity(std::string name, EntityId parent = 0)` | cria uma entidade vazia (na raiz, ou filha de `parent`); os scripts dela começam no próximo passo |

@@ -5,6 +5,6 @@ cena_copiar 4.6969
 cena_json 336.632
 cena_ler 314.432
 cena_montar 5.4402
-jogo_passo 1.9583
+jogo_passo 1.3728
 mundo_cena 0.3076
 mundo_hierarquia 0.2301

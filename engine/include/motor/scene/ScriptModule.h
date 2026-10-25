@@ -50,7 +50,8 @@ namespace motor {
 // 16: Fase 25: Entity::cache (matriz de mundo guardada pela Scene) muda o tamanho de Entity.
 // 17: Fase 35: NavMeshAgent ganhou raio, altura e desvio (multidão); o NavSystem guarda a multidão.
 // 18: Fase 37: o NavSystem guarda o SceneRuntime (RandomPoint); componentes e sistema de percepção novos.
-inline constexpr int kScriptApiVersion = 18;
+// 19: Fase 25: EntityCache::owner (índices da cena acompanham Add e Remove) muda o tamanho de Entity.
+inline constexpr int kScriptApiVersion = 19;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

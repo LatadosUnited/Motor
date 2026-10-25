@@ -35,6 +35,9 @@ struct Result {
     int bodies = 0;
     int fellThrough = 0;                 // abaixo do chão (não pode acontecer)
     int toppled = 0;                     // caixas que saíram da coluna
+    // Os piores passos depois de 2 s (tudo assentado): ms do passo, do Jolt, da sincronização e da escrita.
+    struct Peak { int step; double ms, jolt, sync, write; int active; };
+    std::vector<Peak> peaks;
 };
 
 Result Run(int boxes, int steps, int threads) {
@@ -85,7 +88,13 @@ Result Run(int boxes, int steps, int threads) {
             r.maxStepIndex = i;
         }
         if (i < fallingSteps) falling += ms;
+        if (i >= 120) {
+            const PhysicsStats& st = physics->Stats();
+            r.peaks.push_back({i, ms, st.stepMs, st.syncMs, st.writeMs, st.activeBodies});
+        }
     }
+    std::sort(r.peaks.begin(), r.peaks.end(), [](const Result::Peak& a, const Result::Peak& b) { return a.ms > b.ms; });
+    if (r.peaks.size() > 3) r.peaks.resize(3);
     r.avgMs = total / steps;
     r.avgStepMs = totalStep / steps;
     r.avgSyncMs = totalSync / steps;
@@ -126,6 +135,10 @@ int main(int argc, char** argv) {
                     " Jolt %.2f, sync %.2f, escrita %.2f ms; %d/%d dormindo, %d fora da coluna\n",
                     r.threads, r.avgMs, r.maxMs, r.maxStepIndex, r.fallingMs, r.avgStepMs, r.avgSyncMs, r.avgWriteMs,
                     r.asleep, r.bodies, r.toppled);
+        for (const Result::Peak& p : r.peaks) {
+            std::printf("    pior depois de 2 s: passo %d, %.2f ms (Jolt %.2f, sync %.2f, escrita %.2f; %d acordados)\n",
+                        p.step, p.ms, p.jolt, p.sync, p.write, p.active);
+        }
         CHECK(r.fellThrough == 0);
         CHECK(r.bodies == boxes + 1);
     }

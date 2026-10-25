@@ -598,6 +598,10 @@ struct Jogador : motor::Script {
   Personagem: `MoveCharacter`, `Jump`, `IsGrounded`, `GetCharacterVelocity`, `SetCharacterVelocity` e o campo
   `useGravity`. Área: `OverlapSphere`, `OverlapBox`, `SphereCast` (com máscara de camadas). Entidade criada neste passo só
   ganha corpo no próximo `FixedUpdate`.
+- **Interpolação** (Fase 25): no `Update`, corpos dinâmicos e personagens aparecem entre os dois últimos passos fixos
+  (`PhysicsSettings::interpolate`, ligada; a `Application` informa a fração do passo com `FixedAlpha`). É só visual:
+  antes de cada passo os Transforms voltam a ser os da física. Até 4 passos fixos por quadro
+  (`ApplicationDesc::maxFixedSteps`); num quadro mais lento que isso, o jogo fica mais lento junto.
 - **Camadas de colisão** (Fase 18): até 16 camadas com nome e a tabela de quem se choca com quem, no projeto
   (`.mproject`, formato 3; **Arquivo > Camadas de colisão** ou a ferramenta MCP `physics_layers`). Collider e
   Controlador de personagem escolhem a camada no campo **Camada**. O editor e o Player copiam a tabela para

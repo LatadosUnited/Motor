@@ -27,6 +27,9 @@ ambiente de dentro e a câmera se adapta ao sair para o sol.
 - **Desenho guiado pela GPU** (multi-draw indirect, buffers mapeados de forma persistente) e **objetos guardados
   entre quadros** no renderer (só reenviar o que mudou, como o GPU Resident Drawer da Unity): o que sobrou de CPU
   no fim da Fase 23 é percorrer a cena e montar a lista a cada quadro. *(origem: Fase 23, Tarefa 6 e estudo da 11)*
+- **Componentes em blocos contínuos por tipo** (estilo ECS): a montagem do quadro em várias threads escala mal porque
+  cada objeto lê entidade, componente, material e malha espalhados no heap. Muda a API de `Entity::components`
+  (scripts, Inspector, serializador, prefabs). *(origem: Fase 25, Tarefa 11, e medição da Fase 26, adiada em 25/10/2026)*
 - **Terreno:** mapa de altura editável (subir, baixar, suavizar), pintura de até 4 camadas de textura, collider da
   física, LOD por blocos.
 - **Água:** ondas, reflexo do céu, refração e cor pela profundidade (transparência da Fase 18, `SceneDepthTexture`
