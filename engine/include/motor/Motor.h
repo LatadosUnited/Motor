@@ -47,3 +47,6 @@
 // Fase 34: navegação (navmesh, agentes).
 #include "motor/ai/NavMesh.h"
 #include "motor/ai/NavSystem.h"
+
+// Fase 37: percepção (visão, audição, memória dos agentes).
+#include "motor/ai/PerceptionSystem.h"
