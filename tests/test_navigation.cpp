@@ -1,12 +1,14 @@
 // Navegação (Fase 34): navmesh gerado pela Recast, caminhos pelo Detour, geometria tirada dos Colliders da cena e o
 // NavSystem movendo os NavMeshAgent no SceneRuntime, e o navmesh salvo em .mnav (Tarefa 7). Não usa OpenGL nem
-// janela.
+// janela. Fase 35: a multidão (DetourCrowd), com agentes que desviam uns dos outros.
 #include "TestUtil.h"
 
 #include <motor/ai/NavMesh.h>
 #include <motor/ai/NavSystem.h>
 #include <motor/assets/AssetLibrary.h>
+#include <motor/assets/Model.h>
 #include <motor/core/Paths.h>
+#include <motor/physics/PhysicsSystem.h>
 #include <motor/project/Project.h>
 #include <motor/renderer/Mesh.h>
 #include <motor/scene/Components.h>
@@ -15,8 +17,11 @@
 #include <motor/scene/SceneSerializer.h>
 
 #include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
 
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <vector>
@@ -403,6 +408,456 @@ int main(int argc, char** argv) {
         CHECK(steps * kDt < 5.6f);
         std::printf("  chegou em %.2f s (maior aumento do que falta: %.3f m)\n", steps * kDt, worstIncrease);
         runtime.Stop();
+    }
+
+    SECTION("Multidão: dois agentes se cruzam sem se atravessar");
+    {
+        // Lado a lado na mesma linha, trocando de lugar: sem desvio, um passaria por dentro do outro no meio.
+        Scene scene = MakeScene();
+        const EntityId a = AddAgent(scene, {-7.0f, 0.0f, 5.0f}).id;
+        const EntityId b = AddAgent(scene, {7.0f, 0.0f, 5.0f}).id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->SetDestination(a, {7.0f, 0.0f, 5.0f}) && nav->SetDestination(b, {-7.0f, 0.0f, 5.0f}));
+        float closest = 1e9f;
+        bool sawEachOther = false;
+        int steps = 0;
+        for (; steps < 60 * 15 && nav && !(nav->HasArrived(a) && nav->HasArrived(b)); ++steps) {
+            runtime.FixedUpdate(kDt);
+            closest = std::min(closest, glm::distance(scene.Find(a)->transform.position, scene.Find(b)->transform.position));
+            const std::vector<EntityId> na = nav->GetNeighbors(a), nb = nav->GetNeighbors(b);
+            if (na == std::vector<EntityId>{b} && nb == std::vector<EntityId>{a}) sawEachOther = true;
+        }
+        CHECK(nav && nav->HasArrived(a) && nav->HasArrived(b));
+        CHECK(sawEachOther);  // cada um é o vizinho de quem o outro desvia
+        CHECK(closest > 0.9f);  // raios de 0,5 m: nunca mais perto que 1 m, com folga de 10 cm
+        CHECK(glm::distance(scene.Find(a)->transform.position, glm::vec3(7.0f, 0.0f, 5.0f)) < 0.3f);
+        std::printf("  cruzaram em %.2f s, a %.2f m um do outro no mais perto\n", steps * kDt, closest);
+        runtime.Stop();
+    }
+
+
+    SECTION("Multidão: muitos agentes, a multidão cresce e ninguém entra no outro");
+    {
+        // 50 agentes do lado de -Z vão todos para o mesmo ponto do outro lado da parede; depois que saem, nascem mais
+        // 60 onde eles estavam (a multidão começa com 100 lugares e dobra).
+        Scene scene = MakeScene();
+        std::vector<EntityId> agents;
+        for (int i = 0; i < 50; ++i) {
+            agents.push_back(AddAgent(scene, {-7.0f + (i % 10) * 1.5f, 0.0f, -3.0f - (i / 10) * 1.4f}).id);
+        }
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        const glm::vec3 goal(0.0f, 0.0f, 6.0f);
+        int planned = 0;
+        for (EntityId id : agents) planned += nav && nav->SetDestination(id, goal) ? 1 : 0;
+        CHECK(planned == 50);
+
+        double worstMs = 0.0;
+        for (int step = 0; step < 60 * 20 && nav; ++step) {
+            if (step == 150) {
+                for (int i = 0; i < 60; ++i) {
+                    Entity& late = AddAgent(scene, {-7.0f + (i % 10) * 1.5f, 0.0f, -3.0f - (i / 10) * 1.1f});
+                    late.Get<NavMeshAgent>()->target = EntityRef(agents[0]);  // os novos seguem o primeiro (fila)
+                    late.Get<NavMeshAgent>()->stoppingDistance = 2.0f;
+                    agents.push_back(late.id);
+                }
+            }
+            const auto t0 = std::chrono::steady_clock::now();
+            runtime.FixedUpdate(kDt);
+            worstMs = std::max(worstMs, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        }
+
+        // Ninguém dentro de ninguém (raios de 0,5 m; a colisão da multidão deixa entrar um pouco), e todos andaram.
+        float closest = 1e9f;
+        int moved = 0;
+        int behindWall = 0;
+        for (size_t i = 0; i < agents.size(); ++i) {
+            const glm::vec3 p = scene.Find(agents[i])->transform.position;
+            for (size_t j = i + 1; j < agents.size(); ++j) {
+                closest = std::min(closest, glm::distance(p, scene.Find(agents[j])->transform.position));
+            }
+            if (i < 50 && p.z > 0.5f) ++moved;
+            if (p.z < 0.0f) ++behindWall;
+        }
+        CHECK(agents.size() == 110);
+        CHECK(closest > 0.6f);
+        CHECK(moved == 50);           // os 50 primeiros passaram para o lado do ponto
+        CHECK(behindWall < 10);       // os 60 novos também deram a volta na parede atrás do primeiro
+        std::printf("  110 agentes: o mais perto a %.2f m, passo mais lento %.1f ms\n", closest, worstMs);
+        runtime.Stop();
+    }
+
+    SECTION("Multidão: agente que um script tirou do lugar continua de onde foi posto");
+    {
+        Scene scene = MakeScene();
+        const EntityId id = AddAgent(scene, {-8.0f, 0.0f, -8.0f}).id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, 8.0f}));
+        for (int i = 0; i < 30; ++i) runtime.FixedUpdate(kDt);
+        scene.Find(id)->transform.position = {8.0f, 0.0f, -8.0f};  // como um script faria
+        runtime.FixedUpdate(kDt);
+        CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(8.0f, 0.0f, -8.0f)) < 0.2f);
+        for (int i = 0; i < 60 * 10 && nav && !nav->HasArrived(id); ++i) runtime.FixedUpdate(kDt);
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(8.0f, 0.0f, 8.0f)) < 0.3f);
+        runtime.Stop();
+    }
+
+    SECTION("Agente com Controlador de personagem: anda pela física, empurra a caixa e não sai do navmesh");
+    {
+        // A caixa tem Rigidbody: não entra no navmesh, e o caminho passa por ela. Quem a tira do caminho é a física.
+        Scene scene = MakeScene();
+        Entity& box = scene.CreateEntity("Caixa");
+        box.transform.position = {0.0f, 0.5f, 5.25f};
+        box.Add<ColliderComponent>();
+        box.Add<RigidbodyComponent>().mass = 5.0f;
+        const EntityId boxId = box.id;
+        Entity& agentEntity = AddAgent(scene, {-6.0f, 0.9f, 5.0f});  // centro da cápsula de 1,8 m
+        agentEntity.Add<CharacterControllerComponent>();
+        const EntityId id = agentEntity.id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        PhysicsSystem* physics = runtime.GetSystem<PhysicsSystem>();
+        CHECK(nav && physics && nav->SetDestination(id, {6.0f, 0.0f, 5.0f}));
+        float worstOff = 0.0f;
+        int steps = 0;
+        for (; steps < 60 * 12 && nav && !nav->HasArrived(id); ++steps) {
+            runtime.FixedUpdate(kDt);
+            const glm::vec3 feet = scene.Find(id)->transform.position - glm::vec3(0.0f, 0.9f, 0.0f);
+            const auto onMesh = nav->SamplePosition(feet, 1.0f);
+            worstOff = std::max(worstOff, onMesh ? glm::length(glm::vec2(onMesh->x - feet.x, onMesh->z - feet.z)) : 9.0f);
+        }
+        const glm::vec3 end = scene.Find(id)->transform.position;
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(glm::length(glm::vec2(end.x - 6.0f, end.z - 5.0f)) < 0.5f);
+        CHECK(Near(end.y, 0.9f, 0.1f) && physics && physics->IsGrounded(id));  // em pé no chão, pela física
+        CHECK(Near(NavAgentFeet(scene, id).y, 0.0f, 0.1f));                    // pés na base da cápsula
+        CHECK(worstOff < 0.15f);                                               // os pés sempre no navmesh
+        const glm::vec3 boxEnd = scene.Find(boxId)->transform.position;
+        CHECK(glm::distance(boxEnd, glm::vec3(0.0f, 0.5f, 5.25f)) > 0.2f);    // a caixa foi empurrada
+        std::printf("  com física: chegou em %.2f s; caixa em (%.2f, %.2f); fora do navmesh no máximo %.3f m\n",
+                    steps * kDt, boxEnd.x, boxEnd.z, worstOff);
+
+        // Empurrado para fora (como por uma explosão): volta para o navmesh e continua.
+        CHECK(nav && nav->SetDestination(id, {-6.0f, 0.0f, 5.0f}));
+        scene.Find(id)->transform.position = {0.0f, 0.9f, 9.9f};  // além da borda (navmesh vai até ~9,5)
+        for (int i = 0; i < 60 * 12 && nav && !nav->HasArrived(id); ++i) runtime.FixedUpdate(kDt);
+        const glm::vec3 back = scene.Find(id)->transform.position;
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(glm::length(glm::vec2(back.x + 6.0f, back.z - 5.0f)) < 0.5f);
+        runtime.Stop();
+    }
+
+    SECTION("Ligação de navegação: pulo sobre o vão até a plataforma mais alta");
+    {
+        // Plataforma A (topo em y = 0, x de -9 a -1) e B (topo em y = 1, x de 1 a 9): 2 m de vão, só pulando.
+        auto makeScene = [](bool withLink, bool bothWays) {
+            Scene scene;
+            Entity& a = scene.CreateEntity("A");
+            a.transform.position = {-5.0f, -0.5f, 0.0f};
+            a.Add<ColliderComponent>().size = {8.0f, 1.0f, 8.0f};
+            Entity& b = scene.CreateEntity("B");
+            b.transform.position = {5.0f, 0.5f, 0.0f};
+            b.Add<ColliderComponent>().size = {8.0f, 1.0f, 8.0f};
+            scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+            if (withLink) {
+                Entity& link = scene.CreateEntity("Pulo");
+                link.transform.position = {0.0f, 0.0f, 1.0f};  // pontas relativas à entidade
+                NavMeshLink& l = link.Add<NavMeshLink>();
+                l.start = {-1.6f, 0.0f, -1.0f};
+                l.end = {1.6f, 1.0f, -1.0f};
+                l.bidirectional = bothWays;
+            }
+            return scene;
+        };
+
+        // Sem a ligação, o outro lado é outra ilha: caminho parcial até a borda.
+        {
+            Scene scene = makeScene(false, true);
+            const EntityId id = AddAgent(scene, {-6.0f, 0.0f, 0.0f}).id;
+            SceneRuntime runtime(scene);
+            runtime.Start();
+            NavSystem* nav = runtime.GetSystem<NavSystem>();
+            CHECK(nav && nav->SetDestination(id, {6.0f, 1.0f, 0.0f}) && nav->IsPathPartial(id));
+            runtime.Stop();
+        }
+
+        Scene scene = makeScene(true, false);
+        CHECK(CollectNavGeometry(scene).links.size() == 1);
+        const EntityId id = AddAgent(scene, {-6.0f, 0.0f, 0.0f}).id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->GetNavMesh() && nav->GetNavMesh()->Links().size() == 1);
+        CHECK(nav && nav->SetDestination(id, {6.0f, 1.0f, 0.0f}) && !nav->IsPathPartial(id));
+        bool jumped = false;
+        float top = 0.0f;
+        int steps = 0;
+        for (; steps < 60 * 10 && nav && !nav->HasArrived(id); ++steps) {
+            runtime.FixedUpdate(kDt);
+            if (nav->IsOnLink(id)) {
+                jumped = true;
+                CHECK(nav->HasPath(id));
+            }
+            const glm::vec3 p = scene.Find(id)->transform.position;
+            if (p.x > -1.0f && p.x < 1.0f) top = std::max(top, p.y);  // em cima do vão
+        }
+        const glm::vec3 end = scene.Find(id)->transform.position;
+        CHECK(nav && nav->HasArrived(id) && jumped);
+        CHECK(glm::distance(end, glm::vec3(6.0f, 1.0f, 0.0f)) < 0.3f);
+        CHECK(top > 1.3f);  // arco de 1 m acima da linha entre as pontas (no meio dela, y = 0,5)
+        std::printf("  pulou e chegou em %.2f s, no alto do vão a y = %.2f\n", steps * kDt, top);
+
+        // Só de A para B: a volta não tem caminho (parcial até a borda de B).
+        CHECK(nav && nav->SetDestination(id, {-6.0f, 0.0f, 0.0f}) && nav->IsPathPartial(id));
+        runtime.Stop();
+
+        // Com corpo físico, a física segue o arco e o personagem cai em pé do outro lado.
+        Scene physical = makeScene(true, true);
+        Entity& body = AddAgent(physical, {-6.0f, 0.9f, 0.0f});
+        body.Add<CharacterControllerComponent>();
+        const EntityId bodyId = body.id;
+        SceneRuntime physicalRuntime(physical);
+        physicalRuntime.Start();
+        NavSystem* nav2 = physicalRuntime.GetSystem<NavSystem>();
+        CHECK(nav2 && nav2->SetDestination(bodyId, {6.0f, 1.0f, 0.0f}));
+        for (int i = 0; i < 60 * 10 && nav2 && !nav2->HasArrived(bodyId); ++i) physicalRuntime.FixedUpdate(kDt);
+        const glm::vec3 landed = physical.Find(bodyId)->transform.position;
+        CHECK(nav2 && nav2->HasArrived(bodyId));
+        CHECK(glm::distance(landed, glm::vec3(6.0f, 1.9f, 0.0f)) < 0.5f);
+        physicalRuntime.Stop();
+
+        // Altura do arco 0 (escada): vai reto de uma ponta à outra, sem passar acima da linha entre elas.
+        Scene ladder = makeScene(true, true);
+        ladder.FindByName("Pulo")->Get<NavMeshLink>()->arcHeight = 0.0f;
+        const EntityId climber = AddAgent(ladder, {-6.0f, 0.0f, 0.0f}).id;
+        SceneRuntime ladderRuntime(ladder);
+        ladderRuntime.Start();
+        NavSystem* nav3 = ladderRuntime.GetSystem<NavSystem>();
+        CHECK(nav3 && nav3->SetDestination(climber, {6.0f, 1.0f, 0.0f}));
+        float above = -1.0f;
+        for (int i = 0; i < 60 * 10 && nav3 && !nav3->HasArrived(climber); ++i) {
+            ladderRuntime.FixedUpdate(kDt);
+            const glm::vec3 p = ladder.Find(climber)->transform.position;
+            if (nav3->IsOnLink(climber) && p.x > -1.6f && p.x < 1.6f) {
+                above = std::max(above, p.y - (p.x + 1.6f) / 3.2f);  // acima da linha (y de 0 a 1 entre as pontas)
+            }
+        }
+        CHECK(nav3 && nav3->HasArrived(climber));
+        CHECK(above >= 0.0f && above < 0.05f);
+        ladderRuntime.Stop();
+
+        // A ligação entra na impressão digital e vai junto no .mnav.
+        const NavGeometry withLink = CollectNavGeometry(makeScene(true, true));
+        NavGeometry withoutLink = withLink;
+        withoutLink.links.clear();
+        CHECK(NavMesh::SourceHash(withLink, {}) != NavMesh::SourceHash(withoutLink, {}));
+        auto built = NavMesh::Build(withLink, {});
+        const fs::path file = base / "ligacao.mnav";
+        CHECK(built && built->Save(file));
+        auto loaded = NavMesh::Load(file);
+        CHECK(loaded && loaded->Links().size() == 1 && loaded->Links()[0].bidirectional);
+    }
+
+    SECTION("Áreas com custo: dá a volta na lama cara, atravessa a barata, e quem não anda nela nem entra");
+    {
+        // Chão 20 x 20 sem parede; faixa de lama (área 2) de x = -2 a 2 e z = -10 a 6: a volta pela ponta livre
+        // (z > 6) tem uns 25 m, atravessar tem 16 m, 4 deles na lama.
+        auto makeScene = [](float mudLength) {
+            Scene scene;
+            Entity& floor = scene.CreateEntity("Chão");
+            floor.transform.position = {0.0f, -0.5f, 0.0f};
+            floor.Add<ColliderComponent>().size = {20.0f, 1.0f, 20.0f};
+            scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+            Entity& mud = scene.CreateEntity("Lama");
+            mud.transform.position = {0.0f, 0.0f, -10.0f + mudLength * 0.5f};
+            NavMeshArea& area = mud.Add<NavMeshArea>();
+            area.size = {4.0f, 2.0f, mudLength};
+            area.area = 2;
+            area.name = "Lama";
+            area.cost = 5.0f;
+            return scene;
+        };
+        auto maxZ = [](const std::vector<glm::vec3>& corners) {
+            float z = -1e9f;
+            for (const glm::vec3& c : corners) z = std::max(z, c.z);
+            return z;
+        };
+
+        Scene scene = makeScene(16.0f);
+        CHECK(CollectNavGeometry(scene).areas.size() == 1);
+        const EntityId mudId = scene.FindByName("Lama")->id;
+        const EntityId id = AddAgent(scene, {-8.0f, 0.0f, -5.0f}).id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        const NavMesh* mesh = nav ? nav->GetNavMesh() : nullptr;
+        CHECK(mesh && mesh->AreaAt({0.0f, 0.0f, -5.0f}) == 2 && mesh->AreaAt({-8.0f, 0.0f, -5.0f}) == 0);
+        runtime.FixedUpdate(kDt);  // os custos da cena chegam ao navmesh
+        CHECK(mesh && Near(mesh->AreaCost(2), 5.0f, 1e-4f) && Near(mesh->AreaCost(0), 1.0f, 1e-4f));
+
+        // Custo 5: atravessar vale 12 + 4 * 5 = 32 m, mais que a volta.
+        std::vector<glm::vec3> path;
+        CHECK(nav && nav->FindPath({-8.0f, 0.0f, -5.0f}, {8.0f, 0.0f, -5.0f}, path) && maxZ(path) > 5.5f);
+        // Custo 1,5 (mudado no jogo, sem gerar de novo): 18 m, menos que a volta.
+        scene.Find(mudId)->Get<NavMeshArea>()->cost = 1.5f;
+        runtime.FixedUpdate(kDt);
+        CHECK(nav && nav->FindPath({-8.0f, 0.0f, -5.0f}, {8.0f, 0.0f, -5.0f}, path) && maxZ(path) < -4.0f);
+
+        // Andando de verdade (multidão), com a lama cara de novo: o agente dá a volta e não corta por ela no caminho
+        // (o atalho de visão do DetourCrowd ignorava o custo e desfazia a volta).
+        scene.Find(mudId)->Get<NavMeshArea>()->cost = 5.0f;
+        CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, -5.0f}));
+        bool cut = false;
+        for (int i = 0; i < 60 * 15 && nav && !nav->HasArrived(id); ++i) {
+            runtime.FixedUpdate(kDt);
+            const glm::vec3 p = scene.Find(id)->transform.position;
+            if (std::abs(p.x) < 1.9f && p.z < 5.9f) cut = true;
+        }
+        CHECK(nav && nav->HasArrived(id) && !cut);
+        CHECK(nav && nav->Warp(id, {-8.0f, 0.0f, -5.0f}));
+        scene.Find(mudId)->Get<NavMeshArea>()->cost = 1.5f;
+
+        // O agente que não anda na lama dá a volta mesmo com ela barata, e nunca põe o pé nela.
+        scene.Find(id)->Get<NavMeshAgent>()->areas.bits = static_cast<uint16_t>(0xffff & ~(1u << 2));
+        CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, -5.0f}));
+        bool stepped = false;
+        for (int i = 0; i < 60 * 15 && nav && !nav->HasArrived(id); ++i) {
+            runtime.FixedUpdate(kDt);
+            const glm::vec3 p = scene.Find(id)->transform.position;
+            if (std::abs(p.x) < 1.9f && p.z < 5.9f) stepped = true;
+        }
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(!stepped);
+        CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(8.0f, 0.0f, -5.0f)) < 0.3f);
+        // Pelo FindPath com a mesma máscara, o caminho também dá a volta.
+        CHECK(nav && nav->FindPath({-8.0f, 0.0f, -5.0f}, {8.0f, 0.0f, -5.0f}, path, 0xffff & ~(1u << 2)) && maxZ(path) > 5.5f);
+        runtime.Stop();
+
+        // Lama de ponta a ponta: quem não anda nela não tem caminho até o outro lado.
+        Scene closed = makeScene(20.0f);
+        Entity& walker = AddAgent(closed, {-8.0f, 0.0f, -5.0f});
+        walker.Get<NavMeshAgent>()->areas.bits = static_cast<uint16_t>(0xffff & ~(1u << 2));
+        const EntityId walkerId = walker.id;
+        SceneRuntime closedRuntime(closed);
+        closedRuntime.Start();
+        NavSystem* nav2 = closedRuntime.GetSystem<NavSystem>();
+        CHECK(nav2 && nav2->SetDestination(walkerId, {8.0f, 0.0f, -5.0f}) && nav2->IsPathPartial(walkerId));
+        closedRuntime.Stop();
+
+        // A área entra na impressão digital e volta do .mnav.
+        NavGeometry withArea = CollectNavGeometry(makeScene(16.0f));
+        NavGeometry withoutArea = withArea;
+        withoutArea.areas.clear();
+        CHECK(NavMesh::SourceHash(withArea, {}) != NavMesh::SourceHash(withoutArea, {}));
+        auto built = NavMesh::Build(withArea, {});
+        const fs::path file = base / "areas.mnav";
+        CHECK(built && built->Save(file));
+        auto loaded = NavMesh::Load(file);
+        CHECK(loaded && loaded->AreaAt({0.0f, 0.0f, -5.0f}) == 2 && loaded->AreaAt({0.0f, 0.0f, 8.0f}) == 0);
+    }
+
+    SECTION("Animação do agente: parado, andando, correndo e pulando pela velocidade");
+    {
+        // Modelo sem malha com quatro clipes vazios: basta para o Animator trocar de clipe.
+        auto model = std::make_shared<Model>();
+        model->skeleton = std::make_shared<Skeleton>();
+        for (const char* name : {"Parado", "Andando", "Correndo", "Pulando"}) {
+            auto clip = std::make_shared<AnimationClip>();
+            clip->name = name;
+            clip->duration = 1.0f;
+            clip->skeleton = model->skeleton;
+            model->clips.push_back(clip);
+        }
+        auto addAnimated = [&](Scene& scene, const glm::vec3& position) {
+            Entity& agent = AddAgent(scene, position);
+            NavMeshAgentAnimation& anim = agent.Add<NavMeshAgentAnimation>();
+            anim.runClip = "Correndo";
+            anim.jumpClip = "Pulando";
+            const EntityId id = agent.id;
+            Entity& body = scene.CreateEntity("Modelo", id);  // o Animator fica no filho, como num glTF
+            Animator& animator = body.Add<Animator>();
+            animator.model = model;
+            animator.clip.clear();
+            return std::make_pair(id, body.id);
+        };
+
+        Scene scene = MakeScene();
+        const auto [id, bodyId] = addAnimated(scene, {-8.0f, 0.0f, 5.0f});
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        const Animator* animator = scene.Find(bodyId)->Get<Animator>();
+        runtime.FixedUpdate(kDt);
+        CHECK(animator->CurrentClip() == "Parado" && Near(animator->speed, 1.0f, 1e-4f));
+
+        // Acelera até 3,5 m/s: anda (até ~3 m/s) e corre; o Animator acompanha (3,5 / 4 na corrida).
+        CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, 5.0f}));
+        bool walked = false, ran = false, ranAtPace = false;
+        for (int i = 0; i < 60 * 10 && nav && !nav->HasArrived(id); ++i) {
+            runtime.FixedUpdate(kDt);
+            runtime.Update(kDt);
+            const float speed = glm::length(nav->GetVelocity(id));
+            if (animator->CurrentClip() == "Andando") walked = true;
+            if (animator->CurrentClip() == "Correndo") {
+                ran = true;
+                if (speed > 3.4f && Near(animator->speed, speed / 4.0f, 0.01f)) ranAtPace = true;
+            }
+        }
+        CHECK(walked && ran && ranAtPace);
+        for (int i = 0; i < 60; ++i) runtime.FixedUpdate(kDt);  // chegou e freou
+        CHECK(animator->CurrentClip() == "Parado" && Near(animator->speed, 1.0f, 1e-4f));
+
+        // Mais devagar que o meio entre andar e correr: só anda, no ritmo (2 / 1,5).
+        scene.Find(id)->Get<NavMeshAgent>()->speed = 2.0f;
+        CHECK(nav && nav->SetDestination(id, {-8.0f, 0.0f, 5.0f}));
+        bool ranSlow = false, walkedAtPace = false;
+        for (int i = 0; i < 60 * 10 && nav && !nav->HasArrived(id); ++i) {
+            runtime.FixedUpdate(kDt);
+            const float speed = glm::length(nav->GetVelocity(id));
+            if (animator->CurrentClip() == "Correndo") ranSlow = true;
+            if (speed > 1.95f && animator->CurrentClip() == "Andando" && Near(animator->speed, speed / 1.5f, 0.01f)) {
+                walkedAtPace = true;
+            }
+        }
+        CHECK(!ranSlow && walkedAtPace);
+        runtime.Stop();
+
+        // Na ligação, o clipe de pular.
+        Scene jump;
+        Entity& a = jump.CreateEntity("A");
+        a.transform.position = {-5.0f, -0.5f, 0.0f};
+        a.Add<ColliderComponent>().size = {8.0f, 1.0f, 8.0f};
+        Entity& b = jump.CreateEntity("B");
+        b.transform.position = {5.0f, -0.5f, 0.0f};
+        b.Add<ColliderComponent>().size = {8.0f, 1.0f, 8.0f};
+        jump.CreateEntity("Navegação").Add<NavMeshSurface>();
+        NavMeshLink& link = jump.CreateEntity("Pulo").Add<NavMeshLink>();
+        link.start = {-1.6f, 0.0f, 0.0f};
+        link.end = {1.6f, 0.0f, 0.0f};
+        const auto [jumper, jumperBody] = addAnimated(jump, {-6.0f, 0.0f, 0.0f});
+        SceneRuntime jumpRuntime(jump);
+        jumpRuntime.Start();
+        NavSystem* nav2 = jumpRuntime.GetSystem<NavSystem>();
+        const Animator* jumperAnimator = jump.Find(jumperBody)->Get<Animator>();
+        CHECK(nav2 && nav2->SetDestination(jumper, {6.0f, 0.0f, 0.0f}));
+        bool jumpedClip = true, sawLink = false;
+        for (int i = 0; i < 60 * 10 && nav2 && !nav2->HasArrived(jumper); ++i) {
+            jumpRuntime.FixedUpdate(kDt);
+            if (nav2->IsOnLink(jumper)) {
+                sawLink = true;
+                if (jumperAnimator->CurrentClip() != "Pulando") jumpedClip = false;
+            }
+        }
+        CHECK(sawLink && jumpedClip);
+        CHECK(nav2 && nav2->HasArrived(jumper) && jumperAnimator->CurrentClip() != "Pulando");
+        jumpRuntime.Stop();
     }
 
     SECTION("Arquivo .mnav: grava, lê e as consultas dão o mesmo resultado");

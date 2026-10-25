@@ -759,13 +759,16 @@ componentes comuns (Inspector, cena, desfazer):
 
 ## Navegação (IA)
 
-Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fase 34). Dois
+Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Cinco
 componentes comuns (Inspector, cena, desfazer):
 
 | Componente | Campos |
 |---|---|
 | **Superfície de navegação** (`NavMeshSurface`) | Navmesh (arquivo `.mnav` e o botão Gerar), Raio, Altura, Altura do degrau e Inclinação máxima do agente; Tamanho e Altura da célula; Área mínima. Uma por cena: liga o navmesh |
-| **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada |
+| **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada, Raio, Altura, Desviar dos outros, Áreas por onde anda |
+| **Ligação de navegação** (`NavMeshLink`) | Início e Fim (pontas, relativas à entidade), Raio, Nos dois sentidos, Altura do arco (0 = escada). Pulo ou escada entre dois pontos do navmesh |
+| **Animação do agente** (`NavMeshAgentAnimation`) | Clipes parado, andando, correndo e pulando; Velocidade do andar e da corrida, Parado abaixo de, Acompanhar a velocidade, Mistura. Troca os clipes do Animator pela velocidade do agente |
+| **Área de navegação** (`NavMeshArea`) | Tamanho e Centro (caixa), Área (1 a 15), Nome, Custo. Água, lama: o agente dá a volta quando sai mais curto; o agente escolhe por quais áreas anda (**Áreas por onde anda**) |
 
 - **De onde vem o navmesh:** dos **Colliders estáticos** das entidades ativas (sem Rigidbody, sem trigger, sem
   agente, sem Controlador de personagem). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como
@@ -777,16 +780,19 @@ componentes comuns (Inspector, cena, desfazer):
   quantos polígonos saíram e quanto tempo levou, ou por que não saiu nenhum.
 - **Agente:** anda pelo caminho até o destino, acelerando e freando a tempo de parar, vira em Y para onde anda (a
   frente é o -Z) e mantém os pés no navmesh (a origem fica **Altura da base** acima). Com **Alvo**, segue a
-  entidade e refaz o caminho quando ela anda. Ele mexe no Transform direto: por enquanto, use em entidades sem
-  física.
+  entidade e refaz o caminho quando ela anda. Sem física, mexe no Transform direto; com **Controlador de
+  personagem** na mesma entidade, anda pela física (empurra caixas, cai, não sai do navmesh).
+- **Multidão:** os agentes desviam uns dos outros e não se atravessam (DetourCrowd, Fase 35); **Raio** é o tamanho
+  com que os outros o veem. Os caminhos de quem segue um alvo entram numa fila dividida entre os passos.
 - **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
   `Warp`, `FindPath`, `SamplePosition`, `Raycast` e `Rebuild` (cenário mudou). Ver a seção 15 do
   [guia de scripts](docs/scripts.md) (um guarda que patrulha e persegue, `docs/examples/Guarda.cpp`) e a
   referência em [docs/scripts-api.md](docs/scripts-api.md).
 - **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
-  Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando) e, no Play com a câmera do editor, o
-  caminho de cada agente em amarelo.
-- **Ainda não:** multidão, obstáculos que se mexem (roteiro em
+  Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando), o raio de cada agente em verde, as
+  ligações em roxo (no arco do pulo, com seta se só valem num sentido) e as Áreas de navegação em laranja, com nome e
+  custo. No Play com a câmera do editor, também o caminho de cada agente em amarelo e de quem ele desvia em laranja.
+- **Ainda não:** obstáculos que se mexem (roteiro em
   `docs/roadmap/alpha-6.md`).
 
 ## Servidor MCP (agentes no editor)
@@ -811,7 +817,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
-| Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes; no Play, caminho, velocidade e chegada) |
+| Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia) |
   | Scripts | `scripts_build` (`wait` responde quando a compilação termina), `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD, desenhado na hora; vistas scene, game e editor), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |

@@ -368,7 +368,7 @@ int main(int argc, char** argv) {
     }
     for (const char* type : {"Flutuar", "ExemploCampos", "CicloDeVida", "Projetil", "Disparador", "Placar", "Moeda",
                              "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "SonsDoMenu", "Girar", "Jogador", "MoverWASD", "Seguir",
-                             "Lampada", "Interruptor", "Chuva", "Guarda"}) {
+                             "Lampada", "Interruptor", "Chuva", "Guarda", "Pastor"}) {
         const ComponentType* t = ComponentRegistry::Instance().Find(type);
         if (!t) std::printf("  não registrado: %s\n", type);
         CHECK(t && t->IsScript());
@@ -813,6 +813,71 @@ int main(int argc, char** argv) {
         const std::vector<glm::vec3> path = nav ? nav->GetPath(guardId) : std::vector<glm::vec3>{};
         CHECK(!path.empty());
         CHECK(!path.empty() && std::min(glm::distance(path.back(), a), glm::distance(path.back(), b)) < 0.3f);
+        runtime.Stop();
+    }
+
+    SECTION("Pastor: o rebanho vai ao curral desviando entre si; com chuva dá a volta na lama, sem chuva atravessa");
+    for (const bool rain : {false, true}) {
+        // Faixa de lama (x de -2 a 2, z de -10 a 6) entre o rebanho e o curral; a volta pela ponta livre tem uns 25 m.
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+        Entity& mud = scene.CreateEntity("Lama");
+        mud.transform.position = {0.0f, 0.0f, -2.0f};
+        NavMeshArea& area = mud.Add<NavMeshArea>();
+        area.size = {4.0f, 2.0f, 16.0f};
+        area.area = 2;
+        area.name = "Lama";
+        area.cost = 1.5f;
+        const EntityId mudId = mud.id;
+        Entity& pen = scene.CreateEntity("Curral");
+        pen.transform.position = {7.0f, 0.0f, -5.0f};
+        const EntityId penId = pen.id;
+        Entity& shepherd = scene.CreateEntity("Pastor");
+        shepherd.transform.position = {-7.0f, 0.0f, -5.0f};
+        AddScript(shepherd, "Pastor");
+        const EntityId shepherdId = shepherd.id;
+        std::vector<EntityId> sheep;
+        for (int i = 0; i < 6; ++i) {
+            Entity& s = scene.CreateEntity("Ovelha", shepherdId);
+            s.transform.position = {-1.0f + (i % 2) * 2.0f, 0.0f, -2.0f + (i / 2) * 2.0f};
+            s.Add<NavMeshAgent>();
+            sheep.push_back(s.id);
+        }
+        if (auto* ref = ScriptField<EntityRef>(scene, shepherdId, "Pastor", "curral")) ref->id = penId;
+        if (auto* ref = ScriptField<EntityRef>(scene, shepherdId, "Pastor", "lama")) ref->id = mudId;
+        if (bool* field = ScriptField<bool>(scene, shepherdId, "Pastor", "chovendo")) *field = rain;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->GetNavMesh());
+        bool inMud = false;
+        float farthestZ = -1e9f;  // a volta passa por z > 6; o caminho reto fica em z < 0
+        float closest = 1e9f;
+        int arrived = 0;
+        for (int step = 0; step < 300 && arrived < 6; ++step) {
+            Run(runtime, 0.1f);
+            arrived = 0;
+            for (size_t i = 0; i < sheep.size(); ++i) {
+                const glm::vec3 p = glm::vec3(scene.WorldMatrix(sheep[i])[3]);
+                if (std::abs(p.x) < 1.9f && p.z < 5.9f) inMud = true;
+                farthestZ = std::max(farthestZ, p.z);
+                for (size_t j = i + 1; j < sheep.size(); ++j) {
+                    closest = std::min(closest, glm::distance(p, glm::vec3(scene.WorldMatrix(sheep[j])[3])));
+                }
+                if (nav && nav->HasArrived(sheep[i])) ++arrived;
+            }
+        }
+        std::printf("  %s: %d ovelhas no curral, %s, a %.2f m uma da outra no mais perto\n", rain ? "com chuva" : "sem chuva",
+                    arrived, inMud ? "atravessaram a lama" : "deram a volta na lama", closest);
+        CHECK(arrived == 6);
+        CHECK(inMud == !rain);
+        CHECK(rain ? farthestZ > 5.5f : farthestZ < 0.0f);
+        CHECK(closest > 0.6f);
+        CHECK(Near(scene.Find(mudId)->Get<NavMeshArea>()->cost, rain ? 6.0f : 1.5f, 1e-4f));
+        for (EntityId s : sheep) CHECK(glm::distance(glm::vec3(scene.WorldMatrix(s)[3]), {7.0f, 0.0f, -5.0f}) < 3.0f);
         runtime.Stop();
     }
 

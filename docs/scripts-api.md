@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 16 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 17 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -385,7 +385,10 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`, `AudioGroup group` (`Effects`, `Music`, `Interface`); tocar e parar na seção [Som](#som-motoraudiosystem) |
 | `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
 | `motor::NavMeshSurface` | Superfície de navegação | `NavMeshData navMesh` (`guid`, `path` e `file` do `.mnav` gerado no editor; vazio = gerado no Play), `agentRadius`, `agentHeight`, `agentMaxClimb`, `agentMaxSlope` (graus), `cellSize`, `cellHeight`, `minRegionArea` (m²); uma por cena, liga o navmesh (seção [Navegação](#navegação-motornavsystem)) |
-| `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance` |
+| `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance`, `radius` e `height` (tamanho para os outros agentes desviarem), `bool avoidOthers`, `NavAreaMask areas` (por onde anda: `bits`, um por área; `Allows(area)`) |
+| `motor::NavMeshLink` | Ligação de navegação | `glm::vec3 start`, `end` (pontas, relativas à entidade), `radius` (quão longe do navmesh as pontas podem ficar), `bool bidirectional`, `arcHeight` (altura do pulo; 0 = reto, escada) |
+| `motor::NavMeshAgentAnimation` | Animação do agente | `std::string idleClip`, `walkClip`, `runClip` (vazio: só anda), `jumpClip` (nas ligações; vazio: anda), `walkSpeed` e `runSpeed` (m/s em que cada clipe toca na velocidade normal; corre da metade entre as duas para cima), `idleBelow`, `bool matchSpeed` (o `speed` do Animator acompanha o agente), `fade` (s de `CrossFade`) |
+| `motor::NavMeshArea` | Área de navegação | `glm::vec3 size`, `center` (caixa no espaço da entidade), `int area` (1 a 15; 0 é o chão comum), `std::string name`, `cost` (a partir de 1: andar 1 m na área conta como `cost` metros; vale na hora, sem gerar de novo) |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
@@ -548,9 +551,11 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `bool SetDestination(EntityId agente, glm::vec3 destino)` | o agente vai até o ponto do navmesh mais perto do destino; `false` sem `NavMeshAgent`, sem navmesh ou longe dele. Destino noutra ilha do navmesh: vai até o ponto alcançável mais perto (`IsPathPartial`). Chamar a cada passo com o mesmo destino refaz o caminho à toa: chame quando o destino mudar |
 | `void Stop(EntityId agente)` | esquece o destino e freia |
 | `bool HasPath(agente) const`, `bool HasArrived(agente) const`, `bool IsPathPartial(agente) const` | anda para um destino; chegou ao último destino pedido (até o próximo `SetDestination`); o caminho não chega ao destino |
+| `bool IsOnLink(agente) const` | atravessando uma ligação (`NavMeshLink`: pulo, escada), para tocar a animação de pulo ou de subir |
+| `std::vector<EntityId> GetNeighbors(agente) const` | de quem o agente desvia agora (os mais perto, até 6), do mais perto ao mais longe; vazio fora da multidão |
 | `float RemainingDistance(agente) const`, `glm::vec3 GetVelocity(agente) const`, `std::vector<glm::vec3> GetPath(agente) const` | quanto falta pelo caminho, velocidade atual, cantos que faltam |
 | `bool Warp(EntityId agente, glm::vec3 posicao)` | teleporta o agente para o navmesh perto da posição e esquece o caminho |
-| `bool FindPath(inicio, fim, std::vector<glm::vec3>& cantos) const` | só o caminho (cantos do começo ao fim), sem mover ninguém |
+| `bool FindPath(inicio, fim, std::vector<glm::vec3>& cantos, uint16_t areas = motor::kNavAllAreas) const` | só o caminho (cantos do começo ao fim), sem mover ninguém; só pelas áreas de `areas` (um bit por área), pesando o custo de cada uma |
 | `std::optional<glm::vec3> SamplePosition(posicao, float distanciaMaxima = 2) const` | ponto do navmesh mais perto, se estiver a essa distância |
 | `std::optional<motor::NavRaycastHit> Raycast(inicio, fim) const` | anda em linha reta pelo navmesh; `nullopt` se chega ao fim, senão onde parou (`point`, `normal`, `fraction`): "dá para ver/andar até lá sem dar a volta?" |
 | `bool Rebuild()` | gera o navmesh de novo com a cena como está (porta aberta, ponte construída); os agentes refazem os caminhos |
@@ -558,7 +563,19 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `uint64_t Version() const` | sobe a cada navmesh novo (gerado, lido ou descartado): quem guarda algo feito do navmesh sabe quando refazer |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
-Sem física por enquanto: o agente mexe no Transform direto, não desvia de outros agentes e não é empurrado.
+Os agentes andam como uma multidão (DetourCrowd, Fase 35): desviam uns dos outros e não se atravessam (com
+`avoidOthers` desligado, o agente vai reto, mas ainda é empurrado). Muitos indo ao mesmo ponto se espremem em volta
+dele: quem para encostado nos que já chegaram, ou perto do ponto sem conseguir avançar, conta como chegado
+(`HasArrived`).
+
+`motor::NavAgentFeet(scene, agente)` dá os pés do agente no mundo (a origem menos a altura da base, ou a base da
+cápsula com Controlador de personagem): é o ponto que ele mantém no navmesh.
+
+Sem corpo físico, o agente mexe no Transform direto. Com um `CharacterControllerComponent` na mesma entidade, anda
+pela física: o `NavSystem` chama `MoveCharacter` com a velocidade do caminho, a Jolt empurra caixas, para em paredes
+e cuida da gravidade, e os pés ficam na base da cápsula (`baseOffset` não conta). Empurrado para fora do navmesh, o
+agente volta para ele. Não chame `MoveCharacter` num agente: o `NavSystem` sobrescreve a cada passo. Rigidbody num
+agente não é suportado.
 
 ## Teclas
 
