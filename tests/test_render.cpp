@@ -92,6 +92,27 @@ int main(int argc, char** argv) {
         CHECK(near.texelSize > 0.0f && Near(near.texelSize, 2.0f * near.radius / 2048.0f, 1e-6f));
     }
 
+    SECTION("Cascatas reaproveitadas: a desenhada com folga cobre a câmera que andou pouco");
+    {
+        const Cascade drawn = ComputeCascade(camera, 20.0f, 60.0f, sun, 2048, 50.0f, 1.15f);
+        CHECK(CascadeCovers(drawn, ComputeCascade(camera, 20.0f, 60.0f, sun, 2048)));
+        Camera moved = camera;
+        moved.position += glm::vec3(0.5f, 0.0f, -0.4f);
+        const Cascade near = ComputeCascade(moved, 20.0f, 60.0f, sun, 2048);
+        CHECK(CascadeCovers(drawn, near));
+        bool inside = true;  // o pedaço da câmera que andou cabe no mapa já desenhado
+        for (const glm::vec3& corner : FrustumSliceCorners(moved, 20.0f, 60.0f)) {
+            inside = inside && InsideClip(Project(drawn.viewProjection, corner));
+        }
+        CHECK(inside);
+        moved.position += glm::vec3(30.0f, 0.0f, 0.0f);
+        CHECK(!CascadeCovers(drawn, ComputeCascade(moved, 20.0f, 60.0f, sun, 2048)));
+        Camera turned = camera;
+        turned.yaw += 90.0f;
+        CHECK(!CascadeCovers(drawn, ComputeCascade(turned, 20.0f, 60.0f, sun, 2048)));
+        CHECK(!CascadeCovers(Cascade{}, near));  // nada desenhado ainda
+    }
+
     SECTION("Cascatas: andar ou girar a câmera não muda o tamanho e só anda em texels inteiros");
     {
         const Cascade a = ComputeCascade(camera, 5.0f, 20.0f, sun, 1024);

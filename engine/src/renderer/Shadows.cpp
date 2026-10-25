@@ -85,6 +85,7 @@ void ShadowRenderer::EnsureCascades(int resolution) {
     if (m_cascades) glDeleteTextures(1, &m_cascades);
     m_cascades = CreateShadowTexture(GL_TEXTURE_2D_ARRAY, resolution, kCascades);
     m_cascadeResolution = resolution;
+    m_drawnCount = 0;  // mapa novo, vazio
 }
 
 void ShadowRenderer::EnsureCubes(int resolution) {
@@ -186,22 +187,40 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
         glViewport(0, 0, resolution, resolution);
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(1.5f, 2.0f);
+        // As duas cascatas mais longe (com 4) são desenhadas 15% maiores e redesenhadas em quadros alternados: no
+        // outro quadro fica o mapa já desenhado, se ainda cobrir o pedaço da câmera (CascadeCovers). Objetos que se
+        // mexem atrasam um quadro lá longe. Outra câmera (editor) ou luz diferente: tudo desenhado de novo.
+        const bool sameSetup = m_drawnCount == cascades && m_drawnDirection == light.direction;
+        ++m_frame;
         for (int c = 0; c < cascades; ++c) {
             const float nearDist = c == 0 ? camera.nearPlane : splits[static_cast<size_t>(c - 1)];
-            const Cascade cascade = ComputeCascade(camera, nearDist, splits[static_cast<size_t>(c)], light.direction,
-                                                   resolution, std::max(50.0f, distance));
+            const float farDist = splits[static_cast<size_t>(c)];
+            const float casterDepth = std::max(50.0f, distance);
+            const bool distant = cascades > 2 && c >= cascades - 2;
+            Cascade cascade = ComputeCascade(camera, nearDist, farDist, light.direction, resolution, casterDepth);
+            const Cascade& drawn = m_drawnCascades[c];
+            if (distant && sameSetup && (m_frame + static_cast<uint64_t>(c)) % 2 != 0 && CascadeCovers(drawn, cascade)) {
+                result.data.cascadeMatrices[c] = drawn.viewProjection;
+                result.data.cascadeSplits[c] = farDist;
+                result.data.cascadeTexels[c] = drawn.texelSize;
+                continue;
+            }
+            if (distant) cascade = ComputeCascade(camera, nearDist, farDist, light.direction, resolution, casterDepth, 1.15f);
+            m_drawnCascades[c] = cascade;
             glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, m_cascades, 0, c);
             glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
             DrawItems(items, cascade.viewProjection, Frustum::FromMatrix(cascade.viewProjection), false, glm::vec4(0.0f),
                       instances, order, uploadJoints, stats);
             ++stats.shadowPasses;
             result.data.cascadeMatrices[c] = cascade.viewProjection;
-            result.data.cascadeSplits[c] = splits[static_cast<size_t>(c)];
+            result.data.cascadeSplits[c] = farDist;
             result.data.cascadeTexels[c] = cascade.texelSize;
         }
         glDisable(GL_POLYGON_OFFSET_FILL);
         result.data.params = glm::vec4(static_cast<float>(cascades), 1.0f / static_cast<float>(resolution), 0.0f, distance);
         result.cascadeQuality = light.shadowQuality;
+        m_drawnCount = cascades;
+        m_drawnDirection = light.direction;
         result.cascadeLight = static_cast<int>(i);
         break;
     }

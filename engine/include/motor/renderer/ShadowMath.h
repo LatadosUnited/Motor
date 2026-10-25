@@ -54,8 +54,13 @@ struct Cascade {
 // Usa uma esfera em volta do pedaço (o tamanho não muda quando a câmera gira) com o centro preso à grade de
 // texels do mapa (a sombra não "treme" quando a câmera anda). `casterDepth`: quanto antes da esfera, na
 // direção da luz, objetos ainda projetam sombra dentro dela.
+// `margin` > 1 aumenta a esfera (cascata reaproveitada por alguns quadros com a câmera andando).
 Cascade ComputeCascade(const Camera& camera, float nearDist, float farDist, const glm::vec3& lightDir,
-                       int resolution, float casterDepth = 50.0f);
+                       int resolution, float casterDepth = 50.0f, float margin = 1.0f);
+
+// Se a cascata `cached`, desenhada antes, ainda cobre o pedaço de `fresh` (a esfera dele cabe na dela): dá para usar o
+// mapa já desenhado em vez de desenhar de novo.
+bool CascadeCovers(const Cascade& cached, const Cascade& fresh);
 
 // Sombra de pontual/spot: as seis faces do cubo (+X, -X, +Y, -Y, +Z, -Z, a ordem do OpenGL) vistas da luz.
 glm::mat4 CubeFaceView(const glm::vec3& position, int face);

@@ -94,13 +94,14 @@ std::array<glm::vec3, 8> FrustumSliceCorners(const Camera& camera, float nearDis
 }
 
 Cascade ComputeCascade(const Camera& camera, float nearDist, float farDist, const glm::vec3& lightDir, int resolution,
-                       float casterDepth) {
+                       float casterDepth, float margin) {
     const auto corners = FrustumSliceCorners(camera, nearDist, farDist);
     glm::vec3 center(0.0f);
     for (const glm::vec3& c : corners) center += c;
     center /= 8.0f;
     float radius = 0.0f;
     for (const glm::vec3& c : corners) radius = std::max(radius, glm::length(c - center));
+    radius *= std::max(margin, 1.0f);
     // Arredondado para cima: pequenas variações de ponto flutuante não mudam o tamanho do texel.
     radius = std::ceil(radius * 16.0f) / 16.0f;
 
@@ -125,6 +126,10 @@ Cascade ComputeCascade(const Camera& camera, float nearDist, float farDist, cons
     cascade.center = center;
     cascade.radius = radius;
     return cascade;
+}
+
+bool CascadeCovers(const Cascade& cached, const Cascade& fresh) {
+    return cached.radius > 0.0f && glm::length(fresh.center - cached.center) + fresh.radius <= cached.radius;
 }
 
 glm::mat4 CubeFaceView(const glm::vec3& position, int face) {
