@@ -284,10 +284,11 @@ void NavSystem::PrepareAgent(EntityId id, Agent& agent, const NavMeshAgent& sett
 bool NavSystem::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners,
                          uint16_t areaMask) const {
     corners.clear();
+    ApplyAreaCosts();  // um script pode ter mudado um custo neste passo, depois do NavSystem
     return m_navMesh && m_navMesh->FindPath(start, end, corners, nullptr, areaMask);
 }
 
-void NavSystem::ApplyAreaCosts() {
+void NavSystem::ApplyAreaCosts() const {
     if (!m_navMesh) return;
     // O custo de cada área vem da primeira Área de navegação ativa com ela (a 0, o chão comum, vale 1).
     std::array<float, kNavAreaCount> costs;
@@ -355,6 +356,7 @@ bool NavSystem::SetDestination(EntityId id, const glm::vec3& destination) {
     if (!settings) return false;
     Agent& agent = AgentFor(id);
     agent.followingTarget = false;
+    ApplyAreaCosts();  // um script pode ter mudado um custo neste passo, depois do NavSystem
     PrepareAgent(id, agent, *settings);
     return PlanPath(agent, destination);
 }

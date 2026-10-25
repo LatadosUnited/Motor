@@ -146,7 +146,7 @@ private:
     bool LoadFromFile(const NavMeshSurface& surface);
     void ReplanAgents();
     void ResetCrowd();
-    void ApplyAreaCosts();
+    void ApplyAreaCosts() const;  // const: FindPath também lê os custos da cena (o navmesh é do sistema)
     void GrowCrowd();
     bool AddToCrowd(EntityId id, Agent& agent, const glm::vec3& feet);
     void PrepareAgent(EntityId id, Agent& agent, const NavMeshAgent& settings);

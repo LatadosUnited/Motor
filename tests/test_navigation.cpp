@@ -710,6 +710,20 @@ int main(int argc, char** argv) {
         runtime.FixedUpdate(kDt);
         CHECK(nav && nav->FindPath({-8.0f, 0.0f, -5.0f}, {8.0f, 0.0f, -5.0f}, path) && maxZ(path) < -4.0f);
 
+        // Andando de verdade (multidão), com a lama cara de novo: o agente dá a volta e não corta por ela no caminho
+        // (o atalho de visão do DetourCrowd ignorava o custo e desfazia a volta).
+        scene.Find(mudId)->Get<NavMeshArea>()->cost = 5.0f;
+        CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, -5.0f}));
+        bool cut = false;
+        for (int i = 0; i < 60 * 15 && nav && !nav->HasArrived(id); ++i) {
+            runtime.FixedUpdate(kDt);
+            const glm::vec3 p = scene.Find(id)->transform.position;
+            if (std::abs(p.x) < 1.9f && p.z < 5.9f) cut = true;
+        }
+        CHECK(nav && nav->HasArrived(id) && !cut);
+        CHECK(nav && nav->Warp(id, {-8.0f, 0.0f, -5.0f}));
+        scene.Find(mudId)->Get<NavMeshArea>()->cost = 1.5f;
+
         // O agente que não anda na lama dá a volta mesmo com ela barata, e nunca põe o pé nela.
         scene.Find(id)->Get<NavMeshAgent>()->areas.bits = static_cast<uint16_t>(0xffff & ~(1u << 2));
         CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, -5.0f}));

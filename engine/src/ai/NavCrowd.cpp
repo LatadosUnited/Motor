@@ -29,11 +29,13 @@ dtCrowdAgentParams ToDetour(const NavCrowd::AgentParams& p, int filter) {
     out.height = std::max(p.height, 0.01f);
     out.maxAcceleration = std::max(p.acceleration, 0.0f);
     out.maxSpeed = std::max(p.speed, 0.0f);
-    // Alcances do exemplo da Recast: vizinhos até 12 raios, atalhos de visão até 30.
+    // Alcances do exemplo da Recast: vizinhos até 12 raios, otimização do caminho até 30.
     out.collisionQueryRange = out.radius * 12.0f;
     out.pathOptimizationRange = out.radius * 30.0f;
     out.separationWeight = p.avoidOthers ? 2.0f : 0.0f;
-    out.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO;
+    // Sem DT_CROWD_OPTIMIZE_VIS: o atalho de visão é um raio em linha reta que ignora o custo das áreas e
+    // desfazia a volta na lama cara (o caminho voltava a cortar por ela). Os cantos já saem retos da busca.
+    out.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_TOPO;
     if (p.avoidOthers) out.updateFlags |= DT_CROWD_OBSTACLE_AVOIDANCE | DT_CROWD_SEPARATION;
     out.obstacleAvoidanceType = kAvoidanceGood;
     out.queryFilterType = static_cast<unsigned char>(filter);
