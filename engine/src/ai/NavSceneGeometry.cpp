@@ -128,6 +128,20 @@ NavGeometry CollectNavGeometry(const Scene& scene) {
             }
         }
     }
+    for (EntityId id : scene.EntitiesWith<NavMeshArea>()) {
+        const Entity* e = scene.Find(id);
+        if (!e || !scene.IsActiveInHierarchy(id)) continue;
+        const NavMeshArea& a = *e->Get<NavMeshArea>();
+        const glm::mat4 world = scene.WorldMatrix(id);
+        NavAreaBox box;
+        box.area = a.area;
+        const glm::vec3 half = a.size * 0.5f;
+        for (int i = 0; i < 8; ++i) {
+            const glm::vec3 corner(i & 1 ? half.x : -half.x, i & 2 ? half.y : -half.y, i & 4 ? half.z : -half.z);
+            box.corners[static_cast<size_t>(i)] = glm::vec3(world * glm::vec4(a.center + corner, 1.0f));
+        }
+        out.areas.push_back(box);
+    }
     for (EntityId id : scene.EntitiesWith<NavMeshLink>()) {
         const Entity* e = scene.Find(id);
         if (!e || !scene.IsActiveInHierarchy(id)) continue;

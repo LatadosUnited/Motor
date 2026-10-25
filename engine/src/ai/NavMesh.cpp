@@ -1,6 +1,7 @@
 #include "motor/ai/NavMesh.h"
 
 #include "ai/NavMeshDetour.h"
+#include "motor/scene/NavMeshArea.h"
 
 #include <DetourNavMeshBuilder.h>
 #include <Recast.h>
@@ -15,8 +16,30 @@ namespace motor {
 
 namespace {
 
-// Todos os polígonos andáveis ganham esta marca; o filtro das consultas aceita qualquer marca.
+// Ligações andam como chão comum: a marca e a área dele.
 constexpr unsigned short kWalkableFlag = 1;
+
+// Contorno no plano (XZ) dos oito cantos de uma caixa: o polígono convexo que a Recast marca.
+std::vector<float> Footprint(const std::array<glm::vec3, 8>& corners) {
+    std::array<glm::vec3, 8> p = corners;
+    std::sort(p.begin(), p.end(), [](const glm::vec3& a, const glm::vec3& b) { return a.x < b.x || (a.x == b.x && a.z < b.z); });
+    auto cross = [](const glm::vec3& o, const glm::vec3& a, const glm::vec3& b) {
+        return (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+    };
+    std::vector<glm::vec3> hull;
+    for (int pass = 0; pass < 2; ++pass) {  // metade de baixo e de cima (cadeia monótona)
+        const size_t base = hull.size();
+        for (int k = 0; k < 8; ++k) {
+            const glm::vec3& q = pass == 0 ? p[static_cast<size_t>(k)] : p[static_cast<size_t>(7 - k)];
+            while (hull.size() >= base + 2 && cross(hull[hull.size() - 2], hull.back(), q) <= 0.0f) hull.pop_back();
+            hull.push_back(q);
+        }
+        hull.pop_back();
+    }
+    std::vector<float> out;
+    for (const glm::vec3& v : hull) out.insert(out.end(), {v.x, 0.0f, v.z});
+    return out;
+}
 
 // Os objetos da Recast são intermediários da geração: liberados ao sair do Build, dê certo ou não.
 struct RecastScratch {
@@ -113,7 +136,23 @@ std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMe
         Fail(error, "falha ao compactar a grade de voxels");
         return nullptr;
     }
-    if (!rcErodeWalkableArea(&ctx, cfg.walkableRadius, *scratch.compact) || !rcBuildDistanceField(&ctx, *scratch.compact) ||
+    if (!rcErodeWalkableArea(&ctx, cfg.walkableRadius, *scratch.compact)) {
+        Fail(error, "falha ao afastar o chão das paredes");
+        return nullptr;
+    }
+    // Caixas de área: o chão dentro delas ganha a área (e as regiões não misturam áreas diferentes).
+    for (const NavAreaBox& box : geometry.areas) {
+        const std::vector<float> footprint = Footprint(box.corners);
+        if (footprint.size() < 9) continue;  // caixa achatada no plano
+        float lo = box.corners[0].y, hi = box.corners[0].y;
+        for (const glm::vec3& c : box.corners) {
+            lo = std::min(lo, c.y);
+            hi = std::max(hi, c.y);
+        }
+        rcMarkConvexPolyArea(&ctx, footprint.data(), static_cast<int>(footprint.size() / 3), lo, hi,
+                             ToDetourArea(std::clamp(box.area, 1, kNavAreaCount - 1)), *scratch.compact);
+    }
+    if (!rcBuildDistanceField(&ctx, *scratch.compact) ||
         !rcBuildRegions(&ctx, *scratch.compact, 0, cfg.minRegionArea, cfg.mergeRegionArea)) {
         Fail(error, "falha ao dividir o chão em regiões");
         return nullptr;
@@ -143,7 +182,7 @@ std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMe
         return nullptr;
     }
     rcPolyMesh& pm = *scratch.polys;
-    for (int i = 0; i < pm.npolys; ++i) pm.flags[i] = pm.areas[i] == RC_WALKABLE_AREA ? kWalkableFlag : 0;
+    for (int i = 0; i < pm.npolys; ++i) pm.flags[i] = pm.areas[i] == RC_NULL_AREA ? 0 : AreaFlag(pm.areas[i]);
 
     // 5. Polígonos da Recast -> navmesh do Detour (um bloco só; blocos entram com o TileCache, Fase 36).
     if (pm.nverts >= 0xffff) {
@@ -224,19 +263,40 @@ std::optional<glm::vec3> NavMesh::SamplePosition(const glm::vec3& position, cons
     return nearest;
 }
 
-bool NavMesh::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners, bool* partial) const {
+void NavMesh::SetAreaCost(int area, float cost) {
+    if (area < 0 || area >= kNavAreaCount) return;
+    m_detour->filter.setAreaCost(ToDetourArea(area), std::max(cost, 1.0f));  // menos que 1 estraga a estimativa do A*
+}
+
+float NavMesh::AreaCost(int area) const {
+    return area >= 0 && area < kNavAreaCount ? m_detour->filter.getAreaCost(ToDetourArea(area)) : 1.0f;
+}
+
+int NavMesh::AreaAt(const glm::vec3& position) const {
+    const Detour& d = *m_detour;
+    glm::vec3 nearest;
+    const dtPolyRef ref = d.Nearest(position, glm::vec3(2.0f, 4.0f, 2.0f), &nearest.x);
+    unsigned char area = 0;
+    if (!ref || dtStatusFailed(d.mesh->getPolyArea(ref, &area))) return -1;
+    return FromDetourArea(area);
+}
+
+bool NavMesh::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners, bool* partial,
+                       uint16_t areaMask) const {
     corners.clear();
     if (partial) *partial = false;
     const Detour& d = *m_detour;
+    dtQueryFilter filter = d.filter;
+    filter.setIncludeFlags(areaMask);
     const glm::vec3 extents(2.0f, 4.0f, 2.0f);
     glm::vec3 from, to;
-    const dtPolyRef startRef = d.Nearest(start, extents, &from.x);
-    const dtPolyRef endRef = d.Nearest(end, extents, &to.x);
+    const dtPolyRef startRef = d.Nearest(start, extents, &from.x, &filter);
+    const dtPolyRef endRef = d.Nearest(end, extents, &to.x, &filter);
     if (!startRef || !endRef) return false;
 
     dtPolyRef polys[kNavMaxPathPolys];
     int polyCount = 0;
-    const dtStatus status = d.query->findPath(startRef, endRef, &from.x, &to.x, &d.filter, polys, &polyCount, kNavMaxPathPolys);
+    const dtStatus status = d.query->findPath(startRef, endRef, &from.x, &to.x, &filter, polys, &polyCount, kNavMaxPathPolys);
     if (dtStatusFailed(status) || polyCount == 0) return false;
 
     // Fim fora de alcance: o Detour para no polígono mais perto dele; o caminho termina no ponto mais perto lá.

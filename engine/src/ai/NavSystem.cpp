@@ -12,6 +12,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -49,6 +50,7 @@ NavCrowd::AgentParams CrowdParams(const NavMeshAgent& s, bool frozen = false) {
     p.speed = frozen ? 0.0f : s.speed;
     p.acceleration = s.acceleration;
     p.avoidOthers = s.avoidOthers;
+    p.areaMask = s.areas.bits;
     return p;
 }
 
@@ -165,13 +167,14 @@ void NavSystem::ResetCrowd() {
     m_crowd.reset();
     for (auto& [id, agent] : m_agents) agent.crowd = -1;
     if (!m_navMesh) return;
-    m_crowd = NavCrowd::Create(*m_navMesh, m_crowdCapacity);
+    m_crowd = NavCrowd::Create(*m_navMesh, m_crowdCapacity);  // com os custos de área do navmesh
     if (!m_crowd) log::Warn("Navegação: o DetourCrowd recusou o navmesh; os agentes ficam parados");
 }
 
 void NavSystem::ReplanAgents() {
     // Navmesh novo, multidão nova: cada agente volta para ela onde está e, se estava andando, refaz o caminho até o
-    // mesmo destino.
+    // mesmo destino (com os custos de área da cena).
+    ApplyAreaCosts();
     ResetCrowd();
     if (!m_crowd) return;
     for (auto& [id, agent] : m_agents) {
@@ -254,9 +257,31 @@ void NavSystem::PrepareAgent(EntityId id, Agent& agent, const NavMeshAgent& sett
     m_crowd->SetParams(agent.crowd, CrowdParams(settings));  // um script pode ter mudado a velocidade
 }
 
-bool NavSystem::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners) const {
+bool NavSystem::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners,
+                         uint16_t areaMask) const {
     corners.clear();
-    return m_navMesh && m_navMesh->FindPath(start, end, corners);
+    return m_navMesh && m_navMesh->FindPath(start, end, corners, nullptr, areaMask);
+}
+
+void NavSystem::ApplyAreaCosts() {
+    if (!m_navMesh) return;
+    // O custo de cada área vem da primeira Área de navegação ativa com ela (a 0, o chão comum, vale 1).
+    std::array<float, kNavAreaCount> costs;
+    costs.fill(1.0f);
+    std::array<bool, kNavAreaCount> found{};
+    for (EntityId id : m_scene->EntitiesWith<NavMeshArea>()) {
+        if (!m_scene->IsActiveInHierarchy(id)) continue;
+        const NavMeshArea& a = *m_scene->Find(id)->Get<NavMeshArea>();
+        if (a.area < 1 || a.area >= kNavAreaCount || found[static_cast<size_t>(a.area)]) continue;
+        found[static_cast<size_t>(a.area)] = true;
+        costs[static_cast<size_t>(a.area)] = std::max(a.cost, 1.0f);
+    }
+    for (int area = 0; area < kNavAreaCount; ++area) {
+        const float cost = costs[static_cast<size_t>(area)];
+        if (m_navMesh->AreaCost(area) == cost) continue;
+        m_navMesh->SetAreaCost(area, cost);
+        if (m_crowd) m_crowd->SetAreaCost(area, cost);
+    }
 }
 
 std::optional<glm::vec3> NavSystem::SamplePosition(const glm::vec3& position, float maxDistance) const {
@@ -380,6 +405,7 @@ bool NavSystem::Warp(EntityId id, const glm::vec3& position) {
 void NavSystem::OnFixedUpdate(SceneRuntime&, float dt) {
     if (!m_scene) return;
     ++m_step;
+    ApplyAreaCosts();  // um script pode ter mudado o custo de uma área
     // Cópia: a lista muda se a estrutura da cena mudar.
     const std::vector<EntityId> agents = m_scene->EntitiesWith<NavMeshAgent>();
     if (!agents.empty() && !m_navMesh && !m_warnedNoNavMesh) {

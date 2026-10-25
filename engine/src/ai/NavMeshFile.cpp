@@ -98,6 +98,11 @@ uint64_t NavMesh::SourceHash(const NavGeometry& geometry, const NavMeshBuildSett
         const unsigned char both = link.bidirectional ? 1 : 0;
         Mix(hash, &both, 1);
     }
+    // Áreas também só quando há: o custo delas não entra (muda sem gerar de novo).
+    for (const NavAreaBox& box : geometry.areas) {
+        Mix(hash, box.corners.data(), sizeof(box.corners));
+        Mix(hash, &box.area, sizeof(box.area));
+    }
     return hash;
 }
 

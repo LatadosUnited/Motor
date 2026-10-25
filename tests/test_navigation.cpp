@@ -659,6 +659,90 @@ int main(int argc, char** argv) {
         CHECK(loaded && loaded->Links().size() == 1 && loaded->Links()[0].bidirectional);
     }
 
+    SECTION("Áreas com custo: dá a volta na lama cara, atravessa a barata, e quem não anda nela nem entra");
+    {
+        // Chão 20 x 20 sem parede; faixa de lama (área 2) de x = -2 a 2 e z = -10 a 6: a volta pela ponta livre
+        // (z > 6) tem uns 25 m, atravessar tem 16 m, 4 deles na lama.
+        auto makeScene = [](float mudLength) {
+            Scene scene;
+            Entity& floor = scene.CreateEntity("Chão");
+            floor.transform.position = {0.0f, -0.5f, 0.0f};
+            floor.Add<ColliderComponent>().size = {20.0f, 1.0f, 20.0f};
+            scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+            Entity& mud = scene.CreateEntity("Lama");
+            mud.transform.position = {0.0f, 0.0f, -10.0f + mudLength * 0.5f};
+            NavMeshArea& area = mud.Add<NavMeshArea>();
+            area.size = {4.0f, 2.0f, mudLength};
+            area.area = 2;
+            area.name = "Lama";
+            area.cost = 5.0f;
+            return scene;
+        };
+        auto maxZ = [](const std::vector<glm::vec3>& corners) {
+            float z = -1e9f;
+            for (const glm::vec3& c : corners) z = std::max(z, c.z);
+            return z;
+        };
+
+        Scene scene = makeScene(16.0f);
+        CHECK(CollectNavGeometry(scene).areas.size() == 1);
+        const EntityId mudId = scene.FindByName("Lama")->id;
+        const EntityId id = AddAgent(scene, {-8.0f, 0.0f, -5.0f}).id;
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        const NavMesh* mesh = nav ? nav->GetNavMesh() : nullptr;
+        CHECK(mesh && mesh->AreaAt({0.0f, 0.0f, -5.0f}) == 2 && mesh->AreaAt({-8.0f, 0.0f, -5.0f}) == 0);
+        runtime.FixedUpdate(kDt);  // os custos da cena chegam ao navmesh
+        CHECK(mesh && Near(mesh->AreaCost(2), 5.0f, 1e-4f) && Near(mesh->AreaCost(0), 1.0f, 1e-4f));
+
+        // Custo 5: atravessar vale 12 + 4 * 5 = 32 m, mais que a volta.
+        std::vector<glm::vec3> path;
+        CHECK(nav && nav->FindPath({-8.0f, 0.0f, -5.0f}, {8.0f, 0.0f, -5.0f}, path) && maxZ(path) > 5.5f);
+        // Custo 1,5 (mudado no jogo, sem gerar de novo): 18 m, menos que a volta.
+        scene.Find(mudId)->Get<NavMeshArea>()->cost = 1.5f;
+        runtime.FixedUpdate(kDt);
+        CHECK(nav && nav->FindPath({-8.0f, 0.0f, -5.0f}, {8.0f, 0.0f, -5.0f}, path) && maxZ(path) < -4.0f);
+
+        // O agente que não anda na lama dá a volta mesmo com ela barata, e nunca põe o pé nela.
+        scene.Find(id)->Get<NavMeshAgent>()->areas.bits = static_cast<uint16_t>(0xffff & ~(1u << 2));
+        CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, -5.0f}));
+        bool stepped = false;
+        for (int i = 0; i < 60 * 15 && nav && !nav->HasArrived(id); ++i) {
+            runtime.FixedUpdate(kDt);
+            const glm::vec3 p = scene.Find(id)->transform.position;
+            if (std::abs(p.x) < 1.9f && p.z < 5.9f) stepped = true;
+        }
+        CHECK(nav && nav->HasArrived(id));
+        CHECK(!stepped);
+        CHECK(glm::distance(scene.Find(id)->transform.position, glm::vec3(8.0f, 0.0f, -5.0f)) < 0.3f);
+        // Pelo FindPath com a mesma máscara, o caminho também dá a volta.
+        CHECK(nav && nav->FindPath({-8.0f, 0.0f, -5.0f}, {8.0f, 0.0f, -5.0f}, path, 0xffff & ~(1u << 2)) && maxZ(path) > 5.5f);
+        runtime.Stop();
+
+        // Lama de ponta a ponta: quem não anda nela não tem caminho até o outro lado.
+        Scene closed = makeScene(20.0f);
+        Entity& walker = AddAgent(closed, {-8.0f, 0.0f, -5.0f});
+        walker.Get<NavMeshAgent>()->areas.bits = static_cast<uint16_t>(0xffff & ~(1u << 2));
+        const EntityId walkerId = walker.id;
+        SceneRuntime closedRuntime(closed);
+        closedRuntime.Start();
+        NavSystem* nav2 = closedRuntime.GetSystem<NavSystem>();
+        CHECK(nav2 && nav2->SetDestination(walkerId, {8.0f, 0.0f, -5.0f}) && nav2->IsPathPartial(walkerId));
+        closedRuntime.Stop();
+
+        // A área entra na impressão digital e volta do .mnav.
+        NavGeometry withArea = CollectNavGeometry(makeScene(16.0f));
+        NavGeometry withoutArea = withArea;
+        withoutArea.areas.clear();
+        CHECK(NavMesh::SourceHash(withArea, {}) != NavMesh::SourceHash(withoutArea, {}));
+        auto built = NavMesh::Build(withArea, {});
+        const fs::path file = base / "areas.mnav";
+        CHECK(built && built->Save(file));
+        auto loaded = NavMesh::Load(file);
+        CHECK(loaded && loaded->AreaAt({0.0f, 0.0f, -5.0f}) == 2 && loaded->AreaAt({0.0f, 0.0f, 8.0f}) == 0);
+    }
+
     SECTION("Arquivo .mnav: grava, lê e as consultas dão o mesmo resultado");
     {
         NavGeometry g;

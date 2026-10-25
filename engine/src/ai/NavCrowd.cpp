@@ -2,6 +2,9 @@
 
 #include "NavMeshDetour.h"
 
+#include "motor/core/Log.h"
+#include "motor/scene/NavMeshArea.h"
+
 #include <DetourCommon.h>
 #include <DetourCrowd.h>
 
@@ -20,7 +23,7 @@ namespace {
 // Qualidade do desvio (as quatro do exemplo da Recast); os agentes usam a "boa".
 constexpr unsigned char kAvoidanceGood = 2;
 
-dtCrowdAgentParams ToDetour(const NavCrowd::AgentParams& p) {
+dtCrowdAgentParams ToDetour(const NavCrowd::AgentParams& p, int filter) {
     dtCrowdAgentParams out{};
     out.radius = std::clamp(p.radius, 0.01f, NavCrowd::kMaxAgentRadius);
     out.height = std::max(p.height, 0.01f);
@@ -33,7 +36,7 @@ dtCrowdAgentParams ToDetour(const NavCrowd::AgentParams& p) {
     out.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO;
     if (p.avoidOthers) out.updateFlags |= DT_CROWD_OBSTACLE_AVOIDANCE | DT_CROWD_SEPARATION;
     out.obstacleAvoidanceType = kAvoidanceGood;
-    out.queryFilterType = 0;
+    out.queryFilterType = static_cast<unsigned char>(filter);
     return out;
 }
 
@@ -54,10 +57,12 @@ std::unique_ptr<NavCrowd> NavCrowd::Create(const NavMesh& navMesh, int capacity)
     if (!crowd->m_crowd || !crowd->m_crowd->init(crowd->m_capacity, kMaxAgentRadius, navMesh.m_detour->mesh)) {
         return nullptr;
     }
-    // Mesmo filtro das consultas do NavMesh: qualquer polígono marcado.
+    // Filtro 0: todas as áreas, com os custos do NavMesh. Outras máscaras ganham filtros conforme aparecem.
     dtQueryFilter* filter = crowd->m_crowd->getEditableFilter(0);
+    *filter = navMesh.m_detour->filter;
     filter->setIncludeFlags(0xffff);
     filter->setExcludeFlags(0);
+    crowd->m_filterMasks = {0xffff};
 
     // Níveis de qualidade do desvio, do exemplo da Recast (mais divisões e anéis = escolhe melhor e custa mais).
     dtObstacleAvoidanceParams params = *crowd->m_crowd->getObstacleAvoidanceParams(0);
@@ -74,15 +79,41 @@ std::unique_ptr<NavCrowd> NavCrowd::Create(const NavMesh& navMesh, int capacity)
 
 NavCrowd::~NavCrowd() { dtFreeCrowd(m_crowd); }
 
+int NavCrowd::FilterFor(uint16_t areaMask) {
+    for (size_t i = 0; i < m_filterMasks.size(); ++i) {
+        if (m_filterMasks[i] == areaMask) return static_cast<int>(i);
+    }
+    if (m_filterMasks.size() >= DT_CROWD_MAX_QUERY_FILTER_TYPE) {
+        if (!m_warnedFilters) {
+            m_warnedFilters = true;
+            log::Warn("Navegação: mais de {} combinações de áreas nos agentes; as que passam disso andam por todas",
+                      DT_CROWD_MAX_QUERY_FILTER_TYPE);
+        }
+        return 0;
+    }
+    const int index = static_cast<int>(m_filterMasks.size());
+    dtQueryFilter* filter = m_crowd->getEditableFilter(index);
+    *filter = *m_crowd->getFilter(0);  // os custos são os mesmos para todos
+    filter->setIncludeFlags(areaMask);
+    m_filterMasks.push_back(areaMask);
+    return index;
+}
+
+void NavCrowd::SetAreaCost(int area, float cost) {
+    for (size_t i = 0; i < m_filterMasks.size(); ++i) {
+        m_crowd->getEditableFilter(static_cast<int>(i))->setAreaCost(ToDetourArea(area), std::max(cost, 1.0f));
+    }
+}
+
 int NavCrowd::Add(const glm::vec3& position, const AgentParams& params) {
-    const dtCrowdAgentParams p = ToDetour(params);
+    const dtCrowdAgentParams p = ToDetour(params, FilterFor(params.areaMask));
     return m_crowd->addAgent(&position.x, &p);
 }
 
 void NavCrowd::Remove(int index) { m_crowd->removeAgent(index); }
 
 void NavCrowd::SetParams(int index, const AgentParams& params) {
-    const dtCrowdAgentParams p = ToDetour(params);
+    const dtCrowdAgentParams p = ToDetour(params, FilterFor(params.areaMask));
     m_crowd->updateAgentParameters(index, &p);
 }
 
@@ -91,14 +122,15 @@ bool NavCrowd::SetDestination(int index, const glm::vec3& destination, bool* par
     dtCrowdAgent* ag = m_crowd->getEditableAgent(index);
     if (!ag || !ag->active || ag->state != DT_CROWDAGENT_STATE_WALKING) return false;
     const NavMesh::Detour& d = *m_navMesh->m_detour;
+    const dtQueryFilter* filter = m_crowd->getFilter(ag->params.queryFilterType);
     glm::vec3 to;
-    const dtPolyRef endRef = d.Nearest(destination, glm::vec3(2.0f, 4.0f, 2.0f), &to.x);
+    const dtPolyRef endRef = d.Nearest(destination, glm::vec3(2.0f, 4.0f, 2.0f), &to.x, filter);
     const dtPolyRef startRef = ag->corridor.getFirstPoly();
     if (!startRef || !endRef) return false;
 
     dtPolyRef polys[kNavMaxPathPolys];
     int count = 0;
-    const dtStatus status = d.query->findPath(startRef, endRef, ag->npos, &to.x, &d.filter, polys, &count, kNavMaxPathPolys);
+    const dtStatus status = d.query->findPath(startRef, endRef, ag->npos, &to.x, filter, polys, &count, kNavMaxPathPolys);
     if (dtStatusFailed(status) || count == 0) return false;
     // Fim fora de alcance (outra ilha): o caminho termina no ponto mais perto dele, como no NavMesh::FindPath.
     bool isPartial = dtStatusDetail(status, DT_PARTIAL_RESULT);
@@ -121,9 +153,11 @@ bool NavCrowd::SetDestination(int index, const glm::vec3& destination, bool* par
 }
 
 bool NavCrowd::RequestDestination(int index, const glm::vec3& destination) {
+    const dtCrowdAgent* ag = m_crowd->getAgent(index);
+    if (!ag || !ag->active) return false;
     const NavMesh::Detour& d = *m_navMesh->m_detour;
     glm::vec3 to;
-    const dtPolyRef ref = d.Nearest(destination, glm::vec3(2.0f, 4.0f, 2.0f), &to.x);
+    const dtPolyRef ref = d.Nearest(destination, glm::vec3(2.0f, 4.0f, 2.0f), &to.x, m_crowd->getFilter(ag->params.queryFilterType));
     return ref && m_crowd->requestMoveTarget(index, ref, &to.x);
 }
 
@@ -135,7 +169,7 @@ bool NavCrowd::MoveTo(int index, const glm::vec3& feet) {
     constexpr float kTooFar = 2.0f;  // m: mais que isso num passo não é andar
     if (dtVdist2DSqr(ag->npos, &feet.x) > kTooFar * kTooFar) return false;
     const NavMesh::Detour& d = *m_navMesh->m_detour;
-    ag->corridor.movePosition(&feet.x, d.query, &d.filter);
+    ag->corridor.movePosition(&feet.x, d.query, m_crowd->getFilter(ag->params.queryFilterType));
     dtVcopy(ag->npos, ag->corridor.getPos());
     return true;
 }
@@ -281,7 +315,7 @@ void NavCrowd::SeparateOverlaps() {
         dtCrowdAgent* ag = m_crowd->getEditableAgent(i);
         // Pelo corredor: o empurrão não tira o agente do navmesh nem o passa através de uma parede.
         const float target[3] = {ag->npos[0] + p.x, ag->npos[1], ag->npos[2] + p.y};
-        ag->corridor.movePosition(target, d.query, &d.filter);
+        ag->corridor.movePosition(target, d.query, m_crowd->getFilter(ag->params.queryFilterType));
         dtVcopy(ag->npos, ag->corridor.getPos());
     }
 }

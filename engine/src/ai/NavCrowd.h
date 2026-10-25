@@ -35,6 +35,7 @@ public:
         float speed = 3.5f;
         float acceleration = 8.0f;
         bool avoidOthers = true;  // desvia dos outros agentes (sem isso, só não atravessa)
+        uint16_t areaMask = 0xffff;  // áreas por onde anda (um bit por área)
     };
 
     // Raio máximo de um agente: maior que isso conta como este (a grade de vizinhos da multidão usa esse tamanho).
@@ -51,6 +52,8 @@ public:
     int Add(const glm::vec3& position, const AgentParams& params);
     void Remove(int index);
     void SetParams(int index, const AgentParams& params);
+    // Custo de andar 1 m na área, para todos os agentes (o mesmo do NavMesh::SetAreaCost).
+    void SetAreaCost(int area, float cost);
 
     // Caminho buscado na hora até `destination` (levado ao navmesh). false se o agente ou o destino estão longe do
     // navmesh; destino em outra ilha vale como caminho até o ponto mais perto dele (`partial`).
@@ -86,6 +89,7 @@ public:
 private:
     NavCrowd() = default;
     void SeparateOverlaps();
+    int FilterFor(uint16_t areaMask);  // filtro do DetourCrowd com essa máscara (um por máscara, até 16)
 
     static constexpr unsigned char kTouching = 1;
     static constexpr unsigned char kTouchingIdle = 2;
@@ -95,6 +99,8 @@ private:
     int m_capacity = 0;
     std::vector<unsigned char> m_touching;  // por índice: kTouching, kTouchingIdle
     std::vector<uint64_t> m_nextLink;       // por índice: ligação à frente antes do Update (0: nenhuma)
+    std::vector<uint16_t> m_filterMasks;    // máscara de cada filtro do DetourCrowd em uso
+    bool m_warnedFilters = false;
 };
 
 } // namespace motor

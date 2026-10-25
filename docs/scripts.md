@@ -1063,6 +1063,10 @@ Um guarda que patrulha entre dois pontos e persegue o jogador quando o vê
   andando (o vão entre duas plataformas, o alto de um muro). As pontas são relativas à entidade e precisam cair perto
   do navmesh; gere o navmesh de novo depois de pôr ou mudar uma. O agente vai em arco (**Altura do arco**) ou reto
   (0, escada), na velocidade dele, e `IsOnLink(id)` diz quando ele está no meio do pulo.
+- **Água, lama, grama alta:** a **Área de navegação** (`NavMeshArea`) é uma caixa que marca o chão dentro dela com
+  uma área (1 a 15) e um **Custo**: com custo 3, andar 1 m ali conta como 3 m, e o agente dá a volta quando a volta
+  sai mais curta. O custo vale na hora (um script pode encarecer a lama quando chove); mudar a caixa pede gerar o
+  navmesh de novo. No agente, **Áreas por onde anda** desmarca as que ele evita de todo (o cavalo não entra na água).
 
 Para montar: o chão e as paredes com Collider, a **Superfície de navegação** (e **Gerar**), duas entidades
 vazias `PontoA` e `PontoB`, e o guarda com **Agente de navegação** e **Scripts > Guarda**, com Ponto A, Ponto B

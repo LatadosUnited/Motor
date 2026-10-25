@@ -385,8 +385,9 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::AudioSource` | Fonte de áudio | `AudioClip clip` (`guid` e `path` do `.wav`/`.ogg`/`.mp3`; `file`, o arquivo no disco, resolvido ao abrir a cena; `IsEmpty()`), `volume`, `pitch`, `bool loop`, `bool playOnStart`, `bool spatial` (som 3D), `minDistance`, `maxDistance`, `AudioGroup group` (`Effects`, `Music`, `Interface`); tocar e parar na seção [Som](#som-motoraudiosystem) |
 | `motor::AudioListener` | Ouvinte de áudio | `volume` (volume geral); na câmera. Sem nenhum ativo, ouve a câmera principal |
 | `motor::NavMeshSurface` | Superfície de navegação | `NavMeshData navMesh` (`guid`, `path` e `file` do `.mnav` gerado no editor; vazio = gerado no Play), `agentRadius`, `agentHeight`, `agentMaxClimb`, `agentMaxSlope` (graus), `cellSize`, `cellHeight`, `minRegionArea` (m²); uma por cena, liga o navmesh (seção [Navegação](#navegação-motornavsystem)) |
-| `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance`, `radius` e `height` (tamanho para os outros agentes desviarem), `bool avoidOthers` |
+| `motor::NavMeshAgent` | Agente de navegação | `speed`, `acceleration`, `angularSpeed` (graus/s), `stoppingDistance`, `baseOffset`, `bool updateRotation`, `EntityRef target` (segue a entidade), `repathDistance`, `radius` e `height` (tamanho para os outros agentes desviarem), `bool avoidOthers`, `NavAreaMask areas` (por onde anda: `bits`, um por área; `Allows(area)`) |
 | `motor::NavMeshLink` | Ligação de navegação | `glm::vec3 start`, `end` (pontas, relativas à entidade), `radius` (quão longe do navmesh as pontas podem ficar), `bool bidirectional`, `arcHeight` (altura do pulo; 0 = reto, escada) |
+| `motor::NavMeshArea` | Área de navegação | `glm::vec3 size`, `center` (caixa no espaço da entidade), `int area` (1 a 15; 0 é o chão comum), `std::string name`, `cost` (a partir de 1: andar 1 m na área conta como `cost` metros; vale na hora, sem gerar de novo) |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
@@ -552,7 +553,7 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `bool IsOnLink(agente) const` | atravessando uma ligação (`NavMeshLink`: pulo, escada), para tocar a animação de pulo ou de subir |
 | `float RemainingDistance(agente) const`, `glm::vec3 GetVelocity(agente) const`, `std::vector<glm::vec3> GetPath(agente) const` | quanto falta pelo caminho, velocidade atual, cantos que faltam |
 | `bool Warp(EntityId agente, glm::vec3 posicao)` | teleporta o agente para o navmesh perto da posição e esquece o caminho |
-| `bool FindPath(inicio, fim, std::vector<glm::vec3>& cantos) const` | só o caminho (cantos do começo ao fim), sem mover ninguém |
+| `bool FindPath(inicio, fim, std::vector<glm::vec3>& cantos, uint16_t areas = motor::kNavAllAreas) const` | só o caminho (cantos do começo ao fim), sem mover ninguém; só pelas áreas de `areas` (um bit por área), pesando o custo de cada uma |
 | `std::optional<glm::vec3> SamplePosition(posicao, float distanciaMaxima = 2) const` | ponto do navmesh mais perto, se estiver a essa distância |
 | `std::optional<motor::NavRaycastHit> Raycast(inicio, fim) const` | anda em linha reta pelo navmesh; `nullopt` se chega ao fim, senão onde parou (`point`, `normal`, `fraction`): "dá para ver/andar até lá sem dar a volta?" |
 | `bool Rebuild()` | gera o navmesh de novo com a cena como está (porta aberta, ponte construída); os agentes refazem os caminhos |

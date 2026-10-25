@@ -80,7 +80,9 @@ public:
     uint64_t Version() const { return m_version; }
 
     // --- Consultas (false/nullopt sem navmesh) ---
-    bool FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners) const;
+    // Só pelas áreas de `areaMask` (um bit por área; motor/scene/NavMeshArea.h), pesando o custo de cada uma.
+    bool FindPath(const glm::vec3& start, const glm::vec3& end, std::vector<glm::vec3>& corners,
+                  uint16_t areaMask = kNavAllAreas) const;
     std::optional<glm::vec3> SamplePosition(const glm::vec3& position, float maxDistance = 2.0f) const;
     std::optional<NavRaycastHit> Raycast(const glm::vec3& start, const glm::vec3& end) const;
 
@@ -138,6 +140,7 @@ private:
     bool LoadFromFile(const NavMeshSurface& surface);
     void ReplanAgents();
     void ResetCrowd();
+    void ApplyAreaCosts();
     void GrowCrowd();
     bool AddToCrowd(EntityId id, Agent& agent, const glm::vec3& feet);
     void PrepareAgent(EntityId id, Agent& agent, const NavMeshAgent& settings);
