@@ -44,10 +44,12 @@ ctest --test-dir build --output-on-failure
     `imstb_truetype.h` do ImGui), `UiRenderer` (sobre o `renderer/Renderer2D`), `UiSystem` (cliques).
   - `audio/` (acima de scene): som do jogo com a miniaudio. `AudioSystem` (sistema do `SceneRuntime`);
     componentes `AudioSource` e `AudioListener` ficam em `scene/`.
-  - `ai/` (acima de scene e physics): navegação com a Recast/Detour (Fases 34 e 35). `NavMesh` (gerar, caminho,
-    raio, ligações, áreas), `NavSystem` (sistema do `SceneRuntime`: gera o navmesh no Play e move os agentes, pela
-    física quando têm CharacterController), `NavCrowd` (interno: a multidão do DetourCrowd); componentes
-    `NavMeshSurface`, `NavMeshAgent`, `NavMeshLink`, `NavMeshArea` e `NavMeshAgentAnimation` ficam em `scene/`.
+  - `ai/` (acima de scene, physics e audio): navegação com a Recast/Detour (Fases 34 e 35) e percepção (Fase 37).
+    `NavMesh` (gerar, caminho, raio, ligações, áreas, ponto ao acaso, ponto de fuga), `NavSystem` (sistema do
+    `SceneRuntime`: gera o navmesh no Play e move os agentes, pela física quando têm CharacterController),
+    `NavCrowd` (interno: a multidão do DetourCrowd), `PerceptionSystem` (visão pelo raio da física, audição, memória);
+    componentes `NavMeshSurface`, `NavMeshAgent`, `NavMeshLink`, `NavMeshArea`, `NavMeshAgentAnimation`,
+    `Perception` e `PerceptionTarget` ficam em `scene/`.
 - `editor/` — `MotorEditor`. `EditorApp` só monta as peças (loop, layout, barra de menus, atalhos,
   desfazer); `SceneViewport` (câmera livre, gizmo, seleção, arquivos soltos), `PlayController` (menu Jogo,
   botões e pedidos de Play), `SceneDocument` (cena/projeto abertos, menu Arquivo, popups, título),
