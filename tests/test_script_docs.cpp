@@ -3,10 +3,11 @@
 //   modelos do editor (editor/templates/Scripts/), sem erros nem avisos.
 // - Roda os exemplos de verdade: o mini jogo do guia (andar, coletar, pontuar), a porta, o inimigo, o
 //   disparador e a bola, com a física, simulando as teclas no estado interno do Input; o HUD e o menu com a
-//   UI do jogo (UiSystem), simulando o mouse; os sons do menu com o áudio (AudioSystem) sem dispositivo.
+//   UI do jogo (UiSystem), simulando o mouse; os sons do menu com o áudio (AudioSystem) sem dispositivo; o
+//   guarda com a navegação (NavSystem).
 // - Cada bloco ```cpp do guia é um trecho de um arquivo de exemplo, e cada exemplo é citado no guia.
-// - A referência cita todos os métodos públicos de Script, de PhysicsSystem, de UiSystem, de AudioSystem e
-//   as opções de FieldOptions.
+// - A referência cita todos os métodos públicos de Script, de PhysicsSystem, de UiSystem, de AudioSystem, de
+//   NavSystem e as opções de FieldOptions.
 // Sem janela nem OpenGL. Demora alguns segundos (compila a DLL).
 #include "TestUtil.h"
 
@@ -14,6 +15,8 @@
 #include "scripts/ScriptHost.h"
 #include "scripts/ScriptProject.h"
 
+#include <motor/ai/NavSystem.h>
+#include <motor/ai/PerceptionSystem.h>
 #include <motor/assets/AssetLibrary.h>
 #include <motor/audio/AudioSystem.h>
 #include <motor/core/Input.h>
@@ -286,12 +289,18 @@ int main(int argc, char** argv) {
         const std::string audioH = ReadText(include / "audio" / "AudioSystem.h");
         const std::string optionsH = ReadText(include / "project" / "GameOptions.h");
         const std::string saveH = ReadText(include / "project" / "SaveData.h");
+        const std::string navH = ReadText(include / "ai" / "NavSystem.h");
+        const std::string perceptionH = ReadText(include / "ai" / "PerceptionSystem.h");
 
         std::set<std::string> names = DeclaredFunctions(Between(scriptH, "class Script {", "private:"));
         for (const std::string& n : DeclaredFunctions(Between(physicsH, "class PhysicsSystem", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(uiH, "class UiSystem", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(audioH, "class AudioSystem", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(saveH, "class SaveData {", "private:"))) names.insert(n);
+        for (const std::string& n : DeclaredFunctions(Between(navH, "class NavSystem", "private:"))) names.insert(n);
+        for (const std::string& n : DeclaredFunctions(Between(perceptionH, "class PerceptionSystem", "private:")))
+            names.insert(n);
+        names.erase("NavSystem");
         names.erase("SaveData");
         names.erase("Set");  // chamada dentro dos SetInt/SetFloat... (inline), não é método público
         names.erase("Script");
@@ -310,7 +319,9 @@ int main(int argc, char** argv) {
         const std::pair<const std::string*, const char*> structs[] = {
             {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"},
             {&uiH, "struct UiPointer {"}, {&audioH, "struct AudioSettings {"}, {&audioH, "struct AudioVoiceInfo {"},
-            {&optionsH, "struct GameOptions {"}};
+            {&optionsH, "struct GameOptions {"}, {&navH, "struct NavStats {"},
+            {&perceptionH, "struct PerceptionStats {"}, {&perceptionH, "struct PerceptionEye {"},
+            {&perceptionH, "struct HeardNoise {"}, {&perceptionH, "struct PerceptionMemory {"}};
         for (const auto& [header, type] : structs) {
             const std::string body = Between(*header, type, "};");
             CHECK(!body.empty());
@@ -363,7 +374,7 @@ int main(int argc, char** argv) {
     }
     for (const char* type : {"Flutuar", "ExemploCampos", "CicloDeVida", "Projetil", "Disparador", "Placar", "Moeda",
                              "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "SonsDoMenu", "Girar", "Jogador", "MoverWASD", "Seguir",
-                             "Lampada", "Interruptor", "Chuva"}) {
+                             "Lampada", "Interruptor", "Chuva", "Guarda", "Pastor", "Veado"}) {
         const ComponentType* t = ComponentRegistry::Instance().Find(type);
         if (!t) std::printf("  não registrado: %s\n", type);
         CHECK(t && t->IsScript());
@@ -748,6 +759,216 @@ int main(int argc, char** argv) {
         CHECK(audio && audio->IsPlaying("Musica"));
         runtime.Stop();
         CHECK(runtime.GetSystem<AudioSystem>() == nullptr);
+    }
+
+    SECTION("Guarda: patrulha entre os pontos pelo navmesh, persegue o alvo que vê e volta a patrulhar");
+    {
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        Entity& wall = scene.CreateEntity("Parede");  // de x = -6 a 6 em z = 0: a patrulha dá a volta por x = 8
+        wall.transform.position = {0.0f, 1.5f, 0.0f};
+        wall.Add<ColliderComponent>().size = {12.0f, 3.0f, 1.0f};
+        scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+        const glm::vec3 a{8.0f, 0.0f, -6.0f}, b{8.0f, 0.0f, 6.0f};
+        Entity& pointA = scene.CreateEntity("PontoA");
+        pointA.transform.position = a;
+        const EntityId pointAId = pointA.id;
+        Entity& pointB = scene.CreateEntity("PontoB");
+        pointB.transform.position = b;
+        const EntityId pointBId = pointB.id;
+        Entity& target = scene.CreateEntity("Alvo");
+        target.transform.position = {-8.0f, 0.0f, 8.0f};  // longe e atrás da parede
+        const EntityId targetId = target.id;
+        Entity& guard = scene.CreateEntity("Guarda");
+        guard.transform.position = {6.0f, 0.0f, -6.0f};
+        guard.Add<NavMeshAgent>();
+        AddScript(guard, "Guarda");
+        const EntityId guardId = guard.id;
+        if (auto* ref = ScriptField<EntityRef>(scene, guardId, "Guarda", "pontoA")) ref->id = pointAId;
+        if (auto* ref = ScriptField<EntityRef>(scene, guardId, "Guarda", "pontoB")) ref->id = pointBId;
+        if (auto* ref = ScriptField<EntityRef>(scene, guardId, "Guarda", "alvo")) ref->id = targetId;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->GetNavMesh());
+        auto where = [&] { return scene.Find(guardId)->transform.position; };
+
+        // Patrulha: vai até B e depois volta até A.
+        float nearB = 1e9f, nearAAfterB = 1e9f;
+        for (int i = 0; i < 120; ++i) {
+            Run(runtime, 0.1f);
+            nearB = std::min(nearB, glm::distance(where(), b));
+            if (nearB < 0.3f) nearAAfterB = std::min(nearAAfterB, glm::distance(where(), a));
+        }
+        std::printf("  patrulha: chegou a %.2f m de B e depois a %.2f m de A\n", nearB, nearAAfterB);
+        CHECK(nearB < 0.3f && nearAAfterB < 0.3f);
+
+        // O alvo aparece a 3 m, à vista: o guarda vai até ele.
+        for (int i = 0; i < 60 && std::abs(where().z) < 3.0f; ++i) Run(runtime, 0.1f);  // longe da parede
+        scene.Find(targetId)->transform.position = where() + glm::vec3(-3.0f, 0.0f, 0.0f);
+        Run(runtime, 1.5f);
+        const float chase = glm::distance(where(), scene.Find(targetId)->transform.position);
+        std::printf("  perseguição: a %.2f m do alvo\n", chase);
+        CHECK(chase < 0.5f);
+
+        // O alvo some atrás da parede: o guarda volta para um dos pontos da patrulha.
+        scene.Find(targetId)->transform.position = {-8.0f, 0.0f, 8.0f};
+        Run(runtime, 0.2f);
+        const std::vector<glm::vec3> path = nav ? nav->GetPath(guardId) : std::vector<glm::vec3>{};
+        CHECK(!path.empty());
+        CHECK(!path.empty() && std::min(glm::distance(path.back(), a), glm::distance(path.back(), b)) < 0.3f);
+        runtime.Stop();
+    }
+
+    SECTION("Pastor: o rebanho vai ao curral desviando entre si; com chuva dá a volta na lama, sem chuva atravessa");
+    for (const bool rain : {false, true}) {
+        // Faixa de lama (x de -2 a 2, z de -10 a 6) entre o rebanho e o curral; a volta pela ponta livre tem uns 25 m.
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+        Entity& mud = scene.CreateEntity("Lama");
+        mud.transform.position = {0.0f, 0.0f, -2.0f};
+        NavMeshArea& area = mud.Add<NavMeshArea>();
+        area.size = {4.0f, 2.0f, 16.0f};
+        area.area = 2;
+        area.name = "Lama";
+        area.cost = 1.5f;
+        const EntityId mudId = mud.id;
+        Entity& pen = scene.CreateEntity("Curral");
+        pen.transform.position = {7.0f, 0.0f, -5.0f};
+        const EntityId penId = pen.id;
+        Entity& shepherd = scene.CreateEntity("Pastor");
+        shepherd.transform.position = {-7.0f, 0.0f, -5.0f};
+        AddScript(shepherd, "Pastor");
+        const EntityId shepherdId = shepherd.id;
+        std::vector<EntityId> sheep;
+        for (int i = 0; i < 6; ++i) {
+            Entity& s = scene.CreateEntity("Ovelha", shepherdId);
+            s.transform.position = {-1.0f + (i % 2) * 2.0f, 0.0f, -2.0f + (i / 2) * 2.0f};
+            s.Add<NavMeshAgent>();
+            sheep.push_back(s.id);
+        }
+        if (auto* ref = ScriptField<EntityRef>(scene, shepherdId, "Pastor", "curral")) ref->id = penId;
+        if (auto* ref = ScriptField<EntityRef>(scene, shepherdId, "Pastor", "lama")) ref->id = mudId;
+        if (bool* field = ScriptField<bool>(scene, shepherdId, "Pastor", "chovendo")) *field = rain;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->GetNavMesh());
+        bool inMud = false;
+        float farthestZ = -1e9f;  // a volta passa por z > 6; o caminho reto fica em z < 0
+        float closest = 1e9f;
+        int arrived = 0;
+        for (int step = 0; step < 300 && arrived < 6; ++step) {
+            Run(runtime, 0.1f);
+            arrived = 0;
+            for (size_t i = 0; i < sheep.size(); ++i) {
+                const glm::vec3 p = glm::vec3(scene.WorldMatrix(sheep[i])[3]);
+                if (std::abs(p.x) < 1.9f && p.z < 5.9f) inMud = true;
+                farthestZ = std::max(farthestZ, p.z);
+                for (size_t j = i + 1; j < sheep.size(); ++j) {
+                    closest = std::min(closest, glm::distance(p, glm::vec3(scene.WorldMatrix(sheep[j])[3])));
+                }
+                if (nav && nav->HasArrived(sheep[i])) ++arrived;
+            }
+        }
+        std::printf("  %s: %d ovelhas no curral, %s, a %.2f m uma da outra no mais perto\n", rain ? "com chuva" : "sem chuva",
+                    arrived, inMud ? "atravessaram a lama" : "deram a volta na lama", closest);
+        CHECK(arrived == 6);
+        CHECK(inMud == !rain);
+        CHECK(rain ? farthestZ > 5.5f : farthestZ < 0.0f);
+        CHECK(closest > 0.6f);
+        CHECK(Near(scene.Find(mudId)->Get<NavMeshArea>()->cost, rain ? 6.0f : 1.5f, 1e-4f));
+        for (EntityId s : sheep) CHECK(glm::distance(glm::vec3(scene.WorldMatrix(s)[3]), {7.0f, 0.0f, -5.0f}) < 3.0f);
+        runtime.Stop();
+    }
+
+    SECTION("Veado: pasta perto de casa, não vê o jogador atrás da parede, foge quando o ouve ou o vê");
+    {
+        // Parede de x = -6 a 6 em z = 0; o veado pasta em volta de (0, 0, -6) e o jogador começa do outro lado.
+        Scene scene;
+        loadedScenes = {&scene};
+        AddFloor(scene);
+        Entity& wall = scene.CreateEntity("Parede");
+        wall.transform.position = {0.0f, 1.5f, 0.0f};
+        wall.Add<ColliderComponent>().size = {12.0f, 3.0f, 1.0f};
+        scene.CreateEntity("Navegação").Add<NavMeshSurface>();
+        Entity& deer = scene.CreateEntity("Veado");
+        deer.transform.position = {0.0f, 0.0f, -6.0f};
+        deer.Add<NavMeshAgent>();
+        Perception& eyes = deer.Add<Perception>();
+        eyes.sightRange = 12.0f;
+        eyes.nearRange = 4.0f;  // o jogador chega por qualquer lado: perto assim, vê em qualquer direção
+        eyes.eyeHeight = 1.2f;
+        eyes.detects = "Jogador";
+        AddScript(deer, "Veado");
+        const EntityId deerId = deer.id;
+        if (float* field = ScriptField<float>(scene, deerId, "Veado", "raioPasto")) *field = 3.0f;
+        if (float* field = ScriptField<float>(scene, deerId, "Veado", "pausa")) *field = 0.5f;
+        Entity& player = scene.CreateEntity("Jogador");
+        player.transform.position = {0.0f, 0.0f, 3.0f};
+        player.Add<PerceptionTarget>();
+        const EntityId playerId = player.id;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        runtime.SetRandomSeed(37);
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        PerceptionSystem* senses = runtime.GetSystem<PerceptionSystem>();
+        CHECK(nav && nav->GetNavMesh() && senses);
+        const auto deerAt = [&] { return glm::vec3(scene.WorldMatrix(deerId)[3]); };
+        const auto speed = [&] { return scene.Find(deerId)->Get<NavMeshAgent>()->speed; };
+        const glm::vec3 home(0.0f, 0.0f, -6.0f);
+        if (nav && senses) {
+            // Pastando, 8 s com o jogador do outro lado da parede: passeia sem sair do pasto e sem se assustar.
+            float farthest = 0.0f, walked = 0.0f;
+            bool scared = false;
+            glm::vec3 before = deerAt();
+            for (int i = 0; i < 80; ++i) {
+                Run(runtime, 0.1f);
+                const glm::vec3 now = deerAt();
+                walked += glm::distance(now, before);
+                before = now;
+                farthest = std::max(farthest, std::hypot(now.x - home.x, now.z - home.z));
+                scared = scared || speed() > 5.0f;
+            }
+            std::printf("  pastando: andou %.1f m, no máximo a %.2f m de casa\n", walked, farthest);
+            CHECK(walked > 2.0f && farthest < 3.6f && !scared);
+            CHECK(!senses->CanSee(deerId, playerId));
+
+            // Passos do jogador atrás da parede: não o vê, mas ouve, e foge para longe dele.
+            const float gapBefore = glm::distance(deerAt(), glm::vec3(0.0f, 0.0f, 3.0f));
+            for (int i = 0; i < 10; ++i) {
+                senses->MakeNoise({0.0f, 0.0f, 3.0f}, 12.0f, playerId);
+                Run(runtime, 0.1f);
+            }
+            CHECK(speed() == 7.0f && !senses->CanSee(deerId, playerId));
+            Run(runtime, 1.5f);
+            const float gapAfter = glm::distance(deerAt(), glm::vec3(0.0f, 0.0f, 3.0f));
+            std::printf("  ouviu os passos: de %.1f m para %.1f m do jogador\n", gapBefore, gapAfter);
+            CHECK(gapAfter > gapBefore + 1.0f);  // o pasto fica perto da borda do chão: foge até ela e de lado
+
+            // Silêncio: depois da calma (3 s) volta a pastar, devagar.
+            Run(runtime, 4.0f);
+            CHECK(speed() == 3.5f);
+
+            // O jogador aparece do lado do veado: ele o vê e corre para longe.
+            const glm::vec3 side = deerAt() + glm::vec3(2.5f, 0.0f, 0.0f);
+            scene.Find(playerId)->transform.position = side;
+            Run(runtime, 0.2f);
+            CHECK(senses->CanSee(deerId, playerId) && speed() == 7.0f);
+            const auto memory = senses->Recall(deerId, playerId);
+            CHECK(memory && memory->bySight);
+            Run(runtime, 2.0f);
+            const float fled = std::hypot(deerAt().x - side.x, deerAt().z - side.z);
+            std::printf("  viu o jogador a 2,5 m: está a %.1f m dele 2 s depois\n", fled);
+            CHECK(fled > 6.0f);
+        }
+        runtime.Stop();
     }
 
     loadedScenes.clear();

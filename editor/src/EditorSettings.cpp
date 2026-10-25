@@ -72,6 +72,7 @@ EditorSettings EditorSettings::Load() {
         v.gridFine = root.value("gridFine", v.gridFine);
         v.gridHeight = root.value("gridHeight", v.gridHeight);
         v.stats = root.value("viewportStats", v.stats);
+        v.navMesh = root.value("viewportNavMesh", v.navMesh);
         v.Clamp();
         settings.playSideBySide = root.value("playSideBySide", settings.playSideBySide);
         settings.mcpEnabled = root.value("mcpEnabled", settings.mcpEnabled);
@@ -101,6 +102,7 @@ void EditorSettings::Save() const {
     root["gridFine"] = viewport.gridFine;
     root["gridHeight"] = viewport.gridHeight;
     root["viewportStats"] = viewport.stats;
+    root["viewportNavMesh"] = viewport.navMesh;
     root["playSideBySide"] = playSideBySide;
     root["mcpEnabled"] = mcpEnabled;
     root["mcpPort"] = mcpPort;

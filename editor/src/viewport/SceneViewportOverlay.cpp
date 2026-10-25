@@ -369,6 +369,11 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
     ImGui::SetItemTooltip("Formas de colisão (verde), triggers (azul) e personagens. Clique para alternar:\n"
                           "Selecionado (só o objeto selecionado), Todos ou Nenhum.");
     ImGui::SameLine();
+    if (toggleButton("Navmesh", m_prefs.navMesh)) m_prefs.navMesh = !m_prefs.navMesh;
+    ImGui::SetItemTooltip("Navmesh da Superfície de navegação (azul): por onde os agentes andam. Fora do Play, o arquivo\n"
+                          "gerado pelo botão Gerar; no Play, o que o jogo está usando, com os caminhos dos agentes (amarelo).\n"
+                          "Também o cone de visão de cada Percepção e, no Play, quem cada agente vê (vermelho) e ouve (azul).");
+    ImGui::SameLine();
     if (toggleButton("UI", m_showUi)) m_showUi = !m_showUi;
     ImGui::SetItemTooltip("Mostrar a interface do jogo (HUD) por cima da cena. Com ela ligada, um clique na UI a\n"
                           "seleciona e arrastar move o elemento; desligue para clicar nos objetos 3D por trás dela.");

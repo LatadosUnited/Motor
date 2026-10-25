@@ -15,16 +15,17 @@ namespace motor {
 // Tipos de arquivo que a engine sabe usar, reconhecidos pela extensão (sem diferenciar maiúsculas).
 // Model: glTF 2.0 (.gltf/.glb) e FBX (.fbx), motor/assets/Model.h. Font: .ttf/.otf da UI do jogo (motor/ui/Font.h).
 // EnvironmentMap: céu em HDR equirretangular (.hdr), usado no ambiente da cena (Fase 7).
-enum class AssetType { Unknown, Scene, Texture, Mesh, Material, Prefab, Font, Model, EnvironmentMap, Audio };
+enum class AssetType { Unknown, Scene, Texture, Mesh, Material, Prefab, Font, Model, EnvironmentMap, Audio, NavMesh };
 
 // Extensão dos arquivos de cena. Fica aqui (camada de assets) para o tipo do arquivo ser reconhecido sem
 // depender da cena; SceneSerializer::kFileExtension é a mesma.
 inline constexpr const char* kSceneFileExtension = ".mscene";
 inline constexpr const char* kMaterialFileExtension = ".mmat";   // MaterialFile.h
 inline constexpr const char* kPrefabFileExtension = ".mprefab";  // motor/scene/Prefab.h
+inline constexpr const char* kNavMeshFileExtension = ".mnav";    // motor/ai/NavMesh.h (Fase 34)
 
 AssetType AssetTypeFromPath(const std::filesystem::path& path);
-const char* AssetTypeName(AssetType type);  // "Cena", "Textura", "Malha", "Material", "Prefab", "Fonte", "Modelo", "Céu HDR", "Som", "Arquivo"
+const char* AssetTypeName(AssetType type);  // "Cena", "Textura", "Malha", "Material", "Prefab", "Fonte", "Modelo", "Céu HDR", "Som", "Navmesh", "Arquivo"
 
 // Dados na CPU, antes de irem para a GPU. Estas funções não usam OpenGL (dá para testar sem janela).
 struct MeshData {

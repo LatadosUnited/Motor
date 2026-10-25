@@ -24,5 +24,12 @@ motor_add_layer(scene
         AudioListener.cpp
         EntityRef.cpp
         PrefabNested.cpp
+        NavMeshSurface.cpp
+        NavMeshAgent.cpp
+        NavMeshLink.cpp
+        NavMeshArea.cpp
+        NavMeshAgentAnimation.cpp
+        Perception.cpp
+        PerceptionTarget.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

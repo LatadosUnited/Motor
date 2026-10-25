@@ -48,7 +48,9 @@ namespace motor {
 //     controle (GamepadButton/GamepadAxis).
 // 15: campo shadows (ShadowCasting: com sombra, sem sombra, só sombra) no MeshRenderer.
 // 16: Fase 25: Entity::cache (matriz de mundo guardada pela Scene) muda o tamanho de Entity.
-inline constexpr int kScriptApiVersion = 16;
+// 17: Fase 35: NavMeshAgent ganhou raio, altura e desvio (multidão); o NavSystem guarda a multidão.
+// 18: Fase 37: o NavSystem guarda o SceneRuntime (RandomPoint); componentes e sistema de percepção novos.
+inline constexpr int kScriptApiVersion = 18;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";
