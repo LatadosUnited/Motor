@@ -1054,28 +1054,64 @@ Um guarda que patrulha entre dois pontos e persegue o jogador quando o vê
   jeito barato de "ver" (para ver por cima de uma mesa baixa, use o `Raycast` da física).
 - `FindPath(de, ate, cantos)` só calcula o caminho, sem mover ninguém (ex.: para saber se dá para chegar);
   `SamplePosition(ponto)` acha o ponto do navmesh mais perto, e `Warp(id, ponto)` teleporta o agente.
-- Vários agentes desviam uns dos outros sozinhos (o **Raio** do agente é o tamanho com que os outros o veem). Muitos
-  indo ao mesmo ponto param em volta dele, e cada um conta como chegado quando não consegue mais avançar.
-- Sem física, o agente mexe no Transform direto. Com um **Controlador de personagem** na mesma entidade ele anda
-  pela física: empurra caixas, cai e não atravessa paredes, e volta para o navmesh se for empurrado para fora dele.
-  Rigidbody num agente não funciona.
-- **Pulos e escadas:** a **Ligação de navegação** (`NavMeshLink`) liga dois pontos do navmesh que não se alcançam
-  andando (o vão entre duas plataformas, o alto de um muro). As pontas são relativas à entidade e precisam cair perto
-  do navmesh; gere o navmesh de novo depois de pôr ou mudar uma. O agente vai em arco (**Altura do arco**) ou reto
-  (0, escada), na velocidade dele, e `IsOnLink(id)` diz quando ele está no meio do pulo.
-- **Água, lama, grama alta:** a **Área de navegação** (`NavMeshArea`) é uma caixa que marca o chão dentro dela com
-  uma área (1 a 15) e um **Custo**: com custo 3, andar 1 m ali conta como 3 m, e o agente dá a volta quando a volta
-  sai mais curta. O custo vale na hora (um script pode encarecer a lama quando chove); mudar a caixa pede gerar o
-  navmesh de novo. No agente, **Áreas por onde anda** desmarca as que ele evita de todo (o cavalo não entra na água).
-- **Animação:** a **Animação do agente** (`NavMeshAgentAnimation`), na entidade do agente, troca os clipes do
-  Animator dele (ou do modelo filho) pela velocidade: parado, andando, correndo e pulando nas ligações, com mistura.
-  Com **Acompanhar a velocidade**, o clipe toca mais rápido quanto mais rápido o agente anda (os pés não escorregam).
-  Um script que chame `CrossFade` no mesmo passo, depois do `NavSystem`, vence.
-
 Para montar: o chão e as paredes com Collider, a **Superfície de navegação** (e **Gerar**), duas entidades
 vazias `PontoA` e `PontoB`, e o guarda com **Agente de navegação** e **Scripts > Guarda**, com Ponto A, Ponto B
 e Alvo escolhidos no Inspector. No Play, ligue **Cena e Jogo lado a lado** (menu Jogo) para ver no Viewport o
 caminho do guarda em amarelo.
+
+### Multidão, pulos e lama
+
+Vários agentes andam juntos como uma multidão: desviam uns dos outros e não se atravessam, sem script nenhum. O
+**Raio** do agente é o tamanho com que os outros o veem. Muitos indo ao mesmo ponto param em volta dele, e cada um
+conta como chegado (`HasArrived`) quando não consegue mais avançar; para não se espremerem, mande cada um para um
+lugar. Um pastor que leva o rebanho (as ovelhas são filhas dele) até o curral, e com chuva desvia da lama
+([examples/Pastor.cpp](examples/Pastor.cpp)):
+
+```cpp
+        // O custo vale na hora, sem gerar o navmesh de novo: as ovelhas que ainda vão pedir caminho já veem a lama
+        // nova. As que estão andando continuam no caminho que têm; Recolher() refaz o de todas.
+        if (auto* area = GetComponent<motor::NavMeshArea>(lama)) {
+            const float custo = chovendo ? custoComChuva : m_custoSeco;
+            if (area->cost != custo) {
+                area->cost = custo;
+                Recolher();
+            }
+        }
+```
+
+```cpp
+        const glm::vec3 centro = glm::vec3(GetScene().WorldMatrix(curral)[3]);
+        const float n = static_cast<float>(m_ovelhas.size());
+        const float raio = n > 1.0f ? espaco * n / glm::two_pi<float>() : 0.0f;  // a volta cabe todas
+        for (size_t i = 0; i < m_ovelhas.size(); ++i) {
+            const float angulo = glm::two_pi<float>() * static_cast<float>(i) / std::max(n, 1.0f);
+            nav->SetDestination(m_ovelhas[i], centro + raio * glm::vec3(std::cos(angulo), 0.0f, std::sin(angulo)));
+        }
+```
+
+- **Água, lama, grama alta:** a **Área de navegação** (`NavMeshArea`) é uma caixa que marca o chão dentro dela com
+  uma área (1 a 15) e um **Custo**: com custo 3, andar 1 m ali conta como 3 m, e o agente dá a volta quando a volta
+  sai mais curta. O custo vale na hora (como a chuva do pastor); mudar a caixa pede gerar o navmesh de novo. No
+  agente, **Áreas por onde anda** desmarca as que ele evita de todo (o cavalo não entra na água), e
+  `FindPath(de, ate, cantos, areas)` aceita a mesma máscara (um bit por área).
+- **Pulos e escadas:** a **Ligação de navegação** (`NavMeshLink`) liga dois pontos do navmesh que não se alcançam
+  andando (o vão entre duas plataformas, o alto de um muro, a cerca do curral). As pontas são relativas à entidade e
+  precisam cair perto do navmesh; gere o navmesh de novo depois de pôr ou mudar uma. O agente vai em arco (**Altura
+  do arco**) ou reto (0, escada), na velocidade dele, e `IsOnLink(id)` diz quando ele está no meio do pulo.
+- **Corpo físico:** sem física, o agente mexe no Transform direto. Com um **Controlador de personagem** na mesma
+  entidade ele anda pela física: empurra caixas, cai e não atravessa paredes, e volta para o navmesh se for empurrado
+  para fora dele. Não chame `MoveCharacter` nele (o `NavSystem` manda a cada passo); Rigidbody num agente não
+  funciona.
+- **Animação:** a **Animação do agente** (`NavMeshAgentAnimation`), na entidade do agente, troca os clipes do
+  Animator dele (ou do modelo filho) pela velocidade: parado, andando, correndo e pulando nas ligações, com mistura.
+  Com **Acompanhar a velocidade**, o clipe toca mais rápido quanto mais rápido o agente anda (os pés não escorregam).
+  Um script que chame `CrossFade` no mesmo passo, depois do `NavSystem`, vence.
+- `GetNeighbors(id)` diz de quem o agente está desviando agora (os mais perto, até 6), e no viewport, com o botão
+  **Navmesh**, aparecem o raio de cada agente, as ligações, as áreas e, no Play, as linhas até os vizinhos.
+
+Para montar: a lama com **Área de navegação** (Área 2, Custo 1,5), uma entidade vazia `Curral`, e o pastor (vazio,
+com **Scripts > Pastor**, Curral e Lama escolhidos) com as ovelhas como filhas, cada uma com **Agente de
+navegação**. Gere o navmesh e dê Play; marque **Chovendo** no Inspector do pastor para ver o rebanho mudar de rumo.
 
 ## 16. Recarga: o que é preservado
 
