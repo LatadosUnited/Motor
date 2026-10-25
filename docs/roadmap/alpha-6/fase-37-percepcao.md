@@ -3,12 +3,12 @@ tipo: fase
 alpha: 6
 fase: 37
 titulo: Percepção
-status: em andamento
+status: pronta
 prioridade: 3
 areas: [ai, scene]
 branch: fase-37-percepcao
 inicio: 2026-10-25
-fim: 
+fim: 2026-10-25
 ---
 
 # Fase 37 — Percepção
@@ -38,7 +38,7 @@ pela distância primeiro e reparte os raios entre os passos quando há muitos pa
 - [x] Tarefa 5: Raios de visada repartidos entre os passos e grade de alvos para muitos agentes — cdb107d
 - [x] Tarefa 6: Ponto aleatório no navmesh e ponto de fuga no `NavSystem` — bd7f315
 - [x] Tarefa 7: Cone de visão e audição no viewport, ferramenta MCP `ai_perception` — a65f711
-- [ ] Tarefa 8: Guia de scripts e exemplo compilado
+- [x] Tarefa 8: Guia de scripts e exemplo compilado — 8c2c5cd
 
 ## Pronto quando
 
@@ -50,8 +50,42 @@ mostra quem cada agente vê numa cena de teste.
 
 ## Feito
 
-(Preencher ao terminar.)
+- Tarefa 1: componentes `Perception` (alcance e ângulo da visão, percebe em volta, olhos, audição, memória, grupos
+  que percebe) e `PerceptionTarget` (grupo, ponto olhado, visibilidade, alcance dos sons). Na Tarefa 3, o liga e
+  desliga dos sons do alvo virou o alcance (`soundRange`, vezes o volume da fonte): a distância máxima da Fonte de
+  áudio (30 m) fazia um passo ser ouvido longe demais.
+- Tarefa 2: `PerceptionSystem` (camada `ai`, ordem `kSystemOrderPerception` = -50: depois da física, antes dos
+  scripts). Vê pelo alcance, pelo cone e pela linha de visada (`PhysicsSystem::Raycast`); Colliders do alvo, de quem
+  olha e dos filhos de cada um não tapam. O raio da física só ignora uma entidade: quando bate num filho de quem olha
+  (um escudo), um segundo raio vai do alvo para os olhos.
+- Tarefa 3: audição. `MakeNoise` dos scripts (ouvido no passo seguinte, dura um passo) e os sons que tocam na Fonte
+  de áudio dos alvos. A camada `ai` passa a depender de `audio`.
+- Tarefa 4: memória: última posição (a origem do alvo visto; onde fez o ruído ouvido), idade, esquecer depois da
+  memória; `GetMemory`, `Recall` e `Forget`.
+- Tarefa 5: grade de alvos (células de 16 m) e orçamento de raios por passo (128, `SetRaycastBudget`; os pares
+  olhados há mais tempo primeiro). 100 agentes olhando 20 alvos que andam: 7,0 ms por passo em Debug antes, 0,8 ms
+  depois e 0,27 ms em Release (meta: 1 ms); 376 pares olhados por passo em vez de 2000. O custo não estava nos raios
+  (42 por passo), mas em achar entidade e matriz de novo para cada par.
+- Tarefa 6: `RandomPoint` (sorteio do Detour, com a semente do Play) e `FleePoint` (para o lado oposto, desviando de
+  22,5° em 22,5° até 135°) no `NavMesh` e no `NavSystem`. `kScriptApiVersion` 18 (o `NavSystem` guarda o
+  `SceneRuntime`).
+- Tarefa 7: no viewport (botão Navmesh), o cone de cada Percepção, o alcance dos sons dos alvos e, no Play, linhas
+  até quem vê e o que ouviu e um X onde lembra; ferramenta MCP `ai_perception`. Conferido no editor pelo MCP
+  (PrintWindow): o guarda vê o jogador a 4,08 m, não vê o escondido atrás da parede (o raio dele bate) e, com o
+  jogador passado para trás da parede, lembra onde o viu 1,3 s depois.
+- Tarefa 8: guia de scripts, seção 15, "Ver, ouvir e lembrar", com `docs/examples/Veado.cpp`: o veado pasta (andou
+  11,9 m em 8 s sem sair de 3 m de casa), não vê o jogador atrás da parede, foge ao ouvir os passos dele e, ao vê-lo
+  a 2,5 m, está a 10,9 m dois segundos depois.
 
 ## Limitações
 
-(Preencher ao terminar.)
+- O som atravessa paredes e chega em linha reta; não contorna pelo navmesh nem abafa atrás de uma parede.
+- A visão olha um ponto só do alvo (o ponto olhado): um alvo com só a cabeça para fora de uma mureta pode não ser
+  visto. O cone é medido em 3D e desenhado no chão.
+- Com o orçamento de raios estourado, a visão atrasa alguns passos (quem entra no cone demora a ser visto, quem passa
+  para trás de uma parede demora a sumir). Sair do alcance ou do cone vale na hora.
+- Ruídos sem dono (`MakeNoise` sem fonte) são ouvidos, mas não ficam na memória.
+- `FleePoint` olha em linha reta pelo navmesh: num beco sem saída escolhe o lado que mais afasta, sem planejar a
+  rota de fuga inteira. `RandomPoint` em polígonos muito grandes às vezes cai no plano B (andar reto pela superfície
+  até o ponto sorteado), que se acumula perto das paredes.
+- Sem botão próprio no viewport: a percepção aparece junto do navmesh (botão Navmesh).
