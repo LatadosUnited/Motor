@@ -36,6 +36,14 @@ incluir a engine. Elas também não entram na API dos scripts, então o `kScript
 | `Lower` (minúsculas ASCII) | 4 | `core/Input.cpp:50`, `editor/src/mcp/McpSceneTools.cpp:54`, `panels/ProjectPanelUtil.cpp:35`, `scripts/ScriptProject.cpp:77` |
 | `LowerExtension` | 2 | `assets/AssetLoaders.cpp:47`, `editor/src/export/GameExport.cpp:35` |
 | `ExecutableDir` | 2 | já é pública em `motor/core/EngineAssets.h:22`; `editor/src/scripts/ScriptProject.cpp:136` tem uma cópia |
+| `ToUtf8` e `PathFromUtf8` | 2 | `motor::` em `engine/include/motor/core/Paths.h:11` e `:21` (engine, editor, Player); `hub::` em `hub/src/HubCore.cpp:84` (Hub, distribuição, instalador) |
+
+O par de UTF-8 também confunde o grafo do graphify, que liga as chamadas pelo nome. Na conferência de 24/10, das 97
+chamadas inferidas que ele pôs no `ToUtf8()` do Hub, só 20 eram do Hub de verdade: 62 vinham da engine e do editor,
+que chamam o `motor::ToUtf8`, e 15 de headers que nem o chamam. Com uma definição só, as pontes falsas entre o Hub e
+o editor somem do grafo no próximo `--update`. O `Paths.h` continua existindo para a engine e os scripts (incluindo o
+header do `common/`), e o `HubCore.h` passa a usar o mesmo; o SDK dos scripts (`motor_package`) precisa levar o header
+novo do `common/`.
 
 O `SetError(Result&, ...)` do `GameExport.cpp:181` é outro (grava no resultado da exportação) e fica. Os dois
 `CopyTree` (`Prefab.cpp`, `GameExport.cpp`) só têm o nome em comum.
@@ -59,7 +67,8 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 
 - As tarefas 1 a 4 mexem em arquivos de assets, projeto, cena, editor, hub e distribuição. Nenhum branch aberto em
   24/10 toca neles: o `fase-25-fisica-passos` mexe em `Scene.h` e `physics/`, o `fase-26-threads` em `Scene.cpp`,
-  `Animator.cpp`, `physics/` e no renderer. Podem ir já, num branch só.
+  `Animator.cpp`, `physics/` e no renderer. Podem ir já, num branch só. A tarefa 10 vai junto: mexe no `Paths.h`
+  (header público da área Núcleo, combinar antes) e no `HubCore` (área Hub).
 - A tarefa 5 (`DrawScene`) **espera o merge do `fase-26-threads`**, que reescreve boa parte do `Renderer.cpp`
   (125 linhas mudadas). Também não deve rodar junto com a Fase 24, que mexe no renderer.
 - A tarefa 7 é do editor. O `NavMeshBake` serve ao drawer da superfície e ao MCP, e a raiz de `editor/src` é só
@@ -76,10 +85,13 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 - [ ] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta
 - [ ] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2
 - [ ] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo
+- [ ] Tarefa 10: Juntar os dois `ToUtf8` e `PathFromUtf8` (engine e Hub) num `motor/common/Utf8.h`
 
 ## Pronto quando
 
 - `grep` não acha mais `void SetError(std::string* error` fora do `common/`, nem as leituras de arquivo da tabela.
+- Só há uma definição de `ToUtf8` e uma de `PathFromUtf8`, no `common/`, e no grafo as chamadas da engine e do
+  editor caem no `ToUtf8` dela, não num do Hub.
 - Nenhuma função de `engine/src` ou `editor/src` passa de 120 linhas, fora as `Add*Tools` do MCP.
 - Build sem avisos, `ctest` inteiro passando (com `test_layers`) e o `test_desempenho` em Release igual à base, sem
   regravar.
