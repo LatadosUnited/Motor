@@ -795,6 +795,9 @@ componentes comuns (Inspector, cena, desfazer):
   Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando), o raio de cada agente em verde, as
   ligações em roxo (no arco do pulo, com seta se só valem num sentido) e as Áreas de navegação em laranja, com nome e
   custo. No Play com a câmera do editor, também o caminho de cada agente em amarelo e de quem ele desvia em laranja.
+  Junto, a Percepção (Fase 37): o cone de visão de cada agente no chão, o círculo de "percebe em volta" e, em azul, até
+  onde chegam os sons de cada Alvo de percepção com Fonte de áudio; no Play, uma linha vermelha até quem ele vê, azul
+  até o que ouviu e um X cinza (com os segundos) onde lembra ter percebido quem sumiu.
 - **Ainda não:** obstáculos que se mexem (roteiro em
   `docs/roadmap/alpha-6.md`).
 
@@ -820,7 +823,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
-| Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia) |
+| Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia), `ai_perception` (olhos, cone e alcances de cada Percepção e os alvos; no Play, quem vê, o que ouviu e o que lembra) |
   | Scripts | `scripts_build` (`wait` responde quando a compilação termina), `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD, desenhado na hora; vistas scene, game e editor), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |
