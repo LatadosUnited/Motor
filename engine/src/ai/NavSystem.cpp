@@ -424,7 +424,9 @@ void NavSystem::OnFixedUpdate(SceneRuntime&, float dt) {
     if (m_crowd) m_crowd->Update(dt);
     for (EntityId id : agents) {
         Agent* agent = FindAgent(id);
-        if (agent && agent->seen == m_step) ApplyAgent(id, *agent, *m_scene->Find(id)->Get<NavMeshAgent>(), dt);
+        if (!agent || agent->seen != m_step) continue;
+        ApplyAgent(id, *agent, *m_scene->Find(id)->Get<NavMeshAgent>(), dt);
+        Animate(id, *agent);
     }
     // Agentes que sumiram (entidade destruída ou inativa, componente removido) saem da multidão e do registro.
     for (auto it = m_agents.begin(); it != m_agents.end();) {
@@ -615,6 +617,32 @@ void NavSystem::AdvanceCrossing(EntityId id, Agent& agent, const NavMeshAgent& s
     m_crowd->SetParams(agent.crowd, CrowdParams(s));
     agent.written = c.end;
     if (agent.hasDestination && !agent.arrived) PlanPath(agent, agent.destination);
+}
+
+void NavSystem::Animate(EntityId id, Agent& agent) {
+    const NavMeshAgentAnimation* a = m_scene->Find(id)->Get<NavMeshAgentAnimation>();
+    Animator* animator = a ? FindAnimator(*m_scene, id) : nullptr;
+    if (!animator) return;
+    // Pela velocidade no plano. Entre andar e correr, 10% de folga em volta do meio, para não ficar trocando quando
+    // a velocidade oscila bem ali.
+    const float speed = glm::length(Flat(GetVelocity(id)));
+    const float runFrom = (a->walkSpeed + a->runSpeed) * 0.5f;
+    int gait = 1;
+    if (agent.crossing.active && !a->jumpClip.empty()) {
+        gait = 3;
+    } else if (speed < a->idleBelow) {
+        gait = 0;
+    } else if (!a->runClip.empty() && speed >= runFrom * (agent.gait == 2 ? 0.9f : 1.1f)) {
+        gait = 2;
+    }
+    agent.gait = gait;
+    const std::string& clip = gait == 0 ? a->idleClip : gait == 2 ? a->runClip : gait == 3 ? a->jumpClip : a->walkClip;
+    if (clip.empty()) return;
+    animator->CrossFade(clip, a->fade);  // o clipe que já toca continua
+    const float reference = gait == 2 ? a->runSpeed : a->walkSpeed;
+    animator->speed = a->matchSpeed && (gait == 1 || gait == 2) && reference > 0.0f
+                          ? std::clamp(speed / reference, 0.25f, 3.0f)
+                          : 1.0f;
 }
 
 MOTOR_RUNTIME_SYSTEM(Navegacao, NavSystem, kSystemOrderNavigation);

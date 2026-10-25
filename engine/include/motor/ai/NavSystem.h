@@ -128,6 +128,7 @@ private:
         bool arrived = false;
         bool followingTarget = false;
         Crossing crossing;
+        int gait = -1;                   // clipe da Animação do agente: 0 parado, 1 andando, 2 correndo, 3 pulando
         uint32_t seen = 0;               // passo em que o agente apareceu por último (some: o registro sai)
     };
 
@@ -153,6 +154,7 @@ private:
     void StartCrossing(EntityId id, Agent& agent, const NavMeshAgent& settings, const glm::vec3& start,
                        const glm::vec3& end);
     void AdvanceCrossing(EntityId id, Agent& agent, const NavMeshAgent& settings, float dt);
+    void Animate(EntityId id, Agent& agent);
 
     Scene* m_scene = nullptr;
     PhysicsSystem* m_physics = nullptr;  // corpo dos agentes com CharacterController

@@ -6,6 +6,7 @@
 #include <motor/ai/NavMesh.h>
 #include <motor/ai/NavSystem.h>
 #include <motor/assets/AssetLibrary.h>
+#include <motor/assets/Model.h>
 #include <motor/core/Paths.h>
 #include <motor/physics/PhysicsSystem.h>
 #include <motor/project/Project.h>
@@ -741,6 +742,103 @@ int main(int argc, char** argv) {
         CHECK(built && built->Save(file));
         auto loaded = NavMesh::Load(file);
         CHECK(loaded && loaded->AreaAt({0.0f, 0.0f, -5.0f}) == 2 && loaded->AreaAt({0.0f, 0.0f, 8.0f}) == 0);
+    }
+
+    SECTION("Animação do agente: parado, andando, correndo e pulando pela velocidade");
+    {
+        // Modelo sem malha com quatro clipes vazios: basta para o Animator trocar de clipe.
+        auto model = std::make_shared<Model>();
+        model->skeleton = std::make_shared<Skeleton>();
+        for (const char* name : {"Parado", "Andando", "Correndo", "Pulando"}) {
+            auto clip = std::make_shared<AnimationClip>();
+            clip->name = name;
+            clip->duration = 1.0f;
+            clip->skeleton = model->skeleton;
+            model->clips.push_back(clip);
+        }
+        auto addAnimated = [&](Scene& scene, const glm::vec3& position) {
+            Entity& agent = AddAgent(scene, position);
+            NavMeshAgentAnimation& anim = agent.Add<NavMeshAgentAnimation>();
+            anim.runClip = "Correndo";
+            anim.jumpClip = "Pulando";
+            const EntityId id = agent.id;
+            Entity& body = scene.CreateEntity("Modelo", id);  // o Animator fica no filho, como num glTF
+            Animator& animator = body.Add<Animator>();
+            animator.model = model;
+            animator.clip.clear();
+            return std::make_pair(id, body.id);
+        };
+
+        Scene scene = MakeScene();
+        const auto [id, bodyId] = addAnimated(scene, {-8.0f, 0.0f, 5.0f});
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        const Animator* animator = scene.Find(bodyId)->Get<Animator>();
+        runtime.FixedUpdate(kDt);
+        CHECK(animator->CurrentClip() == "Parado" && Near(animator->speed, 1.0f, 1e-4f));
+
+        // Acelera até 3,5 m/s: anda (até ~3 m/s) e corre; o Animator acompanha (3,5 / 4 na corrida).
+        CHECK(nav && nav->SetDestination(id, {8.0f, 0.0f, 5.0f}));
+        bool walked = false, ran = false, ranAtPace = false;
+        for (int i = 0; i < 60 * 10 && nav && !nav->HasArrived(id); ++i) {
+            runtime.FixedUpdate(kDt);
+            runtime.Update(kDt);
+            const float speed = glm::length(nav->GetVelocity(id));
+            if (animator->CurrentClip() == "Andando") walked = true;
+            if (animator->CurrentClip() == "Correndo") {
+                ran = true;
+                if (speed > 3.4f && Near(animator->speed, speed / 4.0f, 0.01f)) ranAtPace = true;
+            }
+        }
+        CHECK(walked && ran && ranAtPace);
+        for (int i = 0; i < 60; ++i) runtime.FixedUpdate(kDt);  // chegou e freou
+        CHECK(animator->CurrentClip() == "Parado" && Near(animator->speed, 1.0f, 1e-4f));
+
+        // Mais devagar que o meio entre andar e correr: só anda, no ritmo (2 / 1,5).
+        scene.Find(id)->Get<NavMeshAgent>()->speed = 2.0f;
+        CHECK(nav && nav->SetDestination(id, {-8.0f, 0.0f, 5.0f}));
+        bool ranSlow = false, walkedAtPace = false;
+        for (int i = 0; i < 60 * 10 && nav && !nav->HasArrived(id); ++i) {
+            runtime.FixedUpdate(kDt);
+            const float speed = glm::length(nav->GetVelocity(id));
+            if (animator->CurrentClip() == "Correndo") ranSlow = true;
+            if (speed > 1.95f && animator->CurrentClip() == "Andando" && Near(animator->speed, speed / 1.5f, 0.01f)) {
+                walkedAtPace = true;
+            }
+        }
+        CHECK(!ranSlow && walkedAtPace);
+        runtime.Stop();
+
+        // Na ligação, o clipe de pular.
+        Scene jump;
+        Entity& a = jump.CreateEntity("A");
+        a.transform.position = {-5.0f, -0.5f, 0.0f};
+        a.Add<ColliderComponent>().size = {8.0f, 1.0f, 8.0f};
+        Entity& b = jump.CreateEntity("B");
+        b.transform.position = {5.0f, -0.5f, 0.0f};
+        b.Add<ColliderComponent>().size = {8.0f, 1.0f, 8.0f};
+        jump.CreateEntity("Navegação").Add<NavMeshSurface>();
+        NavMeshLink& link = jump.CreateEntity("Pulo").Add<NavMeshLink>();
+        link.start = {-1.6f, 0.0f, 0.0f};
+        link.end = {1.6f, 0.0f, 0.0f};
+        const auto [jumper, jumperBody] = addAnimated(jump, {-6.0f, 0.0f, 0.0f});
+        SceneRuntime jumpRuntime(jump);
+        jumpRuntime.Start();
+        NavSystem* nav2 = jumpRuntime.GetSystem<NavSystem>();
+        const Animator* jumperAnimator = jump.Find(jumperBody)->Get<Animator>();
+        CHECK(nav2 && nav2->SetDestination(jumper, {6.0f, 0.0f, 0.0f}));
+        bool jumpedClip = true, sawLink = false;
+        for (int i = 0; i < 60 * 10 && nav2 && !nav2->HasArrived(jumper); ++i) {
+            jumpRuntime.FixedUpdate(kDt);
+            if (nav2->IsOnLink(jumper)) {
+                sawLink = true;
+                if (jumperAnimator->CurrentClip() != "Pulando") jumpedClip = false;
+            }
+        }
+        CHECK(sawLink && jumpedClip);
+        CHECK(nav2 && nav2->HasArrived(jumper) && jumperAnimator->CurrentClip() != "Pulando");
+        jumpRuntime.Stop();
     }
 
     SECTION("Arquivo .mnav: grava, lê e as consultas dão o mesmo resultado");

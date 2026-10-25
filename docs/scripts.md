@@ -1067,6 +1067,10 @@ Um guarda que patrulha entre dois pontos e persegue o jogador quando o vê
   uma área (1 a 15) e um **Custo**: com custo 3, andar 1 m ali conta como 3 m, e o agente dá a volta quando a volta
   sai mais curta. O custo vale na hora (um script pode encarecer a lama quando chove); mudar a caixa pede gerar o
   navmesh de novo. No agente, **Áreas por onde anda** desmarca as que ele evita de todo (o cavalo não entra na água).
+- **Animação:** a **Animação do agente** (`NavMeshAgentAnimation`), na entidade do agente, troca os clipes do
+  Animator dele (ou do modelo filho) pela velocidade: parado, andando, correndo e pulando nas ligações, com mistura.
+  Com **Acompanhar a velocidade**, o clipe toca mais rápido quanto mais rápido o agente anda (os pés não escorregam).
+  Um script que chame `CrossFade` no mesmo passo, depois do `NavSystem`, vence.
 
 Para montar: o chão e as paredes com Collider, a **Superfície de navegação** (e **Gerar**), duas entidades
 vazias `PontoA` e `PontoB`, e o guarda com **Agente de navegação** e **Scripts > Guarda**, com Ponto A, Ponto B
