@@ -18,3 +18,4 @@
 #include "motor/scene/NavMeshSurface.h"
 #include "motor/scene/NavMeshAgent.h"
 #include "motor/scene/NavMeshLink.h"
+#include "motor/scene/NavMeshArea.h"
