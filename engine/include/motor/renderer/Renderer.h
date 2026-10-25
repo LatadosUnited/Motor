@@ -162,21 +162,21 @@ private:
     ShadowParamsIds m_shadowIds;
     std::vector<DrawKey> m_sceneKeys, m_shadowKeys;
     std::vector<DrawKey> m_lastSceneKeys, m_lastShadowKeys;  // do quadro anterior: iguais, a ordem não muda
-    std::vector<glm::mat4> m_objects;  // 2 por item (mundo e normal), na ordem de m_items: o buffer de objetos
+    std::vector<glm::mat4> m_objects;  // 2 por item (mundo e normal), na ordem de m_items: o buffer de objetos (só os
+                                       // 2 * m_items.size() primeiros valem; não é esvaziado entre quadros)
     // Material do Submit anterior: o mesmo objeto, ou os mesmos valores, não consultam as tabelas.
     const Material* m_lastMaterial = nullptr;
     MaterialKey m_lastMaterialKey;
+    size_t m_lastMaterialKeyHash = 0;  // do SubmitMany (o AddItem não o usa: só acelera a comparação)
     ShadowParams m_lastShadowParams;
     uint32_t m_lastMaterialId = 0, m_lastShadowId = 0;
     std::vector<uint32_t> m_sceneOrder, m_shadowOrder;
     std::vector<uint8_t> m_visible;  // por item: aparece na câmera (PrepareItems)
     // SubmitMany: pedidos montados em paralelo e as chaves de material de cada um (reaproveitados entre quadros).
     struct PendingSubmit {
-        SubmitRequest request;
         MaterialKey key;
         ShadowParams shadow;
-        uint32_t materialId = 0, shadowId = 0;
-        uint32_t slot = 0;  // posição em m_items
+        size_t keyHash = 0, shadowHash = 0;
         bool ok = false;
     };
     std::vector<PendingSubmit> m_pending;

@@ -1,4 +1,6 @@
 #include "motor/scene/Scene.h"
+
+#include "motor/core/FrameStats.h"
 #include "motor/scene/EntityRef.h"
 
 #include "motor/renderer/Camera.h"
@@ -134,6 +136,7 @@ Scene& Scene::operator=(Scene&& other) noexcept {
     m_byName = std::move(other.m_byName);
     m_pending = std::move(other.m_pending);
     m_indexVersion = other.m_indexVersion;
+    m_meshList = MeshList();
     for (const auto& e : m_entities) e->cache.owner = this;
     other.m_indexVersion = UINT64_MAX;
     return *this;
@@ -507,6 +510,7 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
 }
 
 void Scene::SubmitTo(Renderer& renderer) const {
+    MOTOR_PROFILE_STAT("Render: enviar a cena");
     // Entidades na raiz da hierarquia vão em paralelo (Fase 26): a matriz de mundo delas só depende do próprio
     // transform, e cada uma só escreve no próprio cache. Filhos (o cache confere e pode recalcular o do pai, que
     // outra thread estaria lendo) e malhas com pele (procuram o Animator acima) ficam para depois, nesta thread.
@@ -514,10 +518,18 @@ void Scene::SubmitTo(Renderer& renderer) const {
     const ComponentType* meshType = ComponentRegistry::TypeOf<MeshRenderer>();
     const std::vector<EntityId>& ids = EntitiesWith<MeshRenderer>();
     if (!meshType || ids.empty()) return;
+    MeshList& list = m_meshList;
+    if (list.version != SceneStructureVersion() || list.items.size() != ids.size()) {
+        list.items.resize(ids.size());
+        for (size_t i = 0; i < ids.size(); ++i) {
+            const Entity* e = Find(ids[i]);
+            list.items[i] = {e, e ? static_cast<const MeshRenderer*>(e->Get(*meshType)) : nullptr};
+        }
+        list.version = SceneStructureVersion();
+    }
     std::vector<uint8_t> later(ids.size(), 0);
     renderer.SubmitMany(ids.size(), [&](size_t i, Renderer::SubmitRequest& request) {
-        const Entity* e = Find(ids[i]);
-        const MeshRenderer* mr = e ? static_cast<const MeshRenderer*>(e->Get(*meshType)) : nullptr;
+        const auto [e, mr] = list.items[i];
         if (!mr || !mr->mesh) return false;
         if (e->parent != kNullEntity || mr->mesh->IsSkinned()) {
             later[i] = 1;
@@ -534,8 +546,7 @@ void Scene::SubmitTo(Renderer& renderer) const {
     std::vector<glm::mat4> joints;
     for (size_t i = 0; i < ids.size(); ++i) {
         if (!later[i]) continue;
-        const Entity* e = Find(ids[i]);
-        const MeshRenderer* mr = e->Get<MeshRenderer>();
+        const auto [e, mr] = list.items[i];
         if (!IsActiveInHierarchy(*e)) continue;
         if (mr->mesh->IsSkinned()) {
             // Pose do Animator mais próximo (a própria entidade ou acima) que anima o esqueleto desta pele;

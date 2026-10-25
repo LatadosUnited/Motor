@@ -1,6 +1,7 @@
 #include "renderer/Shadows.h"
 
 #include "motor/core/JobSystem.h"
+#include "motor/core/FrameStats.h"
 #include "motor/core/Profile.h"
 #include "motor/renderer/Renderer.h"
 #include "motor/renderer/GpuMemory.h"
@@ -99,7 +100,7 @@ void ShadowRenderer::EnsureCubes(int resolution) {
 }
 
 void ShadowRenderer::BuildPasses(std::span<const DrawItem> items, const ShadowOrder& order) {
-    MOTOR_PROFILE_SCOPE("Sombras: listas");
+    MOTOR_PROFILE_STAT("Render: listas das sombras");
     JobSystem& jobs = JobSystem::Get();
     // 1) Recorte: um bit por passada em cada item, os itens divididos entre as threads.
     m_masks.resize(items.size());

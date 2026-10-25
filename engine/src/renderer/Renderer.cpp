@@ -2,6 +2,7 @@
 
 #include "motor/core/EngineAssets.h"
 #include "motor/core/JobSystem.h"
+#include "motor/core/FrameStats.h"
 #include "motor/core/Profile.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Framebuffer.h"
@@ -199,7 +200,8 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_items.clear();
     m_joints.clear();
     m_wires.clear();
-    m_objects.clear();
+    // m_objects não é esvaziado: vale até 2 * m_items.size(). Refazer 20 000 matrizes (o construtor do glm escreve a
+    // identidade) custava ~0,7 ms por quadro com 10 000 objetos.
     m_materialIds.Clear();
     m_shadowIds.Clear();
     m_lastMaterial = nullptr;
@@ -231,8 +233,9 @@ DrawItem& Renderer::AddItem(const Mesh& mesh, const Material& material, const gl
     item.transparent = material.blend == BlendMode::Transparent;
     item.shadows = shadows;
     // A matriz da normal e a caixa no mundo saem no EndScene, em paralelo (PrepareItems): aqui só a de mundo.
-    m_objects.push_back(model);
-    m_objects.push_back(model);
+    const size_t object = 2 * (m_items.size() - 1);
+    if (m_objects.size() < object + 2) m_objects.resize(object + 2);
+    m_objects[object] = model;
     return item;
 }
 
@@ -245,61 +248,65 @@ void Renderer::SubmitMany(size_t count, const SubmitFill& fill) {
     MOTOR_ASSERT(m_inScene, "SubmitMany fora de BeginScene/EndScene");
     MOTOR_PROFILE_SCOPE("Renderer: SubmitMany");
     JobSystem& jobs = JobSystem::Get();
-
-    // 1) Pedidos e chaves do material, em paralelo: ler os materiais (espalhados na memória) é o que custa.
+    const size_t base = m_items.size();
+    m_items.resize(base + count);
+    if (m_objects.size() < 2 * (base + count)) m_objects.resize(2 * (base + count));
     m_pending.resize(count);
+
+    // 1) Em paralelo: cada pedido já no seu lugar (base + i), com as chaves do material e os hashes delas. Ler os
+    //    objetos e materiais (espalhados na memória) é o que custa.
     jobs.ParallelFor(count, 256, [&](size_t begin, size_t end) {
+        SubmitRequest request;
         for (size_t i = begin; i < end; ++i) {
             PendingSubmit& p = m_pending[i];
-            p.ok = fill(i, p.request) && p.request.mesh && p.request.material;
+            request = SubmitRequest{};
+            p.ok = fill(i, request) && request.mesh && request.material;
             if (!p.ok) continue;
-            const Material& material = *p.request.material;
+            const Material& material = *request.material;
             p.key = {MaterialParamsOf(material), material.doubleSided};
+            p.keyHash = MaterialKeyHash{}(p.key);
             p.shadow = ShadowParamsOf(material);
+            p.shadowHash = ShadowParamsHash{}(p.shadow);
+            DrawItem& item = m_items[base + i];
+            item = DrawItem{};
+            item.mesh = request.mesh;
+            item.material = request.material;
+            item.transparent = material.blend == BlendMode::Transparent;
+            item.shadows = request.shadows;
+            m_objects[2 * (base + i)] = request.model;  // a matriz da normal sai no PrepareItems
         }
     });
 
-    // 2) Números de material na ordem dos pedidos (a tabela é uma só): serial, mas só compara chaves seguidas num
-    //    vetor contíguo. Mesmo atalho do AddItem: o mesmo material, ou os mesmos valores, não consultam as tabelas.
-    uint32_t slot = static_cast<uint32_t>(m_items.size());
-    for (PendingSubmit& p : m_pending) {
+    // 2) Números de material na ordem dos pedidos (a tabela é uma só): serial, comparando primeiro os hashes. Mesmo
+    //    atalho do AddItem: o mesmo material, ou os mesmos valores, não consultam as tabelas. Pedido recusado (raro):
+    //    os seguintes descem uma posição.
+    size_t slot = base;
+    for (size_t i = 0; i < count; ++i) {
+        const PendingSubmit& p = m_pending[i];
         if (!p.ok) continue;
-        if (p.request.material != m_lastMaterial) {
+        const Material* material = m_items[base + i].material;
+        if (material != m_lastMaterial) {
             const bool first = m_lastMaterial == nullptr;
-            m_lastMaterial = p.request.material;
-            if (first || !(p.key == m_lastMaterialKey)) {
-                m_lastMaterialId = m_materialIds.Id(p.key);
+            m_lastMaterial = material;
+            if (first || p.keyHash != m_lastMaterialKeyHash || !(p.key == m_lastMaterialKey)) {
+                m_lastMaterialId = m_materialIds.Id(p.key, p.keyHash);
                 m_lastMaterialKey = p.key;
+                m_lastMaterialKeyHash = p.keyHash;
             }
             if (first || !(p.shadow == m_lastShadowParams)) {
-                m_lastShadowId = m_shadowIds.Id(p.shadow);
+                m_lastShadowId = m_shadowIds.Id(p.shadow, p.shadowHash);
                 m_lastShadowParams = p.shadow;
             }
         }
-        p.materialId = m_lastMaterialId;
-        p.shadowId = m_lastShadowId;
-        p.slot = slot++;
-    }
-
-    // 3) Itens e matrizes nos lugares deles, em paralelo (a matriz da normal e a caixa saem no PrepareItems).
-    m_items.resize(slot);
-    m_objects.resize(2 * static_cast<size_t>(slot));
-    jobs.ParallelFor(count, 512, [&](size_t begin, size_t end) {
-        for (size_t i = begin; i < end; ++i) {
-            const PendingSubmit& p = m_pending[i];
-            if (!p.ok) continue;
-            DrawItem& item = m_items[p.slot];
-            item = DrawItem{};
-            item.mesh = p.request.mesh;
-            item.material = p.request.material;
-            item.materialId = p.materialId;
-            item.shadowId = p.shadowId;
-            item.transparent = p.request.material->blend == BlendMode::Transparent;
-            item.shadows = p.request.shadows;
-            m_objects[2 * size_t{p.slot}] = p.request.model;
-            m_objects[2 * size_t{p.slot} + 1] = p.request.model;
+        if (slot != base + i) {
+            m_items[slot] = m_items[base + i];
+            m_objects[2 * slot] = m_objects[2 * (base + i)];
         }
-    });
+        m_items[slot].materialId = m_lastMaterialId;
+        m_items[slot].shadowId = m_lastShadowId;
+        ++slot;
+    }
+    m_items.resize(slot);
 }
 
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
@@ -322,7 +329,7 @@ void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const g
 }
 
 void Renderer::PrepareItems(const Frustum& view) {
-    MOTOR_PROFILE_SCOPE("Renderer: preparar itens");
+    MOTOR_PROFILE_STAT("Render: preparar");
     // Por item: matriz da normal, caixa no mundo, chaves de ordem e recorte da câmera. Cada item só escreve no que é
     // dele, então os itens se dividem entre as threads sem trava (Fase 26).
     const size_t count = m_items.size();
@@ -397,7 +404,10 @@ void Renderer::EndScene() {
         m_sky->Update(m_environment, *m_post);
     }
 
-    DrawScene();
+    {
+        MOTOR_PROFILE_STAT("Render: cena e sombras");
+        DrawScene();
+    }
     {
         MOTOR_PROFILE_GPU("Pós-processamento");
         m_post->Resolve(m_keepSceneDepth || !m_wires.empty());  // a profundidade só para quem a lê
@@ -435,7 +445,7 @@ void Renderer::DrawScene() {
     sortIfChanged(m_shadowKeys, m_lastShadowKeys, m_shadowOrder);
 
     // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
-    m_instances->UploadObjects(m_objects);
+    m_instances->UploadObjects(std::span(m_objects.data(), 2 * m_items.size()));
     const ShadowRenderer::Result shadows = [&] {
         MOTOR_PROFILE_GPU("Sombras");
         return m_shadows->Render(m_camera, m_lights, m_environment, m_items, *m_instances,

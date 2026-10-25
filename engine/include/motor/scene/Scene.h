@@ -22,6 +22,7 @@ class Camera;
 class Framebuffer;
 class Mesh;
 class Renderer;
+struct MeshRenderer;
 struct Light;
 
 using EntityId = uint32_t;
@@ -206,6 +207,22 @@ private:
     mutable std::unordered_map<size_t, std::vector<EntityId>> m_byName;
     mutable std::vector<IndexChange> m_pending;
     mutable uint64_t m_indexVersion = UINT64_MAX;
+
+    // SubmitTo (Fase 26): entidade e MeshRenderer de cada id de EntitiesWith<MeshRenderer>, lado a lado, refeita só
+    // quando a estrutura muda (SceneStructureVersion). Sem ela, cada objeto passava pelo mapa de ids e pela lista de
+    // componentes da entidade (~5 leituras espalhadas na memória). Cópia e movimento começam vazios.
+    struct MeshList {
+        std::vector<std::pair<const Entity*, const MeshRenderer*>> items;
+        uint64_t version = UINT64_MAX;
+        MeshList() = default;
+        MeshList(const MeshList&) {}
+        MeshList& operator=(const MeshList&) {
+            items.clear();
+            version = UINT64_MAX;
+            return *this;
+        }
+    };
+    mutable MeshList m_meshList;
 };
 
 } // namespace motor

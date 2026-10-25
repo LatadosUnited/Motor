@@ -39,11 +39,13 @@ struct ShadowParamsHash {
 };
 
 // Números pequenos e seguidos (0, 1, 2...) para chaves iguais, na ordem em que aparecem. Clear() a cada quadro.
+// `hash` (o de Hash) pode vir pronto: o SubmitMany o calcula em paralelo.
 template <class Key, class Hash>
 class KeyIds {
 public:
-    uint32_t Id(const Key& key) {
-        const auto [it, inserted] = m_ids.try_emplace(key, static_cast<uint32_t>(m_keys.size()));
+    uint32_t Id(const Key& key) { return Id(key, Hash{}(key)); }
+    uint32_t Id(const Key& key, size_t hash) {
+        const auto [it, inserted] = m_ids.try_emplace(Hashed{key, hash}, static_cast<uint32_t>(m_keys.size()));
         if (inserted) m_keys.push_back(key);
         return it->second;
     }
@@ -55,7 +57,15 @@ public:
     }
 
 private:
-    std::unordered_map<Key, uint32_t, Hash> m_ids;
+    struct Hashed {
+        Key key;
+        size_t hash;
+        bool operator==(const Hashed& other) const { return hash == other.hash && key == other.key; }
+    };
+    struct ByHash {
+        size_t operator()(const Hashed& h) const { return h.hash; }
+    };
+    std::unordered_map<Hashed, uint32_t, ByHash> m_ids;
     std::vector<Key> m_keys;
 };
 
