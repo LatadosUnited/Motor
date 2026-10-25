@@ -7,6 +7,7 @@
 
 #include <motor/Motor.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -71,7 +72,7 @@ public:
     void OnPathDeleted(const std::filesystem::path& path);
 
     void MarkSaved();
-    bool HasUnsavedChanges();                   // compara a cena atual com o último estado salvo
+    bool HasUnsavedChanges();                   // a cena atual não é a do último estado salvo
     void PollChanges(float dt);                 // atualiza o "*" do título e grava o salvamento automático
     void SaveRecovery(std::string_view reason = "autosave", const motor::Scene* overrideScene = nullptr);
     void ClearRecovery();
@@ -92,6 +93,7 @@ private:
     void UpdateWindowTitle();
     void DrawNewProjectPopup();
     void DrawCollisionLayersWindow();  // Arquivo > Camadas de colisão
+    void UpdateDirty(bool pendingChange);  // m_dirty, o título e a recuperação
     void DrawGameSettingsWindow();     // Arquivo > Configurações do jogo
     void DrawGameIdentity();
     void DrawControlsWindow();         // Arquivo > Controles
@@ -108,9 +110,11 @@ private:
 
     std::optional<motor::Project> m_project;
     std::filesystem::path m_scenePath;   // vazio = "Sem título"
-    std::string m_savedSnapshot;         // JSON do último estado salvo/carregado
+    // Último estado salvo/carregado: a versão do desfazer (UndoHistory::Version) de quando foi salvo. Sem JSON da
+    // cena guardado: gravar a cena de referência em JSON a cada 0,5 s travava o editor (Fase 27).
+    uint64_t m_savedVersion = 0;
+    bool m_savedValid = false;  // false: não há estado salvo igual à cena (cena sem arquivo, recuperação diferente)
     bool m_dirty = false;
-    float m_dirtyCheckTimer = 0.0f;
     float m_autoSaveTimer = 0.0f;
 
     FileAction m_pendingAction = FileAction::None;

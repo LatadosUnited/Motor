@@ -89,6 +89,10 @@ private:
     }
 };
 
+// Mesmo id, nome, ativo, pai, transform e componentes (com os mesmos valores, na mesma ordem): o que Scene::operator==
+// compara em cada entidade.
+bool SameEntity(const Entity& a, const Entity& b);
+
 struct RaycastHit {
     EntityId entity = kNullEntity;
     float distance = 0.0f;
@@ -107,6 +111,12 @@ public:
 
     // Mesmo conteúdo: entidades (na mesma ordem, com os mesmos ids e valores) e ambiente.
     bool operator==(const Scene& other) const;
+
+    // Desfazer do editor (Fase 27), que guarda as entidades e não a cena inteira: uma cena com cópias de `entities`
+    // (em ordem de id, como Entities(), com os mesmos ids) e o próximo id que ela vai dar.
+    static Scene FromEntities(const std::vector<const Entity*>& entities, EntityId nextId,
+                              const Environment& environment);
+    EntityId NextEntityId() const { return m_nextId; }
 
     Entity& CreateEntity(std::string name, EntityId parent = kNullEntity);
     void DestroyEntity(EntityId id);               // destrói também os descendentes

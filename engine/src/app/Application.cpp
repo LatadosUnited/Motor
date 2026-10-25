@@ -104,8 +104,12 @@ void Application::Run() {
             }
             if (m_imgui) {
                 MOTOR_PROFILE_STAT("ImGui");
-                m_imgui->BeginFrame();
+                {
+                    MOTOR_PROFILE_STAT("ImGui: começar");
+                    m_imgui->BeginFrame();
+                }
                 OnImGui();
+                MOTOR_PROFILE_STAT("ImGui: desenhar");
                 m_imgui->EndFrame();
             }
             {

@@ -57,7 +57,7 @@ public:
     bool IsRunning() const { return m_server.IsRunning(); }
 
     void ApplyGameInput();  // início do quadro (antes do jogo rodar): teclas simuladas pedidas pelo agente
-    void Pump();            // depois do viewport desenhar: atende as mensagens
+    bool Pump();            // depois do viewport desenhar: atende as mensagens (true se atendeu alguma)
     void OnPlayStopped();   // solta as teclas simuladas
 
     void DrawMenuItems(EditorSettings& settings);  // no menu Ver

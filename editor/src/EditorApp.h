@@ -12,6 +12,8 @@
 #include "UndoHistory.h"
 #include "mcp/McpController.h"
 
+#include <motor/core/FrameStats.h>
+
 #include <motor/Motor.h>
 
 #include <filesystem>
@@ -29,6 +31,8 @@ public:
         int mcpPort = 0;                // > 0: liga o servidor MCP nesta porta (--mcp na linha de comando)
         std::filesystem::path createParent;  // --create <pasta-pai> <nome>: cria o projeto e abre (Fase 14)
         std::string createName;
+        std::filesystem::path perfFile;  // --perf: contadores de cada quadro num CSV ao fechar (Fase 27)
+        double seconds = 0.0;            // --segundos: > 0 fecha sozinho depois desse tempo
     };
     explicit EditorApp(Options options);
 
@@ -74,6 +78,9 @@ private:
     std::filesystem::path m_createParent;
     std::string m_createName;
     int m_startupMcpPort = 0;
+    std::filesystem::path m_perfFile;
+    double m_quitAfterSeconds = 0.0;
+    motor::PerfRecorder m_perf;  // --perf
     int m_historyRequest = 0;  // -1 desfazer, +1 refazer (executado no início do próximo frame)
     float m_assetRefreshTimer = 0.0f;
     bool m_resetLayout = true;  // constrói o layout padrão se não houver um salvo

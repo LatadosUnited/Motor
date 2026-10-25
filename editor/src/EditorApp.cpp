@@ -54,7 +54,9 @@ EditorApp::EditorApp(Options options)
       m_startupProject(std::move(options.project)),
       m_createParent(std::move(options.createParent)),
       m_createName(std::move(options.createName)),
-      m_startupMcpPort(options.mcpPort) {}
+      m_startupMcpPort(options.mcpPort),
+      m_perfFile(std::move(options.perfFile)),
+      m_quitAfterSeconds(options.seconds) {}
 
 void EditorApp::OnInit() {
     m_ctx.pushAssetUndo = [this](std::function<void()> undo, std::function<void()> redo) {
@@ -62,6 +64,7 @@ void EditorApp::OnInit() {
             m_history.PushAction(m_ctx.scene, m_ctx.selected, &m_ctx.selection, std::move(undo), std::move(redo));
         }
     };
+    m_history.SetLazyCompare(true);  // compara a cena só depois de entrada ou pedido do MCP (Fase 27)
     log::Info("Motor Editor {} (API de scripts {})", kVersion, kScriptApiVersion);
     if (EditorSettings::IsDisabled()) log::Info("Configuração do editor desligada (--no-settings)");
     m_viewport.Init();
@@ -163,9 +166,10 @@ void EditorApp::OnUpdate(float dt) {
     // Em segundo plano (ex.: você no VS Code) e durante a compilação dos scripts, fora do Play, o editor desenha
     // menos: o processador fica para o compilador, que levava o triplo do tempo com o editor a 60 FPS (a placa
     // de vídeo integrada divide a energia com o processador). O jogo no Play continua na velocidade normal.
+    // Medindo (--perf), sem o limite de segundo plano: a janela aberta por um script nem sempre fica com o foco.
     if (m_play.IsActive()) {
         SetFrameLimit(0.0);
-    } else if (!GetWindow().IsFocused()) {
+    } else if (!GetWindow().IsFocused() && m_perfFile.empty()) {
         SetFrameLimit(10.0);
     } else {
         SetFrameLimit(m_scripts.IsBuilding() ? 20.0 : 0.0);  // um segundo de "Compilando..." não precisa de 60 FPS
@@ -174,7 +178,10 @@ void EditorApp::OnUpdate(float dt) {
     if (motor::SceneRuntime* runtime = m_play.Runtime()) runtime->SetFixedAlpha(FixedAlpha());  // interpolação
     m_play.Update(dt, m_viewport.IsFocused(), m_gameView.IsFocused(), GetWindow());
     m_scripts.Update(dt);
-    m_document.PollChanges(dt);
+    {
+        MOTOR_PROFILE_STAT("Update: checar não salvo");
+        m_document.PollChanges(dt);
+    }
 
     // Arquivos novos ou movidos fora do editor: cria os .meta que faltam e atualiza os caminhos dos GUIDs.
     m_assetRefreshTimer += dt;
@@ -186,10 +193,20 @@ void EditorApp::OnUpdate(float dt) {
         // Modelos glTF novos ou alterados viram prefab (motor/scene/ModelImport.h).
         if (!m_play.IsActive()) motor::ImportModelsInProject(m_ctx.assets);
         m_ctx.prefabs.ReloadChanged(m_ctx.assets);
+        m_history.NoteActivity();  // instâncias de um prefab alterado mudam no UpdatePrefabs
     }
 
     m_viewport.UpdateCamera(dt, GetWindow());
     if (GetWindow().IsMinimized()) UpdateMinimized();
+
+    if (!m_perfFile.empty()) {
+        const FrameStats::Frame& last = FrameStats::Instance().Last();  // o quadro anterior, já fechado
+        if (last.index != 0) m_perf.Record(last);
+    }
+    if (m_quitAfterSeconds > 0.0 && ElapsedTime() >= m_quitAfterSeconds) {
+        log::Info("Editor: {:.1f} s rodados (--segundos), fechando", ElapsedTime());
+        Quit();
+    }
 }
 
 void EditorApp::OnRender(Renderer& renderer) {
@@ -224,18 +241,29 @@ void EditorApp::UpdateMinimized() {
     // Minimizado o OnImGui não roda: o que não é interface roda aqui, para o servidor MCP continuar atendendo
     // (antes os pedidos esperavam até a janela voltar, e o agente via o editor como travado).
     ApplyRequests();
-    m_mcp.Pump();
+    if (m_mcp.Pump()) m_history.NoteActivity();
     ApplyPendingChanges(true);  // ninguém está arrastando nada com a janela minimizada
 }
 
 void EditorApp::OnImGui() {
     // Desfazer/refazer e Play/Parar pedidos no frame anterior: aplicados antes de os painéis desenharem a cena.
     ApplyRequests();
+    // O desfazer só compara a cena depois de alguma entrada (tecla, clique, roda, texto): mexer o mouse não muda
+    // nada, e com milhares de entidades a comparação custa milissegundos (Fase 27).
+    for (const ImGuiInputEvent& event : ImGui::GetCurrentContext()->InputEventsTrail) {
+        if (event.Type != ImGuiInputEventType_MousePos && event.Type != ImGuiInputEventType_MouseViewport) {
+            m_history.NoteActivity();
+            break;
+        }
+    }
     m_ctx.playing = m_play.IsActive();
     m_ctx.SyncSelection();  // seleção trocada por fora (criar, MCP, desfazer) antes dos painéis
 
     ImGuizmo::BeginFrame();
-    DrawMenuBar();
+    {
+        MOTOR_PROFILE_STAT("ImGui: menus");
+        DrawMenuBar();
+    }
 
     const ImGuiID dockspaceId = ImGui::GetID("EditorDockSpace");
     if (m_resetLayout) {
@@ -250,26 +278,52 @@ void EditorApp::OnImGui() {
     ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport());
     m_gameView.PrepareDock(m_play);
 
-    DrawHierarchyPanel(m_ctx);
-    DrawScenePanel(m_ctx);
-    DrawInspectorPanel(m_ctx);
-    m_viewport.Draw(m_ctx, m_play, GetRenderer().GetStats(), FramesPerSecond());
-    m_gameView.Draw(m_play);
-    DrawProjectPanel();
-    m_scripts.DrawPanel();
+    // Cada painel com o seu tempo de CPU no --perf e no Tracy (Fase 27: o editor com milhares de entidades).
+    {
+        MOTOR_PROFILE_STAT("ImGui: Hierarquia");
+        DrawHierarchyPanel(m_ctx);
+    }
+    {
+        MOTOR_PROFILE_STAT("ImGui: Cena");
+        DrawScenePanel(m_ctx);
+    }
+    {
+        MOTOR_PROFILE_STAT("ImGui: Inspector");
+        DrawInspectorPanel(m_ctx);
+    }
+    {
+        MOTOR_PROFILE_STAT("ImGui: Viewport");
+        m_viewport.Draw(m_ctx, m_play, GetRenderer().GetStats(), FramesPerSecond());
+        m_gameView.Draw(m_play);
+    }
+    {
+        MOTOR_PROFILE_STAT("ImGui: Projeto e Scripts");
+        DrawProjectPanel();
+        m_scripts.DrawPanel();
+    }
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
 
     // Atalhos antes dos popups: o Esc que fecha um popup não deve também limpar a seleção.
-    HandleShortcuts();
+    {
+        MOTOR_PROFILE_STAT("ImGui: atalhos");
+        HandleShortcuts();
+    }
     // Pedidos do servidor MCP: depois do viewport (que informa o mouse à UI do jogo) e antes do Track do fim do
     // quadro, que transforma as mudanças deles em passos de desfazer.
-    m_mcp.Pump();
+    {
+        MOTOR_PROFILE_STAT("ImGui: MCP");
+        if (m_mcp.Pump()) m_history.NoteActivity();  // as ferramentas mexem na cena
+    }
+    MOTOR_PROFILE_STAT("ImGui: popups");
     if (!m_ctx.pendingError.empty()) m_document.ShowError(std::exchange(m_ctx.pendingError, {}));
     m_document.DrawPopups();
     m_scripts.DrawNewScriptPopup();
     m_export.DrawPopup();
     DrawAboutPopup();
-    ApplyPendingChanges(!IsInteracting());
+    {
+        MOTOR_PROFILE_STAT("ImGui: desfazer e prefabs");
+        ApplyPendingChanges(!IsInteracting());
+    }
 }
 
 bool EditorApp::OnCloseRequested() {
@@ -291,6 +345,14 @@ void EditorApp::OnShutdown() {
     m_settings.viewport = m_viewport.Prefs();
     m_settings.playSideBySide = m_play.SideBySide();
     m_settings.Save();
+    if (!m_perfFile.empty()) {
+        std::string error;
+        if (m_perf.Save(m_perfFile, &error)) {
+            log::Info("Contadores: {} quadros em {}", m_perf.FrameCount(), ToUtf8(m_perfFile));
+        } else {
+            log::Error("--perf: não foi possível gravar os contadores: {}", error);
+        }
+    }
 }
 
 void EditorApp::ApplyPlayRequest() {

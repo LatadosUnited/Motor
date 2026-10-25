@@ -199,6 +199,8 @@ MotorEditor [pasta-do-projeto | arquivo.mproject] [opções]
   --settings <arquivo>          usa outro arquivo de configuração no lugar de %APPDATA%/Motor/editor.json
   --no-settings                 não lê nem grava configuração nenhuma (agentes e testes automáticos)
   --mcp[=porta]                 liga o servidor MCP
+  --perf <arquivo.csv>          grava os contadores de cada quadro (CPU por painel, GPU) num CSV ao fechar
+  --segundos S                  fecha sozinho depois de S segundos, sem perguntar pelo que não foi salvo
   --version                     mostra a versão (e a da API de scripts) e sai
 ```
 

@@ -141,9 +141,9 @@ std::string Server::Submit(std::string body) {
     return reply.get();
 }
 
-void Server::Pump() {
+size_t Server::Pump() {
     // Primeiro os que esperam (Play começar, compilação acabar): um quadro já passou desde a última conferência.
-    std::erase_if(m_parked, [](Parked& p) {
+    size_t handled = std::erase_if(m_parked, [](Parked& p) {
         std::optional<std::string> reply = p.deferred.Poll();
         if (!reply) return false;
         p.job->done.set_value(std::move(*reply));
@@ -166,6 +166,7 @@ void Server::Pump() {
         }
         job->done.set_value(std::move(reply));
     }
+    return handled + jobs.size();
 }
 
 } // namespace editor::mcp
