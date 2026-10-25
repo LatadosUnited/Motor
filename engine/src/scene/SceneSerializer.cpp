@@ -312,6 +312,7 @@ bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibr
 }
 
 bool Load(const std::filesystem::path& path, Scene& out, AssetLibrary& assets, std::string* error) {
+    const auto start = std::chrono::steady_clock::now();
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         SetError(error, std::format("Não foi possível abrir '{}'.", ToUtf8(path)));
@@ -321,7 +322,8 @@ bool Load(const std::filesystem::path& path, Scene& out, AssetLibrary& assets, s
     ss << file.rdbuf();
 
     if (!FromJson(ss.str(), out, assets, error)) return false;
-    log::Info("Cena carregada: {} ({} entidades)", ToUtf8(path), out.Entities().size());
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    log::Info("Cena carregada: {} ({} entidades, {:.0f} ms)", ToUtf8(path), out.Entities().size(), ms);
     return true;
 }
 

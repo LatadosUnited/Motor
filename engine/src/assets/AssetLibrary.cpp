@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 #include <functional>
 #include <fstream>
@@ -178,11 +179,13 @@ size_t AssetLibrary::PreloadTextures(std::span<const std::string> guids) {
     if (pending.empty()) return 0;
 
     // Ler e decodificar (PNG/JPG) é o que custa: em paralelo. A textura OpenGL só nesta thread (a do contexto).
+    const auto start = std::chrono::steady_clock::now();
     std::vector<ImageData> images(pending.size());
     std::vector<uint8_t> ok(pending.size(), 0);
     JobSystem::Get().ParallelFor(pending.size(), 1, [&](size_t begin, size_t end) {
         for (size_t i = begin; i < end; ++i) ok[i] = LoadImageFile(pending[i].second, images[i], nullptr) ? 1 : 0;
     });
+    const auto decoded = std::chrono::steady_clock::now();
     size_t loaded = 0;
     for (size_t i = 0; i < pending.size(); ++i) {
         if (!ok[i]) continue;  // quem pedir pelo GetTextureByGuid tenta de novo e recebe o erro
@@ -194,6 +197,10 @@ size_t AssetLibrary::PreloadTextures(std::span<const std::string> guids) {
         m_textures.push_back({{}, pending[i].first, std::move(texture)});
         ++loaded;
     }
+    using Ms = std::chrono::duration<double, std::milli>;
+    log::Info("Texturas da cena: {} em {:.0f} ms (ler e decodificar {:.0f} ms em paralelo, criar {:.0f} ms)", loaded,
+              Ms(std::chrono::steady_clock::now() - start).count(), Ms(decoded - start).count(),
+              Ms(std::chrono::steady_clock::now() - decoded).count());
     return loaded;
 }
 
