@@ -27,8 +27,8 @@ public:
 
     // Vincula o alvo HDR da cena (viewport incluído) e limpa cor e profundidade.
     void BeginScene();
-    // MSAA -> texturas de cor e de profundidade (SceneColor/SceneDepth passam a valer).
-    void Resolve();
+    // MSAA -> textura de cor (SceneColor passa a valer) e, com `depth`, a de profundidade (SceneDepth).
+    void Resolve(bool depth);
     // Bloom + tone mapping (+ FXAA) da cor resolvida para o destino final (do mesmo tamanho), que
     // `bindTarget` vincula (framebuffer e viewport). Mexe no estado do GL: blend, profundidade e viewport.
     void Apply(const Environment& environment, const std::function<void()>& bindTarget);

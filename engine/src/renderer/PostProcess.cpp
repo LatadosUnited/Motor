@@ -3,6 +3,7 @@
 #include "motor/core/Log.h"
 #include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
+#include "renderer/GpuProfile.h"
 
 #include <glm/vec2.hpp>
 
@@ -143,12 +144,15 @@ void PostProcess::BeginScene() {
     glClearNamedFramebufferfv(m_sceneFbo, GL_DEPTH, 0, &clearDepth);
 }
 
-void PostProcess::Resolve() {
+void PostProcess::Resolve(bool depth) {
     if (!m_resolveFbo) return;
+    MOTOR_PROFILE_GPU("Resolve MSAA");
     glBlitNamedFramebuffer(m_sceneFbo, m_resolveFbo, 0, 0, m_width, m_height, 0, 0, m_width, m_height,
                            GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    glBlitNamedFramebuffer(m_sceneFbo, m_resolveFbo, 0, 0, m_width, m_height, 0, 0, m_width, m_height,
-                           GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    if (depth) {
+        glBlitNamedFramebuffer(m_sceneFbo, m_resolveFbo, 0, 0, m_width, m_height, 0, 0, m_width, m_height,
+                               GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    }
 }
 
 void PostProcess::DrawFullscreen() const {
@@ -165,6 +169,7 @@ void PostProcess::Apply(const Environment& env, const std::function<void()>& bin
 
     const bool bloom = env.bloom && env.bloomIntensity > 0.0f && !m_bloom.empty();
     if (bloom) {
+        MOTOR_PROFILE_GPU("Bloom");
         // Descida: cena -> metade (com o limiar) -> um quarto -> ...
         m_bloomDown->Bind();
         m_bloomDown->SetFloat("uThreshold", std::max(env.bloomThreshold, 0.0f));
@@ -201,16 +206,20 @@ void PostProcess::Apply(const Environment& env, const std::function<void()>& bin
     } else {
         bindTarget();
     }
-    m_composite->Bind();
-    glBindTextureUnit(0, m_colorTexture);
-    glBindTextureUnit(1, bloom ? m_bloom[0].texture : m_colorTexture);
-    m_composite->SetFloat("uExposure", std::max(env.exposure, 0.0f));
-    // Soma dos níveis: dividida pelo número deles para a intensidade não depender do tamanho da tela.
-    m_composite->SetFloat("uBloomIntensity", bloom ? env.bloomIntensity / static_cast<float>(m_bloom.size()) : 0.0f);
-    m_composite->SetInt("uToneMapper", static_cast<int>(env.toneMapper));
-    DrawFullscreen();
+    {
+        MOTOR_PROFILE_GPU("Tone mapping");
+        m_composite->Bind();
+        glBindTextureUnit(0, m_colorTexture);
+        glBindTextureUnit(1, bloom ? m_bloom[0].texture : m_colorTexture);
+        m_composite->SetFloat("uExposure", std::max(env.exposure, 0.0f));
+        // Soma dos níveis: dividida pelo número deles para a intensidade não depender do tamanho da tela.
+        m_composite->SetFloat("uBloomIntensity", bloom ? env.bloomIntensity / static_cast<float>(m_bloom.size()) : 0.0f);
+        m_composite->SetInt("uToneMapper", static_cast<int>(env.toneMapper));
+        DrawFullscreen();
+    }
 
     if (env.fxaa) {
+        MOTOR_PROFILE_GPU("FXAA");
         bindTarget();
         m_fxaa->Bind();
         glBindTextureUnit(0, m_ldrTexture);

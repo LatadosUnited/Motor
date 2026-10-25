@@ -84,6 +84,9 @@ public:
     const RenderStats& GetStats() const { return m_stats; }
 
     // Resultado da última cena (válido até a próxima), base para efeitos de ambiente (água, partículas):
+    // Com MSAA, a profundidade só é copiada para a textura nos quadros com wireframes ou com KeepSceneDepth(true):
+    // a cópia do depth buffer com amostras custa caro na GPU integrada (~5 ms a 1280x720 com MSAA 4x).
+    void KeepSceneDepth(bool keep) { m_keepSceneDepth = keep; }
     unsigned int SceneDepthTexture() const;  // DEPTH_COMPONENT32F, valores do depth buffer (0 a 1)
     unsigned int SceneColorTexture() const;  // RGBA16F, luz linear antes do pós-processamento
     unsigned int SkyCubemap() const;         // céu (RGBA16F linear, com mips), sem a rotação e o brilho
@@ -149,6 +152,7 @@ private:
     int m_windowWidth = 0;
     int m_windowHeight = 0;
     int m_samples = 4;
+    bool m_keepSceneDepth = false;
     bool m_shadowsEnabled = true;
     ShadowQuality m_maxShadowQuality = ShadowQuality::High;
     const Framebuffer* m_target = nullptr;

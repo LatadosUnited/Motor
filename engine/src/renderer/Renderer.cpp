@@ -283,7 +283,7 @@ void Renderer::EndScene() {
     DrawScene();
     {
         MOTOR_PROFILE_GPU("Pós-processamento");
-        m_post->Resolve();
+        m_post->Resolve(m_keepSceneDepth || !m_wires.empty());  // a profundidade só para quem a lê
         m_post->Apply(m_environment, [this] { BindTarget(); });
     }
     DrawWireframes();
