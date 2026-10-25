@@ -139,4 +139,25 @@ glm::mat4 CubeFaceProjection(float nearPlane, float farPlane) {
     return glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
 }
 
+bool SpotCoversCubeFace(const glm::vec3& direction, float outerAngle, int face) {
+    const float length = glm::length(direction);
+    if (length <= 0.0f || face < 0 || face > 5) return true;
+    const glm::vec3 d = direction / length;
+    // A face é o cone de base quadrada entre 4 planos (eixo ± cada um dos outros dois eixos). O spot fica fora se o
+    // cone inteiro estiver do lado de fora de um deles. 1° a mais cobre o PCF e a costura entre as faces.
+    const float sinAngle = std::sin(glm::radians(std::clamp(outerAngle + 1.0f, 0.0f, 90.0f)));
+    const int axis = face / 2;
+    const float sign = face % 2 == 0 ? 1.0f : -1.0f;
+    for (int other = 0; other < 3; ++other) {
+        if (other == axis) continue;
+        for (const float s : {1.0f, -1.0f}) {
+            glm::vec3 normal(0.0f);
+            normal[axis] = sign;
+            normal[other] = s;
+            if (glm::dot(d, normal) * 0.70710678f < -sinAngle) return false;
+        }
+    }
+    return true;
+}
+
 } // namespace motor

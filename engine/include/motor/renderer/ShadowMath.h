@@ -60,5 +60,8 @@ Cascade ComputeCascade(const Camera& camera, float nearDist, float farDist, cons
 // Sombra de pontual/spot: as seis faces do cubo (+X, -X, +Y, -Y, +Z, -Z, a ordem do OpenGL) vistas da luz.
 glm::mat4 CubeFaceView(const glm::vec3& position, int face);
 glm::mat4 CubeFaceProjection(float nearPlane, float farPlane);  // 90°, quadrada
+// Spot: se o cone (eixo `direction`, meio ângulo `outerAngle` em graus) alcança a face. Faces fora do cone não são
+// desenhadas: um spot de até ~35° alinhado a um eixo usa uma face só, em vez das seis.
+bool SpotCoversCubeFace(const glm::vec3& direction, float outerAngle, int face);
 
 } // namespace motor

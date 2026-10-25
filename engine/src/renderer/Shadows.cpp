@@ -236,9 +236,11 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
             const glm::mat4 projection = CubeFaceProjection(kPointNear, light.range);
             const glm::vec4 positionRange(light.position, light.range);
             for (int face = 0; face < 6; ++face) {
-                const glm::mat4 viewProjection = projection * CubeFaceView(light.position, face);
                 glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, m_cubes, 0, static_cast<int>(slot) * 6 + face);
                 glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
+                // Spot: só as faces que o cone alcança (as outras ficam limpas, sem sombra).
+                if (light.type == LightType::Spot && !SpotCoversCubeFace(light.direction, light.outerAngle, face)) continue;
+                const glm::mat4 viewProjection = projection * CubeFaceView(light.position, face);
                 DrawItems(items, viewProjection, Frustum::FromMatrix(viewProjection), true, positionRange, instances, order,
                           uploadJoints, stats);
                 ++stats.shadowPasses;

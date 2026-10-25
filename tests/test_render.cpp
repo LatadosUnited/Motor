@@ -147,6 +147,33 @@ int main(int argc, char** argv) {
         CHECK(ShadowResolution(LightType::Point, ShadowQuality::High) == 1024);
     }
 
+    SECTION("Sombra de spot: só as faces do cubo que o cone alcança");
+    {
+        auto faces = [](const glm::vec3& direction, float angle) {
+            int mask = 0;
+            for (int face = 0; face < 6; ++face) mask |= SpotCoversCubeFace(direction, angle, face) ? 1 << face : 0;
+            return mask;
+        };
+        CHECK(faces({0.0f, -1.0f, 0.0f}, 35.0f) == 1 << 3);              // para baixo: só -Y
+        CHECK((faces({1.0f, -1.0f, 0.0f}, 30.0f) & 0xF) == ((1 << 0) | (1 << 3)));  // na diagonal: +X e -Y, sem -X e +Y
+        CHECK(faces({0.0f, -1.0f, 0.0f}, 90.0f) == 0x3F);                 // meia esfera: encosta em todas
+        CHECK(faces({0.0f, 0.0f, 0.0f}, 35.0f) == 0x3F);                  // sem direção: todas
+        // Toda direção dentro do cone cai numa face desenhada (a do maior eixo).
+        bool covered = true;
+        const glm::vec3 axis = glm::normalize(glm::vec3(0.3f, -1.0f, 0.6f));
+        const glm::vec3 side = glm::normalize(glm::cross(axis, glm::vec3(1.0f, 0.0f, 0.0f)));
+        const glm::vec3 up = glm::cross(axis, side);
+        for (int i = 0; i < 64; ++i) {
+            const float spin = glm::radians(static_cast<float>(i) * 5.625f);
+            const glm::vec3 d = axis * std::cos(glm::radians(40.0f)) +
+                                (side * std::cos(spin) + up * std::sin(spin)) * std::sin(glm::radians(40.0f));
+            const glm::vec3 a = glm::abs(d);
+            const int face = a.x >= a.y && a.x >= a.z ? (d.x > 0 ? 0 : 1) : a.y >= a.z ? (d.y > 0 ? 2 : 3) : (d.z > 0 ? 4 : 5);
+            covered = covered && SpotCoversCubeFace(axis, 40.0f, face);
+        }
+        CHECK(covered);
+    }
+
     SECTION("BRDF: GGX normalizada, Fresnel e reflexo de base");
     {
         // ∫ D(h) (n·h) dω = 1 (a distribuição das micro-facetas projetada soma 1).
