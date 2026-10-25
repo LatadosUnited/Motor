@@ -759,14 +759,15 @@ componentes comuns (Inspector, cena, desfazer):
 
 ## Navegação (IA)
 
-Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Três
+Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Quatro
 componentes comuns (Inspector, cena, desfazer):
 
 | Componente | Campos |
 |---|---|
 | **Superfície de navegação** (`NavMeshSurface`) | Navmesh (arquivo `.mnav` e o botão Gerar), Raio, Altura, Altura do degrau e Inclinação máxima do agente; Tamanho e Altura da célula; Área mínima. Uma por cena: liga o navmesh |
-| **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada, Raio, Altura, Desviar dos outros |
+| **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada, Raio, Altura, Desviar dos outros, Áreas por onde anda |
 | **Ligação de navegação** (`NavMeshLink`) | Início e Fim (pontas, relativas à entidade), Raio, Nos dois sentidos, Altura do arco (0 = escada). Pulo ou escada entre dois pontos do navmesh |
+| **Área de navegação** (`NavMeshArea`) | Tamanho e Centro (caixa), Área (1 a 15), Nome, Custo. Água, lama: o agente dá a volta quando sai mais curto; o agente escolhe por quais áreas anda (**Áreas por onde anda**) |
 
 - **De onde vem o navmesh:** dos **Colliders estáticos** das entidades ativas (sem Rigidbody, sem trigger, sem
   agente, sem Controlador de personagem). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como
@@ -789,7 +790,7 @@ componentes comuns (Inspector, cena, desfazer):
 - **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
   Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando) e, no Play com a câmera do editor, o
   caminho de cada agente em amarelo.
-- **Ainda não:** áreas com custo, obstáculos que se mexem (roteiro em
+- **Ainda não:** obstáculos que se mexem (roteiro em
   `docs/roadmap/alpha-6.md`).
 
 ## Servidor MCP (agentes no editor)
