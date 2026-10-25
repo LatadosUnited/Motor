@@ -52,7 +52,14 @@ layout(binding = 8) uniform sampler2D uBrdfLut;
 uniform vec4 uColor;     // sRGB
 uniform vec4 uPbr;       // x = metal, y = rugosidade, z = specular, w = força do mapa de normal (0 = sem mapa)
 uniform vec4 uEmissive;  // rgb = emissão (linear, já com a intensidade), a = força da oclusão
-uniform vec4 uAlphaMode; // x = 0 opaco, 1 recorte, 2 transparente; y = limite do recorte
+uniform vec4 uAlphaMode; // x = 0 opaco, 1 recorte, 2 transparente; y = limite do recorte; z = mapas que o material tem
+
+// Bits de uAlphaMode.z (motor::kMapAlbedo...): mapa que falta vale branco. Com NO_MAPS (materiais sem nenhum mapa,
+// variante do Renderer) as leituras nem entram no shader: o if pela uniform não evita o custo no driver da Intel.
+const int kMapAlbedo = 1;
+const int kMapMetallicRoughness = 2;
+const int kMapOcclusion = 4;
+const int kMapEmissive = 8;
 
 out vec4 oColor;
 
@@ -126,22 +133,34 @@ float PointShadow(int layer, vec3 worldPos, vec3 N, vec3 lightPos, float range) 
 }
 
 void main() {
+    int maps = int(uAlphaMode.z + 0.5);
     vec4 tint = vec4(pow(uColor.rgb, vec3(2.2)), uColor.a);
-    vec4 albedo = texture(uAlbedo, fs.uv) * tint;
+    vec4 albedo = tint;
+#ifndef NO_MAPS
+    if ((maps & kMapAlbedo) != 0) albedo *= texture(uAlbedo, fs.uv);
+#endif
     if (uAlphaMode.x == 1.0 && albedo.a < uAlphaMode.y) discard;  // recorte (folhas, grades)
-    vec4 mr = texture(uMetalRoughMap, fs.uv);
+    vec4 mr = vec4(1.0);
+#ifndef NO_MAPS
+    if ((maps & kMapMetallicRoughness) != 0) mr = texture(uMetalRoughMap, fs.uv);
+#endif
     float metallic = clamp(uPbr.x * mr.b, 0.0, 1.0);
     float roughness = clamp(uPbr.y * mr.g, 0.045, 1.0);
-    float occlusion = mix(1.0, texture(uOcclusionMap, fs.uv).r, uEmissive.a);
+    float occlusion = 1.0;
+#ifndef NO_MAPS
+    if ((maps & kMapOcclusion) != 0) occlusion = mix(1.0, texture(uOcclusionMap, fs.uv).r, uEmissive.a);
+#endif
 
     vec3 geometricN = normalize(fs.normal);
     if (!gl_FrontFacing) geometricN = -geometricN;  // material de duas faces visto por trás
     vec3 N = geometricN;
+#ifndef NO_MAPS
     if (uPbr.w > 0.0) {
         vec3 t = texture(uNormalMap, fs.uv).xyz * 2.0 - 1.0;
         t.xy *= uPbr.w;
         N = normalize(CotangentFrame(geometricN, fs.worldPos, fs.uv) * t);
     }
+#endif
     vec3 V = normalize(uCameraPosition.xyz - fs.worldPos);
     float NdotV = max(dot(N, V), 1e-4);
     vec3 f0 = BaseReflectance(albedo.rgb, metallic, uPbr.z);
@@ -198,7 +217,10 @@ void main() {
     vec2 brdf = texture(uBrdfLut, vec2(NdotV, roughness)).rg;
     vec3 ambient = (1.0 - Fr) * diffuseColor * (irradiance / PI + uAmbient.rgb) + prefiltered * (f0 * brdf.x + brdf.y);
 
-    vec3 emissive = uEmissive.rgb * texture(uEmissiveMap, fs.uv).rgb;
+    vec3 emissive = uEmissive.rgb;
+#ifndef NO_MAPS
+    if ((maps & kMapEmissive) != 0) emissive *= texture(uEmissiveMap, fs.uv).rgb;
+#endif
     vec3 color = direct + ambient * occlusion + emissive;
 
     // Neblina de distância: a cor é a do horizonte do céu.

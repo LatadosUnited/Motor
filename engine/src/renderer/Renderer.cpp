@@ -113,6 +113,9 @@ Renderer::Renderer() {
     const std::filesystem::path dir = EngineAssetsDir() / "shaders";
     m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
     m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag");  // animação esquelética (Fase 11)
+    // Materiais sem nenhum mapa (o comum): sem as leituras de textura no shader. Um if pela uniform não basta (o
+    // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
+    m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", "#define NO_MAPS\n");
     m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag", "#define SINGLE_MODEL\n");
     auto findLitUniforms = [](Shader& shader) {
         return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
@@ -120,6 +123,7 @@ Renderer::Renderer() {
     };
     m_litUniforms = findLitUniforms(*m_litShader);
     m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
+    m_litPlainUniforms = findLitUniforms(*m_litPlainShader);
     m_unlitModel = m_unlitShader->Uniform("uModel");
     m_unlitColor = m_unlitShader->Uniform("uColor");
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
@@ -316,7 +320,10 @@ void Renderer::DrawScene() {
     m_shadowKeys.resize(m_items.size());
     for (size_t i = 0; i < m_items.size(); ++i) {
         const DrawItem& item = m_items[i];
-        const uint32_t shader = item.skinned ? 1u : 0u;
+        // 0 = lit, 1 = com pele, 2 = lit sem mapas.
+        const MaterialParams& params = m_materialIds[item.materialId].params;
+        const bool plain = params.alphaMode.z == 0.0f && params.pbr.w == 0.0f;
+        const uint32_t shader = item.skinned ? 1u : plain ? 2u : 0u;
         m_sceneKeys[i] = {shader, item.materialId, item.mesh};
         m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
     }
@@ -438,8 +445,9 @@ void Renderer::DrawScene() {
     auto draw = [&](size_t b) {
         const DrawBatch& batch = batches[b];
         const DrawItem& item = *batch.first;
-        Shader& shader = item.skinned ? *m_skinnedShader : *m_litShader;
-        const LitUniforms& u = item.skinned ? m_skinnedUniforms : m_litUniforms;
+        const uint32_t variant = m_sceneKeys[batch.firstIndex].shader;
+        Shader& shader = variant == 1 ? *m_skinnedShader : variant == 2 ? *m_litPlainShader : *m_litShader;
+        const LitUniforms& u = variant == 1 ? m_skinnedUniforms : variant == 2 ? m_litPlainUniforms : m_litUniforms;
         if (bound != &shader) {
             shader.Bind();
             bound = &shader;

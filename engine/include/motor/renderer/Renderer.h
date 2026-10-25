@@ -115,8 +115,9 @@ private:
 
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
+    std::unique_ptr<Shader> m_litPlainShader; // lit.frag com NO_MAPS: materiais sem nenhum mapa
     std::unique_ptr<Shader> m_unlitShader;
-    LitUniforms m_litUniforms, m_skinnedUniforms;
+    LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms;
     int m_unlitModel = -1, m_unlitColor = -1;
     std::shared_ptr<Texture2D> m_whiteTexture;
     std::unique_ptr<PostProcess> m_post;
