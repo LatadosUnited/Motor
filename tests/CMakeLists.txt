@@ -83,7 +83,8 @@ target_link_libraries(test_script_project PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(test_script_project PRIVATE
     MOTOR_TEST_SDK_JSON="${CMAKE_BINARY_DIR}/bin/sdk/MotorSDK.json"
     MOTOR_TEST_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/editor/templates/Scripts")
-set_tests_properties(test_script_project PROPERTIES TIMEOUT 600)
+# Sozinho: mede o tempo de compilar com e sem o cabeçalho pré-compilado, e falha com outros testes disputando a CPU.
+set_tests_properties(test_script_project PROPERTIES TIMEOUT 600 RUN_SERIAL TRUE)
 
 # Luzes: componente, tipo da luz, coleta para o renderer e conversão de cenas antigas.
 motor_add_test(test_lights)
