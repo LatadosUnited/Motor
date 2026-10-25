@@ -86,6 +86,25 @@ powershell -File bench/comparar.ps1 -Projeto "C:/temp/bench/Motor Bench"
 
 ## Resultados
 
+### 25/10/2026 — Fase 24: GPU, pós, sombras e LOD
+
+Máquina de referência parada, Player Release do branch `fase-24-gpu` (0ce3a8a) contra o player da Unity de 18/10, uma
+rodada do `comparar.ps1` (detalhes de cada mudança na nota da Fase 24).
+
+| Cena | Motor | Unity | Motor em % da Unity | Fase 25 |
+|---|---|---|---|---|
+| vazia | 7,2 ms | 14,5 ms | **201%** | 105% |
+| cubos1000 | 9,5 ms | 17,2 ms | 182% | 116% |
+| cubos1000sombra | 10,8 ms | 22,7 ms | **211%** | 128% |
+| cubos10000 | 12,7 ms | 37,0 ms | **290%** | 197% |
+| fisica1000 | 12,3 ms | 19,3 ms | 157% | 104% |
+| scripts1000 | 9,4 ms | 17,3 ms | 185% | 122% |
+| spawn200 | 8,8 ms | 15,7 ms | 178% | 112% |
+
+Referência (sombra Média): quadro 44 → **22,1 ms**, GPU 47 → 19,5 ms (Cena HDR 11,0, sombras 2,9, pós 3,9), física
+8,1 → 3,8 ms por quadro (1 passo fixo em vez de 3). `test_desempenho` sem mudança (a fase não mexe no que ele mede);
+base mantida.
+
 ### 25/10/2026 — Fase 25: cena, dados e física
 
 Máquina de referência parada, Player Release do `main` (4eea721) contra o player da Unity de 18/10, uma rodada do

@@ -37,6 +37,7 @@ public:
     struct Result {
         Data data;
         int cascadeLight = -1;            // índice (em `lights`) da direcional com cascatas
+        ShadowQuality cascadeQuality = ShadowQuality::High;  // da direcional: filtro das cascatas no lit.frag
         std::vector<int> cubeLayer;       // por luz: camada do cubo de sombra, -1 = sem
     };
 
@@ -78,6 +79,11 @@ private:
     unsigned int m_fbo = 0;
     unsigned int m_cascades = 0;
     int m_cascadeResolution = 0;
+    // Cascadas distantes reaproveitadas (Fase 24): o que cada camada do mapa tem desenhado agora.
+    Cascade m_drawnCascades[kCascades]{};
+    glm::vec3 m_drawnDirection{0.0f};
+    int m_drawnCount = 0;
+    uint64_t m_frame = 0;
     unsigned int m_cubes = 0;
     int m_cubeResolution = 0;
 };

@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace motor {
@@ -111,15 +112,8 @@ Renderer::Renderer() {
     GpuTimers::SetCurrent(m_gpuTimers.get());
 
     const std::filesystem::path dir = EngineAssetsDir() / "shaders";
-    m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
-    m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag");  // animação esquelética (Fase 11)
+    LoadLitShaders(ShadowQuality::High);
     m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag", "#define SINGLE_MODEL\n");
-    auto findLitUniforms = [](Shader& shader) {
-        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
-                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
-    };
-    m_litUniforms = findLitUniforms(*m_litShader);
-    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
     m_unlitModel = m_unlitShader->Uniform("uModel");
     m_unlitColor = m_unlitShader->Uniform("uColor");
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
@@ -150,6 +144,26 @@ Renderer::~Renderer() {
     glDeleteBuffers(1, &m_frameUbo);
 }
 
+// As três variantes do lit.frag com o filtro das cascatas da qualidade dada (SHADOW_FILTER). Recompiladas só quando a
+// qualidade da direcional muda (trocar a cena ou as opções), não a cada quadro.
+void Renderer::LoadLitShaders(ShadowQuality cascadeFilter) {
+    const std::filesystem::path dir = EngineAssetsDir() / "shaders";
+    const std::string filter = "#define SHADOW_FILTER " + std::to_string(static_cast<int>(cascadeFilter)) + "\n";
+    m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter);
+    m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag", filter);  // animação esquelética (Fase 11)
+    // Materiais sem nenhum mapa (o comum): sem as leituras de textura no shader. Um if pela uniform não basta (o
+    // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
+    m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define NO_MAPS\n");
+    auto findLitUniforms = [](Shader& shader) {
+        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
+                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
+    };
+    m_litUniforms = findLitUniforms(*m_litShader);
+    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
+    m_litPlainUniforms = findLitUniforms(*m_litPlainShader);
+    m_litShadowFilter = cascadeFilter;
+}
+
 void Renderer::BeginFrame(int width, int height) {
     MOTOR_PROFILE_GPU_COLLECT();  // as zonas de GPU do quadro anterior
     m_gpuTimers->BeginFrame();    // e as dos contadores, de alguns quadros atrás
@@ -169,6 +183,8 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_target = target;
     m_camera = camera;
     m_environment = environment;
+    // Tamanho na tela = diâmetro * m_lodScale / distância (altura vista a 1 m: 2 * tan(fov / 2)).
+    m_lodScale = m_lodBias / std::max(2.0f * std::tan(glm::radians(camera.fovY) * 0.5f), 1e-3f);
 
     if (lights.size() > kMaxLights && !std::exchange(m_warnedTooManyLights, true)) {
         log::Warn("Renderer: {} luzes na cena; só as primeiras {} são usadas", lights.size(), kMaxLights);
@@ -221,6 +237,13 @@ void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat
     MOTOR_ASSERT(m_inScene, "Submit fora de BeginScene/EndScene");
     DrawItem& item = AddItem(mesh, material, model, shadows);
     item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
+    if (!mesh.Lods().empty()) {
+        // Nível de detalhe pelo tamanho na tela: diâmetro da caixa no mundo sobre a altura vista na distância dela.
+        const glm::vec3 center = (item.bounds.min + item.bounds.max) * 0.5f;
+        const float diameter = glm::length(item.bounds.max - item.bounds.min);
+        const float distance = std::max(glm::length(center - m_camera.position), 1e-3f);
+        item.mesh = &mesh.ForScreenSize(diameter * m_lodScale / distance);
+    }
 }
 
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
@@ -283,7 +306,7 @@ void Renderer::EndScene() {
     DrawScene();
     {
         MOTOR_PROFILE_GPU("Pós-processamento");
-        m_post->Resolve();
+        m_post->Resolve(m_keepSceneDepth || !m_wires.empty());  // a profundidade só para quem a lê
         m_post->Apply(m_environment, [this] { BindTarget(); });
     }
     DrawWireframes();
@@ -307,7 +330,10 @@ void Renderer::DrawScene() {
     m_shadowKeys.resize(m_items.size());
     for (size_t i = 0; i < m_items.size(); ++i) {
         const DrawItem& item = m_items[i];
-        const uint32_t shader = item.skinned ? 1u : 0u;
+        // 0 = lit, 1 = com pele, 2 = lit sem mapas.
+        const MaterialParams& params = m_materialIds[item.materialId].params;
+        const bool plain = params.alphaMode.z == 0.0f && params.pbr.w == 0.0f;
+        const uint32_t shader = item.skinned ? 1u : plain ? 2u : 0u;
         m_sceneKeys[i] = {shader, item.materialId, item.mesh};
         m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
     }
@@ -357,6 +383,7 @@ void Renderer::DrawScene() {
     // Só o cabeçalho e as luzes usadas: o resto do bloco o shader não lê.
     glNamedBufferSubData(m_lightsUbo, 0, static_cast<GLsizeiptr>(sizeof(glm::ivec4) + m_lights.size() * sizeof(LightData)), &lightsData);
     glBindBufferBase(GL_UNIFORM_BUFFER, kLightsBinding, m_lightsUbo);
+    if (shadows.cascadeLight >= 0 && shadows.cascadeQuality != m_litShadowFilter) LoadLitShaders(shadows.cascadeQuality);
     glNamedBufferSubData(m_shadowsUbo, 0, sizeof(ShadowRenderer::Data), &shadows.data);
     glBindBufferBase(GL_UNIFORM_BUFFER, kShadowsBinding, m_shadowsUbo);
 
@@ -429,8 +456,9 @@ void Renderer::DrawScene() {
     auto draw = [&](size_t b) {
         const DrawBatch& batch = batches[b];
         const DrawItem& item = *batch.first;
-        Shader& shader = item.skinned ? *m_skinnedShader : *m_litShader;
-        const LitUniforms& u = item.skinned ? m_skinnedUniforms : m_litUniforms;
+        const uint32_t variant = m_sceneKeys[batch.firstIndex].shader;
+        Shader& shader = variant == 1 ? *m_skinnedShader : variant == 2 ? *m_litPlainShader : *m_litShader;
+        const LitUniforms& u = variant == 1 ? m_skinnedUniforms : variant == 2 ? m_litPlainUniforms : m_litUniforms;
         if (bound != &shader) {
             shader.Bind();
             bound = &shader;

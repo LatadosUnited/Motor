@@ -7,6 +7,7 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/geometric.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -137,7 +138,8 @@ std::shared_ptr<Mesh> Mesh::CreatePlane(float uvRepeat) {
     return std::make_shared<Mesh>(vertices, indices);
 }
 
-std::shared_ptr<Mesh> Mesh::CreateSphere(int segments, int rings) {
+// Os níveis de cada primitiva (sem LOD; Create* junta os níveis).
+std::shared_ptr<Mesh> SphereLevel(int segments, int rings) {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     vertices.reserve(static_cast<size_t>((segments + 1) * (rings + 1)));
@@ -203,7 +205,7 @@ void Cap(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, int segm
 }
 } // namespace
 
-std::shared_ptr<Mesh> Mesh::CreateCylinder(int segments) {
+std::shared_ptr<Mesh> CylinderLevel(int segments) {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     auto side = [](float c, float s) { return glm::vec3(c, 0.0f, s); };
@@ -215,7 +217,7 @@ std::shared_ptr<Mesh> Mesh::CreateCylinder(int segments) {
     return std::make_shared<Mesh>(vertices, indices);
 }
 
-std::shared_ptr<Mesh> Mesh::CreateCapsule(int segments, int rings) {
+std::shared_ptr<Mesh> CapsuleLevel(int segments, int rings) {
     // Duas meias esferas de raio 0,5 separadas por 1 (altura total 2), como a cápsula do Collider padrão.
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
@@ -234,7 +236,7 @@ std::shared_ptr<Mesh> Mesh::CreateCapsule(int segments, int rings) {
     return std::make_shared<Mesh>(vertices, indices);
 }
 
-std::shared_ptr<Mesh> Mesh::CreateCone(int segments) {
+std::shared_ptr<Mesh> ConeLevel(int segments) {
     // Base de raio 0,5 em y = -0,5 e ponta em y = 0,5. Cada fatia tem a sua ponta, com a normal do meio dela.
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
@@ -250,6 +252,50 @@ std::shared_ptr<Mesh> Mesh::CreateCone(int segments) {
     }
     Cap(vertices, indices, segments, radius, -0.5f, false);
     return std::make_shared<Mesh>(vertices, indices);
+}
+
+namespace {
+// Primitiva com dois níveis mais simples (LOD): metade das divisões abaixo de 25% da altura da tela, um quarto
+// abaixo de 8% (nunca menos de `minimum`). `level(d)` monta a malha com as divisões divididas por d.
+std::shared_ptr<Mesh> WithLods(int divisions, int minimum, const std::function<std::shared_ptr<Mesh>(int)>& level) {
+    std::shared_ptr<Mesh> mesh = level(1);
+    std::vector<Mesh::Lod> lods;
+    if (divisions / 2 >= minimum) lods.push_back({level(2), 0.25f});
+    if (divisions / 4 >= minimum) lods.push_back({level(4), 0.08f});
+    mesh->SetLods(std::move(lods));
+    return mesh;
+}
+} // namespace
+
+std::shared_ptr<Mesh> Mesh::CreateSphere(int segments, int rings) {
+    return WithLods(segments, 12, [&](int d) { return SphereLevel(segments / d, std::max(rings / d, 4)); });
+}
+
+std::shared_ptr<Mesh> Mesh::CreateCylinder(int segments) {
+    return WithLods(segments, 12, [&](int d) { return CylinderLevel(segments / d); });
+}
+
+std::shared_ptr<Mesh> Mesh::CreateCapsule(int segments, int rings) {
+    return WithLods(segments, 12, [&](int d) { return CapsuleLevel(segments / d, std::max(rings / d, 2)); });
+}
+
+std::shared_ptr<Mesh> Mesh::CreateCone(int segments) {
+    return WithLods(segments, 12, [&](int d) { return ConeLevel(segments / d); });
+}
+
+void Mesh::SetLods(std::vector<Lod> lods) {
+    std::sort(lods.begin(), lods.end(), [](const Lod& a, const Lod& b) { return a.screenSize > b.screenSize; });
+    std::erase_if(lods, [](const Lod& l) { return !l.mesh; });
+    m_lods = std::move(lods);
+}
+
+const Mesh& Mesh::ForScreenSize(float screenSize) const {
+    const Mesh* chosen = this;
+    for (const Lod& lod : m_lods) {
+        if (screenSize >= lod.screenSize) break;
+        chosen = lod.mesh.get();
+    }
+    return *chosen;
 }
 
 } // namespace motor

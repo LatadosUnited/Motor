@@ -3,6 +3,7 @@
 #include "motor/renderer/Renderer.h"
 #include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
+#include "renderer/GpuProfile.h"
 
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
@@ -15,12 +16,18 @@ namespace {
 constexpr float kCascadeLambda = 0.8f;  // mais perto da divisão logarítmica: mais detalhe perto da câmera
 constexpr float kPointNear = 0.05f;
 
+// Profundidade das cascatas em 16 bits: cada uma cobre no máximo algumas centenas de metros em projeção ortogonal
+// (passos de poucos milímetros, abaixo do deslocamento contra o "acne") e grava e lê metade do 32F. Os cubos das
+// pontuais guardam a distância até a luz (até o alcance), em 24 bits.
+constexpr GLenum kCascadeFormat = GL_DEPTH_COMPONENT16;
+constexpr GLenum kCubeFormat = GL_DEPTH_COMPONENT24;
+
 GLuint CreateShadowTexture(GLenum target, int resolution, int layers) {
+    const GLenum format = target == GL_TEXTURE_2D_ARRAY ? kCascadeFormat : kCubeFormat;
     GLuint texture = 0;
     glCreateTextures(target, 1, &texture);
-    glTextureStorage3D(texture, 1, GL_DEPTH_COMPONENT32F, resolution, resolution, layers);
-    TrackGpuMemory(GpuObject::Texture, texture, GpuMemoryKind::Shadows,
-                   GpuTextureBytes(GL_DEPTH_COMPONENT32F, resolution, resolution, layers));
+    glTextureStorage3D(texture, 1, format, resolution, resolution, layers);
+    TrackGpuMemory(GpuObject::Texture, texture, GpuMemoryKind::Shadows, GpuTextureBytes(format, resolution, resolution, layers));
     // Comparação no hardware (sampler...Shadow): com LINEAR, cada leitura já é um PCF 2x2.
     glTextureParameteri(texture, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
     glTextureParameteri(texture, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
@@ -78,6 +85,7 @@ void ShadowRenderer::EnsureCascades(int resolution) {
     if (m_cascades) glDeleteTextures(1, &m_cascades);
     m_cascades = CreateShadowTexture(GL_TEXTURE_2D_ARRAY, resolution, kCascades);
     m_cascadeResolution = resolution;
+    m_drawnCount = 0;  // mapa novo, vazio
 }
 
 void ShadowRenderer::EnsureCubes(int resolution) {
@@ -170,27 +178,49 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
     for (size_t i = 0; i < lights.size(); ++i) {
         const Light& light = lights[i];
         if (light.type != LightType::Directional || !light.castShadows) continue;
+        MOTOR_PROFILE_GPU("Sombras cascatas");
         const int resolution = ShadowResolution(LightType::Directional, light.shadowQuality);
         EnsureCascades(resolution);
-        const std::vector<float> splits = CascadeSplits(camera.nearPlane, distance, kCascades, kCascadeLambda);
+        // Qualidade baixa: 2 cascatas (metade das passadas); as outras, 4. O filtro (PCF, mistura nas divisas) é variante do lit.frag.
+        const int cascades = light.shadowQuality == ShadowQuality::Low ? 2 : kCascades;
+        const std::vector<float> splits = CascadeSplits(camera.nearPlane, distance, cascades, kCascadeLambda);
         glViewport(0, 0, resolution, resolution);
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(1.5f, 2.0f);
-        for (int c = 0; c < kCascades; ++c) {
+        // As duas cascatas mais longe (com 4) são desenhadas 15% maiores e redesenhadas em quadros alternados: no
+        // outro quadro fica o mapa já desenhado, se ainda cobrir o pedaço da câmera (CascadeCovers). Objetos que se
+        // mexem atrasam um quadro lá longe. Outra câmera (editor) ou luz diferente: tudo desenhado de novo.
+        const bool sameSetup = m_drawnCount == cascades && m_drawnDirection == light.direction;
+        ++m_frame;
+        for (int c = 0; c < cascades; ++c) {
             const float nearDist = c == 0 ? camera.nearPlane : splits[static_cast<size_t>(c - 1)];
-            const Cascade cascade = ComputeCascade(camera, nearDist, splits[static_cast<size_t>(c)], light.direction,
-                                                   resolution, std::max(50.0f, distance));
+            const float farDist = splits[static_cast<size_t>(c)];
+            const float casterDepth = std::max(50.0f, distance);
+            const bool distant = cascades > 2 && c >= cascades - 2;
+            Cascade cascade = ComputeCascade(camera, nearDist, farDist, light.direction, resolution, casterDepth);
+            const Cascade& drawn = m_drawnCascades[c];
+            if (distant && sameSetup && (m_frame + static_cast<uint64_t>(c)) % 2 != 0 && CascadeCovers(drawn, cascade)) {
+                result.data.cascadeMatrices[c] = drawn.viewProjection;
+                result.data.cascadeSplits[c] = farDist;
+                result.data.cascadeTexels[c] = drawn.texelSize;
+                continue;
+            }
+            if (distant) cascade = ComputeCascade(camera, nearDist, farDist, light.direction, resolution, casterDepth, 1.15f);
+            m_drawnCascades[c] = cascade;
             glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, m_cascades, 0, c);
             glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
             DrawItems(items, cascade.viewProjection, Frustum::FromMatrix(cascade.viewProjection), false, glm::vec4(0.0f),
                       instances, order, uploadJoints, stats);
             ++stats.shadowPasses;
             result.data.cascadeMatrices[c] = cascade.viewProjection;
-            result.data.cascadeSplits[c] = splits[static_cast<size_t>(c)];
+            result.data.cascadeSplits[c] = farDist;
             result.data.cascadeTexels[c] = cascade.texelSize;
         }
         glDisable(GL_POLYGON_OFFSET_FILL);
-        result.data.params = glm::vec4(static_cast<float>(kCascades), 1.0f / static_cast<float>(resolution), 0.0f, distance);
+        result.data.params = glm::vec4(static_cast<float>(cascades), 1.0f / static_cast<float>(resolution), 0.0f, distance);
+        result.cascadeQuality = light.shadowQuality;
+        m_drawnCount = cascades;
+        m_drawnDirection = light.direction;
         result.cascadeLight = static_cast<int>(i);
         break;
     }
@@ -213,6 +243,7 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
     if (candidates.size() > kMaxPointShadows) candidates.resize(kMaxPointShadows);
 
     if (!candidates.empty()) {
+        MOTOR_PROFILE_GPU("Sombras cubos");
         int resolution = 1;
         for (const Candidate& c : candidates) {
             resolution = std::max(resolution, ShadowResolution(lights[c.light].type, lights[c.light].shadowQuality));
@@ -224,9 +255,11 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
             const glm::mat4 projection = CubeFaceProjection(kPointNear, light.range);
             const glm::vec4 positionRange(light.position, light.range);
             for (int face = 0; face < 6; ++face) {
-                const glm::mat4 viewProjection = projection * CubeFaceView(light.position, face);
                 glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, m_cubes, 0, static_cast<int>(slot) * 6 + face);
                 glClearNamedFramebufferfv(m_fbo, GL_DEPTH, 0, &clearDepth);
+                // Spot: só as faces que o cone alcança (as outras ficam limpas, sem sombra).
+                if (light.type == LightType::Spot && !SpotCoversCubeFace(light.direction, light.outerAngle, face)) continue;
+                const glm::mat4 viewProjection = projection * CubeFaceView(light.position, face);
                 DrawItems(items, viewProjection, Frustum::FromMatrix(viewProjection), true, positionRange, instances, order,
                           uploadJoints, stats);
                 ++stats.shadowPasses;
