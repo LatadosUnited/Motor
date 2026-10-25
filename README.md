@@ -759,7 +759,7 @@ componentes comuns (Inspector, cena, desfazer):
 
 ## Navegação (IA)
 
-Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Cinco
+Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Sete
 componentes comuns (Inspector, cena, desfazer):
 
 | Componente | Campos |
@@ -769,6 +769,8 @@ componentes comuns (Inspector, cena, desfazer):
 | **Ligação de navegação** (`NavMeshLink`) | Início e Fim (pontas, relativas à entidade), Raio, Nos dois sentidos, Altura do arco (0 = escada). Pulo ou escada entre dois pontos do navmesh |
 | **Animação do agente** (`NavMeshAgentAnimation`) | Clipes parado, andando, correndo e pulando; Velocidade do andar e da corrida, Parado abaixo de, Acompanhar a velocidade, Mistura. Troca os clipes do Animator pela velocidade do agente |
 | **Área de navegação** (`NavMeshArea`) | Tamanho e Centro (caixa), Área (1 a 15), Nome, Custo. Água, lama: o agente dá a volta quando sai mais curto; o agente escolhe por quais áreas anda (**Áreas por onde anda**) |
+| **Percepção** (`Perception`) | Alcance e Ângulo da visão, Percebe em volta até, Altura dos olhos, Audição, Memória, Percebe os grupos. Os sentidos do agente (Fase 37) |
+| **Alvo de percepção** (`PerceptionTarget`) | Grupo, Altura do ponto olhado, Visibilidade, Sons são ouvidos. Quem os agentes podem ver e ouvir |
 
 - **De onde vem o navmesh:** dos **Colliders estáticos** das entidades ativas (sem Rigidbody, sem trigger, sem
   agente, sem Controlador de personagem). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como
