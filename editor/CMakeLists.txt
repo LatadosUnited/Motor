@@ -67,6 +67,7 @@ add_executable(MotorEditor
     src/viewport/NavMeshOverlay.cpp
     src/NavMeshBake.cpp
     src/mcp/McpNavTools.cpp
+    src/viewport/PerceptionOverlay.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 # Includes do editor a partir de src/ ("scripts/ScriptHost.h"); as peças comuns ficam na raiz de src/.

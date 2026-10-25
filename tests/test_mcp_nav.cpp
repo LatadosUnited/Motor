@@ -1,6 +1,6 @@
 // Ferramentas de navegação do MCP (Fase 34): nav_bake (o mesmo que o botão Gerar do Inspector), nav_path (no Play,
-// pelo .mnav ou gerado na hora) e nav_agents (antes e durante o Play; Fase 35: raio, vizinhos, ligações). Sem janela,
-// como o test_mcp.
+// pelo .mnav ou gerado na hora) e nav_agents (antes e durante o Play; Fase 35: raio, vizinhos, ligações), e
+// ai_perception (Fase 37: o que cada agente vê, ouve e lembra). Sem janela, como o test_mcp.
 #include "TestUtil.h"
 
 #include <EditorContext.h>
@@ -8,6 +8,8 @@
 #include <mcp/McpSceneTools.h>
 
 #include <motor/ai/NavSystem.h>
+#include <motor/ai/PerceptionSystem.h>
+#include <motor/audio/AudioSystem.h>
 #include <motor/core/Paths.h>
 #include <motor/project/Project.h>
 #include <motor/scene/Components.h>
@@ -162,18 +164,77 @@ int main(int argc, char** argv) {
         scene.DestroyEntity(otherId);
     }
 
+    SECTION("ai_perception: olhos e alvos fora do Play; quem vê, ouve e lembra no Play");
+    {
+        motor::AudioSettings::Global().useDevice = false;
+        motor::Scene& scene = ctx.scene;
+        scene = motor::Scene();
+        motor::Entity& floor = scene.CreateEntity("Chão");
+        floor.transform.position = {0.0f, -0.5f, 0.0f};
+        floor.Add<motor::ColliderComponent>().size = {20.0f, 1.0f, 20.0f};
+        motor::Entity& wall = scene.CreateEntity("Parede");
+        wall.transform.position = {0.0f, 1.5f, 0.0f};
+        wall.Add<motor::ColliderComponent>().size = {12.0f, 3.0f, 1.0f};
+        motor::Entity& guard = scene.CreateEntity("Guarda");
+        guard.transform.position = {0.0f, 0.0f, 5.0f};
+        guard.Add<motor::Perception>().detects = "Jogador";
+        const motor::EntityId guardId = guard.id;
+        motor::Entity& player = scene.CreateEntity("Jogador");
+        player.transform.position = {0.0f, 0.0f, 2.0f};
+        player.Add<motor::PerceptionTarget>();
+        player.Add<motor::AudioSource>().volume = 0.5f;
+        const motor::EntityId playerId = player.id;
+        motor::Entity& hidden = scene.CreateEntity("Escondido");
+        hidden.transform.position = {0.0f, 0.0f, -3.0f};
+        hidden.Add<motor::PerceptionTarget>();
+        const motor::EntityId hiddenId = hidden.id;
+
+        const Json before = Call(protocol, "ai_perception");
+        CHECK(before["isError"] == false && before["data"]["playing"] == false);
+        const Json& eyes = before["data"]["agents"][0];
+        CHECK(before["data"]["agents"].size() == 1 && eyes["name"] == "Guarda" && eyes["detects"] == "Jogador");
+        CHECK(eyes["eye"] == Json::array({0.0, 1.6000000238418579, 5.0}) && eyes["forward"][2] == -1.0);
+        CHECK(eyes["sight_range"] == 15.0 && eyes["sight_angle"] == 120.0 && !eyes.contains("seen"));
+        CHECK(before["data"]["targets"].size() == 2 && before["data"]["targets"][0]["group"] == "Jogador");
+        CHECK(before["data"]["targets"][0]["audible_range"] == 5.0);  // 10 m vezes o volume 0,5
+        CHECK(!before["data"]["targets"][1].contains("audible_range") && !before["data"].contains("stats"));
+        CHECK(Call(protocol, "ai_perception", {{"entity", "Jogador"}})["isError"] == true);  // sem Percepção
+
+        motor::SceneRuntime runtime(scene);
+        runtime.Start();
+        running = &runtime;
+        motor::PerceptionSystem* senses = runtime.GetSystem<motor::PerceptionSystem>();
+        CHECK(senses != nullptr);
+        if (senses) {
+            runtime.FixedUpdate(1.0f / 60.0f);
+            senses->MakeNoise({0.0f, 0.0f, -3.0f}, 20.0f, hiddenId);
+            runtime.FixedUpdate(1.0f / 60.0f);
+            const Json during = Call(protocol, "ai_perception", {{"entity", guardId}});
+            CHECK(during["data"]["playing"] == true && during["data"]["agents"].size() == 1);
+            const Json& a = during["data"]["agents"][0];
+            CHECK(a["seen"].size() == 1 && a["seen"][0]["id"] == playerId && a["seen"][0]["name"] == "Jogador");
+            CHECK(a["heard"].size() == 1 && a["heard"][0]["source"] == hiddenId);  // atrás da parede: só ouvido
+            CHECK(a["memory"].size() == 2 && a["memory"][0]["age"] == 0.0);
+            const Json& stats = during["data"]["stats"];
+            CHECK(stats["perceivers"] == 1 && stats["targets"] == 2 && stats["noises"] == 1);
+            CHECK(stats["raycast_budget"] == 128);
+        }
+        runtime.Stop();
+        running = nullptr;
+    }
+
     SECTION("Na lista de ferramentas, com as que só leem marcadas");
     {
         const auto list = protocol.Handle(Json{{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}});
         int found = 0;
         for (const Json& tool : (*list)["result"]["tools"]) {
             const std::string name = tool["name"];
-            if (name != "nav_bake" && name != "nav_path" && name != "nav_agents") continue;
+            if (name != "nav_bake" && name != "nav_path" && name != "nav_agents" && name != "ai_perception") continue;
             ++found;
             const bool readOnly = tool.contains("annotations") && tool["annotations"].value("readOnlyHint", false);
             CHECK(readOnly == (name != "nav_bake"));
         }
-        CHECK(found == 3);
+        CHECK(found == 4);
     }
 
     return TestResult();

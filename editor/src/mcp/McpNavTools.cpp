@@ -1,5 +1,6 @@
-// Ferramentas de navegação do MCP (Fase 34): gerar o navmesh, pedir um caminho e ver os agentes. Como as de cena,
-// usam só o EditorContext e o jogo rodando (RuntimeGetter): funcionam sem janela (test_mcp_nav).
+// Ferramentas de navegação do MCP (Fase 34): gerar o navmesh, pedir um caminho e ver os agentes; e a percepção deles
+// (Fase 37, ai_perception). Como as de cena, usam só o EditorContext e o jogo rodando (RuntimeGetter): funcionam sem
+// janela (test_mcp_nav).
 
 #include "McpSceneTools.h"
 
@@ -7,8 +8,12 @@
 
 #include <motor/ai/NavMesh.h>
 #include <motor/ai/NavSystem.h>
+#include <motor/ai/PerceptionSystem.h>
+#include <motor/scene/AudioSource.h>
 #include <motor/scene/NavMeshAgent.h>
 #include <motor/scene/NavMeshSurface.h>
+#include <motor/scene/Perception.h>
+#include <motor/scene/PerceptionTarget.h>
 #include <motor/scene/SceneRuntime.h>
 
 #include <format>
@@ -42,6 +47,11 @@ glm::vec3 ReadPoint(const Json& args, const char* key) {
 NavSystem* RunningNav(const RuntimeGetter& runtime) {
     SceneRuntime* r = runtime ? runtime() : nullptr;
     return r ? r->GetSystem<NavSystem>() : nullptr;
+}
+
+PerceptionSystem* RunningSenses(const RuntimeGetter& runtime) {
+    SceneRuntime* r = runtime ? runtime() : nullptr;
+    return r ? r->GetSystem<PerceptionSystem>() : nullptr;
 }
 
 Json Corners(const std::vector<glm::vec3>& corners) {
@@ -182,6 +192,108 @@ void AddNavTools(Protocol& protocol, EditorContext& ctx, RuntimeGetter runtime) 
                 agents.push_back(std::move(agent));
             }
             out["agents"] = std::move(agents);
+            return ToolResult::Data(out);
+        },
+    });
+
+    protocol.AddTool({
+        .name = "ai_perception",
+        .description = "Percepção dos agentes (Perception) e os alvos que eles podem perceber (PerceptionTarget). De cada "
+                       "agente: olhos e frente no mundo, alcance e ângulo da visão, alcance em volta, audição, memória "
+                       "e os grupos que percebe. No Play também: quem vê agora (id, nome, distância), o que ouviu no "
+                       "último passo (fonte, onde, distância) e o que lembra (alvo, última posição, há quantos segundos, "
+                       "se veio da visão), e os números do último passo. `entity`: só esse agente.",
+        .inputSchema = Schema({{"entity", {{"type", {"integer", "string"}},
+                                           {"description", "só este agente (padrão: todos com Percepção)"}}}}),
+        .readOnly = true,
+        .run = [&ctx, runtime](const Json& args) {
+            const Scene& scene = ctx.scene;
+            PerceptionSystem* senses = RunningSenses(runtime);
+            Json out = {{"playing", senses != nullptr}};
+            const auto name = [&](EntityId id) {
+                const Entity* e = scene.Find(id);
+                return e ? Json(e->name) : Json(nullptr);
+            };
+            EntityId only = kNullEntity;
+            if (args.contains("entity")) {
+                const Entity& e = ResolveEntity(ctx, args);
+                if (!e.Get<Perception>()) throw ToolError(std::format("{} não tem Percepção", e.name));
+                only = e.id;
+            }
+
+            Json agents = Json::array();
+            for (EntityId id : scene.EntitiesWith<Perception>()) {
+                if (only != kNullEntity && id != only) continue;
+                const Entity* e = scene.Find(id);
+                if (!e) continue;
+                const Perception& p = *e->Get<Perception>();
+                const PerceptionEye eye = PerceptionEyeOf(scene, id);
+                Json agent = {{"id", id},
+                              {"name", e->name},
+                              {"eye", Point(eye.position)},
+                              {"forward", Point(eye.forward)},
+                              {"sight_range", p.sightRange},
+                              {"sight_angle", p.sightAngle},
+                              {"near_range", p.nearRange},
+                              {"hearing", p.hearing},
+                              {"memory", p.memory},
+                              {"detects", p.detects}};
+                if (!scene.IsActiveInHierarchy(id)) agent["active"] = false;
+                if (senses) {
+                    Json seen = Json::array();
+                    for (EntityId target : senses->GetSeen(id)) {
+                        seen.push_back({{"id", target},
+                                        {"name", name(target)},
+                                        {"distance", glm::distance(eye.position, PerceptionPointOf(scene, target))}});
+                    }
+                    Json heard = Json::array();
+                    for (const HeardNoise& noise : senses->GetHeard(id)) {
+                        Json h = {{"position", Point(noise.position)}, {"distance", noise.distance}};
+                        h["source"] = noise.source == kNullEntity ? Json(nullptr) : Json(noise.source);
+                        if (noise.source != kNullEntity) h["name"] = name(noise.source);
+                        heard.push_back(std::move(h));
+                    }
+                    Json memory = Json::array();
+                    for (const PerceptionMemory& m : senses->GetMemory(id)) {
+                        memory.push_back({{"target", m.target},
+                                          {"name", name(m.target)},
+                                          {"position", Point(m.position)},
+                                          {"age", m.age},
+                                          {"seen", m.seen},
+                                          {"heard", m.heard},
+                                          {"by_sight", m.bySight}});
+                    }
+                    agent["seen"] = std::move(seen);
+                    agent["heard"] = std::move(heard);
+                    agent["memory"] = std::move(memory);
+                }
+                agents.push_back(std::move(agent));
+            }
+            out["agents"] = std::move(agents);
+
+            Json targets = Json::array();
+            for (EntityId id : scene.EntitiesWith<PerceptionTarget>()) {
+                const Entity* e = scene.Find(id);
+                if (!e) continue;
+                const PerceptionTarget& t = *e->Get<PerceptionTarget>();
+                Json target = {{"id", id},
+                               {"name", e->name},
+                               {"group", t.group},
+                               {"point", Point(PerceptionPointOf(scene, id))},
+                               {"visibility", t.visibility},
+                               {"sound_range", t.soundRange}};
+                if (const AudioSource* source = e->Get<AudioSource>()) target["audible_range"] = t.soundRange * source->volume;
+                if (!scene.IsActiveInHierarchy(id)) target["active"] = false;
+                targets.push_back(std::move(target));
+            }
+            out["targets"] = std::move(targets);
+
+            if (senses) {
+                const PerceptionStats& s = senses->Stats();
+                out["stats"] = {{"perceivers", s.perceivers}, {"targets", s.targets},   {"checks", s.checks},
+                                {"raycasts", s.raycasts},     {"deferred", s.deferred}, {"noises", s.noises},
+                                {"ms", s.ms},                 {"raycast_budget", senses->RaycastBudget()}};
+            }
             return ToolResult::Data(out);
         },
     });

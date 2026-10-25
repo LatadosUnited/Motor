@@ -88,6 +88,12 @@ public:
                   uint16_t areaMask = kNavAllAreas) const;
     std::optional<glm::vec3> SamplePosition(const glm::vec3& position, float maxDistance = 2.0f) const;
     std::optional<NavRaycastHit> Raycast(const glm::vec3& start, const glm::vec3& end) const;
+    // Ponto ao acaso alcançável a até `radius` metros de `center` (vagar, pastar). Sorteia com o gerador do Play, o
+    // mesmo do Random dos scripts: SetRandomSeed repete os pontos.
+    std::optional<glm::vec3> RandomPoint(const glm::vec3& center, float radius, uint16_t areaMask = kNavAllAreas);
+    // Ponto para fugir de `threat`: a até `distance` metros de `from`, para o lado oposto, desviando das paredes.
+    std::optional<glm::vec3> FleePoint(const glm::vec3& from, const glm::vec3& threat, float distance,
+                                       uint16_t areaMask = kNavAllAreas) const;
 
     // --- Agentes (entidade com NavMeshAgent) ---
     // Vai até `destination` (levado ao ponto mais perto no navmesh). false se não há caminho; destino em outra
@@ -162,6 +168,7 @@ private:
     void Animate(EntityId id, Agent& agent);
 
     Scene* m_scene = nullptr;
+    SceneRuntime* m_runtime = nullptr;  // o gerador de números do Play (RandomPoint)
     PhysicsSystem* m_physics = nullptr;  // corpo dos agentes com CharacterController
     std::unique_ptr<NavMesh> m_navMesh;
     std::unique_ptr<NavCrowd> m_crowd;  // depois do navmesh: sai antes dele

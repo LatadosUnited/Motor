@@ -25,7 +25,7 @@ testado no `ctest` sem janela.
 | 34 | [Navmesh e agentes](alpha-6/fase-34-navmesh.md) | pronta (24/10) |
 | 35 | [Multidão e física](alpha-6/fase-35-multidao.md) | pronta (24/10) |
 | 36 | Mundo que muda | planejada |
-| 37 | Percepção | planejada |
+| 37 | [Percepção](alpha-6/fase-37-percepcao.md) | pronta (25/10) |
 | 38 | Comportamento | planejada |
 
 ## Fase 35 — Multidão e física

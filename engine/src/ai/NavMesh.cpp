@@ -318,6 +318,113 @@ bool NavMesh::FindPath(const glm::vec3& start, const glm::vec3& end, std::vector
     return !corners.empty();
 }
 
+namespace {
+
+// O Detour pede o sorteio como ponteiro de função, sem contexto: o gerador da chamada fica aqui durante ela.
+thread_local const std::function<float()>* t_random = nullptr;
+float DetourRandom() {
+    const float r = t_random ? (*t_random)() : 0.5f;
+    return std::clamp(r, 0.0f, 0.99999f);
+}
+
+float FlatDistance(const glm::vec3& a, const glm::vec3& b) {
+    return std::hypot(a.x - b.x, a.z - b.z);
+}
+
+} // namespace
+
+std::optional<glm::vec3> NavMesh::RandomPoint(const glm::vec3& center, float radius,
+                                              const std::function<float()>& random, uint16_t areaMask) const {
+    const Detour& d = *m_detour;
+    dtQueryFilter filter = d.filter;
+    filter.setIncludeFlags(areaMask);
+    glm::vec3 start;
+    const dtPolyRef startRef = d.Nearest(center, glm::vec3(2.0f, 4.0f, 2.0f), &start.x, &filter);
+    if (!startRef) return std::nullopt;
+    radius = std::max(0.0f, radius);
+
+    // O sorteio do Detour escolhe entre os polígonos ligados que o círculo toca (pela área deles) e um ponto dentro
+    // do sorteado, que pode cair fora do círculo num polígono grande: tenta algumas vezes.
+    t_random = &random;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        dtPolyRef ref = 0;
+        glm::vec3 point;
+        if (dtStatusFailed(d.query->findRandomPointAroundCircle(startRef, &start.x, radius, &filter, DetourRandom,
+                                                                 &ref, &point.x))) {
+            break;
+        }
+        if (FlatDistance(point, start) <= radius) {
+            t_random = nullptr;
+            return point;
+        }
+    }
+    t_random = nullptr;
+
+    // Não saiu dentro: anda pela superfície em linha reta até um ponto sorteado no disco (para nas paredes).
+    const float angle = random() * 6.2831853f;
+    const float length = radius * std::sqrt(std::clamp(random(), 0.0f, 1.0f));
+    const glm::vec3 goal = start + glm::vec3(std::cos(angle) * length, 0.0f, std::sin(angle) * length);
+    glm::vec3 point = start;
+    dtPolyRef visited[16];
+    int visitedCount = 0;
+    if (dtStatusFailed(d.query->moveAlongSurface(startRef, &start.x, &goal.x, &filter, &point.x, visited,
+                                                 &visitedCount, 16))) {
+        return start;
+    }
+    if (visitedCount > 0) {
+        float height = point.y;
+        if (dtStatusSucceed(d.query->getPolyHeight(visited[visitedCount - 1], &point.x, &height))) point.y = height;
+    }
+    return point;
+}
+
+std::optional<glm::vec3> NavMesh::FleePoint(const glm::vec3& from, const glm::vec3& threat, float distance,
+                                            uint16_t areaMask) const {
+    const Detour& d = *m_detour;
+    dtQueryFilter filter = d.filter;
+    filter.setIncludeFlags(areaMask);
+    glm::vec3 start;
+    const dtPolyRef startRef = d.Nearest(from, glm::vec3(2.0f, 4.0f, 2.0f), &start.x, &filter);
+    if (!startRef || distance <= 0.0f) return std::nullopt;
+
+    glm::vec3 away(start.x - threat.x, 0.0f, start.z - threat.z);
+    const float awayLength = glm::length(away);
+    away = awayLength > 1e-4f ? away / awayLength : glm::vec3(0.0f, 0.0f, 1.0f);  // em cima da ameaça: qualquer lado
+    const float startGap = FlatDistance(start, threat);
+
+    // Reto para longe primeiro; depois desviando de 22,5° em 22,5°, dos dois lados. Fica com o primeiro que anda
+    // quase tudo (80% da distância); se nenhum, com o que mais se afasta.
+    std::optional<glm::vec3> best;
+    float bestGap = startGap + 0.1f;  // tem de afastar alguma coisa
+    for (int step = 0; step <= 12; ++step) {
+        const float degrees = 22.5f * static_cast<float>((step + 1) / 2) * (step % 2 == 0 ? 1.0f : -1.0f);
+        const float radians = degrees * 0.017453293f;
+        const glm::vec3 dir(away.x * std::cos(radians) - away.z * std::sin(radians), 0.0f,
+                            away.x * std::sin(radians) + away.z * std::cos(radians));
+        const glm::vec3 end = start + dir * distance;
+        float t = 0.0f;
+        glm::vec3 normal(0.0f);
+        dtPolyRef visited[kNavMaxPathPolys];
+        int visitedCount = 0;
+        if (dtStatusFailed(d.query->raycast(startRef, &start.x, &end.x, &filter, &t, &normal.x, visited,
+                                            &visitedCount, kNavMaxPathPolys)) || visitedCount == 0) {
+            continue;
+        }
+        // Parou numa parede: recua um pouco dela, para o destino não ficar colado.
+        const float walked = t >= 1.0f || t == FLT_MAX ? distance : std::max(0.0f, t * distance - 0.25f);
+        glm::vec3 point = start + dir * walked;
+        float height = point.y;
+        if (dtStatusSucceed(d.query->getPolyHeight(visited[visitedCount - 1], &point.x, &height))) point.y = height;
+        const float gap = FlatDistance(point, threat);
+        if (walked >= distance * 0.8f && gap > startGap) return point;
+        if (gap > bestGap) {
+            bestGap = gap;
+            best = point;
+        }
+    }
+    return best;
+}
+
 std::optional<NavRaycastHit> NavMesh::Raycast(const glm::vec3& start, const glm::vec3& end) const {
     const Detour& d = *m_detour;
     glm::vec3 from;

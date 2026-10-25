@@ -8,7 +8,8 @@ motor_add_layer(ai
         NavMeshFile.cpp
         NavSceneGeometry.cpp
         NavSystem.cpp
-    DEPENDS scene physics
+        PerceptionSystem.cpp
+    DEPENDS scene physics audio
     PRIVATE_LIBS Recast)
 
 # A libMotor.dll exporta todos os símbolos (--export-all-symbols); os da Recast ficam de fora.

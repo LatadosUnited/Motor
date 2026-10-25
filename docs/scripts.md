@@ -1113,6 +1113,55 @@ Para montar: a lama com **Área de navegação** (Área 2, Custo 1,5), uma entid
 com **Scripts > Pastor**, Curral e Lama escolhidos) com as ovelhas como filhas, cada uma com **Agente de
 navegação**. Gere o navmesh e dê Play; marque **Chovendo** no Inspector do pastor para ver o rebanho mudar de rumo.
 
+### Ver, ouvir e lembrar
+
+Os sentidos dos agentes são do motor; o que fazer com eles é do script. Quem percebe tem o componente **Percepção**
+(alcance e ângulo da visão, **Percebe em volta até** para o que está colado, altura dos olhos, audição, memória e
+os grupos que percebe). Quem pode ser percebido tem **Alvo de percepção** (grupo, visibilidade e o alcance dos sons
+da Fonte de áudio dele). O sistema `motor::PerceptionSystem` (`#include <motor/ai/PerceptionSystem.h>`) olha a cada
+passo, antes dos scripts. Ele vê quem está no cone e no alcance sem nada no meio (o raio da física: parede tapa) e
+ouve os ruídos que chegam até ele. De cada um que percebeu, lembra onde estava e há quanto tempo foi. Um veado que
+pasta perto de casa e foge do jogador ([examples/Veado.cpp](examples/Veado.cpp)):
+
+```cpp
+        // A memória já junta o que ele vê e o que ouve: o perigo é o mais recente percebido há menos de `calma`
+        // segundos, na última posição em que foi visto ou ouvido (a lista vem do mais recente ao mais antigo).
+        const std::vector<motor::PerceptionMemory> lembra = sentidos->GetMemory(GetId());
+        const bool assustado = !lembra.empty() && lembra.front().age < calma;
+```
+
+```cpp
+            if (!nav->HasPath(GetId()) || (percebeuAgora && m_desdeFuga > 0.5f)) {
+                const glm::vec3 eu = motor::NavAgentFeet(GetScene(), GetId());
+                if (auto ponto = nav->FleePoint(eu, perigo.position, distanciaFuga)) nav->SetDestination(GetId(), *ponto);
+                m_desdeFuga = 0.0f;
+            }
+```
+
+```cpp
+        if (auto ponto = nav->RandomPoint(m_casa, raioPasto)) nav->SetDestination(GetId(), *ponto);
+```
+
+- `GetSeen(id)` diz quem o agente vê agora, do mais perto ao mais longe; `CanSee(id, alvo)` pergunta por um.
+- `GetHeard(id)` diz o que ele ouviu no último passo (quem fez, onde e a que distância). Ruído é o que um script faz
+  com `MakeNoise(ponto, alcance, quem)` (passos, um tiro, uma pedra jogada para distrair) e também o som que toca na
+  Fonte de áudio de um Alvo de percepção. O som atravessa paredes.
+- `GetMemory(id)` e `Recall(id, alvo)` dão o que ele lembra: a última posição, há quantos segundos (`age`) e se veio
+  da visão. Passada a **Memória** da Percepção sem perceber o alvo de novo, ele esquece; `Forget` esquece antes (o
+  guarda chegou onde viu o jogador e não achou ninguém).
+- No `NavSystem`, `RandomPoint(centro, raio)` sorteia um ponto alcançável perto (vagar, pastar) e
+  `FleePoint(de, ameaca, distancia)` acha para onde fugir, desviando das paredes.
+- Agachado ou no escuro, baixe a **Visibilidade** do Alvo de percepção do jogador: ela multiplica o alcance da visão
+  de quem olha.
+- No viewport, com o botão **Navmesh**, aparece o cone de cada Percepção e, no Play, uma linha vermelha até quem ele
+  vê, azul até o que ouviu e um X cinza onde lembra ter percebido quem sumiu. A ferramenta `ai_perception` do MCP
+  mostra o mesmo.
+
+Para montar: o chão e as paredes com Collider, a **Superfície de navegação**, o jogador com **Alvo de percepção**
+(Grupo: Jogador) e o veado com **Agente de navegação**, **Percepção** e **Scripts > Veado**. Para os passos do
+jogador serem ouvidos, ponha uma **Fonte de áudio** com o som de passo nele, ou chame `MakeNoise` no script dele a
+cada passo.
+
 ## 16. Recarga: o que é preservado
 
 Ao salvar um arquivo de script com o editor aberto:

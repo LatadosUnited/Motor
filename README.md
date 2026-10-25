@@ -759,7 +759,7 @@ componentes comuns (Inspector, cena, desfazer):
 
 ## Navegação (IA)
 
-Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Cinco
+Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Sete
 componentes comuns (Inspector, cena, desfazer):
 
 | Componente | Campos |
@@ -769,6 +769,8 @@ componentes comuns (Inspector, cena, desfazer):
 | **Ligação de navegação** (`NavMeshLink`) | Início e Fim (pontas, relativas à entidade), Raio, Nos dois sentidos, Altura do arco (0 = escada). Pulo ou escada entre dois pontos do navmesh |
 | **Animação do agente** (`NavMeshAgentAnimation`) | Clipes parado, andando, correndo e pulando; Velocidade do andar e da corrida, Parado abaixo de, Acompanhar a velocidade, Mistura. Troca os clipes do Animator pela velocidade do agente |
 | **Área de navegação** (`NavMeshArea`) | Tamanho e Centro (caixa), Área (1 a 15), Nome, Custo. Água, lama: o agente dá a volta quando sai mais curto; o agente escolhe por quais áreas anda (**Áreas por onde anda**) |
+| **Percepção** (`Perception`) | Alcance e Ângulo da visão, Percebe em volta até, Altura dos olhos, Audição, Memória, Percebe os grupos. Os sentidos do agente (Fase 37) |
+| **Alvo de percepção** (`PerceptionTarget`) | Grupo, Altura do ponto olhado, Visibilidade, Alcance dos sons. Quem os agentes podem ver e ouvir |
 
 - **De onde vem o navmesh:** dos **Colliders estáticos** das entidades ativas (sem Rigidbody, sem trigger, sem
   agente, sem Controlador de personagem). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como
@@ -785,13 +787,17 @@ componentes comuns (Inspector, cena, desfazer):
 - **Multidão:** os agentes desviam uns dos outros e não se atravessam (DetourCrowd, Fase 35); **Raio** é o tamanho
   com que os outros o veem. Os caminhos de quem segue um alvo entram numa fila dividida entre os passos.
 - **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
-  `Warp`, `FindPath`, `SamplePosition`, `Raycast` e `Rebuild` (cenário mudou). Ver a seção 15 do
-  [guia de scripts](docs/scripts.md) (um guarda que patrulha e persegue, `docs/examples/Guarda.cpp`) e a
+  `Warp`, `FindPath`, `SamplePosition`, `Raycast`, `RandomPoint` (vagar), `FleePoint` (fugir) e `Rebuild`
+  (cenário mudou). Ver a seção 15 do [guia de scripts](docs/scripts.md) (um guarda que patrulha e persegue,
+  `docs/examples/Guarda.cpp`) e a
   referência em [docs/scripts-api.md](docs/scripts-api.md).
 - **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
   Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando), o raio de cada agente em verde, as
   ligações em roxo (no arco do pulo, com seta se só valem num sentido) e as Áreas de navegação em laranja, com nome e
   custo. No Play com a câmera do editor, também o caminho de cada agente em amarelo e de quem ele desvia em laranja.
+  Junto, a Percepção (Fase 37): o cone de visão de cada agente no chão, o círculo de "percebe em volta" e, em azul, até
+  onde chegam os sons de cada Alvo de percepção com Fonte de áudio; no Play, uma linha vermelha até quem ele vê, azul
+  até o que ouviu e um X cinza (com os segundos) onde lembra ter percebido quem sumiu.
 - **Ainda não:** obstáculos que se mexem (roteiro em
   `docs/roadmap/alpha-6.md`).
 
@@ -817,7 +823,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
-| Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia) |
+| Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia), `ai_perception` (olhos, cone e alcances de cada Percepção e os alvos; no Play, quem vê, o que ouviu e o que lembra) |
   | Scripts | `scripts_build` (`wait` responde quando a compilação termina), `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD, desenhado na hora; vistas scene, game e editor), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |

@@ -20,3 +20,5 @@
 #include "motor/scene/NavMeshLink.h"
 #include "motor/scene/NavMeshArea.h"
 #include "motor/scene/NavMeshAgentAnimation.h"
+#include "motor/scene/Perception.h"
+#include "motor/scene/PerceptionTarget.h"

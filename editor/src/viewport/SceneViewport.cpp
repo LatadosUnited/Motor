@@ -4,6 +4,7 @@
 #include "viewport/SceneViewport.h"
 
 #include "play/PlayController.h"
+#include "viewport/PerceptionOverlay.h"
 
 #include <ImGuizmo.h>
 
@@ -169,6 +170,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         DrawColliders(ctx, overlay, origin);
         if (m_prefs.navMesh) {
             m_navOverlay.DrawPaths(ctx, play.Runtime(), overlay, origin, [this](const glm::vec3& p) { return Project(p); });
+            DrawPerception(ctx, play.Runtime(), overlay, origin, [this](const glm::vec3& p) { return Project(p); });
         }
         DrawSelectedHelpers(ctx, overlay, origin);
         DrawIcons(ctx, overlay, origin);

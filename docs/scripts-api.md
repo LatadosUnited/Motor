@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 17 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 18 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -389,6 +389,8 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::NavMeshLink` | Ligação de navegação | `glm::vec3 start`, `end` (pontas, relativas à entidade), `radius` (quão longe do navmesh as pontas podem ficar), `bool bidirectional`, `arcHeight` (altura do pulo; 0 = reto, escada) |
 | `motor::NavMeshAgentAnimation` | Animação do agente | `std::string idleClip`, `walkClip`, `runClip` (vazio: só anda), `jumpClip` (nas ligações; vazio: anda), `walkSpeed` e `runSpeed` (m/s em que cada clipe toca na velocidade normal; corre da metade entre as duas para cima), `idleBelow`, `bool matchSpeed` (o `speed` do Animator acompanha o agente), `fade` (s de `CrossFade`) |
 | `motor::NavMeshArea` | Área de navegação | `glm::vec3 size`, `center` (caixa no espaço da entidade), `int area` (1 a 15; 0 é o chão comum), `std::string name`, `cost` (a partir de 1: andar 1 m na área conta como `cost` metros; vale na hora, sem gerar de novo) |
+| `motor::Perception` | Percepção | `sightRange` (m; 0 = cego), `sightAngle` (graus, abertura inteira do cone, para o -Z), `nearRange` (m: percebe em qualquer direção), `eyeHeight` (acima da origem), `hearing` (multiplica o alcance dos ruídos; 0 = surdo), `memory` (s), `std::string detects` (grupos de alvos separados por vírgula; vazio = todos; `Detects(grupo)`) |
+| `motor::PerceptionTarget` | Alvo de percepção | `std::string group`, `height` (ponto olhado acima da origem), `visibility` (multiplica o alcance da visão de quem olha; 0 = invisível), `soundRange` (m: até onde os sons da Fonte de áudio da entidade chegam aos agentes, vezes o volume; 0 = não chegam) |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
@@ -557,6 +559,8 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `bool Warp(EntityId agente, glm::vec3 posicao)` | teleporta o agente para o navmesh perto da posição e esquece o caminho |
 | `bool FindPath(inicio, fim, std::vector<glm::vec3>& cantos, uint16_t areas = motor::kNavAllAreas) const` | só o caminho (cantos do começo ao fim), sem mover ninguém; só pelas áreas de `areas` (um bit por área), pesando o custo de cada uma |
 | `std::optional<glm::vec3> SamplePosition(posicao, float distanciaMaxima = 2) const` | ponto do navmesh mais perto, se estiver a essa distância |
+| `std::optional<glm::vec3> RandomPoint(centro, float raio, uint16_t areas = motor::kNavAllAreas)` | ponto ao acaso do navmesh a até `raio` metros do centro (no plano) e alcançável andando de lá pelas áreas de `areas`: vagar, pastar, patrulha sem rota. Sorteia com o gerador do Play, o mesmo do `Random` dos scripts (`SetRandomSeed` repete os pontos); `nullopt` se o centro está longe do navmesh |
+| `std::optional<glm::vec3> FleePoint(de, ameaca, float distancia, uint16_t areas = motor::kNavAllAreas) const` | ponto para fugir: a até `distancia` metros de `de`, para o lado oposto à ameaça. Com parede no caminho, desvia aos poucos (até 135° de cada lado) e fica com o que mais afasta andando em linha reta; `nullopt` se `de` está longe do navmesh ou nenhum lado afasta |
 | `std::optional<motor::NavRaycastHit> Raycast(inicio, fim) const` | anda em linha reta pelo navmesh; `nullopt` se chega ao fim, senão onde parou (`point`, `normal`, `fraction`): "dá para ver/andar até lá sem dar a volta?" |
 | `bool Rebuild()` | gera o navmesh de novo com a cena como está (porta aberta, ponte construída); os agentes refazem os caminhos |
 | `const motor::NavMesh* GetNavMesh() const`, `const motor::NavStats& Stats() const` | o navmesh (nulo sem `NavMeshSurface` ou se a geração falhou) e os números da última geração ou leitura (`triangles`, `polygons`, `buildMs`, `fromFile`: veio do `.mnav`, `stale`: o `.mnav` ficou velho, `error`) |
@@ -576,6 +580,64 @@ pela física: o `NavSystem` chama `MoveCharacter` com a velocidade do caminho, a
 e cuida da gravidade, e os pés ficam na base da cápsula (`baseOffset` não conta). Empurrado para fora do navmesh, o
 agente volta para ele. Não chame `MoveCharacter` num agente: o `NavSystem` sobrescreve a cada passo. Rigidbody num
 agente não é suportado.
+
+## Percepção: `motor::PerceptionSystem`
+
+`#include <motor/ai/PerceptionSystem.h>` e `auto* sentidos = GetSystem<motor::PerceptionSystem>();`. A cada passo
+fixo, depois da física e antes dos scripts (ordem `kSystemOrderPerception`), cada entidade com `Perception` olha os
+`PerceptionTarget` dos grupos que percebe (`detects`). Vê um alvo quando ele está no alcance (`sightRange` vezes a
+`visibility` do alvo) e no cone (`sightAngle`, para o -Z da entidade), ou mais perto que `nearRange` em qualquer
+direção, e a linha de visada está livre: um raio da física dos olhos (`eyeHeight` acima da origem) até o ponto
+olhado (`height` acima da origem do alvo). Um Collider no meio tapa, menos os do próprio alvo e os de quem olha (e
+dos filhos de cada um); triggers não tapam. Sem física na cena, nada tapa.
+
+Ouve um ruído quando está a até `range` metros dele, vezes a própria `hearing`, medidos dos olhos. Ruído é o que um
+script faz com `MakeNoise` (passos, um tiro, uma pedra jogada) e também o som que toca na Fonte de áudio de um
+`PerceptionTarget`, a cada passo em que toca, com alcance `soundRange` vezes o `volume` da fonte. O som atravessa
+paredes. Ninguém ouve os próprios ruídos (nem os dos filhos), e o ruído de um alvo só chega a quem percebe o grupo dele;
+o ruído sem dono (`source` vazio) chega a todos.
+
+De cada alvo que viu ou ouviu, o agente lembra onde ele estava da última vez e há quanto tempo foi, até passar
+`memory` segundos sem percebê-lo de novo (ou o alvo sair da cena). Com a memória, o guarda vai até onde viu o jogador
+sumir atrás da parede. Ruídos sem dono não ficam na memória.
+
+Com muitos agentes: os alvos ficam numa grade de células de 16 m, e cada agente só olha os das células que o alcance
+dele cobre. Os raios de linha de visada têm um orçamento por passo (`SetRaycastBudget`). Com mais pares no cone que
+isso, os pares olhados há mais tempo ganham o raio (os novos primeiro), e os outros ficam com o resultado do último
+raio deles: quem entra no cone pode levar alguns passos para ser visto, e quem passa para trás de uma parede, para
+deixar de ser. Sair do alcance ou do cone vale na hora. 100 agentes olhando 20 alvos custam uns 0,3 ms por passo em
+Release.
+
+```cpp
+// Veado que foge de quem vê.
+if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
+    const std::vector<motor::EntityId> vistos = sentidos->GetSeen(GetId());
+    if (!vistos.empty()) Fugir(vistos.front());  // o mais perto
+    else if (const auto ouvidos = sentidos->GetHeard(GetId()); !ouvidos.empty()) Olhar(ouvidos.front().position);
+}
+// Guarda que perdeu o jogador de vista: vai até onde o percebeu da última vez.
+if (auto lembra = sentidos->Recall(GetId(), jogador); lembra && !lembra->seen) nav->SetDestination(GetId(), lembra->position);
+// No script do jogador, a cada passo dado: quem está a até 6 m ouve.
+sentidos->MakeNoise(glm::vec3(GetScene().WorldMatrix(GetId())[3]), 6.0f, GetId());
+```
+
+| Método | Efeito |
+|---|---|
+| `std::vector<EntityId> GetSeen(EntityId agente) const` | quem o agente vê agora (no último passo), do mais perto ao mais longe; vazio sem `Perception` |
+| `bool CanSee(EntityId agente, EntityId alvo) const` | o alvo está entre os vistos no último passo |
+| `bool CheckSight(EntityId agente, EntityId alvo) const` | olha agora, sem esperar o passo (alcance, cone, grupo e linha de visada); não guarda nada |
+| `void MakeNoise(glm::vec3 posicao, float alcance, EntityId fonte = kNullEntity)` | faz um ruído que chega até `alcance` metros (vezes a audição de quem ouve); `fonte`, quem fez (vazio: sem dono). Os agentes ouvem no próximo passo fixo, e o ruído dura esse passo |
+| `std::vector<motor::HeardNoise> GetHeard(EntityId agente) const` | o que ouviu no último passo, do mais perto ao mais longe; de cada fonte, só o ruído mais perto. Cada um com `source` (quem fez), `position` (onde) e `distance` (dos olhos até lá) |
+| `bool CanHear(EntityId agente, EntityId fonte) const` | ouviu algum ruído da fonte no último passo |
+| `std::vector<motor::PerceptionMemory> GetMemory(EntityId agente) const` | o que o agente lembra, do mais recente ao mais antigo (no empate, do mais perto). Cada um com `target`, `position` (a origem do alvo, se visto; onde fez o ruído, se ouvido), `age` (s desde a última vez; 0 = neste passo), `seen` e `heard` (neste passo) e `bySight` (a última posição veio da visão) |
+| `std::optional<motor::PerceptionMemory> Recall(EntityId agente, EntityId alvo) const` | o que lembra do alvo; `nullopt` se nunca o percebeu ou já esqueceu |
+| `void Forget(EntityId agente, EntityId alvo = kNullEntity)` | esquece o alvo (chegou onde o viu e não achou nada) ou, sem alvo, tudo; percebê-lo de novo volta a lembrar |
+| `void SetRaycastBudget(int raiosPorPasso)`, `int RaycastBudget() const` | raios de linha de visada por passo (128 por padrão, pelo menos 1). Mais raios: a visão fica mais em dia e o passo mais caro |
+| `const motor::PerceptionStats& Stats() const` | o último passo: `perceivers` (com `Perception` ativos), `targets` (alvos ativos), `checks` (pares do mesmo grupo nas células perto), `raycasts` (pares no alcance e no cone que ganharam o raio), `deferred` (pares no cone que ficaram sem raio, passou do orçamento), `noises` (ruídos do passo, dos scripts e das Fontes de áudio), `ms` |
+| `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
+
+`motor::PerceptionEyeOf(scene, agente)` dá os olhos no mundo (`position` e `forward`, a frente normalizada) e
+`motor::PerceptionPointOf(scene, alvo)`, o ponto olhado.
 
 ## Teclas
 
