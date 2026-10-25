@@ -1,7 +1,7 @@
 // Percepção (Fase 37): os componentes Perception e PerceptionTarget (campos, padrões, grupos e a ida e volta pela
 // cena) e o PerceptionSystem no SceneRuntime: visão por alcance, cone e linha de visada (Tarefa 2) e audição, com os
-// ruídos dos scripts e os sons das Fontes de áudio dos alvos (Tarefa 3) e a memória (Tarefa 4). Não usa OpenGL,
-// janela nem placa de som.
+// ruídos dos scripts e os sons das Fontes de áudio dos alvos (Tarefa 3), a memória (Tarefa 4) e a grade de alvos com
+// o orçamento de raios por passo (Tarefa 5). Não usa OpenGL, janela nem placa de som.
 #include "TestUtil.h"
 
 #include <motor/ai/PerceptionSystem.h>
@@ -14,8 +14,10 @@
 
 #include <glm/geometric.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -408,6 +410,129 @@ int main(int argc, char** argv) {
             CHECK(senses->Recall(guard, sheep).has_value());
             runtime.FixedUpdate(kDt);
             CHECK(!senses->Recall(guard, sheep).has_value());
+        }
+        runtime.Stop();
+    }
+
+    SECTION("Orçamento de raios: repartidos entre os passos, os mais antigos primeiro");
+    {
+        // 10 agentes em fila olhando para 10 alvos na frente deles: 100 pares no cone, orçamento de 30 raios.
+        Scene scene;
+        AddRoom(scene);
+        std::vector<EntityId> agents, targets;
+        for (int i = 0; i < 10; ++i) {
+            Entity& g = scene.CreateEntity("Guarda");
+            g.transform.position = {-4.5f + i, 0.0f, 9.0f};
+            g.Add<Perception>().sightAngle = 360.0f;
+            agents.push_back(g.id);
+            targets.push_back(AddTarget(scene, "Alvo", {-4.5f + i, 0.0f, 4.0f}));
+        }
+        const EntityId far = AddTarget(scene, "Longe", {60.0f, 0.0f, 60.0f});  // fora da grade de todos
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        PerceptionSystem* senses = runtime.GetSystem<PerceptionSystem>();
+        CHECK(senses && senses->RaycastBudget() == 128);
+        if (senses) {
+            senses->SetRaycastBudget(30);
+            const auto seenPairs = [&] {
+                int n = 0;
+                for (EntityId a : agents) n += static_cast<int>(senses->GetSeen(a).size());
+                return n;
+            };
+            runtime.FixedUpdate(kDt);
+            CHECK(senses->Stats().raycasts == 30 && senses->Stats().deferred == 70);
+            CHECK(seenPairs() == 30);  // os pares sem raio ainda não veem
+            for (int i = 0; i < 3; ++i) runtime.FixedUpdate(kDt);
+            CHECK(seenPairs() == 100);  // em 4 passos, todos tiveram o raio
+            CHECK(!senses->CanSee(agents[0], far));
+
+            // O primeiro alvo vai para trás da parede: em até 4 passos ninguém o vê mais.
+            scene.Find(targets[0])->transform.position = {-4.5f, 0.0f, -2.0f};
+            int steps = 0;
+            const auto anyoneSees = [&](EntityId t) {
+                return std::any_of(agents.begin(), agents.end(), [&](EntityId a) { return senses->CanSee(a, t); });
+            };
+            do {
+                runtime.FixedUpdate(kDt);
+                ++steps;
+            } while (anyoneSees(targets[0]) && steps < 20);
+            CHECK(!anyoneSees(targets[0]) && steps <= 4);
+            std::printf("  atrás da parede: ninguém vê mais em %d passo(s)\n", steps);
+
+            // Fora do cone sai na hora (o teste barato roda todo passo); com orçamento de sobra, tudo a cada passo.
+            for (EntityId a : agents) scene.Find(a)->Get<Perception>()->sightAngle = 20.0f;
+            runtime.FixedUpdate(kDt);
+            // Só o da frente de cada um no cone (e o primeiro alvo, longe atrás da parede, também no do vizinho): 11
+            // raios, e só os 9 sem parede vistos.
+            CHECK(senses->Stats().raycasts == 11 && seenPairs() == 9);
+            senses->SetRaycastBudget(0);
+            CHECK(senses->RaycastBudget() == 1);
+        }
+        runtime.Stop();
+    }
+
+    SECTION("Muitos agentes: 100 olhando 20 alvos que andam");
+    {
+        // Chão 100 x 100 com 36 pilares, 100 guardas numa grade (cada um virado para um lado) e 20 alvos andando em
+        // círculos entre eles. O critério da fase: menos de 1 ms por passo em Release (em Debug só mostra o número).
+        Scene scene;
+        Entity& floor = scene.CreateEntity("Chão");
+        floor.transform.position = {0.0f, -0.5f, 0.0f};
+        floor.Add<ColliderComponent>().size = {100.0f, 1.0f, 100.0f};
+        for (int x = 0; x < 6; ++x)
+            for (int z = 0; z < 6; ++z) {
+                Entity& pillar = scene.CreateEntity("Pilar");
+                pillar.transform.position = {-35.0f + 14.0f * x, 1.5f, -35.0f + 14.0f * z};
+                pillar.Add<ColliderComponent>().size = {2.0f, 3.0f, 2.0f};
+            }
+        std::vector<EntityId> guards;
+        for (int i = 0; i < 100; ++i) {
+            Entity& g = scene.CreateEntity("Guarda");
+            g.transform.position = {-45.0f + 10.0f * (i % 10), 0.0f, -45.0f + 10.0f * (i / 10)};
+            g.transform.SetEulerDegrees({0.0f, 37.0f * i, 0.0f});
+            g.Add<Perception>();
+            guards.push_back(g.id);
+        }
+        std::vector<EntityId> walkers;
+        for (int i = 0; i < 20; ++i) walkers.push_back(AddTarget(scene, "Andando", {0.0f, 0.0f, 0.0f}));
+        const auto place = [&](int step) {
+            for (int i = 0; i < 20; ++i) {
+                const float a = 0.3f * i + step * kDt * 0.5f;
+                const float r = 5.0f + 2.0f * i;
+                scene.Find(walkers[i])->transform.position = {r * std::cos(a), 0.0f, r * std::sin(a)};
+            }
+        };
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        PerceptionSystem* senses = runtime.GetSystem<PerceptionSystem>();
+        CHECK(senses != nullptr);
+        if (senses) {
+            place(0);
+            runtime.FixedUpdate(kDt);  // a física cria os corpos no primeiro passo
+            double total = 0.0, worst = 0.0;
+            int rays = 0, seen = 0;
+            constexpr int kSteps = 240;
+            for (int step = 1; step <= kSteps; ++step) {
+                place(step);
+                runtime.FixedUpdate(kDt);
+                total += senses->Stats().ms;
+                worst = std::max(worst, senses->Stats().ms);
+                rays += senses->Stats().raycasts;
+                for (EntityId g : guards) seen += static_cast<int>(senses->GetSeen(g).size());
+            }
+            const double mean = total / kSteps;
+            std::printf("  %d agentes, %d alvos: %.3f ms por passo (pior %.3f), %d pares olhados, %.1f raios e %.1f "
+                        "vistos por passo\n",
+                        senses->Stats().perceivers, senses->Stats().targets, mean, worst, senses->Stats().checks,
+                        static_cast<double>(rays) / kSteps, static_cast<double>(seen) / kSteps);
+            CHECK(senses->Stats().perceivers == 100 && senses->Stats().targets == 20);
+            CHECK(senses->Stats().checks < 100 * 20 / 2);  // a grade: cada um só olha os alvos das células perto
+            CHECK(seen > 0);
+#ifdef NDEBUG
+            CHECK(mean < 1.0);
+#endif
         }
         runtime.Stop();
     }

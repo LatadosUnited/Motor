@@ -17,6 +17,11 @@
 // passar a memória dele (Perception::memory) sem perceber o alvo de novo. É o que deixa um guarda ir até onde viu o
 // jogador sumir atrás da parede. Ruídos sem dono não ficam na memória.
 //
+// Muitos agentes: os alvos ficam numa grade de células de 16 m, e cada agente só olha os das células que o alcance
+// dele cobre. Os raios de linha de visada têm um orçamento por passo (SetRaycastBudget, 128 por padrão): com mais
+// pares no cone que isso, os pares olhados há mais tempo ganham o raio (os novos primeiro) e os outros ficam com o
+// resultado do último raio deles. Um alvo que entra no cone só é visto quando chega a vez do raio dele.
+//
 // O que fazer com o que o agente percebe (fugir, perseguir) é do script dele:
 //   if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
 //       for (motor::EntityId alvo : sentidos->GetSeen(GetId())) { /* ... */ }
@@ -29,6 +34,7 @@
 
 #include <glm/vec3.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -36,6 +42,7 @@
 namespace motor {
 
 struct Perception;
+struct PerceptionTarget;
 class AudioSystem;
 class PhysicsSystem;
 
@@ -70,9 +77,10 @@ struct PerceptionMemory {
 struct PerceptionStats {
     int perceivers = 0;  // entidades com Perception ativas
     int targets = 0;     // Alvos de percepção ativos
-    int checks = 0;      // pares (quem olha, alvo) do mesmo grupo
-    int raycasts = 0;    // pares que passaram pelo alcance e pelo cone e foram até a linha de visada
+    int checks = 0;      // pares (quem olha, alvo) do mesmo grupo, nas células que o alcance cobre
+    int raycasts = 0;    // pares no alcance e no cone que ganharam o raio de linha de visada neste passo
     int noises = 0;      // ruídos do passo (de MakeNoise e dos sons dos alvos)
+    int deferred = 0;    // pares no cone que ficaram sem raio neste passo (passou do orçamento)
     double ms = 0.0;
 };
 
@@ -103,6 +111,10 @@ public:
     // Esquece um alvo (chegou onde o viu e não achou nada) ou, com kNullEntity, tudo. Percebê-lo de novo volta a lembrar.
     void Forget(EntityId agent, EntityId target = kNullEntity);
 
+    // Raios de linha de visada por passo (pelo menos 1). Mais raios: visão mais em dia e passo mais caro.
+    void SetRaycastBudget(int raysPerStep);
+    int RaycastBudget() const { return m_raycastBudget; }
+
     const PerceptionStats& Stats() const { return m_stats; }
 
 private:
@@ -110,10 +122,36 @@ private:
         EntityId target = kNullEntity;
         float distance = 0.0f;
     };
+    struct TargetInfo {
+        EntityId id = kNullEntity;
+        glm::vec3 point{0.0f};  // ponto olhado, no mundo
+        const PerceptionTarget* settings = nullptr;
+    };
+    struct Candidate {  // par no alcance e no cone, esperando a linha de visada
+        EntityId agent = kNullEntity;
+        int target = 0;  // em m_targets
+        float distance = 0.0f;
+        glm::vec3 eye{0.0f};
+        uint64_t lastRay = 0;  // passo do último raio do par (0: nunca)
+        bool clear = false;
+    };
+    struct LosEntry {
+        bool clear = false;
+        uint64_t step = 0;  // passo do último raio
+        uint64_t used = 0;  // último passo em que o par estava no cone
+    };
+    static constexpr float kCellSize = 16.0f;
+    static constexpr int kDefaultRaycastBudget = 128;
+    static int CellOf(float coordinate);
+    static uint64_t CellKey(int x, int z);
+    static uint64_t PairKey(EntityId agent, EntityId target);
+    void GatherNearby(const glm::vec3& center, float reach, std::vector<int>& out) const;
     // Alcance e cone (o barato). `distance` recebe a distância dos olhos ao ponto olhado.
-    bool InView(EntityId agent, EntityId target, float* distance) const;
+    static bool InView(const Perception& senses, const PerceptionEye& eye, const glm::vec3& point, float visibility,
+                       float* distance);
     // Linha de visada (o caro): nada entre os olhos e o ponto olhado, fora o próprio alvo e quem olha.
-    bool LineOfSight(EntityId agent, EntityId target, float distance) const;
+    bool LineOfSight(EntityId agent, const glm::vec3& eye, EntityId target, const glm::vec3& point,
+                     float distance) const;
     struct Noise {
         glm::vec3 position{0.0f};
         float range = 0.0f;
@@ -130,6 +168,11 @@ private:
     std::unordered_map<EntityId, std::vector<HeardNoise>> m_heard;
     std::unordered_map<EntityId, std::vector<PerceptionMemory>> m_memory;
     std::vector<Noise> m_pending;  // de MakeNoise, ouvidos no próximo passo
+    std::vector<TargetInfo> m_targets;                      // do passo
+    std::unordered_map<uint64_t, std::vector<int>> m_grid;  // célula -> índices em m_targets
+    std::unordered_map<uint64_t, LosEntry> m_los;           // (agente, alvo) -> último raio
+    int m_raycastBudget = kDefaultRaycastBudget;
+    uint64_t m_step = 0;
     PerceptionStats m_stats;
 };
 

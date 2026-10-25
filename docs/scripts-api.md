@@ -599,6 +599,13 @@ De cada alvo que viu ou ouviu, o agente lembra onde ele estava da última vez e 
 `memory` segundos sem percebê-lo de novo (ou o alvo sair da cena). Com a memória, o guarda vai até onde viu o jogador
 sumir atrás da parede. Ruídos sem dono não ficam na memória.
 
+Com muitos agentes: os alvos ficam numa grade de células de 16 m, e cada agente só olha os das células que o alcance
+dele cobre. Os raios de linha de visada têm um orçamento por passo (`SetRaycastBudget`). Com mais pares no cone que
+isso, os pares olhados há mais tempo ganham o raio (os novos primeiro), e os outros ficam com o resultado do último
+raio deles: quem entra no cone pode levar alguns passos para ser visto, e quem passa para trás de uma parede, para
+deixar de ser. Sair do alcance ou do cone vale na hora. 100 agentes olhando 20 alvos custam uns 0,3 ms por passo em
+Release.
+
 ```cpp
 // Veado que foge de quem vê.
 if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
@@ -623,7 +630,8 @@ sentidos->MakeNoise(glm::vec3(GetScene().WorldMatrix(GetId())[3]), 6.0f, GetId()
 | `std::vector<motor::PerceptionMemory> GetMemory(EntityId agente) const` | o que o agente lembra, do mais recente ao mais antigo (no empate, do mais perto). Cada um com `target`, `position` (a origem do alvo, se visto; onde fez o ruído, se ouvido), `age` (s desde a última vez; 0 = neste passo), `seen` e `heard` (neste passo) e `bySight` (a última posição veio da visão) |
 | `std::optional<motor::PerceptionMemory> Recall(EntityId agente, EntityId alvo) const` | o que lembra do alvo; `nullopt` se nunca o percebeu ou já esqueceu |
 | `void Forget(EntityId agente, EntityId alvo = kNullEntity)` | esquece o alvo (chegou onde o viu e não achou nada) ou, sem alvo, tudo; percebê-lo de novo volta a lembrar |
-| `const motor::PerceptionStats& Stats() const` | o último passo: `perceivers` (com `Perception` ativos), `targets` (alvos ativos), `checks` (pares do mesmo grupo), `raycasts` (pares que passaram pelo alcance e pelo cone), `noises` (ruídos do passo, dos scripts e das Fontes de áudio), `ms` |
+| `void SetRaycastBudget(int raiosPorPasso)`, `int RaycastBudget() const` | raios de linha de visada por passo (128 por padrão, pelo menos 1). Mais raios: a visão fica mais em dia e o passo mais caro |
+| `const motor::PerceptionStats& Stats() const` | o último passo: `perceivers` (com `Perception` ativos), `targets` (alvos ativos), `checks` (pares do mesmo grupo nas células perto), `raycasts` (pares no alcance e no cone que ganharam o raio), `deferred` (pares no cone que ficaram sem raio, passou do orçamento), `noises` (ruídos do passo, dos scripts e das Fontes de áudio), `ms` |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 `motor::PerceptionEyeOf(scene, agente)` dá os olhos no mundo (`position` e `forward`, a frente normalizada) e

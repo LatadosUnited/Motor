@@ -53,6 +53,9 @@ void PerceptionSystem::OnStop(SceneRuntime&) {
     m_seen.clear();
     m_heard.clear();
     m_memory.clear();
+    m_los.clear();
+    m_targets.clear();
+    m_grid.clear();
     m_pending.clear();
     m_scene = nullptr;
     m_physics = nullptr;
@@ -63,11 +66,21 @@ void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float dt) {
     if (!m_scene) return;
     const auto start = std::chrono::steady_clock::now();
     m_stats = {};
+    ++m_step;
 
-    std::vector<EntityId> targets;
-    for (EntityId id : m_scene->EntitiesWith<PerceptionTarget>())
-        if (m_scene->IsActiveInHierarchy(id)) targets.push_back(id);
-    m_stats.targets = static_cast<int>(targets.size());
+    // Os alvos do passo, com o ponto olhado já no mundo, e a grade deles (pelo ponto, no plano XZ).
+    m_targets.clear();
+    m_grid.clear();
+    float maxVisibility = 0.0f;
+    for (EntityId id : m_scene->EntitiesWith<PerceptionTarget>()) {
+        if (!m_scene->IsActiveInHierarchy(id)) continue;
+        const PerceptionTarget* t = m_scene->Find(id)->Get<PerceptionTarget>();
+        const glm::vec3 point = glm::vec3(m_scene->WorldMatrix(id)[3]) + glm::vec3(0.0f, t->height, 0.0f);
+        m_grid[CellKey(CellOf(point.x), CellOf(point.z))].push_back(static_cast<int>(m_targets.size()));
+        m_targets.push_back({id, point, t});
+        maxVisibility = std::max(maxVisibility, t->visibility);
+    }
+    m_stats.targets = static_cast<int>(m_targets.size());
 
     // Quem saiu da cena, perdeu a Percepção ou foi desligado não vê nem ouve mais nada (e esquece tudo).
     const auto gone = [&](const auto& entry) {
@@ -78,28 +91,71 @@ void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float dt) {
     std::erase_if(m_heard, gone);
     std::erase_if(m_memory, gone);
 
+    // 1. O barato: cada agente com os alvos das células que o alcance dele cobre, pelo alcance e pelo cone.
+    std::vector<EntityId> agents;
+    std::vector<Candidate> candidates;
+    std::vector<int> nearby;
+    for (EntityId agent : m_scene->EntitiesWith<Perception>()) {
+        if (!m_scene->IsActiveInHierarchy(agent)) continue;
+        agents.push_back(agent);
+        const Perception& senses = *m_scene->Find(agent)->Get<Perception>();
+        const PerceptionEye eye = PerceptionEyeOf(*m_scene, agent);
+        const float reach = std::max(senses.nearRange, senses.sightRange * maxVisibility);
+        GatherNearby(eye.position, reach, nearby);
+        for (int index : nearby) {
+            const TargetInfo& target = m_targets[index];
+            if (target.id == agent || !senses.Detects(target.settings->group)) continue;
+            ++m_stats.checks;
+            float distance = 0.0f;
+            if (!InView(senses, eye, target.point, target.settings->visibility, &distance)) continue;
+            candidates.push_back({agent, index, distance, eye.position});
+        }
+    }
+    m_stats.perceivers = static_cast<int>(agents.size());
+
+    // 2. O caro: a linha de visada. Até o orçamento por passo; passando dele, os pares olhados há mais tempo (os
+    // novos primeiro) ganham o raio, e os outros ficam com o resultado do último raio deles.
+    std::vector<Candidate*> order(candidates.size());
+    for (size_t i = 0; i < candidates.size(); ++i) order[i] = &candidates[i];
+    for (Candidate* c : order) {
+        const auto it = m_los.find(PairKey(c->agent, m_targets[c->target].id));
+        c->lastRay = it == m_los.end() ? 0 : it->second.step;
+    }
+    const size_t rays = std::min(order.size(), static_cast<size_t>(std::max(0, m_raycastBudget)));
+    if (rays < order.size()) {
+        std::nth_element(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(rays), order.end(),
+                         [](const Candidate* x, const Candidate* y) { return x->lastRay < y->lastRay; });
+    }
+    for (size_t i = 0; i < order.size(); ++i) {
+        Candidate& c = *order[i];
+        const TargetInfo& target = m_targets[c.target];
+        LosEntry& entry = m_los[PairKey(c.agent, target.id)];
+        if (i < rays) {
+            entry.clear = LineOfSight(c.agent, c.eye, target.id, target.point, c.distance);
+            entry.step = m_step;
+            ++m_stats.raycasts;
+        } else {
+            ++m_stats.deferred;  // sem raio ainda (par novo): não vê até a vez dele
+        }
+        entry.used = m_step;
+        c.clear = entry.step != 0 && entry.clear;
+    }
+    // Par que saiu do alcance ou do cone: o próximo encontro começa com um raio novo.
+    std::erase_if(m_los, [&](const auto& entry) { return entry.second.used != m_step; });
+
+    // 3. Visão, audição e memória de cada agente.
     std::vector<Noise> noises = std::move(m_pending);
     m_pending.clear();
     CollectSounds(noises);
     m_stats.noises = static_cast<int>(noises.size());
-
-    for (EntityId agent : m_scene->EntitiesWith<Perception>()) {
-        if (!m_scene->IsActiveInHierarchy(agent)) continue;
-        ++m_stats.perceivers;
+    for (EntityId agent : agents) m_seen[agent].clear();
+    for (const Candidate& c : candidates)
+        if (c.clear) m_seen[c.agent].push_back({m_targets[c.target].id, c.distance});
+    for (EntityId agent : agents) {
         const Perception& senses = *m_scene->Find(agent)->Get<Perception>();
         std::vector<Sight>& seen = m_seen[agent];
-        seen.clear();
-        for (EntityId target : targets) {
-            if (target == agent) continue;
-            if (!senses.Detects(m_scene->Find(target)->Get<PerceptionTarget>()->group)) continue;
-            ++m_stats.checks;
-            float distance = 0.0f;
-            if (!InView(agent, target, &distance)) continue;
-            ++m_stats.raycasts;
-            if (LineOfSight(agent, target, distance)) seen.push_back({target, distance});
-        }
         // O mais perto primeiro: é quase sempre o que o script quer.
-        std::sort(seen.begin(), seen.end(), [](const Sight& a, const Sight& b) { return a.distance < b.distance; });
+        std::sort(seen.begin(), seen.end(), [](const Sight& x, const Sight& y) { return x.distance < y.distance; });
         Hear(agent, senses, noises);
         Remember(agent, senses, dt);
     }
@@ -107,27 +163,51 @@ void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float dt) {
     m_stats.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 }
 
-bool PerceptionSystem::InView(EntityId agent, EntityId target, float* distance) const {
-    const Perception& senses = *m_scene->Find(agent)->Get<Perception>();
-    const PerceptionTarget& seen = *m_scene->Find(target)->Get<PerceptionTarget>();
-    if (seen.visibility <= 0.0f) return false;
+int PerceptionSystem::CellOf(float coordinate) {
+    return static_cast<int>(std::floor(coordinate / kCellSize));
+}
 
-    const PerceptionEye eye = PerceptionEyeOf(*m_scene, agent);
-    const glm::vec3 toTarget = PerceptionPointOf(*m_scene, target) - eye.position;
+uint64_t PerceptionSystem::CellKey(int x, int z) {
+    return (static_cast<uint64_t>(static_cast<uint32_t>(x)) << 32) | static_cast<uint32_t>(z);
+}
+
+uint64_t PerceptionSystem::PairKey(EntityId agent, EntityId target) {
+    return (static_cast<uint64_t>(agent) << 32) | target;
+}
+
+void PerceptionSystem::GatherNearby(const glm::vec3& center, float reach, std::vector<int>& out) const {
+    out.clear();
+    const int x0 = CellOf(center.x - reach), x1 = CellOf(center.x + reach);
+    const int z0 = CellOf(center.z - reach), z1 = CellOf(center.z + reach);
+    // Alcance que cobre mais células que alvos: olhar a lista inteira sai mais barato.
+    const double cells = (static_cast<double>(x1) - x0 + 1) * (static_cast<double>(z1) - z0 + 1);
+    if (cells > static_cast<double>(m_targets.size())) {
+        for (size_t i = 0; i < m_targets.size(); ++i) out.push_back(static_cast<int>(i));
+        return;
+    }
+    for (int x = x0; x <= x1; ++x)
+        for (int z = z0; z <= z1; ++z)
+            if (const auto it = m_grid.find(CellKey(x, z)); it != m_grid.end())
+                out.insert(out.end(), it->second.begin(), it->second.end());
+}
+
+bool PerceptionSystem::InView(const Perception& senses, const PerceptionEye& eye, const glm::vec3& point,
+                              float visibility, float* distance) {
+    if (visibility <= 0.0f) return false;
+    const glm::vec3 toTarget = point - eye.position;
     const float d = glm::length(toTarget);
     *distance = d;
     if (d <= senses.nearRange) return true;  // perto: qualquer direção
-    if (d > senses.sightRange * seen.visibility) return false;
+    if (d > senses.sightRange * visibility) return false;
     if (senses.sightAngle >= 360.0f) return true;
     if (d < 1e-6f) return true;
     const float halfAngle = glm::radians(std::max(0.0f, senses.sightAngle) * 0.5f);
     return glm::dot(eye.forward, toTarget / d) >= std::cos(halfAngle);
 }
 
-bool PerceptionSystem::LineOfSight(EntityId agent, EntityId target, float distance) const {
+bool PerceptionSystem::LineOfSight(EntityId agent, const glm::vec3& eye, EntityId target, const glm::vec3& point,
+                                   float distance) const {
     if (!m_physics || distance < 1e-4f) return true;
-    const glm::vec3 eye = PerceptionEyeOf(*m_scene, agent).position;
-    const glm::vec3 point = PerceptionPointOf(*m_scene, target);
     const glm::vec3 direction = (point - eye) / distance;
     const auto hit = m_physics->Raycast(eye, direction, distance, agent);
     if (!hit || hit->distance >= distance - kSightSlack) return true;
@@ -273,9 +353,18 @@ bool PerceptionSystem::CheckSight(EntityId agent, EntityId target) const {
     const Entity* t = m_scene->Find(target);
     if (!a || !t || !a->Get<Perception>() || !t->Get<PerceptionTarget>()) return false;
     if (!m_scene->IsActiveInHierarchy(agent) || !m_scene->IsActiveInHierarchy(target)) return false;
-    if (!a->Get<Perception>()->Detects(t->Get<PerceptionTarget>()->group)) return false;
+    const Perception& senses = *a->Get<Perception>();
+    const PerceptionTarget& seen = *t->Get<PerceptionTarget>();
+    if (!senses.Detects(seen.group)) return false;
+    const PerceptionEye eye = PerceptionEyeOf(*m_scene, agent);
+    const glm::vec3 point = PerceptionPointOf(*m_scene, target);
     float distance = 0.0f;
-    return InView(agent, target, &distance) && LineOfSight(agent, target, distance);
+    return InView(senses, eye, point, seen.visibility, &distance) &&
+           LineOfSight(agent, eye.position, target, point, distance);
+}
+
+void PerceptionSystem::SetRaycastBudget(int raysPerStep) {
+    m_raycastBudget = std::max(1, raysPerStep);
 }
 
 MOTOR_RUNTIME_SYSTEM(Percepcao, PerceptionSystem, kSystemOrderPerception);
