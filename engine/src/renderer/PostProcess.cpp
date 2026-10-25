@@ -13,6 +13,9 @@ namespace motor {
 
 namespace {
 constexpr int kMaxBloomLevels = 6;
+// Cor da cena em HDR: 32 bits por pixel (sem alfa, que ninguém lê), metade da banda do RGBA16F em cada passada que
+// grava ou lê a cena (como o HDR padrão do URP da Unity). Basta para a luz até ~65000 e para o degradê do céu.
+constexpr GLenum kSceneColorFormat = GL_R11F_G11F_B10F;
 
 GLuint CreateTexture2D(GLenum format, int width, int height) {
     GLuint texture = 0;
@@ -64,7 +67,7 @@ void PostProcess::Resize(int width, int height, int samples) {
 
 void PostProcess::Create() {
     const bool msaa = m_samples > 1;
-    m_colorTexture = CreateTexture2D(GL_RGBA16F, m_width, m_height);
+    m_colorTexture = CreateTexture2D(kSceneColorFormat, m_width, m_height);
     m_depthTexture = CreateTexture2D(GL_DEPTH_COMPONENT32F, m_width, m_height);
     glTextureParameteri(m_depthTexture, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTextureParameteri(m_depthTexture, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -72,9 +75,9 @@ void PostProcess::Create() {
     glCreateFramebuffers(1, &m_sceneFbo);
     if (msaa) {
         glCreateRenderbuffers(1, &m_colorRbo);
-        glNamedRenderbufferStorageMultisample(m_colorRbo, m_samples, GL_RGBA16F, m_width, m_height);
+        glNamedRenderbufferStorageMultisample(m_colorRbo, m_samples, kSceneColorFormat, m_width, m_height);
         TrackGpuMemory(GpuObject::Renderbuffer, m_colorRbo, GpuMemoryKind::PostProcess,
-                       GpuTextureBytes(GL_RGBA16F, m_width, m_height, 1, 1, m_samples));
+                       GpuTextureBytes(kSceneColorFormat, m_width, m_height, 1, 1, m_samples));
         glCreateRenderbuffers(1, &m_depthRbo);
         glNamedRenderbufferStorageMultisample(m_depthRbo, m_samples, GL_DEPTH_COMPONENT32F, m_width, m_height);
         TrackGpuMemory(GpuObject::Renderbuffer, m_depthRbo, GpuMemoryKind::PostProcess,

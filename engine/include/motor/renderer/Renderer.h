@@ -88,7 +88,7 @@ public:
     // a cópia do depth buffer com amostras custa caro na GPU integrada (~5 ms a 1280x720 com MSAA 4x).
     void KeepSceneDepth(bool keep) { m_keepSceneDepth = keep; }
     unsigned int SceneDepthTexture() const;  // DEPTH_COMPONENT32F, valores do depth buffer (0 a 1)
-    unsigned int SceneColorTexture() const;  // RGBA16F, luz linear antes do pós-processamento
+    unsigned int SceneColorTexture() const;  // R11G11B10F (sem alfa), luz linear antes do pós-processamento
     unsigned int SkyCubemap() const;         // céu (RGBA16F linear, com mips), sem a rotação e o brilho
     unsigned int ReflectionCubemap() const;  // céu pré-filtrado: mip = rugosidade * (níveis - 1)
 

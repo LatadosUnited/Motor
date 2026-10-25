@@ -33,7 +33,7 @@ public:
     // `bindTarget` vincula (framebuffer e viewport). Mexe no estado do GL: blend, profundidade e viewport.
     void Apply(const Environment& environment, const std::function<void()>& bindTarget);
 
-    unsigned int SceneColor() const { return m_colorTexture; }  // RGBA16F linear
+    unsigned int SceneColor() const { return m_colorTexture; }  // R11G11B10F linear
     unsigned int SceneDepth() const { return m_depthTexture; }  // DEPTH_COMPONENT32F, valores do depth buffer
 
     // Triângulo de tela cheia (fullscreen.vert): VAO vazio + 3 vértices.
