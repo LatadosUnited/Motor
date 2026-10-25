@@ -52,6 +52,7 @@ motor_add_test(test_mcp_nav
 target_include_directories(test_mcp_nav PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 target_link_libraries(test_mcp_nav PRIVATE nlohmann_json::nlohmann_json)
 motor_add_test(test_world_cache)  # Fase 25: cache da matriz de mundo
+motor_add_test(test_perception)  # Fase 37: percepção dos agentes (visão, audição, memória)
 
 # Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o
 # ctest mostra "pulado". Rodar só ele: ctest --test-dir build-release -L desempenho
