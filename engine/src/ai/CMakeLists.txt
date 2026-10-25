@@ -8,6 +8,7 @@ motor_add_layer(ai
         NavMeshFile.cpp
         NavSceneGeometry.cpp
         NavSystem.cpp
+        PerceptionSystem.cpp
     DEPENDS scene physics
     PRIVATE_LIBS Recast)
 

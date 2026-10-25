@@ -579,6 +579,35 @@ e cuida da gravidade, e os pés ficam na base da cápsula (`baseOffset` não con
 agente volta para ele. Não chame `MoveCharacter` num agente: o `NavSystem` sobrescreve a cada passo. Rigidbody num
 agente não é suportado.
 
+## Percepção: `motor::PerceptionSystem`
+
+`#include <motor/ai/PerceptionSystem.h>` e `auto* sentidos = GetSystem<motor::PerceptionSystem>();`. A cada passo
+fixo, depois da física e antes dos scripts (ordem `kSystemOrderPerception`), cada entidade com `Perception` olha os
+`PerceptionTarget` dos grupos que percebe (`detects`). Vê um alvo quando ele está no alcance (`sightRange` vezes a
+`visibility` do alvo) e no cone (`sightAngle`, para o -Z da entidade), ou mais perto que `nearRange` em qualquer
+direção, e a linha de visada está livre: um raio da física dos olhos (`eyeHeight` acima da origem) até o ponto
+olhado (`height` acima da origem do alvo). Um Collider no meio tapa, menos os do próprio alvo e os de quem olha (e
+dos filhos de cada um); triggers não tapam. Sem física na cena, nada tapa.
+
+```cpp
+// Veado que foge de quem vê.
+if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
+    const std::vector<motor::EntityId> vistos = sentidos->GetSeen(GetId());
+    if (!vistos.empty()) Fugir(vistos.front());  // o mais perto
+}
+```
+
+| Método | Efeito |
+|---|---|
+| `std::vector<EntityId> GetSeen(EntityId agente) const` | quem o agente vê agora (no último passo), do mais perto ao mais longe; vazio sem `Perception` |
+| `bool CanSee(EntityId agente, EntityId alvo) const` | o alvo está entre os vistos no último passo |
+| `bool CheckSight(EntityId agente, EntityId alvo) const` | olha agora, sem esperar o passo (alcance, cone, grupo e linha de visada); não guarda nada |
+| `const motor::PerceptionStats& Stats() const` | o último passo: `perceivers` (com `Perception` ativos), `targets` (alvos ativos), `checks` (pares do mesmo grupo), `raycasts` (pares que passaram pelo alcance e pelo cone), `ms` |
+| `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
+
+`motor::PerceptionEyeOf(scene, agente)` dá os olhos no mundo (`position` e `forward`, a frente normalizada) e
+`motor::PerceptionPointOf(scene, alvo)`, o ponto olhado.
+
 ## Teclas
 
 `motor::Key` (`motor/core/Input.h`):

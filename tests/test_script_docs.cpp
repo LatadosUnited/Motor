@@ -289,6 +289,7 @@ int main(int argc, char** argv) {
         const std::string optionsH = ReadText(include / "project" / "GameOptions.h");
         const std::string saveH = ReadText(include / "project" / "SaveData.h");
         const std::string navH = ReadText(include / "ai" / "NavSystem.h");
+        const std::string perceptionH = ReadText(include / "ai" / "PerceptionSystem.h");
 
         std::set<std::string> names = DeclaredFunctions(Between(scriptH, "class Script {", "private:"));
         for (const std::string& n : DeclaredFunctions(Between(physicsH, "class PhysicsSystem", "private:"))) names.insert(n);
@@ -296,6 +297,8 @@ int main(int argc, char** argv) {
         for (const std::string& n : DeclaredFunctions(Between(audioH, "class AudioSystem", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(saveH, "class SaveData {", "private:"))) names.insert(n);
         for (const std::string& n : DeclaredFunctions(Between(navH, "class NavSystem", "private:"))) names.insert(n);
+        for (const std::string& n : DeclaredFunctions(Between(perceptionH, "class PerceptionSystem", "private:")))
+            names.insert(n);
         names.erase("NavSystem");
         names.erase("SaveData");
         names.erase("Set");  // chamada dentro dos SetInt/SetFloat... (inline), não é método público
@@ -315,7 +318,8 @@ int main(int argc, char** argv) {
         const std::pair<const std::string*, const char*> structs[] = {
             {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"},
             {&uiH, "struct UiPointer {"}, {&audioH, "struct AudioSettings {"}, {&audioH, "struct AudioVoiceInfo {"},
-            {&optionsH, "struct GameOptions {"}, {&navH, "struct NavStats {"}};
+            {&optionsH, "struct GameOptions {"}, {&navH, "struct NavStats {"},
+            {&perceptionH, "struct PerceptionStats {"}, {&perceptionH, "struct PerceptionEye {"}};
         for (const auto& [header, type] : structs) {
             const std::string body = Between(*header, type, "};");
             CHECK(!body.empty());
