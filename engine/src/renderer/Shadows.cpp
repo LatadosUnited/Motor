@@ -16,12 +16,18 @@ namespace {
 constexpr float kCascadeLambda = 0.8f;  // mais perto da divisão logarítmica: mais detalhe perto da câmera
 constexpr float kPointNear = 0.05f;
 
+// Profundidade das cascatas em 16 bits: cada uma cobre no máximo algumas centenas de metros em projeção ortogonal
+// (passos de poucos milímetros, abaixo do deslocamento contra o "acne") e grava e lê metade do 32F. Os cubos das
+// pontuais guardam a distância até a luz (até o alcance), em 24 bits.
+constexpr GLenum kCascadeFormat = GL_DEPTH_COMPONENT16;
+constexpr GLenum kCubeFormat = GL_DEPTH_COMPONENT24;
+
 GLuint CreateShadowTexture(GLenum target, int resolution, int layers) {
+    const GLenum format = target == GL_TEXTURE_2D_ARRAY ? kCascadeFormat : kCubeFormat;
     GLuint texture = 0;
     glCreateTextures(target, 1, &texture);
-    glTextureStorage3D(texture, 1, GL_DEPTH_COMPONENT32F, resolution, resolution, layers);
-    TrackGpuMemory(GpuObject::Texture, texture, GpuMemoryKind::Shadows,
-                   GpuTextureBytes(GL_DEPTH_COMPONENT32F, resolution, resolution, layers));
+    glTextureStorage3D(texture, 1, format, resolution, resolution, layers);
+    TrackGpuMemory(GpuObject::Texture, texture, GpuMemoryKind::Shadows, GpuTextureBytes(format, resolution, resolution, layers));
     // Comparação no hardware (sampler...Shadow): com LINEAR, cada leitura já é um PCF 2x2.
     glTextureParameteri(texture, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
     glTextureParameteri(texture, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
