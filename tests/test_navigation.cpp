@@ -1,6 +1,7 @@
 // Navegação (Fase 34): navmesh gerado pela Recast, caminhos pelo Detour, geometria tirada dos Colliders da cena e o
 // NavSystem movendo os NavMeshAgent no SceneRuntime, e o navmesh salvo em .mnav (Tarefa 7). Não usa OpenGL nem
-// janela. Fase 35: a multidão (DetourCrowd), com agentes que desviam uns dos outros.
+// janela. Fase 35: a multidão (DetourCrowd), com agentes que desviam uns dos outros. Fase 37: ponto ao acaso e ponto
+// de fuga.
 #include "TestUtil.h"
 
 #include <motor/ai/NavMesh.h>
@@ -993,6 +994,114 @@ int main(int argc, char** argv) {
                 runtime.Stop();
             }
         }
+    }
+
+    SECTION("Ponto ao acaso: dentro do raio, no navmesh e repetível pela semente");
+    {
+        Scene scene = MakeScene();
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->GetNavMesh());
+        if (nav && nav->GetNavMesh()) {
+            const glm::vec3 center(0.0f, 0.0f, -5.0f);
+            int inside = 0, onMesh = 0, left = 0, right = 0, near = 0, far = 0;
+            float farthest = 0.0f;
+            for (int i = 0; i < 200; ++i) {
+                const auto p = nav->RandomPoint(center, 4.0f);
+                if (!p) continue;
+                const float flat = std::hypot(p->x - center.x, p->z - center.z);
+                farthest = std::max(farthest, flat);
+                inside += flat <= 4.0f + 1e-3f;
+                const auto snapped = nav->SamplePosition(*p, 0.1f);
+                onMesh += snapped && glm::distance(*snapped, *p) < 0.05f;
+                left += p->x < -1.0f;
+                right += p->x > 1.0f;
+                near += flat < 2.0f;
+                far += flat > 2.5f;
+            }
+            CHECK(inside == 200 && onMesh == 200);
+            CHECK(left > 20 && right > 20 && near > 20 && far > 20);  // espalhados pelo disco
+            std::printf("  200 pontos: %d à esquerda, %d à direita, %d perto, %d longe (o mais longe a %.2f m)\n", left,
+                        right, near, far, farthest);
+
+            runtime.SetRandomSeed(7);
+            std::vector<glm::vec3> first;
+            for (int i = 0; i < 5; ++i) first.push_back(nav->RandomPoint(center, 4.0f).value_or(glm::vec3(99.0f)));
+            runtime.SetRandomSeed(7);
+            bool same = true;
+            for (int i = 0; i < 5; ++i) same = same && nav->RandomPoint(center, 4.0f).value_or(glm::vec3(-99.0f)) == first[i];
+            CHECK(same);
+
+            // Raio 0: o próprio ponto (no navmesh); longe do navmesh: nada.
+            const auto zero = nav->RandomPoint(center, 0.0f);
+            CHECK(zero && std::hypot(zero->x - center.x, zero->z - center.z) < 0.05f);
+            CHECK(!nav->RandomPoint({50.0f, 0.0f, 50.0f}, 4.0f).has_value());
+
+            // Raio grande atrás da parede: os pontos do outro lado são alcançáveis dando a volta (o navmesh é um só).
+            int beyond = 0;
+            for (int i = 0; i < 100; ++i) {
+                const auto p = nav->RandomPoint({0.0f, 0.0f, -2.0f}, 9.0f);
+                beyond += p && p->z > 0.5f;
+            }
+            CHECK(beyond > 0);
+        }
+        runtime.Stop();
+    }
+
+    SECTION("Ponto de fuga: para longe da ameaça, desviando das paredes");
+    {
+        Scene scene = MakeScene();
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        NavSystem* nav = runtime.GetSystem<NavSystem>();
+        CHECK(nav && nav->GetNavMesh());
+        if (nav && nav->GetNavMesh()) {
+            // Campo aberto: reto para o lado oposto.
+            const auto open = nav->FleePoint({0.0f, 0.0f, -5.0f}, {-5.0f, 0.0f, -5.0f}, 4.0f);
+            CHECK(open && Near(open->x, 4.0f, 0.05f) && Near(open->z, -5.0f, 0.05f) && Near(open->y, 0.0f, 0.2f));
+
+            // A parede na frente (em z = 0): desvia para um lado e mesmo assim se afasta, sem atravessá-la.
+            const glm::vec3 from(0.0f, 0.0f, -2.0f), threat(0.0f, 0.0f, -6.0f);
+            const auto walled = nav->FleePoint(from, threat, 5.0f);
+            CHECK(walled.has_value());
+            if (walled) {
+                const float before = std::hypot(from.x - threat.x, from.z - threat.z);
+                const float after = std::hypot(walled->x - threat.x, walled->z - threat.z);
+                CHECK(after > before + 1.0f);
+                CHECK(walled->z < -0.5f);              // do lado de cá da parede
+                CHECK(std::abs(walled->x) > 2.0f);     // foi de lado
+                CHECK(!nav->Raycast(from, *walled).has_value());  // dá para ir reto até lá
+                std::printf("  parede na frente: foge para (%.2f, %.2f), de %.2f m para %.2f m da ameaça\n", walled->x,
+                            walled->z, before, after);
+            }
+
+            // Encurralado no canto (a ameaça empurra para fora do chão): escolhe o lado que mais afasta.
+            const glm::vec3 corner(9.0f, 0.0f, -9.0f), hunter(7.0f, 0.0f, -7.0f);
+            const auto cornered = nav->FleePoint(corner, hunter, 4.0f);
+            CHECK(cornered.has_value());
+            if (cornered) {
+                CHECK(std::hypot(cornered->x - hunter.x, cornered->z - hunter.z) >
+                      std::hypot(corner.x - hunter.x, corner.z - hunter.z));
+                CHECK(nav->SamplePosition(*cornered, 0.1f).has_value());
+            }
+
+            // Em cima da ameaça: foge para algum lado; longe do navmesh ou distância 0: nada.
+            const auto onTop = nav->FleePoint({0.0f, 0.0f, -5.0f}, {0.0f, 0.0f, -5.0f}, 3.0f);
+            CHECK(onTop && std::hypot(onTop->x, onTop->z + 5.0f) > 2.0f);
+            CHECK(!nav->FleePoint({50.0f, 0.0f, 50.0f}, {0.0f, 0.0f, 0.0f}, 3.0f).has_value());
+            CHECK(!nav->FleePoint({0.0f, 0.0f, -5.0f}, {-5.0f, 0.0f, -5.0f}, 0.0f).has_value());
+
+            // Um agente que foge chega lá.
+            Entity& deer = AddAgent(scene, {0.0f, 0.0f, -5.0f});
+            const EntityId id = deer.id;
+            runtime.FixedUpdate(kDt);
+            const auto flee = nav->FleePoint(NavAgentFeet(scene, id), {-3.0f, 0.0f, -5.0f}, 5.0f);
+            CHECK(flee && nav->SetDestination(id, *flee));
+            for (int i = 0; i < 60 * 5 && !nav->HasArrived(id); ++i) runtime.FixedUpdate(kDt);
+            CHECK(nav->HasArrived(id));
+        }
+        runtime.Stop();
     }
 
     return TestResult();

@@ -86,6 +86,7 @@ NavSystem::~NavSystem() = default;
 
 void NavSystem::OnStart(SceneRuntime& runtime) {
     m_scene = &runtime.GetScene();
+    m_runtime = &runtime;
     m_physics = runtime.GetSystem<PhysicsSystem>();
     // Folga para os agentes que nascerem no jogo; passou disso, a multidão dobra (GrowCrowd).
     m_crowdCapacity = std::max(32, static_cast<int>(m_scene->EntitiesWith<NavMeshAgent>().size()) * 2);
@@ -135,6 +136,7 @@ void NavSystem::OnStop(SceneRuntime&) {
     m_navMesh.reset();
     ++m_version;
     m_scene = nullptr;
+    m_runtime = nullptr;
     m_physics = nullptr;
 }
 
@@ -314,6 +316,18 @@ std::optional<glm::vec3> NavSystem::SamplePosition(const glm::vec3& position, fl
     const auto point = m_navMesh->SamplePosition(position, glm::vec3(maxDistance));
     if (point && glm::distance(*point, position) > maxDistance) return std::nullopt;  // a caixa é maior que a esfera
     return point;
+}
+
+std::optional<glm::vec3> NavSystem::RandomPoint(const glm::vec3& center, float radius, uint16_t areaMask) {
+    if (!m_navMesh || !m_runtime) return std::nullopt;
+    ApplyAreaCosts();  // o sorteio do Detour não pesa custo, mas usa o mesmo filtro das áreas
+    return m_navMesh->RandomPoint(center, radius, [this] { return m_runtime->Random(0.0f, 1.0f); }, areaMask);
+}
+
+std::optional<glm::vec3> NavSystem::FleePoint(const glm::vec3& from, const glm::vec3& threat, float distance,
+                                              uint16_t areaMask) const {
+    if (!m_navMesh) return std::nullopt;
+    return m_navMesh->FleePoint(from, threat, distance, areaMask);
 }
 
 std::optional<NavRaycastHit> NavSystem::Raycast(const glm::vec3& start, const glm::vec3& end) const {

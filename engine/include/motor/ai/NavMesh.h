@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -119,6 +120,17 @@ public:
 
     // Anda em linha reta de `start` para `end` pelo navmesh. nullopt se chega sem sair dele; senão, onde parou.
     std::optional<NavRaycastHit> Raycast(const glm::vec3& start, const glm::vec3& end) const;
+
+    // Ponto ao acaso do navmesh a até `radius` metros de `center` (no plano), alcançável andando de lá pelas áreas de
+    // `areaMask` (pastar, vagar, patrulha sem rota). `random` dá números de 0 a 1. nullopt se `center` está longe do
+    // navmesh.
+    std::optional<glm::vec3> RandomPoint(const glm::vec3& center, float radius, const std::function<float()>& random,
+                                         uint16_t areaMask = kNavAllAreas) const;
+    // Ponto para fugir de `threat`: a até `distance` metros de `from`, para o lado oposto ao dele. Com parede no
+    // caminho, tenta desviando aos poucos (até 135° de cada lado) e fica com o que mais afasta da ameaça andando em
+    // linha reta. nullopt se `from` está longe do navmesh ou nenhum lado afasta.
+    std::optional<glm::vec3> FleePoint(const glm::vec3& from, const glm::vec3& threat, float distance,
+                                       uint16_t areaMask = kNavAllAreas) const;
 
     // Comprimento de um caminho (soma dos trechos).
     static float PathLength(const std::vector<glm::vec3>& corners);
