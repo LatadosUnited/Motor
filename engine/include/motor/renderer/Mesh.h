@@ -51,7 +51,21 @@ public:
     void SetSkin(std::shared_ptr<const Skin> skin) { m_skin = std::move(skin); }
     bool IsSkinned() const { return m_skin && !m_weights.empty(); }
 
-    // Primitivas (todas centradas na origem, tamanho 1).
+    // Níveis de detalhe (LOD, Fase 24): versões mais simples da mesma malha para quando o objeto fica pequeno na
+    // tela. `screenSize` = diâmetro da esfera dos limites do objeto dividido pela altura vista pela câmera na
+    // distância dele (1 = ocupa a tela de cima a baixo); o nível vale abaixo desse valor. O Renderer escolhe no
+    // Submit (também para as sombras); o resto da engine (raycast, física, editor) usa sempre esta malha.
+    struct Lod {
+        std::shared_ptr<Mesh> mesh;
+        float screenSize = 0.0f;
+    };
+    void SetLods(std::vector<Lod> lods);  // em qualquer ordem; guardados do maior screenSize para o menor
+    const std::vector<Lod>& Lods() const { return m_lods; }
+    // Esta malha ou o nível que vale para um objeto com esse tamanho na tela.
+    const Mesh& ForScreenSize(float screenSize) const;
+
+    // Primitivas (todas centradas na origem, tamanho 1). Esfera, cilindro, cápsula e cone vêm com dois níveis de LOD
+    // (metade e um quarto das divisões, abaixo de 25% e de 8% da tela).
     static std::shared_ptr<Mesh> CreateCube();
     static std::shared_ptr<Mesh> CreatePlane(float uvRepeat = 1.0f);  // plano XZ, normal +Y
     static std::shared_ptr<Mesh> CreateSphere(int segments = 48, int rings = 24);
@@ -68,6 +82,7 @@ private:
     std::vector<uint32_t> m_indices;
     std::vector<SkinWeights> m_weights;
     std::shared_ptr<const Skin> m_skin;
+    std::vector<Lod> m_lods;
     glm::vec3 m_boundsMin{0.0f};
     glm::vec3 m_boundsMax{0.0f};
 

@@ -12,6 +12,7 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -64,6 +65,9 @@ public:
         m_shadowsEnabled = enabled;
         m_maxShadowQuality = maxQuality;
     }
+    // Multiplica o tamanho na tela usado para escolher o nível de LOD (Mesh::Lods): acima de 1 o detalhe dura mais
+    // longe, abaixo de 1 os níveis simples entram mais perto (qualidade baixa). Vale a partir do próximo BeginScene.
+    void SetLodBias(float bias) { m_lodBias = std::max(bias, 0.01f); }
 
     // target == nullptr desenha na janela. Até kMaxLights luzes (as demais são ignoradas, com aviso no log);
     // nenhuma = só a luz do céu e a ambiente.
@@ -153,6 +157,8 @@ private:
     int m_windowHeight = 0;
     int m_samples = 4;
     bool m_keepSceneDepth = false;
+    float m_lodBias = 1.0f;
+    float m_lodScale = 1.0f;  // m_lodBias / (2 tan(fov / 2)) da câmera do quadro
     bool m_shadowsEnabled = true;
     ShadowQuality m_maxShadowQuality = ShadowQuality::High;
     const Framebuffer* m_target = nullptr;

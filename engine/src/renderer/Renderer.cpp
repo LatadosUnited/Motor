@@ -169,6 +169,8 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_target = target;
     m_camera = camera;
     m_environment = environment;
+    // Tamanho na tela = diâmetro * m_lodScale / distância (altura vista a 1 m: 2 * tan(fov / 2)).
+    m_lodScale = m_lodBias / std::max(2.0f * std::tan(glm::radians(camera.fovY) * 0.5f), 1e-3f);
 
     if (lights.size() > kMaxLights && !std::exchange(m_warnedTooManyLights, true)) {
         log::Warn("Renderer: {} luzes na cena; só as primeiras {} são usadas", lights.size(), kMaxLights);
@@ -221,6 +223,13 @@ void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat
     MOTOR_ASSERT(m_inScene, "Submit fora de BeginScene/EndScene");
     DrawItem& item = AddItem(mesh, material, model, shadows);
     item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
+    if (!mesh.Lods().empty()) {
+        // Nível de detalhe pelo tamanho na tela: diâmetro da caixa no mundo sobre a altura vista na distância dela.
+        const glm::vec3 center = (item.bounds.min + item.bounds.max) * 0.5f;
+        const float diameter = glm::length(item.bounds.max - item.bounds.min);
+        const float distance = std::max(glm::length(center - m_camera.position), 1e-3f);
+        item.mesh = &mesh.ForScreenSize(diameter * m_lodScale / distance);
+    }
 }
 
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
