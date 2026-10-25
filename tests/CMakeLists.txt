@@ -38,6 +38,7 @@ motor_add_test(test_script_list)  # Fase 22: lista de scripts do SceneRuntime
 motor_add_test(test_frame_stats)  # Fase 22: contadores por quadro e CSV do --perf
 motor_add_test(test_entities_with)  # Fase 25: listas por tipo de componente da cena
 motor_add_test(test_destroy_batch)  # Fase 25: destruir em lote
+motor_add_test(test_scene_index)  # Fase 25: índices de filhos, nomes e tipos da cena
 motor_add_test(test_navigation)  # Fase 34: navmesh, caminhos e agentes
 # Fase 34: ferramentas de navegação do MCP (nav_bake, nav_path, nav_agents), sem janela como o test_mcp.
 motor_add_test(test_mcp_nav
