@@ -1,4 +1,6 @@
 #include "motor/scene/Scene.h"
+
+#include "motor/core/FrameStats.h"
 #include "motor/scene/EntityRef.h"
 
 #include "motor/renderer/Camera.h"
@@ -13,6 +15,7 @@
 #include <glm/matrix.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <unordered_set>
@@ -22,7 +25,8 @@ namespace motor {
 namespace {
 uint64_t g_structureVersion = 0;  // SceneStructureVersion(); a cena só é mexida na thread principal
 uint64_t g_indexVersion = 0;      // sobe só no MarkSceneStructureChanged: os índices das cenas são refeitos
-uint64_t g_worldStamp = 0;        // EntityCache::stamp
+// EntityCache::stamp. Atômico: o SubmitTo atualiza o cache das entidades na raiz em várias threads (Fase 26).
+std::atomic<uint64_t> g_worldStamp{0};
 
 size_t NameHash(std::string_view name) {
     return std::hash<std::string_view>{}(name);
@@ -132,6 +136,7 @@ Scene& Scene::operator=(Scene&& other) noexcept {
     m_byName = std::move(other.m_byName);
     m_pending = std::move(other.m_pending);
     m_indexVersion = other.m_indexVersion;
+    m_meshList = MeshList();
     for (const auto& e : m_entities) e->cache.owner = this;
     other.m_indexVersion = UINT64_MAX;
     return *this;
@@ -482,7 +487,7 @@ const glm::mat4& Scene::CachedWorld(const Entity& e) const {
     c.world = parentWorld ? *parentWorld * t.Matrix() : t.Matrix();
     c.local = t;
     c.parentStamp = parentStamp;
-    c.stamp = ++g_worldStamp;
+    c.stamp = g_worldStamp.fetch_add(1, std::memory_order_relaxed) + 1;
     c.valid = true;
     return c.world;
 }
@@ -505,16 +510,50 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
 }
 
 void Scene::SubmitTo(Renderer& renderer) const {
+    MOTOR_PROFILE_STAT("Render: enviar a cena");
+    // Entidades na raiz da hierarquia vão em paralelo (Fase 26): a matriz de mundo delas só depende do próprio
+    // transform, e cada uma só escreve no próprio cache. Filhos (o cache confere e pode recalcular o do pai, que
+    // outra thread estaria lendo) e malhas com pele (procuram o Animator acima) ficam para depois, nesta thread.
+    // O tipo e a lista saem aqui antes: as duas consultas guardam cache na primeira chamada.
+    const ComponentType* meshType = ComponentRegistry::TypeOf<MeshRenderer>();
+    const std::vector<EntityId>& ids = EntitiesWith<MeshRenderer>();
+    if (!meshType || ids.empty()) return;
+    MeshList& list = m_meshList;
+    if (list.version != SceneStructureVersion() || list.items.size() != ids.size()) {
+        list.items.resize(ids.size());
+        for (size_t i = 0; i < ids.size(); ++i) {
+            const Entity* e = Find(ids[i]);
+            list.items[i] = {e, e ? static_cast<const MeshRenderer*>(e->Get(*meshType)) : nullptr};
+        }
+        list.version = SceneStructureVersion();
+    }
+    std::vector<uint8_t> later(ids.size(), 0);
+    renderer.SubmitMany(ids.size(), [&](size_t i, Renderer::SubmitRequest& request) {
+        const auto [e, mr] = list.items[i];
+        if (!mr || !mr->mesh) return false;
+        if (e->parent != kNullEntity || mr->mesh->IsSkinned()) {
+            later[i] = 1;
+            return false;
+        }
+        if (!e->active) return false;
+        request.mesh = mr->mesh.get();
+        request.material = &mr->Resolved();
+        request.model = CachedWorld(*e);
+        request.shadows = mr->shadows;
+        return true;
+    });
+
     std::vector<glm::mat4> joints;
-    for (const auto& e : m_entities) {
-        const MeshRenderer* mr = e->Get<MeshRenderer>();
-        if (!mr || !mr->mesh || !IsActiveInHierarchy(*e)) continue;
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if (!later[i]) continue;
+        const auto [e, mr] = list.items[i];
+        if (!IsActiveInHierarchy(*e)) continue;
         if (mr->mesh->IsSkinned()) {
             // Pose do Animator mais próximo (a própria entidade ou acima) que anima o esqueleto desta pele;
             // sem ele, a pose de repouso. As juntas ficam no espaço da entidade da malha.
             const Skin& skin = *mr->mesh->GetSkin();
             std::span<const glm::mat4> globals = skin.skeleton->restGlobal;
-            for (const Entity* a = e.get(); a; a = Find(a->parent)) {
+            for (const Entity* a = e; a; a = Find(a->parent)) {
                 const Animator* animator = a->Get<Animator>();
                 if (animator && animator->PoseSkeleton() == skin.skeleton.get() && !animator->GlobalPose().empty()) {
                     globals = animator->GlobalPose();

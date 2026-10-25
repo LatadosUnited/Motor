@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <vector>
@@ -27,6 +28,7 @@ class PostProcess;
 class ShadowRenderer;
 class SkyRenderer;
 struct DrawItem;
+struct Frustum;
 
 struct RenderStats {
     uint32_t drawCalls = 0;        // malhas desenhadas em todas as passadas (cena, sombras, contornos)
@@ -83,6 +85,18 @@ public:
     // de `model`. Até kMaxJoints (as demais ficam paradas, com aviso no log). Malha e material como no Submit.
     void SubmitSkinned(const Mesh& mesh, const Material& material, const glm::mat4& model,
                        std::span<const glm::mat4> joints, ShadowCasting shadows = ShadowCasting::On);
+
+    // Muitos Submit de uma vez, montados em paralelo (Fase 26): `fill(i, pedido)` para i em [0, count) preenche o
+    // pedido ou devolve false para pular o i. Roda em várias threads ao mesmo tempo: só pode ler dados que ninguém
+    // muda durante a chamada e escrever no que é só do i. O resultado é o mesmo de chamar Submit na ordem dos i.
+    struct SubmitRequest {
+        const Mesh* mesh = nullptr;
+        const Material* material = nullptr;
+        glm::mat4 model{1.0f};
+        ShadowCasting shadows = ShadowCasting::On;
+    };
+    using SubmitFill = std::function<bool(size_t index, SubmitRequest& request)>;
+    void SubmitMany(size_t count, const SubmitFill& fill);
     void EndScene();
 
     const RenderStats& GetStats() const { return m_stats; }
@@ -113,6 +127,7 @@ private:
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);
     DrawItem& AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows);
+    void PrepareItems(const Frustum& view);
 
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
@@ -147,13 +162,24 @@ private:
     ShadowParamsIds m_shadowIds;
     std::vector<DrawKey> m_sceneKeys, m_shadowKeys;
     std::vector<DrawKey> m_lastSceneKeys, m_lastShadowKeys;  // do quadro anterior: iguais, a ordem não muda
-    std::vector<glm::mat4> m_objects;  // 2 por item (mundo e normal), na ordem de m_items: o buffer de objetos
+    std::vector<glm::mat4> m_objects;  // 2 por item (mundo e normal), na ordem de m_items: o buffer de objetos (só os
+                                       // 2 * m_items.size() primeiros valem; não é esvaziado entre quadros)
     // Material do Submit anterior: o mesmo objeto, ou os mesmos valores, não consultam as tabelas.
     const Material* m_lastMaterial = nullptr;
     MaterialKey m_lastMaterialKey;
+    size_t m_lastMaterialKeyHash = 0;  // do SubmitMany (o AddItem não o usa: só acelera a comparação)
     ShadowParams m_lastShadowParams;
     uint32_t m_lastMaterialId = 0, m_lastShadowId = 0;
     std::vector<uint32_t> m_sceneOrder, m_shadowOrder;
+    std::vector<uint8_t> m_visible;  // por item: aparece na câmera (PrepareItems)
+    // SubmitMany: pedidos montados em paralelo e as chaves de material de cada um (reaproveitados entre quadros).
+    struct PendingSubmit {
+        MaterialKey key;
+        ShadowParams shadow;
+        size_t keyHash = 0, shadowHash = 0;
+        bool ok = false;
+    };
+    std::vector<PendingSubmit> m_pending;
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;

@@ -265,3 +265,11 @@ motor_add_test(test_loading_screen)
 motor_add_test(test_fbx)
 target_compile_definitions(test_fbx PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_SOURCE_DIR}/engine/assets"
                                             MOTOR_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+# Fase 26: sistema de tarefas. A segunda execução roda sem threads de trabalho (tudo na thread que pede).
+motor_add_test(test_job_system)
+add_test(NAME test_job_system_sem_threads COMMAND test_job_system ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_job_system_sem_threads)
+set_tests_properties(test_job_system_sem_threads PROPERTIES ENVIRONMENT "MOTOR_THREADS=0")
+
+# Fase 26: texturas da cena lidas e decodificadas em paralelo (AssetLibrary::PreloadTextures).
+motor_add_test(test_asset_preload)

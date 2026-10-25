@@ -149,7 +149,7 @@ struct PhysicsSystem::World {
     PhysicsSettings settings;
     int threads = 0;
     std::unique_ptr<JPH::TempAllocator> temp;
-    std::unique_ptr<JPH::JobSystemThreadPool> jobs;
+    std::unique_ptr<JPH::JobSystem> jobs;  // o pool da engine (JoltJobs.h), ou um só da Jolt com workerThreads >= 0
     physics_jolt::BroadPhaseLayers broadPhaseLayers;
     physics_jolt::ObjectVsBroadPhase objectVsBroadPhase;
     physics_jolt::ObjectPairs objectPairs{settings.layers};  // tabela de camadas do projeto

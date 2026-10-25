@@ -291,6 +291,11 @@ Coisas que vale saber:
 - Na **pausa** nada é chamado; `Time().elapsed` não conta o tempo pausado.
 - O `Log` aceita o formato do `std::format`: `Log("vidas = {}, posição = {:.2f}", vidas, x)`. Cada `{}`
   precisa de um valor.
+- **Uma thread só:** todos os scripts rodam na thread principal, um depois do outro, na ordem da cena. A engine
+  usa as outras threads (física, montagem do quadro, sombras, animação) só entre as chamadas dos scripts: dentro
+  de um `OnUpdate` dá para ler e mudar qualquer entidade sem trava. O contrário não vale: não crie threads que
+  mexem na cena (`std::thread`, `std::async`). Trabalho pesado sem a cena (gerar um mapa, calcular um caminho
+  próprio) pode ir para uma thread sua, desde que o resultado só seja aplicado num `OnUpdate`.
 
 ## 5. Entrada e tempo
 

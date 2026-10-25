@@ -34,6 +34,7 @@ public:
     static bool IsMetaFile(const std::filesystem::path& path);
     static bool IsTrackedAsset(const std::filesystem::path& path);  // tipos que ganham .meta
     static std::string NewGuid();                                    // 32 dígitos hexadecimais
+    static bool LooksLikeGuid(std::string_view text);                // 32 dígitos hexadecimais minúsculos
     static bool IsValidGuid(std::string_view text);
 
 private:

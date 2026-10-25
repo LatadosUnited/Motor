@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <fstream>
@@ -182,6 +183,23 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
             return false;
         }
 
+        // Texturas da cena (direto ou pelos materiais) decodificadas em paralelo antes de ler as entidades, que
+        // depois as acham já carregadas (Fase 26).
+        {
+            std::vector<std::string> guids;
+            const std::function<void(const json&)> collect = [&](const json& j) {
+                if (j.is_string()) {
+                    if (const auto& s = j.get_ref<const std::string&>(); AssetDatabase::LooksLikeGuid(s)) guids.push_back(s);
+                } else if (j.is_structured()) {
+                    for (const json& item : j) collect(item);
+                }
+            };
+            collect(root);
+            std::sort(guids.begin(), guids.end());
+            guids.erase(std::unique(guids.begin(), guids.end()), guids.end());
+            assets.PreloadTextures(guids);
+        }
+
         if (auto it = root.find("environment"); it != root.end() && it->is_object()) {
             EnvironmentFromJson(*it, out.environment, assets);
         }
@@ -294,6 +312,7 @@ bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibr
 }
 
 bool Load(const std::filesystem::path& path, Scene& out, AssetLibrary& assets, std::string* error) {
+    const auto start = std::chrono::steady_clock::now();
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         SetError(error, std::format("Não foi possível abrir '{}'.", ToUtf8(path)));
@@ -303,7 +322,8 @@ bool Load(const std::filesystem::path& path, Scene& out, AssetLibrary& assets, s
     ss << file.rdbuf();
 
     if (!FromJson(ss.str(), out, assets, error)) return false;
-    log::Info("Cena carregada: {} ({} entidades)", ToUtf8(path), out.Entities().size());
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    log::Info("Cena carregada: {} ({} entidades, {:.0f} ms)", ToUtf8(path), out.Entities().size(), ms);
     return true;
 }
 

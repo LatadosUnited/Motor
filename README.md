@@ -63,6 +63,10 @@ formato e tamanho de cada objeto, registrado em `motor/renderer/GpuMemory.h`). O
 - **No código:** `MOTOR_PROFILE_STAT("Nome")` (`motor/core/FrameStats.h`) mede a CPU e é também zona do Tracy;
   passada nova do renderer: `MOTOR_PROFILE_GPU("Nome")` (`renderer/GpuProfile.h`). `MOTOR_GPU_TIMERS=0` desliga as
   consultas de GPU.
+- **Threads (Fase 26):** a montagem do quadro, as sombras, a animação e a física dividem um pool só,
+  `motor::JobSystem` (`motor/core/JobSystem.h`, núcleos − 1 threads de trabalho; os scripts continuam numa thread
+  só). `MOTOR_THREADS=N` muda o número de threads de trabalho; `MOTOR_THREADS=0` roda tudo na thread principal (para
+  comparar ou achar um erro de corrida).
 
 ## Estrutura
 
