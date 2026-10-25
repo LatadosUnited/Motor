@@ -23,7 +23,7 @@ testado no `ctest` sem janela.
 | Fase | Assunto | Status |
 |---|---|---|
 | 34 | [Navmesh e agentes](alpha-6/fase-34-navmesh.md) | pronta (24/10) |
-| 35 | [Multidão e física](alpha-6/fase-35-multidao.md) | em andamento |
+| 35 | [Multidão e física](alpha-6/fase-35-multidao.md) | pronta (24/10) |
 | 36 | Mundo que muda | planejada |
 | 37 | Percepção | planejada |
 | 38 | Comportamento | planejada |
