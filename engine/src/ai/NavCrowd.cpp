@@ -320,6 +320,14 @@ void NavCrowd::SeparateOverlaps() {
     }
 }
 
+std::vector<int> NavCrowd::Neighbors(int index) const {
+    const dtCrowdAgent* ag = m_crowd->getAgent(index);
+    std::vector<int> out;
+    if (!ag || !ag->active) return out;
+    for (int i = 0; i < ag->nneis; ++i) out.push_back(ag->neis[i].idx);  // já ordenados pela distância
+    return out;
+}
+
 std::vector<glm::vec3> NavCrowd::Corners(int index) const {
     const dtCrowdAgent* ag = m_crowd->getAgent(index);
     if (!ag || !ag->active || ag->corridor.getPathCount() == 0) return {};

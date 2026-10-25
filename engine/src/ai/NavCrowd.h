@@ -83,6 +83,8 @@ public:
     // Encostado em outro agente (com folga de um quarto da soma dos raios) no último Update; `idleOnly`: só conta
     // agente parado, sem destino.
     bool Touching(int index, bool idleOnly) const;
+    // Agentes de quem este desvia no último Update (os mais perto, até 6), do mais perto ao mais longe.
+    std::vector<int> Neighbors(int index) const;
     // Cantos do caminho inteiro, da posição do agente até o destino (vazio sem caminho).
     std::vector<glm::vec3> Corners(int index) const;
 

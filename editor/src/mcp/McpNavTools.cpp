@@ -129,9 +129,11 @@ void AddNavTools(Protocol& protocol, EditorContext& ctx, RuntimeGetter runtime) 
 
     protocol.AddTool({
         .name = "nav_agents",
-        .description = "Agentes de navegação (NavMeshAgent) da cena. No Play: posição dos pés, velocidade, se tem "
-                       "caminho, se chegou, quanto falta e os cantos que faltam, e o navmesh em uso (polígonos, se veio "
-                       "do .mnav e se está desatualizado). Fora do Play: só os agentes e o arquivo da Superfície.",
+        .description = "Agentes de navegação (NavMeshAgent) da cena: posição dos pés, raio e velocidade pedida. No Play "
+                       "também: velocidade, se tem caminho, se chegou, quanto falta, os cantos que faltam, se está "
+                       "atravessando uma ligação (pulo, escada), os vizinhos de quem desvia (ids, do mais perto ao mais "
+                       "longe) e o navmesh em uso (polígonos, ligações, se veio do .mnav e se está desatualizado). Fora "
+                       "do Play: só os agentes e o arquivo da Superfície.",
         .inputSchema = Schema(),
         .readOnly = true,
         .run = [&ctx, runtime](const Json&) {
@@ -142,6 +144,7 @@ void AddNavTools(Protocol& protocol, EditorContext& ctx, RuntimeGetter runtime) 
                 const NavStats& stats = nav->Stats();
                 out["navmesh"] = nav->GetNavMesh()
                                      ? Json{{"polygons", stats.polygons},
+                                            {"links", nav->GetNavMesh()->Links().size()},
                                             {"from_file", stats.fromFile},
                                             {"stale", stats.stale},
                                             {"build_ms", stats.buildMs}}
@@ -156,14 +159,20 @@ void AddNavTools(Protocol& protocol, EditorContext& ctx, RuntimeGetter runtime) 
                 const Entity* e = scene.Find(id);
                 if (!e) continue;
                 const NavMeshAgent& settings = *e->Get<NavMeshAgent>();
-                const glm::vec3 feet = glm::vec3(scene.WorldMatrix(id)[3]) - glm::vec3(0.0f, settings.baseOffset, 0.0f);
-                Json agent = {{"id", id}, {"name", e->name}, {"position", Point(feet)}, {"speed", settings.speed}};
+                const glm::vec3 feet = NavAgentFeet(scene, id);
+                Json agent = {{"id", id},
+                              {"name", e->name},
+                              {"position", Point(feet)},
+                              {"radius", settings.radius},
+                              {"speed", settings.speed}};
                 if (!settings.target.IsEmpty()) agent["target"] = settings.target.id;
                 if (!scene.IsActiveInHierarchy(id)) agent["active"] = false;
                 if (nav) {
                     agent["velocity"] = Point(nav->GetVelocity(id));
                     agent["has_path"] = nav->HasPath(id);
                     agent["arrived"] = nav->HasArrived(id);
+                    if (nav->IsOnLink(id)) agent["on_link"] = true;
+                    agent["neighbors"] = nav->GetNeighbors(id);
                     if (nav->HasPath(id)) {
                         agent["partial"] = nav->IsPathPartial(id);
                         agent["remaining"] = nav->RemainingDistance(id);

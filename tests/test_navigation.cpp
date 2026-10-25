@@ -421,12 +421,16 @@ int main(int argc, char** argv) {
         NavSystem* nav = runtime.GetSystem<NavSystem>();
         CHECK(nav && nav->SetDestination(a, {7.0f, 0.0f, 5.0f}) && nav->SetDestination(b, {-7.0f, 0.0f, 5.0f}));
         float closest = 1e9f;
+        bool sawEachOther = false;
         int steps = 0;
         for (; steps < 60 * 15 && nav && !(nav->HasArrived(a) && nav->HasArrived(b)); ++steps) {
             runtime.FixedUpdate(kDt);
             closest = std::min(closest, glm::distance(scene.Find(a)->transform.position, scene.Find(b)->transform.position));
+            const std::vector<EntityId> na = nav->GetNeighbors(a), nb = nav->GetNeighbors(b);
+            if (na == std::vector<EntityId>{b} && nb == std::vector<EntityId>{a}) sawEachOther = true;
         }
         CHECK(nav && nav->HasArrived(a) && nav->HasArrived(b));
+        CHECK(sawEachOther);  // cada um é o vizinho de quem o outro desvia
         CHECK(closest > 0.9f);  // raios de 0,5 m: nunca mais perto que 1 m, com folga de 10 cm
         CHECK(glm::distance(scene.Find(a)->transform.position, glm::vec3(7.0f, 0.0f, 5.0f)) < 0.3f);
         std::printf("  cruzaram em %.2f s, a %.2f m um do outro no mais perto\n", steps * kDt, closest);
@@ -533,6 +537,7 @@ int main(int argc, char** argv) {
         CHECK(nav && nav->HasArrived(id));
         CHECK(glm::length(glm::vec2(end.x - 6.0f, end.z - 5.0f)) < 0.5f);
         CHECK(Near(end.y, 0.9f, 0.1f) && physics && physics->IsGrounded(id));  // em pé no chão, pela física
+        CHECK(Near(NavAgentFeet(scene, id).y, 0.0f, 0.1f));                    // pés na base da cápsula
         CHECK(worstOff < 0.15f);                                               // os pés sempre no navmesh
         const glm::vec3 boxEnd = scene.Find(boxId)->transform.position;
         CHECK(glm::distance(boxEnd, glm::vec3(0.0f, 0.5f, 5.25f)) > 0.2f);    // a caixa foi empurrada

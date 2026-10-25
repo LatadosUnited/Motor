@@ -223,6 +223,30 @@ float NavSystem::LiftOf(EntityId id, const NavMeshAgent& settings) const {
     return body ? body->height * 0.5f : settings.baseOffset;
 }
 
+glm::vec3 NavAgentFeet(const Scene& scene, EntityId id) {
+    const Entity* e = scene.Find(id);
+    const glm::vec3 origin = glm::vec3(scene.WorldMatrix(id)[3]);
+    if (!e) return origin;
+    if (const auto* body = e->Get<CharacterControllerComponent>()) return origin - glm::vec3(0.0f, body->height * 0.5f, 0.0f);
+    const NavMeshAgent* agent = e->Get<NavMeshAgent>();
+    return origin - glm::vec3(0.0f, agent ? agent->baseOffset : 0.0f, 0.0f);
+}
+
+std::vector<EntityId> NavSystem::GetNeighbors(EntityId id) const {
+    const Agent* agent = FindAgent(id);
+    if (!agent || !m_crowd || agent->crowd < 0) return {};
+    std::vector<EntityId> out;
+    for (int index : m_crowd->Neighbors(agent->crowd)) {
+        for (const auto& [other, record] : m_agents) {
+            if (record.crowd == index) {
+                out.push_back(other);
+                break;
+            }
+        }
+    }
+    return out;
+}
+
 glm::vec3 NavSystem::FeetOf(EntityId id, const NavMeshAgent& settings) const {
     return glm::vec3(m_scene->WorldMatrix(id)[3]) - glm::vec3(0.0f, LiftOf(id, settings), 0.0f);
 }

@@ -1,5 +1,6 @@
 // Ferramentas de navegação do MCP (Fase 34): nav_bake (o mesmo que o botão Gerar do Inspector), nav_path (no Play,
-// pelo .mnav ou gerado na hora) e nav_agents (antes e durante o Play). Sem janela, como o test_mcp.
+// pelo .mnav ou gerado na hora) e nav_agents (antes e durante o Play; Fase 35: raio, vizinhos, ligações). Sem janela,
+// como o test_mcp.
 #include "TestUtil.h"
 
 #include <EditorContext.h>
@@ -127,6 +128,11 @@ int main(int argc, char** argv) {
 
     SECTION("No Play: navmesh do jogo, agente andando e chegando");
     {
+        // Um segundo agente parado ao lado do caminho: o guarda desvia dele (vizinho, Fase 35).
+        motor::Entity& other = scene.CreateEntity("Outro");
+        other.transform.position = {1.2f, 0.0f, -3.5f};
+        other.Add<motor::NavMeshAgent>();
+        const motor::EntityId otherId = other.id;
         motor::SceneRuntime runtime(scene);
         runtime.Start();
         running = &runtime;
@@ -141,6 +147,9 @@ int main(int argc, char** argv) {
         CHECK(guard["has_path"] == true && guard["arrived"] == false);
         CHECK(guard["remaining"].get<float>() > 5.0f && !guard["path"].empty());
         CHECK(guard["velocity"].size() == 3);
+        CHECK(guard["name"] == "Guarda" && guard["radius"] == 0.5f);
+        CHECK(guard["neighbors"].is_array() && guard["neighbors"].size() == 1 && guard["neighbors"][0] == otherId);
+        CHECK(agents["data"]["navmesh"]["links"] == 0);
 
         CHECK(Call(protocol, "nav_path", {{"from", {0, 0, -5}}, {"to", {0, 0, 5}}})["data"]["source"] == "jogo");
         CHECK(Call(protocol, "nav_bake")["isError"] == false);  // ctx.playing é do editor; aqui o teste não o liga
@@ -150,6 +159,7 @@ int main(int argc, char** argv) {
         CHECK(done["arrived"] == true && done["has_path"] == false && !done.contains("path"));
         runtime.Stop();
         running = nullptr;
+        scene.DestroyEntity(otherId);
     }
 
     SECTION("Na lista de ferramentas, com as que só leem marcadas");

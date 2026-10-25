@@ -24,7 +24,9 @@ namespace editor {
 struct EditorContext;
 
 // Navmesh no viewport (Fase 34): a superfície azul translúcida por onde os agentes andam, com as arestas dos
-// triângulos, e no Play os caminhos dos agentes. Fora do Play mostra o .mnav da Superfície de navegação (relido
+// triângulos, o raio de cada agente (verde), as ligações (roxo, em arco; seta se só valem num sentido) e as caixas
+// das Áreas de navegação (laranja, com nome e custo), e no Play
+// os caminhos dos agentes (amarelo) e de quem cada um desvia (laranja, Fase 35). Fora do Play mostra o .mnav da Superfície de navegação (relido
 // quando o arquivo muda, como depois do botão Gerar); no Play, o navmesh que o NavSystem está usando.
 class NavMeshOverlay {
 public:
@@ -37,7 +39,8 @@ public:
     void Update(const EditorContext& ctx, motor::SceneRuntime* runtime);
     // A malha no quadro da cena (com profundidade: some atrás das paredes). Chamado entre BeginScene e EndScene.
     void Submit(motor::Renderer& renderer) const;
-    // Caminhos dos agentes do Play, em linhas por cima da imagem. `project`: mundo -> pixels do viewport.
+    // Raio dos agentes e ligações; no Play, também os caminhos e os vizinhos. Em linhas por cima da imagem.
+    // `project`: mundo -> pixels do viewport.
     void DrawPaths(const EditorContext& ctx, motor::SceneRuntime* runtime, ImDrawList* dl, const ImVec2& origin,
                    const std::function<std::optional<ImVec2>(const glm::vec3&)>& project) const;
     bool HasMesh() const { return m_mesh != nullptr; }

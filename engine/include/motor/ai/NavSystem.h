@@ -58,6 +58,9 @@ struct NavStats {
 };
 
 NavMeshBuildSettings NavSettingsFrom(const NavMeshSurface& surface);
+// Pés de um agente (NavMeshAgent) no mundo: a origem menos a altura da base, ou a base da cápsula com
+// CharacterController. É o ponto que o agente mantém no navmesh.
+glm::vec3 NavAgentFeet(const Scene& scene, EntityId id);
 // Gera o navmesh da cena com os parâmetros da superfície: o que o NavSystem faz sem arquivo e o que o botão "Gerar
 // navmesh" do Inspector grava no .mnav. nullptr se falhar (`stats->error` diz por quê).
 std::unique_ptr<NavMesh> BuildSceneNavMesh(const Scene& scene, const NavMeshSurface& surface, NavStats* stats = nullptr);
@@ -97,6 +100,8 @@ public:
     bool IsOnLink(EntityId id) const;     // atravessando uma ligação (NavMeshLink: pulo, escada)
     float RemainingDistance(EntityId id) const;  // pelo caminho; 0 sem caminho
     glm::vec3 GetVelocity(EntityId id) const;
+    // Agentes de quem este desvia agora (os mais perto, até 6), do mais perto ao mais longe. Vazio fora da multidão.
+    std::vector<EntityId> GetNeighbors(EntityId id) const;
     // Cantos do caminho ainda por andar, começando no próximo (vazio sem caminho).
     std::vector<glm::vec3> GetPath(EntityId id) const;
     // Teleporta o agente (levado ao navmesh) e esquece o caminho. false se o ponto está longe do navmesh.

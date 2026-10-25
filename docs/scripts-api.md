@@ -552,6 +552,7 @@ if (auto* nav = GetSystem<motor::NavSystem>()) {
 | `void Stop(EntityId agente)` | esquece o destino e freia |
 | `bool HasPath(agente) const`, `bool HasArrived(agente) const`, `bool IsPathPartial(agente) const` | anda para um destino; chegou ao último destino pedido (até o próximo `SetDestination`); o caminho não chega ao destino |
 | `bool IsOnLink(agente) const` | atravessando uma ligação (`NavMeshLink`: pulo, escada), para tocar a animação de pulo ou de subir |
+| `std::vector<EntityId> GetNeighbors(agente) const` | de quem o agente desvia agora (os mais perto, até 6), do mais perto ao mais longe; vazio fora da multidão |
 | `float RemainingDistance(agente) const`, `glm::vec3 GetVelocity(agente) const`, `std::vector<glm::vec3> GetPath(agente) const` | quanto falta pelo caminho, velocidade atual, cantos que faltam |
 | `bool Warp(EntityId agente, glm::vec3 posicao)` | teleporta o agente para o navmesh perto da posição e esquece o caminho |
 | `bool FindPath(inicio, fim, std::vector<glm::vec3>& cantos, uint16_t areas = motor::kNavAllAreas) const` | só o caminho (cantos do começo ao fim), sem mover ninguém; só pelas áreas de `areas` (um bit por área), pesando o custo de cada uma |
@@ -566,6 +567,9 @@ Os agentes andam como uma multidão (DetourCrowd, Fase 35): desviam uns dos outr
 `avoidOthers` desligado, o agente vai reto, mas ainda é empurrado). Muitos indo ao mesmo ponto se espremem em volta
 dele: quem para encostado nos que já chegaram, ou perto do ponto sem conseguir avançar, conta como chegado
 (`HasArrived`).
+
+`motor::NavAgentFeet(scene, agente)` dá os pés do agente no mundo (a origem menos a altura da base, ou a base da
+cápsula com Controlador de personagem): é o ponto que ele mantém no navmesh.
 
 Sem corpo físico, o agente mexe no Transform direto. Com um `CharacterControllerComponent` na mesma entidade, anda
 pela física: o `NavSystem` chama `MoveCharacter` com a velocidade do caminho, a Jolt empurra caixas, para em paredes
