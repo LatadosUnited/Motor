@@ -48,3 +48,7 @@ ambiente de dentro e a câmera se adapta ao sair para o sol.
 - Oclusão de ambiente na tela (SSAO), com opção de qualidade (é cara na HD 530).
 - Reflexos locais: probes de reflexo posicionáveis (e, depois, SSR).
 - Exposição automática (adaptação do olho).
+- Luzes por blocos da tela (clustered): na referência da alpha 3 as 9 pontuais custam ~7 ms na HD 530 (Fase 24).
+- "Recebe sombra" no Mesh Renderer e níveis de LOD gerados na importação de modelos (simplificador de malha:
+  biblioteca nova). Sobras da Fase 24.
+- Medir o renderer numa máquina com GPU dedicada (Fase 24 não tinha uma).

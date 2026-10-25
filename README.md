@@ -427,8 +427,10 @@ entity.Remove<Girar>();
   externo do cone (spot). Como a câmera, aponta para o -Z local: direcional e spot se giram com o gizmo de
   rotação; a posição só importa para pontual e spot. Várias por cena (até 32 acesas ao mesmo tempo).
   **Projeta sombra** e **qualidade da sombra** (baixa/média/alta): a primeira direcional com sombra usa
-  4 cascatas (1024/2048/4096 por cascata); pontuais e spots usam um cubo (256/512/1024 por face), até 4 ao
-  mesmo tempo (as mais perto da câmera que iluminam algo visível). Funciona com malhas animadas.
+  cascatas de 1024/2048/4096 (baixa: 2 cascatas e borda dura; média: 4 cascatas e borda suave; alta: borda mais
+  suave e mistura entre cascatas); pontuais e spots usam um cubo (256/512/1024 por face; o spot desenha só as faces
+  que o cone alcança), até 4 ao mesmo tempo (as mais perto da câmera que iluminam algo visível). Funciona com
+  malhas animadas.
   Entidade > Luz direcional / pontual / spot cria uma. Céu, neblina e **luz ambiente** ficam no painel Cena.
 
 ### Renderização (Fase 7)

@@ -34,7 +34,7 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 |---|---|---|---|---|
 | — | Fase 22 — Medição | pronta (20/10) | Tracy, `--perf`, cena de referência, `test_desempenho` | — |
 | — | [Fase 23 — Renderer em lote](alpha-3/fase-23-renderer-em-lote.md) | pronta (21/10) | `cubos10000`: 10 001 → 2 draws, Render 33 → 12,7 ms; referência 7927 → 16 draws, quadro 49 → 44 ms | — |
-| 2 | Fase 24 — GPU: pós, sombras e LOD | planejada | 8 ms de pós numa cena vazia; 47 ms de GPU na referência | 25, 27 |
+| — | [Fase 24 — GPU: pós, sombras e LOD](alpha-3/fase-24-gpu.md) | pronta (25/10) | GPU da cena vazia 9,2 → 4,4 ms, da referência 47 → ~19,5 ms (quadro 44 → 22 ms); todas as cenas do bench de 157 a 290% da Unity | — |
 | — | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | pronta (25/10) | `fisica1000` 84 → 104% da Unity, `jogo_passo` 1,37 → 0,77 ms, filhos e nomes sem percorrer a cena; física da referência 8,1 ms (3 passos por quadro, espera a Fase 24) | — |
 | 4 | Fase 26 — Várias threads | planejada | tudo menos a física roda numa thread; 3 núcleos parados | 27 |
 | 5 | Fase 27 — Editor que escala | planejada | gravar a referência em JSON leva 337 ms, a cada 0,5 s | 23, 24, 25, 26 |
@@ -115,20 +115,11 @@ alpha 4.
 
 ## Fase 24 — GPU: pós, sombras e LOD
 
-Objetivo: baixar o custo fixo da GPU (8 ms de pós numa cena vazia) e os 47 ms de GPU da referência.
-
-- [ ] Tarefa 1: Medir numa máquina com GPU dedicada
-- [ ] Tarefa 2: Bloom em meia resolução e com menos níveis
-- [ ] Tarefa 3: Juntar tone mapping e FXAA numa passada só
-- [ ] Tarefa 4: Níveis de qualidade (Baixa, Média, Alta) nas opções do jogador
-- [ ] Tarefa 5: Cascatas de sombra ajustáveis (número e distância)
-- [ ] Tarefa 6: Profundidade de sombra em 16/24 bits
-- [ ] Tarefa 7: Cache das cascatas distantes e dos objetos estáticos
-- [ ] Tarefa 8: "Projeta sombra" e "Recebe sombra" no Mesh Renderer
-- [ ] Tarefa 9: Sombra de spot com uma face só
-- [ ] Tarefa 10: LOD por distância e geração de níveis na importação
-
-**Pronto quando:** a referência com GPU ≤ 14 ms (hoje 47) na sombra Média, e a cena vazia ≤ 5 ms.
+**Pronta (25/10/2026):** [nota da fase](alpha-3/fase-24-gpu.md). Profundidade do MSAA copiada só quando alguém lê,
+cena HDR em R11G11B10F, bloom mais barato, LOD por distância (primitivas com níveis gerados), sombras em 16/24 bits,
+filtro e número de cascatas pela qualidade, cascatas distantes reaproveitadas, spot só nas faces que o cone alcança,
+lit.frag sem leituras de mapas que não existem. Cena vazia: GPU 4,4 ms (meta ≤ 5). Referência: GPU ~19,5 ms (meta
+≤ 14, não atingida: luzes pontuais e MSAA, Fase 30), quadro 44 → 22 ms, física 8,1 → 3,8 ms por quadro.
 
 ## Fase 25 — Cena, dados e física
 
