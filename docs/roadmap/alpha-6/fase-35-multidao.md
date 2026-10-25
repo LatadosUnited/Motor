@@ -29,7 +29,7 @@ multidão. A fila fica para o que a multidão refaz sozinha e para quem segue um
 - [x] Tarefa 1: Multidão com o DetourCrowd (desvio entre agentes, fila de buscas por quadro) — d2b716f
 - [x] Tarefa 2: Raio, altura e desvio ligável no `NavMeshAgent` — d2b716f
 - [x] Tarefa 3: Agente com `CharacterController` (anda pela física, sem sair do navmesh) — 3695388
-- [ ] Tarefa 4: Off-mesh links (pulos e escadas de mão) como componente
+- [x] Tarefa 4: Off-mesh links (pulos e escadas de mão) como componente — 9c10922
 - [ ] Tarefa 5: Áreas com custo e filtro por tipo de agente
 - [ ] Tarefa 6: Animação segue a velocidade do agente (parado, andar, correr)
 - [ ] Tarefa 7: Raio dos agentes no viewport e vizinhos no `nav_agents`
