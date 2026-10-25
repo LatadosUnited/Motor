@@ -32,7 +32,7 @@ multidão. A fila fica para o que a multidão refaz sozinha e para quem segue um
 - [x] Tarefa 4: Off-mesh links (pulos e escadas de mão) como componente — 9c10922
 - [x] Tarefa 5: Áreas com custo e filtro por tipo de agente — 4c9cfec
 - [x] Tarefa 6: Animação segue a velocidade do agente (parado, andar, correr) — 868925b
-- [ ] Tarefa 7: Raio dos agentes no viewport e vizinhos no `nav_agents`
+- [x] Tarefa 7: Raio dos agentes no viewport e vizinhos no `nav_agents` — 3888cd4
 - [ ] Tarefa 8: Guia de scripts e exemplo compilado
 
 ## Pronto quando
