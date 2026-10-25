@@ -94,13 +94,14 @@ std::array<glm::vec3, 8> FrustumSliceCorners(const Camera& camera, float nearDis
 }
 
 Cascade ComputeCascade(const Camera& camera, float nearDist, float farDist, const glm::vec3& lightDir, int resolution,
-                       float casterDepth) {
+                       float casterDepth, float margin) {
     const auto corners = FrustumSliceCorners(camera, nearDist, farDist);
     glm::vec3 center(0.0f);
     for (const glm::vec3& c : corners) center += c;
     center /= 8.0f;
     float radius = 0.0f;
     for (const glm::vec3& c : corners) radius = std::max(radius, glm::length(c - center));
+    radius *= std::max(margin, 1.0f);
     // Arredondado para cima: pequenas variações de ponto flutuante não mudam o tamanho do texel.
     radius = std::ceil(radius * 16.0f) / 16.0f;
 
@@ -127,6 +128,10 @@ Cascade ComputeCascade(const Camera& camera, float nearDist, float farDist, cons
     return cascade;
 }
 
+bool CascadeCovers(const Cascade& cached, const Cascade& fresh) {
+    return cached.radius > 0.0f && glm::length(fresh.center - cached.center) + fresh.radius <= cached.radius;
+}
+
 glm::mat4 CubeFaceView(const glm::vec3& position, int face) {
     // Tabela das faces do cubemap do OpenGL (direção e "para cima" de cada uma).
     static const glm::vec3 kTargets[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
@@ -137,6 +142,27 @@ glm::mat4 CubeFaceView(const glm::vec3& position, int face) {
 
 glm::mat4 CubeFaceProjection(float nearPlane, float farPlane) {
     return glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
+}
+
+bool SpotCoversCubeFace(const glm::vec3& direction, float outerAngle, int face) {
+    const float length = glm::length(direction);
+    if (length <= 0.0f || face < 0 || face > 5) return true;
+    const glm::vec3 d = direction / length;
+    // A face é o cone de base quadrada entre 4 planos (eixo ± cada um dos outros dois eixos). O spot fica fora se o
+    // cone inteiro estiver do lado de fora de um deles. 1° a mais cobre o PCF e a costura entre as faces.
+    const float sinAngle = std::sin(glm::radians(std::clamp(outerAngle + 1.0f, 0.0f, 90.0f)));
+    const int axis = face / 2;
+    const float sign = face % 2 == 0 ? 1.0f : -1.0f;
+    for (int other = 0; other < 3; ++other) {
+        if (other == axis) continue;
+        for (const float s : {1.0f, -1.0f}) {
+            glm::vec3 normal(0.0f);
+            normal[axis] = sign;
+            normal[other] = s;
+            if (glm::dot(d, normal) * 0.70710678f < -sinAngle) return false;
+        }
+    }
+    return true;
 }
 
 } // namespace motor

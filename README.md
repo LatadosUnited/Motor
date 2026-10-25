@@ -84,6 +84,7 @@ engine/            camadas, de baixo para cima (cada uma só usa as de baixo; co
     physics/       PhysicsSystem (Jolt Physics): corpos, personagem, eventos, raios; contorno dos colliders
     ui/            interface do jogo: componentes Ui*, layout com âncoras, fontes SDF, UiRenderer, UiSystem
     audio/         AudioSystem (miniaudio): toca as Fontes de áudio no Play, som 3D pelo Ouvinte
+    ai/            NavMesh e NavSystem (Recast/Detour): navmesh, caminhos e agentes de navegação
   src/<camada>/    implementação + CMakeLists.txt da camada (+ renderer/GL.h: loader OpenGL privado)
   assets/shaders/  shaders GLSL da engine (skinned.vert: malhas animadas)
   assets/fonts/    fonte padrão da UI do jogo (Roboto Medium, Apache 2.0)
@@ -430,8 +431,10 @@ entity.Remove<Girar>();
   externo do cone (spot). Como a câmera, aponta para o -Z local: direcional e spot se giram com o gizmo de
   rotação; a posição só importa para pontual e spot. Várias por cena (até 32 acesas ao mesmo tempo).
   **Projeta sombra** e **qualidade da sombra** (baixa/média/alta): a primeira direcional com sombra usa
-  4 cascatas (1024/2048/4096 por cascata); pontuais e spots usam um cubo (256/512/1024 por face), até 4 ao
-  mesmo tempo (as mais perto da câmera que iluminam algo visível). Funciona com malhas animadas.
+  cascatas de 1024/2048/4096 (baixa: 2 cascatas e borda dura; média: 4 cascatas e borda suave; alta: borda mais
+  suave e mistura entre cascatas); pontuais e spots usam um cubo (256/512/1024 por face; o spot desenha só as faces
+  que o cone alcança), até 4 ao mesmo tempo (as mais perto da câmera que iluminam algo visível). Funciona com
+  malhas animadas.
   Entidade > Luz direcional / pontual / spot cria uma. Céu, neblina e **luz ambiente** ficam no painel Cena.
 
 ### Renderização (Fase 7)
@@ -601,6 +604,10 @@ struct Jogador : motor::Script {
   Personagem: `MoveCharacter`, `Jump`, `IsGrounded`, `GetCharacterVelocity`, `SetCharacterVelocity` e o campo
   `useGravity`. Área: `OverlapSphere`, `OverlapBox`, `SphereCast` (com máscara de camadas). Entidade criada neste passo só
   ganha corpo no próximo `FixedUpdate`.
+- **Interpolação** (Fase 25): no `Update`, corpos dinâmicos e personagens aparecem entre os dois últimos passos fixos
+  (`PhysicsSettings::interpolate`, ligada; a `Application` informa a fração do passo com `FixedAlpha`). É só visual:
+  antes de cada passo os Transforms voltam a ser os da física. Até 4 passos fixos por quadro
+  (`ApplicationDesc::maxFixedSteps`); num quadro mais lento que isso, o jogo fica mais lento junto.
 - **Camadas de colisão** (Fase 18): até 16 camadas com nome e a tabela de quem se choca com quem, no projeto
   (`.mproject`, formato 3; **Arquivo > Camadas de colisão** ou a ferramenta MCP `physics_layers`). Collider e
   Controlador de personagem escolhem a camada no campo **Camada**. O editor e o Player copiam a tabela para
@@ -760,6 +767,50 @@ componentes comuns (Inspector, cena, desfazer):
   lista os clipes das Fontes de áudio; no `.mscene`, cada um é o campo `"clip"` do componente `"AudioSource"`,
   `{"guid": ..., "path": "Assets/..."}`.
 
+## Navegação (IA)
+
+Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Sete
+componentes comuns (Inspector, cena, desfazer):
+
+| Componente | Campos |
+|---|---|
+| **Superfície de navegação** (`NavMeshSurface`) | Navmesh (arquivo `.mnav` e o botão Gerar), Raio, Altura, Altura do degrau e Inclinação máxima do agente; Tamanho e Altura da célula; Área mínima. Uma por cena: liga o navmesh |
+| **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada, Raio, Altura, Desviar dos outros, Áreas por onde anda |
+| **Ligação de navegação** (`NavMeshLink`) | Início e Fim (pontas, relativas à entidade), Raio, Nos dois sentidos, Altura do arco (0 = escada). Pulo ou escada entre dois pontos do navmesh |
+| **Animação do agente** (`NavMeshAgentAnimation`) | Clipes parado, andando, correndo e pulando; Velocidade do andar e da corrida, Parado abaixo de, Acompanhar a velocidade, Mistura. Troca os clipes do Animator pela velocidade do agente |
+| **Área de navegação** (`NavMeshArea`) | Tamanho e Centro (caixa), Área (1 a 15), Nome, Custo. Água, lama: o agente dá a volta quando sai mais curto; o agente escolhe por quais áreas anda (**Áreas por onde anda**) |
+| **Percepção** (`Perception`) | Alcance e Ângulo da visão, Percebe em volta até, Altura dos olhos, Audição, Memória, Percebe os grupos. Os sentidos do agente (Fase 37) |
+| **Alvo de percepção** (`PerceptionTarget`) | Grupo, Altura do ponto olhado, Visibilidade, Alcance dos sons. Quem os agentes podem ver e ouvir |
+
+- **De onde vem o navmesh:** dos **Colliders estáticos** das entidades ativas (sem Rigidbody, sem trigger, sem
+  agente, sem Controlador de personagem). Caixa, esfera, cilindro e malha entram como são; a cápsula entra como
+  cilindro. Só a face virada para cima de cada triângulo vira chão.
+- **Gerar no editor:** o botão **Gerar**, ao lado do campo **Navmesh** da Superfície, gera o navmesh da cena e grava
+  num arquivo `.mnav` (em `Assets/Navegacao`, ou no arquivo já escolhido), com GUID como os outros assets; o jogo
+  exportado leva o arquivo. No Play o navmesh vem dele; se o cenário ou a Superfície mudaram depois de gerar, o log
+  avisa que está desatualizado (gere de novo). Sem arquivo, o navmesh é gerado no começo de cada Play. O log diz
+  quantos polígonos saíram e quanto tempo levou, ou por que não saiu nenhum.
+- **Agente:** anda pelo caminho até o destino, acelerando e freando a tempo de parar, vira em Y para onde anda (a
+  frente é o -Z) e mantém os pés no navmesh (a origem fica **Altura da base** acima). Com **Alvo**, segue a
+  entidade e refaz o caminho quando ela anda. Sem física, mexe no Transform direto; com **Controlador de
+  personagem** na mesma entidade, anda pela física (empurra caixas, cai, não sai do navmesh).
+- **Multidão:** os agentes desviam uns dos outros e não se atravessam (DetourCrowd, Fase 35); **Raio** é o tamanho
+  com que os outros o veem. Os caminhos de quem segue um alvo entram numa fila dividida entre os passos.
+- **Scripts:** `GetSystem<motor::NavSystem>()` com `SetDestination`, `Stop`, `HasArrived`, `RemainingDistance`,
+  `Warp`, `FindPath`, `SamplePosition`, `Raycast`, `RandomPoint` (vagar), `FleePoint` (fugir) e `Rebuild`
+  (cenário mudou). Ver a seção 15 do [guia de scripts](docs/scripts.md) (um guarda que patrulha e persegue,
+  `docs/examples/Guarda.cpp`) e a
+  referência em [docs/scripts-api.md](docs/scripts-api.md).
+- **No viewport:** o botão **Navmesh** da barra mostra o navmesh em azul translúcido (fora do Play, o `.mnav` da
+  Superfície, atualizado ao gerar de novo; no Play, o que o jogo está usando), o raio de cada agente em verde, as
+  ligações em roxo (no arco do pulo, com seta se só valem num sentido) e as Áreas de navegação em laranja, com nome e
+  custo. No Play com a câmera do editor, também o caminho de cada agente em amarelo e de quem ele desvia em laranja.
+  Junto, a Percepção (Fase 37): o cone de visão de cada agente no chão, o círculo de "percebe em volta" e, em azul, até
+  onde chegam os sons de cada Alvo de percepção com Fonte de áudio; no Play, uma linha vermelha até quem ele vê, azul
+  até o que ouviu e um X cinza (com os segundos) onde lembra ter percebido quem sumiu.
+- **Ainda não:** obstáculos que se mexem (roteiro em
+  `docs/roadmap/alpha-6.md`).
+
 ## Servidor MCP (agentes no editor)
 
 O editor tem um servidor [MCP](https://modelcontextprotocol.io) (Model Context Protocol): um agente como o
@@ -782,6 +833,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
+| Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia), `ai_perception` (olhos, cone e alcances de cada Percepção e os alvos; no Play, quem vê, o que ouviu e o que lembra) |
   | Scripts | `scripts_build` (`wait` responde quando a compilação termina), `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD, desenhado na hora; vistas scene, game e editor), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |
@@ -795,9 +847,9 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   `Origin`/`Host` de fora). Ele não tem senha: enquanto estiver ligado, qualquer programa deste computador pode
   usá-lo. Desligue quando não estiver usando.
 - **Como funciona:** o protocolo JSON-RPC fica em `editor/src/mcp/McpProtocol`, o HTTP em `McpServer` e as
-  ferramentas em `McpSceneTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
+  ferramentas em `McpSceneTools`, `McpNavTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
   thread principal, uma vez por quadro. A captura sai em PNG com um compressor próprio (`ImageEncode`).
-  Testes: `tests/test_mcp.cpp`.
+  Testes: `tests/test_mcp.cpp` e `tests/test_mcp_nav.cpp`.
 
 ## Hub do Motor
 

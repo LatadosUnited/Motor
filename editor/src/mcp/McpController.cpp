@@ -142,6 +142,7 @@ McpController::McpController(Host host)
         if (m_log.size() > kMaxLogLines) m_log.pop_front();
     });
     mcp::AddSceneTools(m_protocol, m_host.ctx, [this] { return m_host.play.Runtime(); });
+    mcp::AddNavTools(m_protocol, m_host.ctx, [this] { return m_host.play.Runtime(); });
     AddEditorTools();
     AddSceneFileTools();
     AddAssetTools();

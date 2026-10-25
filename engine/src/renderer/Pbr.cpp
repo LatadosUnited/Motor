@@ -191,7 +191,11 @@ glm::vec3 SkyRadiance(const Environment& env, const glm::vec3& direction) {
 
 MaterialParams MaterialParamsOf(const Material& m) {
     MaterialParams p;
-    p.alphaMode = glm::vec4(static_cast<float>(m.blend), std::clamp(m.alphaCutoff, 0.0f, 1.0f), 0.0f, 0.0f);
+    // z: os mapas que o material tem (kMapAlbedo...): o lit.frag não lê os que faltam. Ler a textura branca de 1x1
+    // custava ~4 ms por quadro na referência (HD 530), com os 4 mapas de cada pixel.
+    const int maps = (m.albedo ? kMapAlbedo : 0) | (m.metallicRoughnessMap ? kMapMetallicRoughness : 0) |
+                     (m.occlusionMap ? kMapOcclusion : 0) | (m.emissiveMap ? kMapEmissive : 0);
+    p.alphaMode = glm::vec4(static_cast<float>(m.blend), std::clamp(m.alphaCutoff, 0.0f, 1.0f), static_cast<float>(maps), 0.0f);
     p.color = m.color;
     p.pbr = glm::vec4(m.metallic, m.roughness, m.specular, m.normalMap ? m.normalStrength : 0.0f);
     // Sem luz própria (o comum), sem as 3 potências: o renderer chama isto a cada desenho.

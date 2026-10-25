@@ -69,8 +69,11 @@ glm::vec3 SkyRadiance(const Environment& environment, const glm::vec3& direction
 
 // O que um material manda para o lit.frag: os uniforms já convertidos (emissivo linear, recorte limitado) e as
 // texturas (nula = a branca do renderer). O renderer compara com o do desenho anterior e só reenvia o que mudou.
+// Mapas que o material tem (MaterialParams::alphaMode.z), iguais aos do lit.frag.
+inline constexpr int kMapAlbedo = 1, kMapMetallicRoughness = 2, kMapOcclusion = 4, kMapEmissive = 8;
+
 struct MaterialParams {
-    glm::vec4 alphaMode{0.0f};  // x = BlendMode, y = alphaCutoff
+    glm::vec4 alphaMode{0.0f};  // x = BlendMode, y = alphaCutoff, z = mapas (kMapAlbedo | ...)
     glm::vec4 color{1.0f};
     glm::vec4 pbr{0.0f};        // metallic, roughness, specular, força do mapa de normal (0 = sem mapa)
     glm::vec4 emissive{0.0f};   // rgb = emissivo linear * intensidade, a = força da oclusão (0 = sem mapa)

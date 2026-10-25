@@ -11,6 +11,7 @@
 //
 // Em cada FixedUpdate: corpos novos/removidos/alterados entram no mundo -> personagens andam -> o mundo
 // avança -> Transforms recebem as posições -> OnCollision/OnTrigger dos scripts -> OnFixedUpdate dos scripts.
+// No Update, os corpos que o último passo mexeu aparecem interpolados (PhysicsSettings::interpolate).
 // Mudar o Transform de um corpo pelo script ou pelo editor teleporta o corpo; mudar um componente refaz o corpo.
 //
 // Num script:
@@ -55,6 +56,20 @@ struct PhysicsSettings {
     CollisionLayers layers;
     // Troca os triângulos do Collider de malha (testes); normalmente vazio (usa a cópia na CPU da Mesh).
     MeshDataSource meshData;
+    // Interpolação: no Update, corpos dinâmicos e personagens aparecem entre o penúltimo e o último passo fixo
+    // (SceneRuntime::FixedAlpha), sem o tranco de quando o quadro e o passo fixo não batem. Só visual: no
+    // OnFixedUpdate os Transforms voltam a ser os do último passo. No OnUpdate dos scripts, o Transform de um corpo
+    // fica até um passo atrás da física (como na Unity com Rigidbody.interpolation).
+    bool interpolate = true;
+    // Solucionador do Jolt: iterações de velocidade e de posição por passo. 10 é o padrão do Jolt. 20 deixa pilhas
+    // altas assentarem (colunas de 10 caixas giradas umas sobre as outras balançam sem parar com 10), mas dobra o
+    // custo de cada corpo acordado: 1000 caixas se chocando (fisica1000) passavam de 14 para 23 ms por quadro.
+    int velocitySteps = 10;
+    int positionSteps = 2;
+    // Um corpo dorme quando a ponta dele anda menos que isto (m/s) por meio segundo. O Jolt usa 0,03; a PhysX da
+    // Unity dorme com energia equivalente a ~0,1. Mais alto: menos corpos acordados, mas um que anda muito devagar
+    // para antes.
+    float sleepVelocity = 0.05f;
 
     static PhysicsSettings& Global();
 };
@@ -84,6 +99,7 @@ public:
 
     void OnStart(SceneRuntime& runtime) override;
     void OnFixedUpdate(SceneRuntime& runtime, float dt) override;
+    void OnUpdate(SceneRuntime& runtime, float dt) override;  // interpolação (PhysicsSettings::interpolate)
     void OnStop(SceneRuntime& runtime) override;
 
     // Primeiro corpo no raio (direction não precisa ser normalizada), até maxDistance. `ignore`: entidade

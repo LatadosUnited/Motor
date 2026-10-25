@@ -4,6 +4,7 @@
 #include "viewport/SceneViewport.h"
 
 #include "play/PlayController.h"
+#include "viewport/PerceptionOverlay.h"
 
 #include <ImGuizmo.h>
 
@@ -129,6 +130,7 @@ bool SceneViewport::RenderTo(Renderer& renderer, const EditorContext& ctx, bool 
         renderer.SubmitWireframe(*mr->mesh, scene.WorldMatrix(e->id), kSelectionColor);
     }
     if (!gameView && m_prefs.grid) SubmitGrid(renderer);
+    if (!gameView && m_prefs.navMesh) m_navOverlay.Submit(renderer);
     renderer.EndScene();
 
     // UI do jogo por cima, no mesmo framebuffer (no Play e na edição, para ver o HUD no lugar).
@@ -159,11 +161,17 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
 
     // Na visão do jogo não há gizmo, seleção pelo viewport nem câmera livre: o mouse é do jogo.
     const bool gameView = play.InGameView();
+    // A malha do navmesh vale para o próximo Render (o quadro da cena é desenhado antes desta janela).
+    m_navOverlay.Update(ctx, play.Runtime());
     if (!gameView) {
         CollectIcons(ctx);
         ImDrawList* overlay = ImGui::GetWindowDrawList();
         if (m_showUi) m_uiTool.Draw(ctx, overlay, origin, m_ui->Canvas().Layout());
         DrawColliders(ctx, overlay, origin);
+        if (m_prefs.navMesh) {
+            m_navOverlay.DrawPaths(ctx, play.Runtime(), overlay, origin, [this](const glm::vec3& p) { return Project(p); });
+            DrawPerception(ctx, play.Runtime(), overlay, origin, [this](const glm::vec3& p) { return Project(p); });
+        }
         DrawSelectedHelpers(ctx, overlay, origin);
         DrawIcons(ctx, overlay, origin);
         DrawGizmo(ctx, origin);

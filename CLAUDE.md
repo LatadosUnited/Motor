@@ -44,6 +44,12 @@ ctest --test-dir build --output-on-failure
     `imstb_truetype.h` do ImGui), `UiRenderer` (sobre o `renderer/Renderer2D`), `UiSystem` (cliques).
   - `audio/` (acima de scene): som do jogo com a miniaudio. `AudioSystem` (sistema do `SceneRuntime`);
     componentes `AudioSource` e `AudioListener` ficam em `scene/`.
+  - `ai/` (acima de scene, physics e audio): navegação com a Recast/Detour (Fases 34 e 35) e percepção (Fase 37).
+    `NavMesh` (gerar, caminho, raio, ligações, áreas, ponto ao acaso, ponto de fuga), `NavSystem` (sistema do
+    `SceneRuntime`: gera o navmesh no Play e move os agentes, pela física quando têm CharacterController),
+    `NavCrowd` (interno: a multidão do DetourCrowd), `PerceptionSystem` (visão pelo raio da física, audição, memória);
+    componentes `NavMeshSurface`, `NavMeshAgent`, `NavMeshLink`, `NavMeshArea`, `NavMeshAgentAnimation`,
+    `Perception` e `PerceptionTarget` ficam em `scene/`.
 - `editor/` — `MotorEditor`. `EditorApp` só monta as peças (loop, layout, barra de menus, atalhos,
   desfazer); `SceneViewport` (câmera livre, gizmo, seleção, arquivos soltos), `PlayController` (menu Jogo,
   botões e pedidos de Play), `SceneDocument` (cena/projeto abertos, menu Arquivo, popups, título),
@@ -182,6 +188,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: exportação | `editor/src/export/`, `player/` |
 | Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
 | Distribuição | `distrib/`, `server/`, `installer/` (Fase 15: servidor de versões, download, instalador) |
+| IA | `engine/{include/motor,src}/ai/`, `scene/NavMesh*` (Fase 34 em diante) |
 | Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
 
 Componente novo da engine = `scene/<Nome>.h` + `scene/<Nome>.cpp` próprios (`MOTOR_COMPONENT_MODULE`), não
@@ -243,10 +250,12 @@ Alpha 3 (desempenho, replanejada em 21/10/2026; `docs/roadmap/alpha-3.md` e `doc
 | 27 Editor que escala | `UndoHistory`, `document/`, `panels/`, `viewport/` | `Scene::operator==`, `SceneSerializer` | — |
 
 Alphas 4 (mundo aberto e renderização 2, Fases 28 a 30) e 5 (ferramentas, Fases 31 a 33): rascunhos em
-`docs/roadmap/alpha-4.md` e `alpha-5.md`.
+`docs/roadmap/alpha-4.md` e `alpha-5.md`. Alpha 6 (inteligência artificial, Fases 34 a 38): rascunho em
+`docs/roadmap/alpha-6.md`; a Fase 34 (navmesh e agentes) começou antes, a pedido do usuário.
 
 Prioridade atual (ver `docs/roadmap/alpha-3.md`, "Fases"): alphas 1 e 2 fechadas (Fases 0 a 21); alpha 3 com a
-Fases 22 (medição) e 23 (renderer em lote) prontas e a 25 (cena, dados e física) em andamento.
+Fases 22 (medição), 23 (renderer em lote), 24 (GPU) e 25 (cena, dados e física) prontas; faltam a 26 (threads),
+a 27 (editor que escala) e a Organização do código 2.
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

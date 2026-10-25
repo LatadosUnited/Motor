@@ -66,6 +66,7 @@ void PlayMode::Step(float dt) {
     m_runtime->FixedUpdate(dt);
     ApplySceneRequest();
     if (m_runtime && !m_runtime->TakeError()) {
+        m_runtime->SetFixedAlpha(1.0f);  // um passo inteiro: mostra onde ele deixou os corpos
         m_runtime->Update(dt);
         ApplySceneRequest();
     }

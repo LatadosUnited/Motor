@@ -13,6 +13,10 @@ class ImGuiLayer;
 struct ApplicationDesc {
     WindowDesc window;
     double fixedTimestep = 1.0 / 60.0;  // passo da simulação (física, lógica determinística)
+    // Passos fixos no máximo por quadro (FixedStepClock). Com quadros mais longos que fixedTimestep * maxFixedSteps
+    // o jogo fica mais lento (câmera lenta), em vez de gastar cada vez mais passos e deixar o quadro cada vez mais
+    // lento. 0 = sem limite.
+    int maxFixedSteps = 4;
     bool enableImGui = false;
     bool statsInTitle = true;  // FPS e estatísticas no título da janela (o jogo exportado mostra só o nome)
 };
@@ -39,6 +43,9 @@ public:
 
     double ElapsedTime() const { return m_elapsed; }  // segundos desde o início do Run()
     float FramesPerSecond() const { return m_fps; }
+    // Quanto do próximo passo fixo já passou (0 a 1), válido no OnUpdate e no OnRender: para interpolar o que o
+    // passo fixo mexe (SceneRuntime::SetFixedAlpha).
+    float FixedAlpha() const { return m_fixedAlpha; }
     // Limite de quadros por segundo (0 = sem limite além do vsync). O editor usa um limite baixo em segundo
     // plano para não roubar processador de quem compila os scripts.
     void SetFrameLimit(double fps) { m_frameLimit = fps; }
@@ -60,6 +67,7 @@ private:
     std::unique_ptr<ImGuiLayer> m_imgui;
     double m_elapsed = 0.0;
     float m_fps = 0.0f;
+    float m_fixedAlpha = 1.0f;
     double m_frameLimit = 0.0;
     bool m_running = false;
 };

@@ -2,6 +2,7 @@
 
 #include "EditorContext.h"
 #include "viewport/FrameStatsPanel.h"
+#include "viewport/NavMeshOverlay.h"
 #include "viewport/ViewportPrefs.h"
 #include "viewport/UiEditor.h"
 
@@ -94,6 +95,7 @@ private:
     std::unique_ptr<motor::UiRenderer> m_ui;
     UiViewportTool m_uiTool;
     FrameStatsPanel m_statsPanel;  // contadores por quadro (Fase 22), com m_prefs.stats
+    NavMeshOverlay m_navOverlay;   // navmesh e caminhos dos agentes (Fase 34), com m_prefs.navMesh
     bool m_showUi = true;
 
     enum class GizmoTool { None, Translate, Rotate, Scale };

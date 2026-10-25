@@ -1,10 +1,13 @@
 # Linha de base do test_desempenho (ms, Release; a menor de 3 repeticoes).
 # Regrave com MOTOR_DESEMPENHO_GRAVAR=1 ao trocar de maquina ou depois de uma melhora medida.
-cena_comparar 1.7613
-cena_copiar 4.6969
-cena_json 336.632
-cena_ler 314.432
-cena_montar 5.4402
-jogo_passo 1.9583
-mundo_cena 0.3076
-mundo_hierarquia 0.2301
+cena_comparar 0.9265
+cena_copiar 3.4589
+cena_estrutura 0.2399
+cena_filhos 0.2988
+cena_json 255.282
+cena_ler 231.76
+cena_montar 4.5083
+cena_nomes 0.3205
+jogo_passo 0.7707
+mundo_cena 0.2638
+mundo_hierarquia 0.2236

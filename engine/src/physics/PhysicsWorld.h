@@ -35,6 +35,7 @@ struct PhysicsSystem::World {
         Transform written;          // dinâmicos: Transform local que a física escreveu por último
         EntityId parent = kNullEntity;  // pai quando `written` foi escrito
         physics_jolt::Pose pose;                  // estáticos e cinemáticos: pose do mundo aplicada por último
+        glm::mat4 world{1.0f};                    // estáticos e cinemáticos: matriz de mundo de `pose`
         bool kinematicMoving = false;
         uint32_t seen = 0;
     };
@@ -49,6 +50,17 @@ struct PhysicsSystem::World {
         uint32_t seen = 0;
     };
 
+    // Entidade com Collider, com os ponteiros já buscados: o SyncBodies a cada passo não procura nada no mapa da cena
+    // nem nos componentes. Valem enquanto a estrutura das cenas não muda (SceneStructureVersion); `record` vale
+    // até o corpo sair de `bodies` (nulo = procurar de novo).
+    struct ColliderSlot {
+        Entity* entity = nullptr;
+        const ColliderComponent* collider = nullptr;
+        const RigidbodyComponent* rigidbody = nullptr;
+        const MeshRenderer* renderer = nullptr;  // só com forma Malha
+        BodyRecord* record = nullptr;
+    };
+
     struct PairState {
         bool trigger = false;
         bool asleep = false;  // o Jolt tirou o contato porque um dos dois dormiu: continua "em contato"
@@ -59,6 +71,15 @@ struct PhysicsSystem::World {
     struct Exit {
         EntityId a = kNullEntity, b = kNullEntity;
         bool trigger = false;
+    };
+
+    // Corpo ou personagem que o último passo mexeu: Transform local antes e depois do passo, e o que a interpolação
+    // pôs no Transform por último (para saber se um script mexeu nele depois).
+    struct Smoothed {
+        EntityId id = kNullEntity;
+        Transform from;
+        Transform to;
+        Transform shown;
     };
 
     // InitJolt antes de qualquer membro: o JPH::PhysicsSystem já usa o alocador do Jolt ao ser construído.
@@ -79,8 +100,11 @@ struct PhysicsSystem::World {
 
     void WarnOnce(EntityId id, const char* message);
 
-    // Componentes -> corpos. Novos e alterados entram em lote (bem mais rápido que um a um com milhares).
+    // Componentes -> corpos. Novos e alterados entram em lote (bem mais rápido que um a um com milhares). Corpo cujo
+    // Transform e componentes não mudaram custa só as comparações (sem buscas nem decompor matriz).
     void SyncBodies(Scene& scene, float dt);
+    // Refaz `slots` se a estrutura mudou ou a cena é outra; true se refez.
+    bool RefreshSlots(Scene& scene);
 
     BodyRecord* CreateBody(const Entity& entity, const ColliderComponent& collider, const RigidbodyComponent* rigidbody,
                            const Mesh* mesh, const physics_jolt::Pose& pose, std::vector<JPH::BodyID>& addStatic,
@@ -94,8 +118,16 @@ struct PhysicsSystem::World {
 
     void UpdateCharacter(CharacterRecord& r, float dt);
 
-    // Corpos -> Transforms (só os dinâmicos acordados) e personagens -> Transforms.
-    void WriteBack(Scene& scene);
+    // Corpos -> Transforms (só os dinâmicos acordados) e personagens -> Transforms. Com `smooth`, guarda em
+    // `smoothed` quem mudou de lugar, com o Transform de antes e o de depois.
+    void WriteBack(Scene& scene, bool smooth);
+
+    // Interpolação (só visual): ApplySmoothing põe nos Transforms a mistura entre o penúltimo e o último passo
+    // (alpha 0 a 1); RestoreSmoothed, antes de cada passo, devolve o Transform do último passo, para a simulação
+    // nunca ver a pose interpolada. Transform mexido por script depois da interpolação fica como o script deixou
+    // (vira teleporte no SyncBodies, como sempre).
+    void ApplySmoothing(Scene& scene, float alpha);
+    void RestoreSmoothed(Scene& scene);
 
     // Acordado para fins de contato (estático nunca "acorda", mas também nunca dorme).
     bool Awake(JPH::BodyID id);
@@ -125,10 +157,15 @@ struct PhysicsSystem::World {
     JPH::PhysicsSystem physics;  // depois do coletor de contatos e das camadas, que ele usa
 
     std::unordered_map<EntityId, BodyRecord> bodies;
+    std::vector<ColliderSlot> slots;
+    const Scene* slotsScene = nullptr;
+    uint64_t slotsVersion = ~uint64_t{0};
+    JPH::BodyIDVector activeBodies;  // WriteBack: os corpos acordados do passo
     std::unordered_map<EntityId, CharacterRecord> characters;  // depois de physics: sai antes dele
     std::unordered_map<const Mesh*, std::shared_ptr<MeshData>> meshData;
     std::unordered_map<uint64_t, PairState> pairs;
     std::vector<Exit> pendingExits;
+    std::vector<Smoothed> smoothed;  // do último passo
     std::unordered_set<EntityId> warned;
     uint32_t frame = 0;
     bool reportedUpdateError = false;

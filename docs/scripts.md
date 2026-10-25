@@ -30,9 +30,10 @@ Sumário:
 12. [Mini jogo: andar, coletar, pontuar](#12-mini-jogo-andar-coletar-pontuar)
 13. [Interface do jogo (HUD e menus)](#13-interface-do-jogo-hud-e-menus)
 14. [Som](#14-som)
-15. [Recarga: o que é preservado](#15-recarga-o-que-é-preservado)
-16. [Componente "desconhecido" (script não carregado)](#16-componente-desconhecido-script-não-carregado)
-17. [Erros comuns](#17-erros-comuns)
+15. [Navegação (IA)](#15-navegação-ia)
+16. [Recarga: o que é preservado](#16-recarga-o-que-é-preservado)
+17. [Componente "desconhecido" (script não carregado)](#17-componente-desconhecido-script-não-carregado)
+18. [Erros comuns](#18-erros-comuns)
 
 ---
 
@@ -136,14 +137,14 @@ O que cada parte faz:
 |---|---|
 | `#include <motor/scene/ScriptModule.h>` | traz tudo de que um script precisa (Script, Scene, Transform, componentes, GLM) |
 | `struct Flutuar : motor::Script` | o script. Uma struct comum: campos com valor padrão e métodos |
-| `void OnUpdate(float) override` | métodos `On...` que a engine chama no Play. Sempre com `override` (ver [Erros comuns](#17-erros-comuns)) |
+| `void OnUpdate(float) override` | métodos `On...` que a engine chama no Play. Sempre com `override` (ver [Erros comuns](#18-erros-comuns)) |
 | `GetTransform()`, `Time()`, `Log(...)` | a API do script (seções 5 e 6, e a [referência](scripts-api.md)) |
 | `MOTOR_SCRIPT(Flutuar) { ... }` | o registro: roda quando a DLL é carregada |
 | `Register<Flutuar>("Flutuar", "Flutuar")` | o 1º nome é o **identificador** gravado na cena; o 2º é o que o editor mostra |
 | `.Field("altura", "Altura", &Flutuar::altura)` | campo no Inspector: chave no arquivo, rótulo, membro |
 
 O identificador do `Register` é o que liga a cena ao script. Pode renomear a struct à vontade; se renomear o
-identificador, as entidades que usavam o nome antigo ficam com um componente "desconhecido" (seção 16) até
+identificador, as entidades que usavam o nome antigo ficam com um componente "desconhecido" (seção 17) até
 o nome voltar.
 
 ## 3. Campos no Inspector
@@ -256,10 +257,10 @@ Ordem dentro de um passo do jogo (a física é um "sistema", seção 8):
 
 ```text
 Play:   OnStart dos sistemas (física) -> OnStart dos scripts
-Frame:  [passo fixo, 0 ou mais vezes]
+Frame:  [passo fixo, 0 a 4 vezes]
             OnStart dos scripts novos -> física avança -> OnCollision*/OnTrigger* -> OnFixedUpdate dos scripts
             -> destruições pedidas
-        OnStart dos scripts novos -> OnUpdate dos scripts -> destruições pedidas
+        OnStart dos scripts novos -> física interpola -> OnUpdate dos scripts -> destruições pedidas
 Parar:  OnDestroy dos scripts -> a física para -> a cena volta ao estado de antes do Play
 ```
 
@@ -573,10 +574,15 @@ orbital que não deve bater no próprio jogador olha só as paredes, com
   objeto que deve empurrar os outros (porta, plataforma), use Rigidbody **Cinemático**.
 - Entidade criada neste passo só ganha corpo no próximo passo fixo: as chamadas acima devolvem `false`/zero
   até lá.
+- **Interpolação:** no `OnUpdate` (e na tela), corpos com Rigidbody e personagens aparecem entre os dois últimos
+  passos fixos, para não tremerem quando o frame e o passo não batem. Por isso, no `OnUpdate`, o Transform deles
+  fica até um passo (1/60 s) atrás da física; a posição exata é a do `OnFixedUpdate` (ou `GetVelocity` e
+  `Raycast`, que perguntam à física). Mudar o Transform no `OnUpdate` continua teleportando.
+- Num frame muito lento (mais de 4 passos fixos), o jogo inteiro fica mais lento em vez de rodar mais passos.
 
 ## 8. Sistemas do jogo (`GetSystem`)
 
-Partes da engine que rodam a cada passo do jogo (a física, a interface do jogo, o áudio) são **sistemas**. Um
+Partes da engine que rodam a cada passo do jogo (a física, a interface do jogo, o áudio, a navegação) são **sistemas**. Um
 script acha o sistema com `GetSystem<Tipo>()`:
 
 ```cpp
@@ -1004,7 +1010,164 @@ Para montar: crie uma entidade `SomClique` com **Fonte de áudio** (Clipe = o so
 iniciar desligados), outra `Musica` (Repetir ligado, Som 3D desligado), um **Botão** chamado `Jogar` e uma
 entidade vazia com **Scripts > Sons do menu**.
 
-## 15. Recarga: o que é preservado
+## 15. Navegação (IA)
+
+Inimigos e NPCs que andam sozinhos pelo cenário, dando a volta nas paredes, usam um **navmesh**: a malha das
+partes do chão por onde um personagem de um certo tamanho consegue andar. Ele é feito a partir dos **Colliders
+parados** da cena (sem Rigidbody nem Trigger): o chão, as paredes, as rampas. Para ligar:
+
+1. Crie uma entidade vazia (ex.: `Navegação`) com o componente **Superfície de navegação**. Os campos dizem o
+   tamanho do agente: **Raio** (distância que ele mantém das paredes), **Altura** (por baixo de algo mais baixo
+   ele não passa), **Altura do degrau** e **Inclinação máxima** (a rampa mais íngreme que ele sobe).
+2. Clique em **Gerar**, ao lado do campo **Navmesh**: o navmesh é gravado em `Assets/Navegacao/Navmesh.mnav`
+   e aparece em azul no viewport (botão **Navmesh** da barra). Mudou o cenário? Gere de novo; no Play, o
+   console avisa quando o navmesh ficou velho. Sem gerar, o navmesh é feito no começo de cada Play.
+3. Na entidade que vai andar, ponha o componente **Agente de navegação**: **Velocidade**, **Aceleração**,
+   **Distância de parada** e **Altura da base** (quanto a origem da entidade fica acima do chão: 1 numa cápsula
+   de 2 m com a origem no meio). Com o campo **Alvo** preenchido, o agente segue aquela entidade sem script
+   nenhum.
+
+Para decidir **para onde** ir, o script usa o sistema `motor::NavSystem` (`#include <motor/ai/NavSystem.h>`).
+Um guarda que patrulha entre dois pontos e persegue o jogador quando o vê
+([examples/Guarda.cpp](examples/Guarda.cpp)):
+
+```cpp
+        // Vê o alvo se ele está perto e o caminho reto até ele, pelo navmesh, não bate em parede.
+        if (GetEntity(alvo)) {
+            const glm::vec3 ele = Posicao(alvo);
+            const bool perto = glm::distance(eu, ele) < visao;
+            if (perto && !nav->Raycast(eu, ele)) {
+                // Refaz o caminho só quando o alvo andou: pedir a cada passo refaria à toa.
+                if (!m_perseguindo || glm::distance(ele, m_ultimoVisto) > 0.5f) {
+                    nav->SetDestination(GetId(), ele);
+                    m_ultimoVisto = ele;
+                }
+                m_perseguindo = true;
+                return;
+            }
+        }
+
+        // Patrulha: chegou num ponto (ou acabou de perder o alvo de vista), vai para o outro.
+        if (m_perseguindo || nav->HasArrived(GetId()) || !nav->HasPath(GetId())) {
+```
+
+- `SetDestination(id, ponto)` manda o agente andar até lá; devolve `false` se o ponto está longe do navmesh.
+  Destino numa parte do chão que não se liga à do agente (outra ilha): ele vai até onde dá (`IsPathPartial`).
+- `HasArrived(id)` fica `true` quando ele chega (até o próximo destino); `HasPath(id)`, enquanto anda.
+  `RemainingDistance(id)` diz quanto falta pelo caminho, e `Stop(id)` o faz frear e esquecer o destino.
+- `Raycast(de, ate)` anda em linha reta pelo navmesh: `nullopt` se chega sem bater em parede ou borda. É um
+  jeito barato de "ver" (para ver por cima de uma mesa baixa, use o `Raycast` da física).
+- `FindPath(de, ate, cantos)` só calcula o caminho, sem mover ninguém (ex.: para saber se dá para chegar);
+  `SamplePosition(ponto)` acha o ponto do navmesh mais perto, e `Warp(id, ponto)` teleporta o agente.
+Para montar: o chão e as paredes com Collider, a **Superfície de navegação** (e **Gerar**), duas entidades
+vazias `PontoA` e `PontoB`, e o guarda com **Agente de navegação** e **Scripts > Guarda**, com Ponto A, Ponto B
+e Alvo escolhidos no Inspector. No Play, ligue **Cena e Jogo lado a lado** (menu Jogo) para ver no Viewport o
+caminho do guarda em amarelo.
+
+### Multidão, pulos e lama
+
+Vários agentes andam juntos como uma multidão: desviam uns dos outros e não se atravessam, sem script nenhum. O
+**Raio** do agente é o tamanho com que os outros o veem. Muitos indo ao mesmo ponto param em volta dele, e cada um
+conta como chegado (`HasArrived`) quando não consegue mais avançar; para não se espremerem, mande cada um para um
+lugar. Um pastor que leva o rebanho (as ovelhas são filhas dele) até o curral, e com chuva desvia da lama
+([examples/Pastor.cpp](examples/Pastor.cpp)):
+
+```cpp
+        // O custo vale na hora, sem gerar o navmesh de novo: as ovelhas que ainda vão pedir caminho já veem a lama
+        // nova. As que estão andando continuam no caminho que têm; Recolher() refaz o de todas.
+        if (auto* area = GetComponent<motor::NavMeshArea>(lama)) {
+            const float custo = chovendo ? custoComChuva : m_custoSeco;
+            if (area->cost != custo) {
+                area->cost = custo;
+                Recolher();
+            }
+        }
+```
+
+```cpp
+        const glm::vec3 centro = glm::vec3(GetScene().WorldMatrix(curral)[3]);
+        const float n = static_cast<float>(m_ovelhas.size());
+        const float raio = n > 1.0f ? espaco * n / glm::two_pi<float>() : 0.0f;  // a volta cabe todas
+        for (size_t i = 0; i < m_ovelhas.size(); ++i) {
+            const float angulo = glm::two_pi<float>() * static_cast<float>(i) / std::max(n, 1.0f);
+            nav->SetDestination(m_ovelhas[i], centro + raio * glm::vec3(std::cos(angulo), 0.0f, std::sin(angulo)));
+        }
+```
+
+- **Água, lama, grama alta:** a **Área de navegação** (`NavMeshArea`) é uma caixa que marca o chão dentro dela com
+  uma área (1 a 15) e um **Custo**: com custo 3, andar 1 m ali conta como 3 m, e o agente dá a volta quando a volta
+  sai mais curta. O custo vale na hora (como a chuva do pastor); mudar a caixa pede gerar o navmesh de novo. No
+  agente, **Áreas por onde anda** desmarca as que ele evita de todo (o cavalo não entra na água), e
+  `FindPath(de, ate, cantos, areas)` aceita a mesma máscara (um bit por área).
+- **Pulos e escadas:** a **Ligação de navegação** (`NavMeshLink`) liga dois pontos do navmesh que não se alcançam
+  andando (o vão entre duas plataformas, o alto de um muro, a cerca do curral). As pontas são relativas à entidade e
+  precisam cair perto do navmesh; gere o navmesh de novo depois de pôr ou mudar uma. O agente vai em arco (**Altura
+  do arco**) ou reto (0, escada), na velocidade dele, e `IsOnLink(id)` diz quando ele está no meio do pulo.
+- **Corpo físico:** sem física, o agente mexe no Transform direto. Com um **Controlador de personagem** na mesma
+  entidade ele anda pela física: empurra caixas, cai e não atravessa paredes, e volta para o navmesh se for empurrado
+  para fora dele. Não chame `MoveCharacter` nele (o `NavSystem` manda a cada passo); Rigidbody num agente não
+  funciona.
+- **Animação:** a **Animação do agente** (`NavMeshAgentAnimation`), na entidade do agente, troca os clipes do
+  Animator dele (ou do modelo filho) pela velocidade: parado, andando, correndo e pulando nas ligações, com mistura.
+  Com **Acompanhar a velocidade**, o clipe toca mais rápido quanto mais rápido o agente anda (os pés não escorregam).
+  Um script que chame `CrossFade` no mesmo passo, depois do `NavSystem`, vence.
+- `GetNeighbors(id)` diz de quem o agente está desviando agora (os mais perto, até 6), e no viewport, com o botão
+  **Navmesh**, aparecem o raio de cada agente, as ligações, as áreas e, no Play, as linhas até os vizinhos.
+
+Para montar: a lama com **Área de navegação** (Área 2, Custo 1,5), uma entidade vazia `Curral`, e o pastor (vazio,
+com **Scripts > Pastor**, Curral e Lama escolhidos) com as ovelhas como filhas, cada uma com **Agente de
+navegação**. Gere o navmesh e dê Play; marque **Chovendo** no Inspector do pastor para ver o rebanho mudar de rumo.
+
+### Ver, ouvir e lembrar
+
+Os sentidos dos agentes são do motor; o que fazer com eles é do script. Quem percebe tem o componente **Percepção**
+(alcance e ângulo da visão, **Percebe em volta até** para o que está colado, altura dos olhos, audição, memória e
+os grupos que percebe). Quem pode ser percebido tem **Alvo de percepção** (grupo, visibilidade e o alcance dos sons
+da Fonte de áudio dele). O sistema `motor::PerceptionSystem` (`#include <motor/ai/PerceptionSystem.h>`) olha a cada
+passo, antes dos scripts. Ele vê quem está no cone e no alcance sem nada no meio (o raio da física: parede tapa) e
+ouve os ruídos que chegam até ele. De cada um que percebeu, lembra onde estava e há quanto tempo foi. Um veado que
+pasta perto de casa e foge do jogador ([examples/Veado.cpp](examples/Veado.cpp)):
+
+```cpp
+        // A memória já junta o que ele vê e o que ouve: o perigo é o mais recente percebido há menos de `calma`
+        // segundos, na última posição em que foi visto ou ouvido (a lista vem do mais recente ao mais antigo).
+        const std::vector<motor::PerceptionMemory> lembra = sentidos->GetMemory(GetId());
+        const bool assustado = !lembra.empty() && lembra.front().age < calma;
+```
+
+```cpp
+            if (!nav->HasPath(GetId()) || (percebeuAgora && m_desdeFuga > 0.5f)) {
+                const glm::vec3 eu = motor::NavAgentFeet(GetScene(), GetId());
+                if (auto ponto = nav->FleePoint(eu, perigo.position, distanciaFuga)) nav->SetDestination(GetId(), *ponto);
+                m_desdeFuga = 0.0f;
+            }
+```
+
+```cpp
+        if (auto ponto = nav->RandomPoint(m_casa, raioPasto)) nav->SetDestination(GetId(), *ponto);
+```
+
+- `GetSeen(id)` diz quem o agente vê agora, do mais perto ao mais longe; `CanSee(id, alvo)` pergunta por um.
+- `GetHeard(id)` diz o que ele ouviu no último passo (quem fez, onde e a que distância). Ruído é o que um script faz
+  com `MakeNoise(ponto, alcance, quem)` (passos, um tiro, uma pedra jogada para distrair) e também o som que toca na
+  Fonte de áudio de um Alvo de percepção. O som atravessa paredes.
+- `GetMemory(id)` e `Recall(id, alvo)` dão o que ele lembra: a última posição, há quantos segundos (`age`) e se veio
+  da visão. Passada a **Memória** da Percepção sem perceber o alvo de novo, ele esquece; `Forget` esquece antes (o
+  guarda chegou onde viu o jogador e não achou ninguém).
+- No `NavSystem`, `RandomPoint(centro, raio)` sorteia um ponto alcançável perto (vagar, pastar) e
+  `FleePoint(de, ameaca, distancia)` acha para onde fugir, desviando das paredes.
+- Agachado ou no escuro, baixe a **Visibilidade** do Alvo de percepção do jogador: ela multiplica o alcance da visão
+  de quem olha.
+- No viewport, com o botão **Navmesh**, aparece o cone de cada Percepção e, no Play, uma linha vermelha até quem ele
+  vê, azul até o que ouviu e um X cinza onde lembra ter percebido quem sumiu. A ferramenta `ai_perception` do MCP
+  mostra o mesmo.
+
+Para montar: o chão e as paredes com Collider, a **Superfície de navegação**, o jogador com **Alvo de percepção**
+(Grupo: Jogador) e o veado com **Agente de navegação**, **Percepção** e **Scripts > Veado**. Para os passos do
+jogador serem ouvidos, ponha uma **Fonte de áudio** com o som de passo nele, ou chame `MakeNoise` no script dele a
+cada passo.
+
+## 16. Recarga: o que é preservado
 
 Ao salvar um arquivo de script com o editor aberto:
 
@@ -1024,7 +1187,7 @@ Ao salvar um arquivo de script com o editor aberto:
 - Com **erro de compilação** nada muda: os scripts da última compilação boa continuam carregados, e a barra
   de menus mostra "Scripts: N erro(s)".
 
-## 16. Componente "desconhecido" (script não carregado)
+## 17. Componente "desconhecido" (script não carregado)
 
 Se uma cena usa um script que não está carregado (você apagou o arquivo, mudou o identificador do
 `Register`, ou abriu a cena antes de os scripts compilarem), o componente **não some**: o Inspector o mostra
@@ -1032,7 +1195,7 @@ como "script não carregado", com os dados guardados. Ele é salvo de volta igua
 sozinho quando um script com aquele identificador for carregado de novo. Para se livrar dele de vez, remova o
 componente no Inspector.
 
-## 17. Erros comuns
+## 18. Erros comuns
 
 O painel Scripts lista as mensagens do compilador (GCC, em inglês). As mais comuns:
 

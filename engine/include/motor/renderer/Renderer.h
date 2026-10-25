@@ -12,6 +12,7 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -66,6 +67,9 @@ public:
         m_shadowsEnabled = enabled;
         m_maxShadowQuality = maxQuality;
     }
+    // Multiplica o tamanho na tela usado para escolher o nível de LOD (Mesh::Lods): acima de 1 o detalhe dura mais
+    // longe, abaixo de 1 os níveis simples entram mais perto (qualidade baixa). Vale a partir do próximo BeginScene.
+    void SetLodBias(float bias) { m_lodBias = std::max(bias, 0.01f); }
 
     // target == nullptr desenha na janela. Até kMaxLights luzes (as demais são ignoradas, com aviso no log);
     // nenhuma = só a luz do céu e a ambiente.
@@ -98,8 +102,11 @@ public:
     const RenderStats& GetStats() const { return m_stats; }
 
     // Resultado da última cena (válido até a próxima), base para efeitos de ambiente (água, partículas):
+    // Com MSAA, a profundidade só é copiada para a textura nos quadros com wireframes ou com KeepSceneDepth(true):
+    // a cópia do depth buffer com amostras custa caro na GPU integrada (~5 ms a 1280x720 com MSAA 4x).
+    void KeepSceneDepth(bool keep) { m_keepSceneDepth = keep; }
     unsigned int SceneDepthTexture() const;  // DEPTH_COMPONENT32F, valores do depth buffer (0 a 1)
-    unsigned int SceneColorTexture() const;  // RGBA16F, luz linear antes do pós-processamento
+    unsigned int SceneColorTexture() const;  // R11G11B10F (sem alfa), luz linear antes do pós-processamento
     unsigned int SkyCubemap() const;         // céu (RGBA16F linear, com mips), sem a rotação e o brilho
     unsigned int ReflectionCubemap() const;  // céu pré-filtrado: mip = rugosidade * (níveis - 1)
 
@@ -114,6 +121,7 @@ private:
         int alphaMode = -1, drawBase = -1, color = -1, pbr = -1, emissive = -1;
     };
 
+    void LoadLitShaders(ShadowQuality cascadeFilter);
     void DrawScene();
     void DrawWireframes();
     void BindTarget() const;
@@ -123,8 +131,10 @@ private:
 
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
+    std::unique_ptr<Shader> m_litPlainShader; // lit.frag com NO_MAPS: materiais sem nenhum mapa
     std::unique_ptr<Shader> m_unlitShader;
-    LitUniforms m_litUniforms, m_skinnedUniforms;
+    LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms;
+    ShadowQuality m_litShadowFilter = ShadowQuality::High;  // SHADOW_FILTER dos shaders acima
     int m_unlitModel = -1, m_unlitColor = -1;
     std::shared_ptr<Texture2D> m_whiteTexture;
     std::unique_ptr<PostProcess> m_post;
@@ -175,6 +185,9 @@ private:
     int m_windowWidth = 0;
     int m_windowHeight = 0;
     int m_samples = 4;
+    bool m_keepSceneDepth = false;
+    float m_lodBias = 1.0f;
+    float m_lodScale = 1.0f;  // m_lodBias / (2 tan(fov / 2)) da câmera do quadro
     bool m_shadowsEnabled = true;
     ShadowQuality m_maxShadowQuality = ShadowQuality::High;
     const Framebuffer* m_target = nullptr;

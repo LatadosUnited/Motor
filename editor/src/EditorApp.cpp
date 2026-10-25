@@ -171,6 +171,7 @@ void EditorApp::OnUpdate(float dt) {
         SetFrameLimit(m_scripts.IsBuilding() ? 20.0 : 0.0);  // um segundo de "Compilando..." não precisa de 60 FPS
     }
     m_mcp.ApplyGameInput();
+    if (motor::SceneRuntime* runtime = m_play.Runtime()) runtime->SetFixedAlpha(FixedAlpha());  // interpolação
     m_play.Update(dt, m_viewport.IsFocused(), m_gameView.IsFocused(), GetWindow());
     m_scripts.Update(dt);
     m_document.PollChanges(dt);
