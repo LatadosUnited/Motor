@@ -10,6 +10,7 @@
 
 #include "motor/scene/Component.h"
 #include "motor/scene/EntityRef.h"
+#include "motor/scene/NavMeshArea.h"
 
 namespace motor {
 
@@ -27,6 +28,7 @@ struct NavMeshAgent {
     float radius = 0.5f;
     float height = 2.0f;
     bool avoidOthers = true;
+    NavAreaMask areas;              // por onde anda (Áreas de navegação; o padrão é todas)
 
     bool operator==(const NavMeshAgent&) const = default;
 };

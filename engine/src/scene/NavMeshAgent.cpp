@@ -28,7 +28,9 @@ MOTOR_COMPONENT_MODULE(NavAgent) {
         .Field("height", "Altura", &NavMeshAgent::height,
                {.speed = 0.01f, .min = 0.01f, .max = 100.0f, .format = "%.2f m"})
         .Field("avoidOthers", "Desviar dos outros", &NavMeshAgent::avoidOthers,
-               {.tooltip = "Desvia dos outros agentes no caminho (desligado: vai reto, mas não os atravessa)"});
+               {.tooltip = "Desvia dos outros agentes no caminho (desligado: vai reto, mas não os atravessa)"})
+        .Field("areas", "Áreas por onde anda", &NavMeshAgent::areas,
+               {.tooltip = "Fora das áreas marcadas o agente não passa (Áreas de navegação da cena; 0 é o chão comum)"});
 }
 
 } // namespace motor
