@@ -184,15 +184,33 @@ void EditorApp::OnUpdate(float dt) {
     }
 
     // Arquivos novos ou movidos fora do editor: cria os .meta que faltam e atualiza os caminhos dos GUIDs.
+    // Só quando algo mudou na pasta do projeto (FolderWatcher): varrer os arquivos custava ~150 ms a cada 2 s.
     m_assetRefreshTimer += dt;
     if (m_assetRefreshTimer >= 2.0f) {
         m_assetRefreshTimer = 0.0f;
-        m_ctx.assets.Database().Refresh();
+        if (m_assetWatcher.Folder() != m_ctx.assets.Root()) m_assetWatcher.Watch(m_ctx.assets.Root());
+        if (m_assetWatcher.Changed()) m_assetsChanged = true;
+    }
+    if (m_assetsChanged && m_assetRefreshTimer == 0.0f) {  // no quadro em que o intervalo fechou
+        m_assetsChanged = m_play.IsActive();  // no Play os modelos não são importados: confere de novo depois
+        {
+            MOTOR_PROFILE_STAT("Update: assets (.meta)");
+            m_ctx.assets.Database().Refresh();
+        }
         // Materiais e prefabs editados fora do editor (ou por outro programa): relidos no mesmo objeto.
-        m_ctx.assets.ReloadChangedMaterials();
+        {
+            MOTOR_PROFILE_STAT("Update: assets (materiais)");
+            m_ctx.assets.ReloadChangedMaterials();
+        }
         // Modelos glTF novos ou alterados viram prefab (motor/scene/ModelImport.h).
-        if (!m_play.IsActive()) motor::ImportModelsInProject(m_ctx.assets);
-        m_ctx.prefabs.ReloadChanged(m_ctx.assets);
+        {
+            MOTOR_PROFILE_STAT("Update: assets (modelos)");
+            if (!m_play.IsActive()) motor::ImportModelsInProject(m_ctx.assets);
+        }
+        {
+            MOTOR_PROFILE_STAT("Update: assets (prefabs)");
+            m_ctx.prefabs.ReloadChanged(m_ctx.assets);
+        }
         m_history.NoteActivity();  // instâncias de um prefab alterado mudam no UpdatePrefabs
     }
 
@@ -297,8 +315,11 @@ void EditorApp::OnImGui() {
         m_gameView.Draw(m_play);
     }
     {
-        MOTOR_PROFILE_STAT("ImGui: Projeto e Scripts");
+        MOTOR_PROFILE_STAT("ImGui: Projeto");
         DrawProjectPanel();
+    }
+    {
+        MOTOR_PROFILE_STAT("ImGui: Scripts");
         m_scripts.DrawPanel();
     }
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);

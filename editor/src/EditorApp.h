@@ -2,6 +2,7 @@
 
 #include "EditorContext.h"
 #include "EditorSettings.h"
+#include "FolderWatcher.h"
 #include "export/ExportController.h"
 #include "play/GameView.h"
 #include "play/PlayController.h"
@@ -83,6 +84,8 @@ private:
     motor::PerfRecorder m_perf;  // --perf
     int m_historyRequest = 0;  // -1 desfazer, +1 refazer (executado no início do próximo frame)
     float m_assetRefreshTimer = 0.0f;
+    FolderWatcher m_assetWatcher;  // a pasta do projeto: varre os arquivos só quando algo mudou
+    bool m_assetsChanged = true;   // mudança ainda não vista inteira (a importação de modelos espera o fim do Play)
     bool m_resetLayout = true;  // constrói o layout padrão se não houver um salvo
     bool m_showDemo = false;
     bool m_openAbout = false;
