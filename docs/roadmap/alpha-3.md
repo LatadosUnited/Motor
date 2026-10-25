@@ -36,7 +36,7 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 | — | [Fase 23 — Renderer em lote](alpha-3/fase-23-renderer-em-lote.md) | pronta (21/10) | `cubos10000`: 10 001 → 2 draws, Render 33 → 12,7 ms; referência 7927 → 16 draws, quadro 49 → 44 ms | — |
 | — | [Fase 24 — GPU: pós, sombras e LOD](alpha-3/fase-24-gpu.md) | pronta (25/10) | GPU da cena vazia 9,2 → 4,4 ms, da referência 47 → ~19,5 ms (quadro 44 → 22 ms); todas as cenas do bench de 157 a 290% da Unity | — |
 | — | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | pronta (25/10) | `fisica1000` 84 → 104% da Unity, `jogo_passo` 1,37 → 0,77 ms, filhos e nomes sem percorrer a cena; física da referência 8,1 ms (3 passos por quadro, espera a Fase 24) | — |
-| 4 | [Fase 26 — Várias threads](alpha-3/fase-26-threads.md) | em andamento | tudo menos a física roda numa thread; 3 núcleos parados | 27 |
+| — | [Fase 26 — Várias threads](alpha-3/fase-26-threads.md) | pronta (25/10) | `cubos10000`: thread principal ~80 → 46–50% de um núcleo; referência 23,3 → 22,6 ms; texturas da cena decodificadas em paralelo (−22% na carga) | — |
 | 5 | Fase 27 — Editor que escala | planejada | gravar a referência em JSON leva 337 ms, a cada 0,5 s | 23, 24, 25, 26 |
 | — | [Organização do código 2](alpha-3/organizacao-do-codigo-2.md) | planejada | `SetError` em 14 arquivos, leitura de arquivo em 8, `DrawScene` com 186 linhas; sem mudar comportamento | tarefas 1 a 4 já; a 5 depois da 26 e fora da 24 |
 
@@ -129,18 +129,11 @@ Unity. Falta a física da referência ≤ 3 ms por quadro, que depende do quadro
 
 ## Fase 26 — Várias threads
 
-Objetivo: usar os 4 núcleos; hoje só a física sai da thread principal (92% de um núcleo com 10 000 cubos).
-
-- [ ] Tarefa 1: Criar o sistema de tarefas (job system), dividido com a Jolt
-- [ ] Tarefa 2: Paralelizar a montagem do quadro (matrizes, recorte, lotes)
-- [ ] Tarefa 3: Paralelizar a sincronização da física e a animação
-- [ ] Tarefa 4: Estudar uma thread só para o render
-- [ ] Tarefa 5: Carregar texturas, malhas e sons em segundo plano
-- [ ] Tarefa 6: Documentar que os scripts continuam numa thread só
-- [ ] Tarefa 7: Mostrar as threads e os scripts no Tracy
-
-**Pronto quando:** em `cubos10000` e na referência, a thread principal abaixo de 50% de um núcleo e o quadro mais
-rápido; `ctest` repetido sem corrida de dados.
+**Pronta (25/10/2026):** [nota da fase](alpha-3/fase-26-threads.md). Sistema de tarefas único (`JobSystem`, dividido
+com a Jolt), montagem do quadro, sombras, animação e envio da cena em paralelo, texturas da cena decodificadas em
+paralelo, scripts com nome no Tracy. `cubos10000`: thread principal ~80% → 46–50% de um núcleo, quadro igual
+(~15 ms); referência: quadro 23,3 → 22,6 ms, thread principal 50%. Nesta máquina a GPU integrada limita o quadro;
+thread de render e componentes em blocos contínuos ficaram para depois.
 
 ## Fase 27 — Editor que escala
 

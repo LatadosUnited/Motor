@@ -3,11 +3,12 @@ tipo: fase
 alpha: 3
 fase: 26
 titulo: Várias threads
-status: em andamento
+status: pronta
 prioridade: 4
 areas: [core, physics, renderer]
 branch: fase-26-threads
 inicio: 2026-10-23
+fim: 2026-10-25
 ---
 
 # Fase 26 — Várias threads
@@ -23,20 +24,21 @@ sem disputar núcleos entre dois pools.
 
 - [x] Tarefa 1: Criar o sistema de tarefas (job system), dividido com a Jolt — 2f398d5
 - [x] Tarefa 2: Paralelizar a montagem do quadro (matrizes, recorte, lotes) — c190fc3
-- [ ] Tarefa 3: Paralelizar a sincronização da física e a animação
-- [ ] Tarefa 4: Estudar uma thread só para o render
-- [ ] Tarefa 5: Carregar texturas, malhas e sons em segundo plano
-- [ ] Tarefa 6: Documentar que os scripts continuam numa thread só
-- [ ] Tarefa 7: Mostrar as threads e os scripts no Tracy
+- [x] Tarefa 3: Paralelizar a sincronização da física e a animação — d4c5f52
+- [x] Tarefa 4: Estudar uma thread só para o render — nesta nota (Feito)
+- [x] Tarefa 5: Carregar texturas, malhas e sons em segundo plano — d4aabff
+- [x] Tarefa 6: Documentar que os scripts continuam numa thread só — 06deb4c
+- [x] Tarefa 7: Mostrar as threads e os scripts no Tracy — 06deb4c
+- [x] Tarefa 8: Enviar a cena sem o mapa de ids e a lista de componentes por objeto — 75ff43c
 
 ## Pronto quando
 
 Em `cubos10000` e na referência, a thread principal abaixo de 50% de um núcleo e o quadro mais rápido; `ctest`
 repetido sem corrida de dados.
 
-## Andamento
+## Feito
 
-Feito até agora (commits 2f398d5, d46d931, d4c5f52, c190fc3):
+Até 23/10 (commits 2f398d5, d46d931, d4c5f52, c190fc3):
 
 - `motor::JobSystem` (`core/JobSystem.h`): núcleos − 1 threads de trabalho ("Tarefas N" no Tracy), `ParallelFor`
   em que quem pede também trabalha, `Schedule`. `MOTOR_THREADS` muda o número (0 = tudo na thread que pede).
@@ -103,12 +105,91 @@ Leitura:
   malha em lugares diferentes do heap, e 4 threads disputando a memória (com a GPU integrada) ficam cada uma mais
   lenta. Guardar os componentes em blocos contínuos (Fase 25, Tarefa 11) deve ajudar mais que mais threads.
 
+### Depois das Fases 24 e 25 (25/10/2026)
+
+O `main` com as Fases 24 e 25 entrou no branch (0f6f7d6): o LOD e a variante sem mapas da Fase 24 foram para o
+`PrepareItems` (valem para o `Submit` e o `SubmitMany`), as cascatas reaproveitadas e o spot com só as faces do cone
+viraram passadas da lista paralela das sombras. Com a GPU mais rápida, `cubos10000` deixou de ser limitada só pela
+GPU (GPU ~11 ms, quadro ~15 ms) e o envio da cena apareceu.
+
+Contadores novos no `--perf` (`Render: enviar a cena`, `preparar`, `listas das sombras`, `cena e sombras`) mostraram
+o `SubmitMany` com 10 ms sem threads e 7,5 ms com 4: ~1 µs por objeto, quase tudo leituras espalhadas (id → mapa →
+`Entity` → lista de componentes → `MeshRenderer`). Mudanças (75ff43c):
+
+- A `Scene` guarda a lista (entidade, `MeshRenderer`) dos objetos com malha, refeita só quando a estrutura muda
+  (`SceneStructureVersion`); cópia e movimento da cena começam com ela vazia. `kScriptApiVersion` 20.
+- O `SubmitMany` escreve cada item já no lugar, em paralelo, com o hash das chaves do material; a parte serial só
+  numera os materiais (comparando o hash primeiro). As matrizes de objeto não são refeitas a cada quadro (o
+  construtor do glm escrevia 20 000 identidades, 0,7 ms).
+
+| `cubos10000`, 4 threads | antes (branch) | depois |
+|---|---|---|
+| `SubmitMany` | 7,5 ms | 6,0 |
+| montar os pedidos (paralelo) | 3,3 ms | 2,2 a 3,3 (agora escrevendo os itens) |
+| numerar os materiais (serial) | 1,5 ms | 1,5 |
+| pôr os itens no lugar | 2,5 ms | — |
+
+Medição final (Player Release, `main` 0a5dfdc contra o branch, alternados, duas rodadas, 14 s, CPU por thread entre
+os segundos 6 e 12):
+
+| Cena | Build | Quadro | Thread principal | Outras threads | Processo |
+|---|---|---|---|---|---|
+| `cubos10000` | `main` | 14,9–15,3 ms | 79–80% | — | 79–80% |
+| `cubos10000` | Fase 26 | 15,0–15,1 ms | **46–50%** | 21–23% cada | 114–117% |
+| referência | `main` | 23,3–23,4 ms | 53–58% | 5–8% cada (Jolt) | 75–80% |
+| referência | Fase 26 | 22,6 ms | **50%** | 14–16% cada | 96% |
+
+**Tarefa 5 (d4aabff):** `AssetLibrary::PreloadTextures` lê e decodifica no `JobSystem` as texturas dos GUIDs pedidos e
+as dos materiais entre eles; a textura OpenGL é criada na thread principal (a do contexto). O `SceneSerializer` chama
+com todos os GUIDs da cena antes de ler as entidades. O log mostra os tempos ("Texturas da cena: ...") e a carga da
+cena ("Cena carregada: ... (N entidades, X ms)"). Cena de teste com 16 PNG de 2048×2048 (cada um com o seu material),
+três rodadas alternadas:
+
+| | Ler e decodificar | Criar na GPU | Total |
+|---|---|---|---|
+| `MOTOR_THREADS=0` (como no `main`) | 735–802 ms | 722–801 ms | 1457–1603 ms |
+| 3 threads | **387–395 ms** | 781–805 ms | **1176–1200 ms** |
+
+Criar a textura (subir 16 MB e gerar as mipmaps no driver) fica serial: sem gerar as mipmaps cai só para ~830 ms, o
+grosso é a cópia. Malhas (OBJ e modelos) e sons não foram: os sons já eram decodificados numa thread do áudio
+(`PreloadedClips`), e malhas de arquivo são raras nas cenas do bench.
+
+**Tarefa 3:** a animação foi para o `JobSystem` em d4c5f52. A sincronização da física foi refeita na Fase 25 (só os
+corpos que se mexeram) e custa ~0,9 ms por quadro na referência: dividir isso entre threads não compensa o custo de
+dividir.
+
+**Tarefa 4 (estudo):** uma thread só para o render precisaria do contexto OpenGL nela e de uma fila de comandos (ou de
+uma cópia dos dados do quadro) entre a thread do jogo e a do render, com um quadro de atraso. Nesta máquina não
+ajudaria: o quadro é limitado pela GPU integrada, e com mais CPU ocupada a HD 530 fica mais lenta (divide energia e
+memória). Fica para uma máquina com placa de vídeo dedicada (Fase 30 pede a medição).
+
+**Tarefas 6 e 7 (06deb4c):** `docs/scripts.md` explica que os scripts rodam todos na thread principal e que a engine
+usa as outras threads só entre as chamadas deles. No Tracy, cada chamada de script vira uma zona com o nome dele
+(`SceneRuntime::InvokeScript`); as threads de trabalho já tinham nome ("Tarefas N").
+
+Pronto quando:
+
+- `cubos10000` e referência com a thread principal abaixo de 50% de um núcleo: **sim** em `cubos10000` (46–50%),
+  **no limite** na referência (50%).
+- Quadro mais rápido: **na referência sim** (23,3 → 22,6 ms); em `cubos10000` igual ao `main` (antes o branch era
+  0,3–0,6 ms mais lento). Nesta máquina a GPU integrada limita o quadro.
+- `ctest` repetido sem corrida de dados: **sim**, os 10 testes que passam pelas threads (sistema de tarefas com e sem
+  threads, física, animação, render, LOD, índices da cena, sistemas do runtime, texturas) 20 vezes cada, em paralelo,
+  sem falha; o `ctest` inteiro (56) também passa.
+
+`test_desempenho` (Release, `main` e branch alternados, três rodadas): igual ao `main` dentro do ruído, menos
+`cena_ler` (+3 a 6%: a passada que junta os GUIDs da cena percorre o JSON inteiro) e `jogo_passo` (+4%). Uma rodada
+de oito passou do limite em `cena_copiar` (o `main` variou de 3,9 a 5,0 ms na mesma sessão); base mantida.
+
 ## Limitações
 
 - Só entidades na raiz da hierarquia são enviadas em paralelo; filhos e malhas com pele seguem no caminho serial
   (o cache da matriz de um filho confere e pode recalcular o do pai). Cenas com hierarquias fundas (modelos
   importados) ganham pouco.
-- A sincronização da física com a cena (parte da Tarefa 3) não foi paralelizada: está sendo refeita na Fase 25
-  (`fase-25-fisica-passos`, só os corpos que se mexeram).
+- A sincronização da física com a cena não foi paralelizada (~0,9 ms por quadro na referência).
+- Criar as texturas na GPU continua serial na thread principal; malhas e modelos de arquivo carregam um por vez.
+- O trabalho dividido escala mal (memória espalhada): 4 threads tiram ~3 ms da principal gastando ~10 ms de CPU.
+  Componentes em blocos contínuos ficaram para a Fase 28.
+- Sem thread de render (estudo acima).
 - Itens enviados em paralelo entram antes dos do caminho serial: entre itens com a mesma chave de ordem (e
   transparentes à mesma distância), a ordem de desenho pode mudar em relação à da cena.

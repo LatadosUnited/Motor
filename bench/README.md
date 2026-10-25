@@ -86,6 +86,21 @@ powershell -File bench/comparar.ps1 -Projeto "C:/temp/bench/Motor Bench"
 
 ## Resultados
 
+### 25/10/2026 — Fase 26: várias threads (só o Motor)
+
+Player Release, `main` (0a5dfdc, com a Fase 24) contra o branch `fase-26-threads`, alternados, duas rodadas; CPU por
+thread entre os segundos 6 e 12, em % de um núcleo (detalhes na nota da Fase 26).
+
+| Cena | Build | Quadro | Thread principal | Outras threads |
+|---|---|---|---|---|
+| `cubos10000` | `main` | 14,9–15,3 ms | 79–80% | — |
+| `cubos10000` | Fase 26 | 15,0–15,1 ms | 46–50% | 21–23% cada |
+| referência | `main` | 23,3–23,4 ms | 53–58% | 5–8% cada (Jolt) |
+| referência | Fase 26 | 22,6 ms | 50% | 14–16% cada |
+
+Carga de uma cena com 16 texturas PNG de 2048×2048: 1,46–1,60 s → 1,18–1,20 s (decodificar 0,77 → 0,39 s; criar na
+GPU ~0,8 s, serial).
+
 ### 25/10/2026 — Fase 24: GPU, pós, sombras e LOD
 
 Máquina de referência parada, Player Release do branch `fase-24-gpu` (0ce3a8a) contra o player da Unity de 18/10, uma
