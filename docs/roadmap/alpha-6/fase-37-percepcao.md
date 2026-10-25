@@ -32,7 +32,7 @@ pela distância primeiro e reparte os raios entre os passos quando há muitos pa
 ## Tarefas
 
 - [x] Tarefa 1: Componentes `Perception` (visão, audição, memória) e `PerceptionTarget` — fe719d7
-- [ ] Tarefa 2: `PerceptionSystem` no `SceneRuntime`: visão por cone, distância e linha de visada
+- [x] Tarefa 2: `PerceptionSystem` no `SceneRuntime`: visão por cone, distância e linha de visada — 6dc34ab
 - [ ] Tarefa 3: Audição: `MakeNoise` dos scripts e os sons do `AudioSource` de quem é alvo
 - [ ] Tarefa 4: Memória do agente (última posição, há quanto tempo, esquecer) e consultas dos scripts
 - [ ] Tarefa 5: Raios de visada repartidos entre os passos e grade de alvos para muitos agentes
