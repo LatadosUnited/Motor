@@ -273,3 +273,7 @@ set_tests_properties(test_job_system_sem_threads PROPERTIES ENVIRONMENT "MOTOR_T
 
 # Fase 26: texturas da cena lidas e decodificadas em paralelo (AssetLibrary::PreloadTextures).
 motor_add_test(test_asset_preload)
+
+# Fase 27: vigia da pasta do projeto do editor (a varredura dos arquivos só roda quando algo mudou).
+motor_add_test(test_folder_watcher ${PROJECT_SOURCE_DIR}/editor/src/FolderWatcher.cpp)
+target_include_directories(test_folder_watcher PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)

@@ -365,7 +365,11 @@ void ScriptController::DrawPanel() {
 
     // Arquivos e tipos carregados.
     ImGui::SeparatorText("Scripts");
-    const auto files = ScriptProject::ListScriptFiles(paths.scriptsDir);
+    // Vigia a raiz do projeto, que sempre existe (a pasta Scripts/ pode ainda não ter sido criada).
+    const fs::path& root = m_document.GetProject()->RootDir();
+    if (m_scriptsWatcher.Folder() != root) m_scriptsWatcher.Watch(root);
+    if (m_scriptsWatcher.Changed()) m_scriptFiles = ScriptProject::ListScriptFiles(paths.scriptsDir);
+    const std::vector<fs::path>& files = m_scriptFiles;
     if (files.empty()) {
         ImGui::TextDisabled("Nenhum arquivo em %s. Use \"Novo script...\" ou Scripts > Adicionar exemplo.",
                             ToUtf8(paths.scriptsDir).c_str());

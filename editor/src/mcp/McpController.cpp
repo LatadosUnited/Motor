@@ -221,10 +221,11 @@ void McpController::UpdateUiClick() {
     m_clickStage = m_clickStage == 1 ? 2 : 0;
 }
 
-void McpController::Pump() {
-    m_server.Pump();
+bool McpController::Pump() {
+    const bool handled = m_server.Pump() > 0;
     UpdateUiClick();
     if (IsRunning()) DetectEvents();
+    return handled;
 }
 
 void McpController::AddEvent(std::string type, Json data) {

@@ -110,8 +110,10 @@ ctest --test-dir build --output-on-failure
   desenhador do Inspector com `MOTOR_FIELD_DRAWER` (`editor/src/drawers/FieldDrawers.h`), cada um no seu
   `.cpp` em `drawers/`. Não acrescente valores ao enum `FieldType` (isso exigiria mexer em `ComponentsEqual`,
   `SceneSerializer` e `DrawField` ao mesmo tempo). Exemplo completo em `tests/test_component_extension.cpp`.
-- Desfazer é automático: `UndoHistory::Track` compara a cena a cada frame (`Scene::operator==`). Dado de
-  cena fora dos componentes (luz, ambiente) precisa entrar na cópia e no `operator==` de `Scene`.
+- Desfazer é automático: `UndoHistory::Track` compara a cena com a última foto (`SameEntity` por entidade e o
+  ambiente) depois de entrada do usuário ou pedido do MCP (`NoteActivity`) e a cada 0,25 s; a foto guarda só as
+  entidades que mudaram. "Não salvo" é a versão do desfazer (`UndoHistory::Version`), sem JSON. Dado de cena fora
+  dos componentes (luz, ambiente) precisa entrar na cópia, no `operator==` de `Scene` e na foto do `UndoHistory`.
 - Estilo: o do código vizinho (4 espaços, `m_` em membros, comentários curtos explicando o porquê).
 
 ## Testes
@@ -254,8 +256,8 @@ Alphas 4 (mundo aberto e renderização 2, Fases 28 a 30) e 5 (ferramentas, Fase
 `docs/roadmap/alpha-6.md`; a Fase 34 (navmesh e agentes) começou antes, a pedido do usuário.
 
 Prioridade atual (ver `docs/roadmap/alpha-3.md`, "Fases"): alphas 1 e 2 fechadas (Fases 0 a 21); alpha 3 com a
-Fases 22 (medição), 23 (renderer em lote), 24 (GPU), 25 (cena, dados e física) e 26 (threads) prontas; faltam a 27
-(editor que escala) e a Organização do código 2.
+Fases 22 (medição), 23 (renderer em lote), 24 (GPU), 25 (cena, dados e física), 26 (threads) e 27 (editor que
+escala) prontas; falta a Organização do código 2.
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

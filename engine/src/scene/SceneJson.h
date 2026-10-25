@@ -14,7 +14,10 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace motor::SceneSerializer::detail {
@@ -69,5 +72,49 @@ void CheckStoredFields(const ComponentType& type, void* data, const json& obj, A
                        const std::string& owner, std::vector<FieldWarning>& warnings);
 // Componente "desconhecido" que guarda o JSON como veio (o tipo volta quando o script for carregado).
 ComponentPtr MakeMissing(std::string typeName, const json& obj);
+
+// Escreve JSON direto no texto, sem montar a árvore do nlohmann, no mesmo formato de
+// CompactNumberArrays(j.dump(2)): objetos e listas um item por linha com 2 espaços, listas só de números numa linha
+// ([1.0, 2.0]), números como o nlohmann escreve. Montar a árvore da cena de referência e depois o texto custava ~150
+// ms (Fase 27). Uso: BeginObject, Key + valor, ..., EndObject.
+class JsonWriter {
+public:
+    explicit JsonWriter(std::string& out) : m_out(out) {}
+
+    void BeginObject();
+    void EndObject();
+    void BeginArray();
+    void EndArray();
+    void Key(std::string_view key);  // dentro de objeto, antes do valor
+
+    void Null();
+    void Bool(bool value);
+    void Int(int64_t value);
+    void UInt(uint64_t value);
+    void Number(double value);  // não finito vira null, como no nlohmann
+    void String(std::string_view value);
+    void Numbers(const double* values, size_t count);  // lista só de números
+    void Value(const json& value);  // qualquer valor já montado (ambiente, componente desconhecido...)
+    // Texto que já é JSON de um valor simples (null, true, false, inteiro, texto sem escapes): vai como está. Outro
+    // texto: devolve false sem escrever.
+    bool RawSimple(std::string_view text);
+
+private:
+    void BeforeValue();
+    void Indent();
+    void AppendString(std::string_view value);  // entre aspas, com os escapes
+
+    struct Level {
+        bool object = false;
+        bool empty = true;
+    };
+    std::string& m_out;
+    std::vector<Level> m_stack;
+    bool m_afterKey = false;
+};
+
+// Os campos do componente pelo JsonWriter (o mesmo conteúdo de ComponentToJson).
+void WriteComponent(JsonWriter& writer, const ComponentPtr& component, const AssetLibrary& assets,
+                    const JsonOptions& options, const std::string& owner);
 
 } // namespace motor::SceneSerializer::detail

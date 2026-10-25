@@ -52,7 +52,8 @@ Player 1280×720, vsync desligado, 900 quadros com `--perf`, medianas depois de 
 Leitura: a GPU é o limite (56 ms; as 1000 esferas de 2300 triângulos pesam na Cena HDR: LOD e instancing, Fases 24 e
 27), as sombras custam 15 ms (Fase 23) e a CPU do render gasta 33 ms montando 7927 draws (Fase 24). A física mede 19 ms
 por quadro porque o quadro lento pede 3 a 4 passos fixos (no `test_desempenho`, com 1 passo, o quadro inteiro do jogo
-custa 3,1 ms). No editor, gravar a cena em JSON leva 337 ms, e a checagem de "não salvo" faz isso a cada 0,5 s (Fase 26).
+custa 3,1 ms). No editor, gravar a cena em JSON leva 337 ms, e a checagem de "não salvo" faz isso a cada 0,5 s (Fase 27:
+agora 31 ms, e o "não salvo" não usa mais o JSON).
 
 ## Cenas
 
@@ -85,6 +86,25 @@ powershell -File bench/comparar.ps1 -Projeto "C:/temp/bench/Motor Bench"
 ```
 
 ## Resultados
+
+### 25/10/2026 — Fase 27: editor com a cena de referência (só o Motor)
+
+Editor Release com `--perf` e `--segundos` (novos nesta fase), `--no-settings`, o projeto do bench com a referência
+como cena inicial; `main` (bd7f696) contra o branch `fase-27-editor`, alternados. Parado = 25 s sem mexer, sem MCP;
+editando = mover, renomear, duplicar, desfazer, refazer e salvar pelo MCP (detalhes na nota da Fase 27).
+
+```bash
+build-release/bin/MotorEditor.exe "C:/temp/bench/Motor Bench" --no-settings --perf editor.csv --segundos 25
+```
+
+| Medida | `main` | Fase 27 |
+|---|---|---|
+| Parado: quadros acima de 100 ms em 20 s | 37–38 (até 830 ms) | 0 (máximo 34 ms) |
+| Parado: CPU por quadro (Update + Render + ImGui) | ~21 ms | ~10,5 ms |
+| Parado: quadro mediano | 30–31 ms | 30–31 ms (GPU 27–28 ms) |
+| Com o MCP ligado: quadro mediano | 305 ms | 30 ms |
+| Salvar | ~460 ms | 90–157 ms |
+| `test_desempenho` `cena_json` / `cena_ler` | 255 / 232 ms | 31 / 179 ms (base regravada) |
 
 ### 25/10/2026 — Fase 26: várias threads (só o Motor)
 

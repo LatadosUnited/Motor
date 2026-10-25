@@ -62,7 +62,8 @@ public:
 
     void DrawMenu();       // menu "Jogo"
     void DrawStatus();     // "JOGANDO" / "EM PAUSA" na barra de menus
-    void DrawControls(const ImVec2& origin, float viewportWidth);  // botões no topo do viewport
+    // Botões no topo do viewport. Devolve o x da borda esquerda deles (o texto do viewport não pode passar dali).
+    float DrawControls(const ImVec2& origin, float viewportWidth);
 
 private:
     void UpdateCursor(motor::Window& window);

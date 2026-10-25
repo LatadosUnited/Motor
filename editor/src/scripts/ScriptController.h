@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EditorContext.h"
+#include "FolderWatcher.h"
 #include "scripts/ScriptBuilder.h"
 #include "scripts/ScriptHost.h"
 #include "scripts/ScriptProject.h"
@@ -82,6 +83,10 @@ private:
     uint64_t m_builds = 0;               // compilações terminadas (Status::builds)
     std::vector<std::string> m_reloadWarnings;  // valores perdidos na última recarga
     std::string m_log;                   // cópia da saída da compilação para o painel
+    // Arquivos da pasta Scripts/ do painel, relidos só quando o projeto muda (listar a pasta a cada quadro custava
+    // ~4 ms, Fase 27).
+    FolderWatcher m_scriptsWatcher;
+    std::vector<std::filesystem::path> m_scriptFiles;
     std::vector<ScriptProject::Diagnostic> m_diagnostics;
     bool m_focusPanel = false;
     bool m_openNewScriptPopup = false;

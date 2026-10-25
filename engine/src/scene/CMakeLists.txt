@@ -31,5 +31,6 @@ motor_add_layer(scene
         NavMeshAgentAnimation.cpp
         Perception.cpp
         PerceptionTarget.cpp
+        SceneJsonWriter.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

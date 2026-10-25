@@ -51,6 +51,8 @@ void EraseSorted(Map& map, const Key& key, EntityId id, bool dropEmpty) {
     if (dropEmpty && ids.empty()) map.erase(found);
 }
 
+} // namespace
+
 bool SameEntity(const Entity& a, const Entity& b) {
     if (a.id != b.id || a.name != b.name || a.active != b.active || a.parent != b.parent) return false;
     const Transform &ta = a.transform, &tb = b.transform;
@@ -62,7 +64,6 @@ bool SameEntity(const Entity& a, const Entity& b) {
     }
     return true;
 }
-} // namespace
 
 uint64_t SceneStructureVersion() {
     return g_structureVersion;
@@ -109,6 +110,21 @@ Scene::Scene(const Scene& other) : environment(other.environment), m_nextId(othe
         m_entities.back()->cache.owner = this;
         m_byId[e->id] = m_entities.back().get();
     }
+}
+
+Scene Scene::FromEntities(const std::vector<const Entity*>& entities, EntityId nextId, const Environment& environment) {
+    ++g_structureVersion;
+    Scene scene;
+    scene.environment = environment;
+    scene.m_entities.reserve(entities.size());
+    for (const Entity* e : entities) {
+        scene.m_entities.push_back(std::make_unique<Entity>(*e));
+        scene.m_entities.back()->cache.owner = &scene;
+        scene.m_byId[e->id] = scene.m_entities.back().get();
+        scene.m_nextId = std::max(scene.m_nextId, e->id + 1);
+    }
+    scene.m_nextId = std::max(scene.m_nextId, nextId);
+    return scene;  // o movimento aponta as entidades para a cena de quem recebe
 }
 
 Scene& Scene::operator=(const Scene& other) {

@@ -12,6 +12,7 @@
 #include <imgui_stdlib.h>
 
 #include <cstdlib>
+#include <optional>
 #include <format>
 #include <fstream>
 #include <utility>
@@ -179,7 +180,7 @@ void SceneDocument::ApplyRecovery(const SceneSerializer::RecoveryInfo& recovery)
     const fs::path targetPath = recovery.originalPath.empty() ? m_scenePath : recovery.originalPath;
 
     // Compara com a cena que está no disco para manter o '*' de alterações não salvas até o usuário salvar.
-    std::string diskSnapshot;
+    std::optional<std::string> diskSnapshot;
     std::error_code ec;
     if (!targetPath.empty() && fs::is_regular_file(targetPath, ec)) {
         Scene onDisk;
@@ -192,8 +193,9 @@ void SceneDocument::ApplyRecovery(const SceneSerializer::RecoveryInfo& recovery)
     m_ctx.ResetSceneState();
     m_scenePath = targetPath;
     m_history.Reset(m_ctx.scene, kNullEntity);
-    m_savedSnapshot = std::move(diskSnapshot);
-    m_dirty = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false}) != m_savedSnapshot;
+    m_savedVersion = m_history.Version();
+    m_savedValid = diskSnapshot && SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false}) == *diskSnapshot;
+    m_dirty = !m_savedValid;
     m_autoSaveTimer = 0.0f;
     ClearRecovery();
     RememberScene();
@@ -260,7 +262,7 @@ void SceneDocument::OnPathDeleted(const fs::path& path) {
     if (IsInside(m_scenePath, path)) {
         // A cena continua aberta na memória, mas sem arquivo: vira "Sem título" com alterações pendentes.
         m_scenePath.clear();
-        m_savedSnapshot.clear();
+        m_savedValid = false;
         HasUnsavedChanges();
     }
     if (IsInside(m_settings.lastScene, path)) m_settings.lastScene.clear();

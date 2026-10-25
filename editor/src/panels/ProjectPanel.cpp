@@ -63,7 +63,14 @@ void ProjectPanel::Draw(const motor::Project* project, const fs::path& currentSc
     }
 
     m_currentScene = currentScene;
-    if (m_needsRefresh || ImGui::GetTime() - m_lastScanTime > kRescanInterval) Rescan();
+    // Mudanças feitas fora do editor: a cada kRescanInterval, mas só relê a pasta se o sistema avisou que algo mudou
+    // (reler a cada segundo custava dezenas de ms com o disco lento, Fase 27).
+    if (!m_needsRefresh && ImGui::GetTime() - m_lastScanTime > kRescanInterval) {
+        m_lastScanTime = ImGui::GetTime();
+        if (m_watcher.Folder() != m_assetsDir) m_watcher.Watch(m_assetsDir);
+        m_needsRefresh = m_watcher.Changed();
+    }
+    if (m_needsRefresh) Rescan();
 
     DrawToolbar(callbacks);
     ImGui::Separator();

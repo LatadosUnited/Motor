@@ -37,7 +37,7 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 | — | [Fase 24 — GPU: pós, sombras e LOD](alpha-3/fase-24-gpu.md) | pronta (25/10) | GPU da cena vazia 9,2 → 4,4 ms, da referência 47 → ~19,5 ms (quadro 44 → 22 ms); todas as cenas do bench de 157 a 290% da Unity | — |
 | — | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | pronta (25/10) | `fisica1000` 84 → 104% da Unity, `jogo_passo` 1,37 → 0,77 ms, filhos e nomes sem percorrer a cena; física da referência 8,1 ms (3 passos por quadro, espera a Fase 24) | — |
 | — | [Fase 26 — Várias threads](alpha-3/fase-26-threads.md) | pronta (25/10) | `cubos10000`: thread principal ~80 → 46–50% de um núcleo; referência 23,3 → 22,6 ms; texturas da cena decodificadas em paralelo (−22% na carga) | — |
-| 5 | Fase 27 — Editor que escala | planejada | gravar a referência em JSON leva 337 ms, a cada 0,5 s | 23, 24, 25, 26 |
+| — | [Fase 27 — Editor que escala](alpha-3/fase-27-editor.md) | pronta (25/10) | referência no editor: quadros acima de 100 ms parado 37 em 20 s → 0; CPU por quadro ~21 → ~10,5 ms; JSON 255 → 31 ms; salvar ainda 90–157 ms | — |
 | — | [Organização do código 2](alpha-3/organizacao-do-codigo-2.md) | planejada | `SetError` em 14 arquivos, leitura de arquivo em 8, `DrawScene` com 186 linhas; sem mudar comportamento | tarefas 1 a 4 já; a 5 depois da 26 e fora da 24 |
 
 ## Ordem e dependências
@@ -137,14 +137,9 @@ thread de render e componentes em blocos contínuos ficaram para depois.
 
 ## Fase 27 — Editor que escala
 
-Objetivo: editar a cena de referência (~5000 entidades) sem travar.
-
-- [ ] Tarefa 1: Desfazer por diferenças, sem comparar a cena inteira
-- [ ] Tarefa 2: Checar "não salvo" sem gravar a cena em JSON a cada 0,5 s
-- [ ] Tarefa 3: Acelerar gravar e ler a cena em JSON (hoje ~330 ms)
-- [ ] Tarefa 4: Cortar os 6 a 7 ms de CPU do ImGui
-- [ ] Tarefa 5: Lista virtual na Hierarquia com milhares de entidades
-- [ ] Tarefa 6: Corrigir o FPS por baixo dos botões de Play no viewport estreito
-
-**Pronto quando:** com a referência aberta no editor Release, nenhum quadro acima de 100 ms e o editor parado
-abaixo de 16 ms.
+**Pronta (25/10/2026):** [nota da fase](alpha-3/fase-27-editor.md). "Não salvo" pela versão do desfazer (sem gravar
+a cena em JSON a cada 0,5 s), desfazer guardando só as entidades que mudaram e comparando a cena só depois de
+entrada, JSON escrito direto no texto (mesmo arquivo), Hierarquia como lista virtual, arquivos do projeto relidos só
+quando a pasta muda. Referência no editor Release: parado, 0 quadros acima de 100 ms (antes 37 em 20 s) e ~10,5 ms
+de CPU por quadro (o quadro fica em ~30 ms pela GPU do viewport); editando pelo MCP, só o salvar passa de 100 ms
+(90–157 ms, antes ~460).

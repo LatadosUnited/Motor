@@ -9,6 +9,8 @@
 #include "motor/scene/Scene.h"
 
 #include <algorithm>
+#include <array>
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -55,6 +57,37 @@ std::shared_ptr<Asset> ResolveRef(const json& value, ByKey byKey, ByGuid byGuid,
     return nullptr;
 }
 
+// Os valores que os campos Custom mais devolvem (o nome de um enum, um número inteiro, null), sem o json::parse:
+// numa cena com milhares de entidades o parse de cada um custava dezenas de ms (Fase 27). Outros: nullopt.
+std::optional<json> SimpleJsonValue(std::string_view text) {
+    if (text == "null") return json(nullptr);
+    if (text == "true") return json(true);
+    if (text == "false") return json(false);
+    if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
+        const std::string_view inner = text.substr(1, text.size() - 2);
+        for (const char ch : inner) {
+            if (ch == '"' || ch == '\\' || static_cast<unsigned char>(ch) < 0x20) return std::nullopt;  // escapes
+        }
+        return json(std::string(inner));
+    }
+    if (!text.empty() && text.size() <= 18) {
+        // Inteiro como o parse o leria: sem sinal vira unsigned, com '-' vira int64.
+        const bool negative = text.front() == '-';
+        const std::string_view digits = negative ? text.substr(1) : text;
+        if (digits.empty() || digits.find_first_not_of("0123456789") != std::string_view::npos) return std::nullopt;
+        if (digits.size() > 1 && digits.front() == '0') return std::nullopt;  // JSON não aceita zero à esquerda
+        if (negative) {
+            int64_t v = 0;
+            std::from_chars(text.data(), text.data() + text.size(), v);
+            return json(v);
+        }
+        uint64_t v = 0;
+        std::from_chars(digits.data(), digits.data() + digits.size(), v);
+        return json(v);
+    }
+    return std::nullopt;
+}
+
 // Lê N floats de um array JSON; formato errado mantém o valor atual.
 bool FloatsFrom(const json& value, float* out, size_t n) {
     if (!value.is_array() || value.size() != n) return false;
@@ -93,7 +126,9 @@ json FieldToJson(const FieldInfo& f, const void* c, const AssetLibrary& assets, 
             return RefToJson(ref, options);
         }
         case FieldType::Custom: {
-            json value = json::parse(f.custom->toJson(f.Get(c), assets), nullptr, false);
+            const std::string text = f.custom->toJson(f.Get(c), assets);
+            if (std::optional<json> simple = SimpleJsonValue(text)) return std::move(*simple);
+            json value = json::parse(text, nullptr, false);
             if (value.is_discarded()) {
                 log::Warn("Salvar cena: campo '{}' de '{}' ({}) gerou JSON inválido", f.key, owner, f.custom->name);
                 return nullptr;
@@ -188,7 +223,13 @@ bool AssetFieldFromValue(const FieldInfo& field, std::shared_ptr<Asset>& slot, c
 namespace detail {
 
 double Num(float value) {
-    return std::stod(std::format("{}", value));
+    // to_chars dá a mesma representação mais curta do std::format, sem o std::stod (lento no MinGW: passa pelo
+    // locale); a cena de referência tem ~100 mil números (Fase 27).
+    char text[32];
+    const char* end = std::to_chars(text, text + sizeof(text), value).ptr;
+    double out = 0.0;
+    std::from_chars(text, end, out);
+    return out;
 }
 
 json Vec(const glm::vec3& v) { return json::array({Num(v.x), Num(v.y), Num(v.z)}); }
@@ -200,7 +241,18 @@ std::string CompactNumberArrays(const std::string& in) {
     std::string out;
     out.reserve(in.size());
     bool inString = false;
+    // Copia em trechos até o próximo caractere que importa (aspas e barra na string, aspas e '[' fora dela): a
+    // cópia caractere a caractere levava ~40 ms numa cena de 5 MB (Fase 27).
     for (size_t i = 0; i < in.size(); ++i) {
+        size_t stop = i;
+        if (inString) {
+            while (stop < in.size() && in[stop] != '"' && in[stop] != '\\') ++stop;
+        } else {
+            while (stop < in.size() && in[stop] != '"' && in[stop] != '[') ++stop;
+        }
+        out.append(in, i, stop - i);
+        if (stop == in.size()) break;
+        i = stop;
         const char c = in[i];
         if (inString) {
             out += c;
@@ -218,8 +270,20 @@ std::string CompactNumberArrays(const std::string& in) {
             if (close != std::string::npos) {
                 constexpr const char* kSeparators = ", \r\n";
                 const std::string_view body(in.data() + i + 1, close - i - 1);
-                const bool numeric = body.find_first_not_of("0123456789+-.eE, \r\n") == std::string_view::npos &&
-                                     body.find_first_of("0123456789") != std::string_view::npos;
+                // Tabela em vez do find_first_not_of com 17 caracteres (que testa um a um): metade do tempo da função.
+                static const auto kNumberChars = [] {
+                    std::array<bool, 256> table{};
+                    for (const char ch : std::string_view("0123456789+-.eE, \r\n")) table[static_cast<unsigned char>(ch)] = true;
+                    return table;
+                }();
+                bool numeric = false;  // só caracteres de número e ao menos um dígito
+                for (const char ch : body) {
+                    if (!kNumberChars[static_cast<unsigned char>(ch)]) {
+                        numeric = false;
+                        break;
+                    }
+                    numeric = numeric || (ch >= '0' && ch <= '9');
+                }
                 if (numeric) {
                     out += '[';
                     bool first = true;
@@ -263,6 +327,97 @@ json ComponentToJson(const ComponentPtr& component, const AssetLibrary& assets, 
         j[f.key] = FieldToJson(f, component.Data(), assets, options, owner);
     }
     return j;
+}
+
+namespace {
+// Chave repetida (ou um campo chamado "type"): no objeto do nlohmann a última ganha, no mesmo lugar. Esses componentes
+// passam pela árvore para o arquivo continuar igual.
+bool HasRepeatedKeys(const ComponentType& type) {
+    const auto& fields = type.fields;
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (fields[i].key == "type") return true;
+        for (size_t j = 0; j < i; ++j) {
+            if (fields[j].key == fields[i].key) return true;
+        }
+    }
+    return false;
+}
+
+void WriteField(JsonWriter& w, const FieldInfo& f, const void* c, const AssetLibrary& assets,
+                const JsonOptions& options, const std::string& owner) {
+    switch (f.type) {
+        case FieldType::Bool: w.Bool(f.As<bool>(c)); return;
+        case FieldType::Int: w.Int(f.As<int>(c)); return;
+        case FieldType::Float: w.Number(Num(f.As<float>(c))); return;
+        case FieldType::Vec2: {
+            const glm::vec2& v = f.As<glm::vec2>(c);
+            const double values[] = {Num(v.x), Num(v.y)};
+            w.Numbers(values, 2);
+            return;
+        }
+        case FieldType::Vec3: {
+            const glm::vec3& v = f.As<glm::vec3>(c);
+            const double values[] = {Num(v.x), Num(v.y), Num(v.z)};
+            w.Numbers(values, 3);
+            return;
+        }
+        case FieldType::Vec4: {
+            const glm::vec4& v = f.As<glm::vec4>(c);
+            const double values[] = {Num(v.x), Num(v.y), Num(v.z), Num(v.w)};
+            w.Numbers(values, 4);
+            return;
+        }
+        case FieldType::String: w.String(f.As<std::string>(c)); return;
+        case FieldType::Mesh:
+        case FieldType::Texture: {
+            std::optional<AssetRef> ref;
+            if (f.type == FieldType::Mesh) {
+                const auto& mesh = f.As<std::shared_ptr<Mesh>>(c);
+                ref = assets.RefOf(mesh.get());
+                if (mesh && !ref) log::Warn("Salvar cena: malha de '{}' não está no AssetLibrary", owner);
+            } else {
+                const auto& texture = f.As<std::shared_ptr<Texture2D>>(c);
+                ref = assets.RefOf(texture.get());
+                if (texture && !ref) log::Warn("Salvar cena: textura de '{}' não está no AssetLibrary", owner);
+            }
+            if (ref && ref->guid.empty()) {
+                w.String(ref->name);  // embutido: "Cubo"
+            } else {
+                w.Value(RefToJson(ref, options));
+            }
+            return;
+        }
+        case FieldType::Custom: {
+            const std::string text = f.custom->toJson(f.Get(c), assets);
+            if (text != "-0" && w.RawSimple(text)) return;
+            const json value = json::parse(text, nullptr, false);
+            if (value.is_discarded()) {
+                log::Warn("Salvar cena: campo '{}' de '{}' ({}) gerou JSON inválido", f.key, owner, f.custom->name);
+                w.Null();
+                return;
+            }
+            w.Value(value);
+            return;
+        }
+    }
+    w.Null();
+}
+} // namespace
+
+void WriteComponent(JsonWriter& writer, const ComponentPtr& component, const AssetLibrary& assets,
+                    const JsonOptions& options, const std::string& owner) {
+    if (&component.Type() == &ComponentRegistry::MissingType() || HasRepeatedKeys(component.Type())) {
+        writer.Value(ComponentToJson(component, assets, options, owner));
+        return;
+    }
+    writer.BeginObject();
+    writer.Key("type");
+    writer.String(component.Type().name);
+    for (const FieldInfo& f : component.Type().fields) {
+        writer.Key(f.key);
+        WriteField(writer, f, component.Data(), assets, options, owner);
+    }
+    writer.EndObject();
 }
 
 void ReadFields(const ComponentType& type, void* data, const json& obj, AssetLibrary& assets, const std::string& owner) {

@@ -8,16 +8,27 @@
 #include <cfloat>
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 namespace editor {
 
 namespace {
-// Ordem das linhas desenhadas (o Shift+clique seleciona o intervalo entre a âncora e a linha clicada). A do
-// frame anterior é a completa: a deste ainda está sendo montada quando o clique chega.
+// Ordem das linhas (o Shift+clique seleciona o intervalo entre a âncora e a linha clicada), incluindo as que não
+// cabem na janela. A do frame anterior é a que vale: a deste ainda está sendo montada quando o clique chega.
 std::vector<EntityId> g_rows;
 std::vector<EntityId> g_lastRows;
 EntityId g_anchor = kNullEntity;  // último clique sem Shift
+// Lista virtual (Fase 27): a árvore vira uma lista das linhas visíveis (pais abertos) e só as que cabem na janela
+// são desenhadas. Com milhares de entidades, desenhar todas custava milissegundos por quadro.
+struct Row {
+    EntityId id = kNullEntity;
+    int depth = 0;
+    bool hasChildren = false;
+};
+std::vector<Row> g_visible;
+std::unordered_set<EntityId> g_collapsed;  // pais fechados (começam abertos)
+EntityId g_revealed = kNullEntity;         // última seleção cujo caminho foi aberto
 // Clique simples num item já selecionado entre vários: só vira seleção única ao soltar sem ter arrastado
 // (senão arrastar o grupo para outro pai seria impossível).
 EntityId g_collapseOnRelease = kNullEntity;
@@ -74,23 +85,42 @@ void OnRowClicked(EditorContext& ctx, EntityId id) {
     }
 }
 
-// Uma linha da Hierarquia com os filhos embaixo; `flat` (resultado da busca): só a linha, sem os filhos, com o
-// caminho do pai ao lado.
-void DrawEntityNode(EditorContext& ctx, EntityId id, bool flat = false) {
+// Linhas da árvore na ordem da Hierarquia, sem os filhos dos pais fechados.
+void CollectRows(const motor::Scene& scene, EntityId parent, int depth) {
+    for (EntityId id : scene.Children(parent)) {
+        const std::vector<EntityId> children = scene.Children(id);
+        g_visible.push_back({id, depth, !children.empty()});
+        if (!children.empty() && !g_collapsed.contains(id)) CollectRows(scene, id, depth + 1);
+    }
+}
+
+// Seleção nova dentro de um pai fechado (clique no viewport, busca, MCP): abre o caminho até ela, uma vez (depois
+// o usuário pode fechar o pai de novo).
+void RevealSelection(const EditorContext& ctx) {
+    if (ctx.selected == g_revealed) return;
+    g_revealed = ctx.selected;
+    const motor::Entity* e = ctx.scene.Find(ctx.selected);
+    for (int guard = 0; e && e->parent != kNullEntity && guard < 10000; ++guard) {
+        g_collapsed.erase(e->parent);
+        e = ctx.scene.Find(e->parent);
+    }
+}
+
+// Uma linha da Hierarquia (os filhos são outras linhas, logo abaixo, com `depth` maior); `flat` (resultado da
+// busca): sem seta de abrir, com o caminho do pai ao lado.
+void DrawEntityRow(EditorContext& ctx, const Row& row, bool flat) {
+    const EntityId id = row.id;
     motor::Entity* e = ctx.scene.Find(id);
     if (!e) return;
 
-    const std::vector<EntityId> children = flat ? std::vector<EntityId>{} : ctx.scene.Children(id);
-
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick |
-                               ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
-    if (children.empty()) flags |= ImGuiTreeNodeFlags_Leaf;
-    if (flat) flags |= ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                               ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    if (flat || !row.hasChildren) flags |= ImGuiTreeNodeFlags_Leaf;
     if (ctx.IsSelected(id)) flags |= ImGuiTreeNodeFlags_Selected;
-    g_rows.push_back(id);
-
-    // Seleção dentro de um pai recolhido: abre o caminho até ela.
-    if (!flat && ctx.selected != id && ctx.scene.IsDescendantOf(ctx.selected, id)) ImGui::SetNextItemOpen(true);
+    const bool collapsed = g_collapsed.contains(id);
+    if (!flat && row.hasChildren) ImGui::SetNextItemOpen(!collapsed, ImGuiCond_Always);
+    const float indent = static_cast<float>(row.depth) * ImGui::GetStyle().IndentSpacing;
+    if (indent > 0.0f) ImGui::Indent(indent);
 
     // Instâncias de prefab em azul (mais claro na raiz), como no painel Projeto.
     const bool inactive = !ctx.scene.IsActiveInHierarchy(id);
@@ -105,6 +135,15 @@ void DrawEntityNode(EditorContext& ctx, EntityId id, bool flat = false) {
     const bool open = ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(id)), flags, "%s",
                                         e->name.c_str());
     if (colored) ImGui::PopStyleColor();
+    if (indent > 0.0f) ImGui::Unindent(indent);
+    // Clique na seta: vale a partir do próximo quadro (as linhas deste já foram montadas).
+    if (!flat && row.hasChildren && open == collapsed) {
+        if (open) {
+            g_collapsed.erase(id);
+        } else {
+            g_collapsed.insert(id);
+        }
+    }
     if (flat) {
         const std::string path = ParentPath(ctx.scene, id);
         if (!path.empty()) {
@@ -167,11 +206,20 @@ void DrawEntityNode(EditorContext& ctx, EntityId id, bool flat = false) {
         }
         ImGui::EndPopup();
     }
+}
 
-    if (open && !flat) {
-        for (EntityId child : children) DrawEntityNode(ctx, child);
-        ImGui::TreePop();
+// As linhas que aparecem na janela (o ImGuiListClipper pula as outras, só reservando a altura delas).
+void DrawRows(EditorContext& ctx, bool flat) {
+    g_rows.clear();
+    for (const Row& row : g_visible) g_rows.push_back(row.id);  // ordem completa, para o Shift+clique
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(g_visible.size()));
+    while (clipper.Step()) {
+        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+            DrawEntityRow(ctx, g_visible[static_cast<size_t>(i)], flat);
+        }
     }
+    g_lastRows.swap(g_rows);
 }
 
 // Caixa de busca. Devolve o filtro do texto atual (vazio = árvore normal).
@@ -212,9 +260,11 @@ void DrawHierarchyPanel(EditorContext& ctx) {
     const HierarchyFilter filter = DrawSearchBox();
     ImGui::Separator();
 
-    g_rows.clear();
+    g_visible.clear();
     if (filter.Empty()) {
-        for (EntityId root : ctx.scene.Children(kNullEntity)) DrawEntityNode(ctx, root);
+        RevealSelection(ctx);
+        CollectRows(ctx.scene, kNullEntity, 0);
+        DrawRows(ctx, false);
     } else {
         // Resultados numa lista só, na ordem da Hierarquia, com o caminho de cada um.
         const std::vector<EntityId> found = SearchHierarchy(ctx.scene, filter);
@@ -223,9 +273,9 @@ void DrawHierarchyPanel(EditorContext& ctx) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Selecionar todas")) ctx.SetSelection(found);
         }
-        for (EntityId id : found) DrawEntityNode(ctx, id, true);
+        for (EntityId id : found) g_visible.push_back({id, 0, false});
+        DrawRows(ctx, true);
     }
-    g_lastRows.swap(g_rows);
 
     // Área vazia restante: soltar aqui = mover para a raiz; clicar = limpar seleção.
     const ImVec2 avail = ImGui::GetContentRegionAvail();
