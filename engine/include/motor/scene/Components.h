@@ -17,3 +17,4 @@
 #include "motor/scene/PrefabNested.h"
 #include "motor/scene/NavMeshSurface.h"
 #include "motor/scene/NavMeshAgent.h"
+#include "motor/scene/NavMeshLink.h"

@@ -26,5 +26,6 @@ motor_add_layer(scene
         PrefabNested.cpp
         NavMeshSurface.cpp
         NavMeshAgent.cpp
+        NavMeshLink.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)
