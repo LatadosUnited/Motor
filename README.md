@@ -759,7 +759,7 @@ componentes comuns (Inspector, cena, desfazer):
 
 ## Navegação (IA)
 
-Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Quatro
+Inimigos e NPCs andam sozinhos pelo cenário com a camada `engine/.../ai/` (Recast/Detour, Fases 34 e 35). Cinco
 componentes comuns (Inspector, cena, desfazer):
 
 | Componente | Campos |
@@ -767,6 +767,7 @@ componentes comuns (Inspector, cena, desfazer):
 | **Superfície de navegação** (`NavMeshSurface`) | Navmesh (arquivo `.mnav` e o botão Gerar), Raio, Altura, Altura do degrau e Inclinação máxima do agente; Tamanho e Altura da célula; Área mínima. Uma por cena: liga o navmesh |
 | **Agente de navegação** (`NavMeshAgent`) | Velocidade, Aceleração, Velocidade de giro, Distância de parada, Altura da base, Virar para onde anda, Alvo (entidade a seguir), Refazer caminho a cada, Raio, Altura, Desviar dos outros, Áreas por onde anda |
 | **Ligação de navegação** (`NavMeshLink`) | Início e Fim (pontas, relativas à entidade), Raio, Nos dois sentidos, Altura do arco (0 = escada). Pulo ou escada entre dois pontos do navmesh |
+| **Animação do agente** (`NavMeshAgentAnimation`) | Clipes parado, andando, correndo e pulando; Velocidade do andar e da corrida, Parado abaixo de, Acompanhar a velocidade, Mistura. Troca os clipes do Animator pela velocidade do agente |
 | **Área de navegação** (`NavMeshArea`) | Tamanho e Centro (caixa), Área (1 a 15), Nome, Custo. Água, lama: o agente dá a volta quando sai mais curto; o agente escolhe por quais áreas anda (**Áreas por onde anda**) |
 
 - **De onde vem o navmesh:** dos **Colliders estáticos** das entidades ativas (sem Rigidbody, sem trigger, sem
