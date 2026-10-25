@@ -17,7 +17,8 @@ struct PerceptionTarget {
     std::string group = "Jogador";  // os agentes escolhem quais grupos percebem (Perception::detects)
     float height = 1.0f;            // m: ponto olhado acima da origem (o meio do corpo)
     float visibility = 1.0f;        // multiplica o alcance da visão de quem olha (agachado, no escuro); 0 = invisível
-    bool soundsAreNoise = true;     // os sons do AudioSource desta entidade também são ouvidos pelos agentes
+    // m: até onde os sons do AudioSource desta entidade chegam aos agentes (vezes o volume da fonte); 0 = não chegam
+    float soundRange = 10.0f;
 
     bool operator==(const PerceptionTarget&) const = default;
 };

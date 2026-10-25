@@ -1,5 +1,6 @@
 #include "motor/ai/PerceptionSystem.h"
 
+#include "motor/audio/AudioSystem.h"
 #include "motor/physics/PhysicsSystem.h"
 #include "motor/scene/Components.h"
 #include "motor/scene/SceneRuntime.h"
@@ -45,12 +46,16 @@ glm::vec3 PerceptionPointOf(const Scene& scene, EntityId id) {
 void PerceptionSystem::OnStart(SceneRuntime& runtime) {
     m_scene = &runtime.GetScene();
     m_physics = runtime.GetSystem<PhysicsSystem>();
+    m_audio = runtime.GetSystem<AudioSystem>();
 }
 
 void PerceptionSystem::OnStop(SceneRuntime&) {
     m_seen.clear();
+    m_heard.clear();
+    m_pending.clear();
     m_scene = nullptr;
     m_physics = nullptr;
+    m_audio = nullptr;
 }
 
 void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float) {
@@ -63,12 +68,18 @@ void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float) {
         if (m_scene->IsActiveInHierarchy(id)) targets.push_back(id);
     m_stats.targets = static_cast<int>(targets.size());
 
-    // Quem saiu da cena, perdeu a Percepção ou foi desligado não vê mais nada.
-    for (auto it = m_seen.begin(); it != m_seen.end();) {
-        const Entity* e = m_scene->Find(it->first);
-        if (!e || !e->Get<Perception>() || !m_scene->IsActiveInHierarchy(it->first)) it = m_seen.erase(it);
-        else ++it;
-    }
+    // Quem saiu da cena, perdeu a Percepção ou foi desligado não vê nem ouve mais nada.
+    const auto gone = [&](const auto& entry) {
+        const Entity* e = m_scene->Find(entry.first);
+        return !e || !e->Get<Perception>() || !m_scene->IsActiveInHierarchy(entry.first);
+    };
+    std::erase_if(m_seen, gone);
+    std::erase_if(m_heard, gone);
+
+    std::vector<Noise> noises = std::move(m_pending);
+    m_pending.clear();
+    CollectSounds(noises);
+    m_stats.noises = static_cast<int>(noises.size());
 
     for (EntityId agent : m_scene->EntitiesWith<Perception>()) {
         if (!m_scene->IsActiveInHierarchy(agent)) continue;
@@ -87,6 +98,7 @@ void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float) {
         }
         // O mais perto primeiro: é quase sempre o que o script quer.
         std::sort(seen.begin(), seen.end(), [](const Sight& a, const Sight& b) { return a.distance < b.distance; });
+        Hear(agent, senses, noises);
     }
 
     m_stats.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -123,6 +135,57 @@ bool PerceptionSystem::LineOfSight(EntityId agent, EntityId target, float distan
     const auto back = m_physics->Raycast(point, -direction, distance, target);
     if (!back || back->distance >= distance - kSightSlack) return true;
     return IsPart(*m_scene, back->entity, agent) || IsPart(*m_scene, back->entity, target);
+}
+
+void PerceptionSystem::CollectSounds(std::vector<Noise>& noises) const {
+    if (!m_audio) return;
+    for (EntityId id : m_scene->EntitiesWith<PerceptionTarget>()) {
+        const Entity* e = m_scene->Find(id);
+        const AudioSource* source = e->Get<AudioSource>();
+        const float range = e->Get<PerceptionTarget>()->soundRange * (source ? source->volume : 0.0f);
+        if (range <= 0.0f || !m_scene->IsActiveInHierarchy(id) || !m_audio->IsPlaying(id)) continue;
+        noises.push_back({glm::vec3(m_scene->WorldMatrix(id)[3]), range, id});
+    }
+}
+
+void PerceptionSystem::Hear(EntityId agent, const Perception& senses, const std::vector<Noise>& noises) {
+    std::vector<HeardNoise>& heard = m_heard[agent];
+    heard.clear();
+    if (senses.hearing <= 0.0f || noises.empty()) return;
+    const glm::vec3 ears = PerceptionEyeOf(*m_scene, agent).position;
+    for (const Noise& noise : noises) {
+        if (noise.source != kNullEntity) {
+            if (IsPart(*m_scene, noise.source, agent)) continue;  // os próprios passos
+            const Entity* from = m_scene->Find(noise.source);
+            const PerceptionTarget* target = from ? from->Get<PerceptionTarget>() : nullptr;
+            if (target && !senses.Detects(target->group)) continue;
+        }
+        const float distance = glm::distance(ears, noise.position);
+        if (distance > noise.range * senses.hearing) continue;
+        // De cada fonte, só o mais perto (o passo e o som dele no mesmo passo contam uma vez).
+        const auto same = std::find_if(heard.begin(), heard.end(), [&](const HeardNoise& h) {
+            return noise.source != kNullEntity && h.source == noise.source;
+        });
+        if (same == heard.end()) heard.push_back({noise.source, noise.position, distance});
+        else if (distance < same->distance) *same = {noise.source, noise.position, distance};
+    }
+    std::sort(heard.begin(), heard.end(),
+              [](const HeardNoise& a, const HeardNoise& b) { return a.distance < b.distance; });
+}
+
+void PerceptionSystem::MakeNoise(const glm::vec3& position, float range, EntityId source) {
+    if (range > 0.0f) m_pending.push_back({position, range, source});
+}
+
+std::vector<HeardNoise> PerceptionSystem::GetHeard(EntityId agent) const {
+    const auto it = m_heard.find(agent);
+    return it == m_heard.end() ? std::vector<HeardNoise>{} : it->second;
+}
+
+bool PerceptionSystem::CanHear(EntityId agent, EntityId source) const {
+    const auto it = m_heard.find(agent);
+    if (it == m_heard.end()) return false;
+    return std::any_of(it->second.begin(), it->second.end(), [&](const HeardNoise& h) { return h.source == source; });
 }
 
 std::vector<EntityId> PerceptionSystem::GetSeen(EntityId agent) const {

@@ -12,8 +12,9 @@ MOTOR_COMPONENT_MODULE(PerceptionTarget) {
         .Field("visibility", "Visibilidade", &PerceptionTarget::visibility,
                {.speed = 0.01f, .min = 0.0f, .max = 10.0f, .format = "%.2f",
                 .tooltip = "Multiplica o alcance da visão de quem olha (agachado, no escuro); 0 = invisível"})
-        .Field("soundsAreNoise", "Sons são ouvidos", &PerceptionTarget::soundsAreNoise,
-               {.tooltip = "Os sons da Fonte de áudio desta entidade também chegam aos agentes"});
+        .Field("soundRange", "Alcance dos sons", &PerceptionTarget::soundRange,
+               {.speed = 0.1f, .min = 0.0f, .max = 10000.0f, .format = "%.1f m",
+                .tooltip = "Até onde os sons da Fonte de áudio desta entidade chegam aos agentes (vezes o volume); 0 = não chegam"});
 }
 
 } // namespace motor

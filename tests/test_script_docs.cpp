@@ -319,7 +319,8 @@ int main(int argc, char** argv) {
             {&componentH, "struct FieldOptions {"}, {&scriptH, "struct GameTime {"}, {&scriptH, "struct Collision {"},
             {&uiH, "struct UiPointer {"}, {&audioH, "struct AudioSettings {"}, {&audioH, "struct AudioVoiceInfo {"},
             {&optionsH, "struct GameOptions {"}, {&navH, "struct NavStats {"},
-            {&perceptionH, "struct PerceptionStats {"}, {&perceptionH, "struct PerceptionEye {"}};
+            {&perceptionH, "struct PerceptionStats {"}, {&perceptionH, "struct PerceptionEye {"},
+            {&perceptionH, "struct HeardNoise {"}};
         for (const auto& [header, type] : structs) {
             const std::string body = Between(*header, type, "};");
             CHECK(!body.empty());

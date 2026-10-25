@@ -390,7 +390,7 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 | `motor::NavMeshAgentAnimation` | Animação do agente | `std::string idleClip`, `walkClip`, `runClip` (vazio: só anda), `jumpClip` (nas ligações; vazio: anda), `walkSpeed` e `runSpeed` (m/s em que cada clipe toca na velocidade normal; corre da metade entre as duas para cima), `idleBelow`, `bool matchSpeed` (o `speed` do Animator acompanha o agente), `fade` (s de `CrossFade`) |
 | `motor::NavMeshArea` | Área de navegação | `glm::vec3 size`, `center` (caixa no espaço da entidade), `int area` (1 a 15; 0 é o chão comum), `std::string name`, `cost` (a partir de 1: andar 1 m na área conta como `cost` metros; vale na hora, sem gerar de novo) |
 | `motor::Perception` | Percepção | `sightRange` (m; 0 = cego), `sightAngle` (graus, abertura inteira do cone, para o -Z), `nearRange` (m: percebe em qualquer direção), `eyeHeight` (acima da origem), `hearing` (multiplica o alcance dos ruídos; 0 = surdo), `memory` (s), `std::string detects` (grupos de alvos separados por vírgula; vazio = todos; `Detects(grupo)`) |
-| `motor::PerceptionTarget` | Alvo de percepção | `std::string group`, `height` (ponto olhado acima da origem), `visibility` (multiplica o alcance da visão de quem olha; 0 = invisível), `bool soundsAreNoise` (os sons da Fonte de áudio da entidade são ouvidos) |
+| `motor::PerceptionTarget` | Alvo de percepção | `std::string group`, `height` (ponto olhado acima da origem), `visibility` (multiplica o alcance da visão de quem olha; 0 = invisível), `soundRange` (m: até onde os sons da Fonte de áudio da entidade chegam aos agentes, vezes o volume; 0 = não chegam) |
 | `motor::Animator` | Animator | `std::shared_ptr<Model> model` (glTF), `std::string clip` (clipe inicial), `bool playOnStart`, `bool loop`, `float speed`; controle na seção [Animação](#animação-motoranimator) |
 
 Mudar um campo de Collider, Rigidbody ou Controlador de personagem durante o Play refaz o corpo no próximo
@@ -589,12 +589,21 @@ direção, e a linha de visada está livre: um raio da física dos olhos (`eyeHe
 olhado (`height` acima da origem do alvo). Um Collider no meio tapa, menos os do próprio alvo e os de quem olha (e
 dos filhos de cada um); triggers não tapam. Sem física na cena, nada tapa.
 
+Ouve um ruído quando está a até `range` metros dele, vezes a própria `hearing`, medidos dos olhos. Ruído é o que um
+script faz com `MakeNoise` (passos, um tiro, uma pedra jogada) e também o som que toca na Fonte de áudio de um
+`PerceptionTarget`, a cada passo em que toca, com alcance `soundRange` vezes o `volume` da fonte. O som atravessa
+paredes. Ninguém ouve os próprios ruídos (nem os dos filhos), e o ruído de um alvo só chega a quem percebe o grupo dele;
+o ruído sem dono (`source` vazio) chega a todos.
+
 ```cpp
 // Veado que foge de quem vê.
 if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
     const std::vector<motor::EntityId> vistos = sentidos->GetSeen(GetId());
     if (!vistos.empty()) Fugir(vistos.front());  // o mais perto
+    else if (const auto ouvidos = sentidos->GetHeard(GetId()); !ouvidos.empty()) Olhar(ouvidos.front().position);
 }
+// No script do jogador, a cada passo dado: quem está a até 6 m ouve.
+sentidos->MakeNoise(glm::vec3(GetScene().WorldMatrix(GetId())[3]), 6.0f, GetId());
 ```
 
 | Método | Efeito |
@@ -602,7 +611,10 @@ if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
 | `std::vector<EntityId> GetSeen(EntityId agente) const` | quem o agente vê agora (no último passo), do mais perto ao mais longe; vazio sem `Perception` |
 | `bool CanSee(EntityId agente, EntityId alvo) const` | o alvo está entre os vistos no último passo |
 | `bool CheckSight(EntityId agente, EntityId alvo) const` | olha agora, sem esperar o passo (alcance, cone, grupo e linha de visada); não guarda nada |
-| `const motor::PerceptionStats& Stats() const` | o último passo: `perceivers` (com `Perception` ativos), `targets` (alvos ativos), `checks` (pares do mesmo grupo), `raycasts` (pares que passaram pelo alcance e pelo cone), `ms` |
+| `void MakeNoise(glm::vec3 posicao, float alcance, EntityId fonte = kNullEntity)` | faz um ruído que chega até `alcance` metros (vezes a audição de quem ouve); `fonte`, quem fez (vazio: sem dono). Os agentes ouvem no próximo passo fixo, e o ruído dura esse passo |
+| `std::vector<motor::HeardNoise> GetHeard(EntityId agente) const` | o que ouviu no último passo, do mais perto ao mais longe; de cada fonte, só o ruído mais perto. Cada um com `source` (quem fez), `position` (onde) e `distance` (dos olhos até lá) |
+| `bool CanHear(EntityId agente, EntityId fonte) const` | ouviu algum ruído da fonte no último passo |
+| `const motor::PerceptionStats& Stats() const` | o último passo: `perceivers` (com `Perception` ativos), `targets` (alvos ativos), `checks` (pares do mesmo grupo), `raycasts` (pares que passaram pelo alcance e pelo cone), `noises` (ruídos do passo, dos scripts e das Fontes de áudio), `ms` |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 `motor::PerceptionEyeOf(scene, agente)` dá os olhos no mundo (`position` e `forward`, a frente normalizada) e
