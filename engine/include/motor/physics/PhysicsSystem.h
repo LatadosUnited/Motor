@@ -61,9 +61,10 @@ struct PhysicsSettings {
     // OnFixedUpdate os Transforms voltam a ser os do último passo. No OnUpdate dos scripts, o Transform de um corpo
     // fica até um passo atrás da física (como na Unity com Rigidbody.interpolation).
     bool interpolate = true;
-    // Solucionador do Jolt: iterações de velocidade e de posição por passo. 20 (o Jolt usa 10) deixa pilhas altas
-    // assentarem: com 10, colunas de 10 caixas giradas umas sobre as outras balançam sem parar e nunca dormem.
-    int velocitySteps = 20;
+    // Solucionador do Jolt: iterações de velocidade e de posição por passo. 10 é o padrão do Jolt. 20 deixa pilhas
+    // altas assentarem (colunas de 10 caixas giradas umas sobre as outras balançam sem parar com 10), mas dobra o
+    // custo de cada corpo acordado: 1000 caixas se chocando (fisica1000) passavam de 14 para 23 ms por quadro.
+    int velocitySteps = 10;
     int positionSteps = 2;
     // Um corpo dorme quando a ponta dele anda menos que isto (m/s) por meio segundo. O Jolt usa 0,03; a PhysX da
     // Unity dorme com energia equivalente a ~0,1. Mais alto: menos corpos acordados, mas um que anda muito devagar
