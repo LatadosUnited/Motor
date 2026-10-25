@@ -177,7 +177,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         DrawGizmo(ctx, origin);
         DrawToolbar(ImVec2(origin.x + 8.0f, origin.y + 44.0f));
     }
-    play.DrawControls(origin, m_size.x);
+    const float playLeft = play.DrawControls(origin, m_size.x);
 
     // Mouse para a UI do jogo (botões): só na visão do jogo e fora dos botões de Play do viewport. Lado a lado,
     // quem informa é a janela Jogo (GameView).
@@ -219,13 +219,26 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     // Overlay com estatísticas.
     ImDrawList* dl = ImGui::GetWindowDrawList();
     char text[200];
-    std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws (sombras: %u em %u passes)  |  %u tris  |  UI: %u draws  |  %dx%d",
-                  fps, stats.drawCalls, stats.shadowDrawCalls, stats.shadowPasses, stats.triangles,
-                  m_showUi ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(), m_framebuffer->Height());
     const ImVec2 pad{8.0f, 6.0f};
+    // Em cima, o texto vai até os botões de Play: no viewport estreito fica mais curto e, se nem o FPS couber, vai
+    // para baixo (antes passava por baixo dos botões).
+    const float room = playLeft - (origin.x + 8.0f) - pad.x * 2 - 8.0f;
+    bool bottom = gameView;  // na visão do jogo, embaixo: o canto de cima costuma ser do HUD do jogo
+    for (int detail = 0; detail < 3; ++detail) {
+        if (detail == 0) {
+            std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws (sombras: %u em %u passes)  |  %u tris  |  UI: %u draws  |  %dx%d",
+                          fps, stats.drawCalls, stats.shadowDrawCalls, stats.shadowPasses, stats.triangles,
+                          m_showUi ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(), m_framebuffer->Height());
+        } else if (detail == 1) {
+            std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws  |  %u tris", fps, stats.drawCalls, stats.triangles);
+        } else {
+            std::snprintf(text, sizeof(text), "%.0f FPS", fps);
+        }
+        if (gameView || ImGui::CalcTextSize(text).x <= room) break;
+        if (detail == 2) bottom = true;
+    }
     const ImVec2 size = ImGui::CalcTextSize(text);
-    // Na visão do jogo, embaixo: o canto de cima costuma ser do HUD do jogo.
-    const ImVec2 p0{origin.x + 8.0f, gameView ? origin.y + m_size.y - size.y - pad.y * 2 - 8.0f : origin.y + 8.0f};
+    const ImVec2 p0{origin.x + 8.0f, bottom ? origin.y + m_size.y - size.y - pad.y * 2 - 8.0f : origin.y + 8.0f};
     dl->AddRectFilled(p0, ImVec2(p0.x + size.x + pad.x * 2, p0.y + size.y + pad.y * 2), IM_COL32(0, 0, 0, 120), 4.0f);
     dl->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), IM_COL32(235, 235, 235, 255), text);
     // Contadores à direita, abaixo dos botões de Play e (fora da visão do jogo) da barra de ferramentas.

@@ -151,7 +151,7 @@ void PlayController::DrawStatus() {
     ImGui::TextDisabled("(alterações feitas agora são descartadas ao parar)");
 }
 
-void PlayController::DrawControls(const ImVec2& origin, float viewportWidth) {
+float PlayController::DrawControls(const ImVec2& origin, float viewportWidth) {
     enum class Icon { Play, Pause, Step, Stop };
     const bool active = m_mode.IsActive();
     const bool paused = m_mode.IsPaused();
@@ -231,6 +231,7 @@ void PlayController::DrawControls(const ImVec2& origin, float viewportWidth) {
     const ImU32 bg = active ? (paused ? IM_COL32(110, 70, 10, 170) : IM_COL32(20, 60, 120, 170)) : IM_COL32(0, 0, 0, 120);
     dl->AddRectFilled(position, ImVec2(groupMax.x + 5.0f, groupMax.y + 5.0f), bg, 4.0f);
     dl->ChannelsMerge();
+    return position.x;
 }
 
 } // namespace editor
