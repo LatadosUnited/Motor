@@ -131,41 +131,58 @@ void ConvertSceneLight(const json& root, Scene& out) {
 } // namespace
 
 std::string ToJson(const Scene& scene, const AssetLibrary& assets, const JsonOptions& options) {
-    json root;
+    // Direto no texto, sem a árvore do nlohmann (Fase 27); o arquivo sai igual ao do dump(2) com as listas de
+    // números numa linha.
+    std::string out;
+    out.reserve(scene.Entities().size() * 1100 + 4096);  // ~1 KB por entidade na cena de referência
+    JsonWriter w(out);
     const bool prefab = std::string_view(options.format) == kPrefabFormat;
-    root["format"] = options.format;
-    root["version"] = kFormatVersion;
-
+    w.BeginObject();
+    w.Key("format");
+    w.String(options.format);
+    w.Key("version");
+    w.Int(kFormatVersion);
     if (!prefab) {
-        root["environment"] = EnvironmentToJson(scene.environment, assets);
+        w.Key("environment");
+        w.Value(EnvironmentToJson(scene.environment, assets));
     }
 
-    json entities = json::array();
+    w.Key("entities");
+    w.BeginArray();
     for (const auto& e : scene.Entities()) {
         const Transform& t = e->transform;
-        json je = {
-            {"id", e->id},
-            {"name", e->name},
-            {"active", e->active},
-            {"parent", e->parent},
-            {"transform", {
-                {"position", Vec(t.position)},
-                {"rotation", json::array({Num(t.rotation.x), Num(t.rotation.y), Num(t.rotation.z), Num(t.rotation.w)})},
-                {"scale", Vec(t.scale)},
-            }},
-        };
-
+        w.BeginObject();
+        w.Key("id");
+        w.UInt(e->id);
+        w.Key("name");
+        w.String(e->name);
+        w.Key("active");
+        w.Bool(e->active);
+        w.Key("parent");
+        w.UInt(e->parent);
+        w.Key("transform");
+        w.BeginObject();
+        const double position[] = {Num(t.position.x), Num(t.position.y), Num(t.position.z)};
+        const double rotation[] = {Num(t.rotation.x), Num(t.rotation.y), Num(t.rotation.z), Num(t.rotation.w)};
+        const double scale[] = {Num(t.scale.x), Num(t.scale.y), Num(t.scale.z)};
+        w.Key("position");
+        w.Numbers(position, 3);
+        w.Key("rotation");
+        w.Numbers(rotation, 4);
+        w.Key("scale");
+        w.Numbers(scale, 3);
+        w.EndObject();
         if (!e->components.empty()) {
-            json components = json::array();
-            for (const ComponentPtr& c : e->components) components.push_back(ComponentToJson(c, assets, options, e->name));
-            je["components"] = std::move(components);
+            w.Key("components");
+            w.BeginArray();
+            for (const ComponentPtr& c : e->components) WriteComponent(w, c, assets, options, e->name);
+            w.EndArray();
         }
-        entities.push_back(std::move(je));
+        w.EndObject();
     }
-    root["entities"] = std::move(entities);
-
-    // "replace" troca bytes UTF-8 inválidos em vez de lançar exceção.
-    return CompactNumberArrays(root.dump(2, ' ', false, json::error_handler_t::replace));
+    w.EndArray();
+    w.EndObject();
+    return out;
 }
 
 bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::string* error, const char* format) {
@@ -208,7 +225,11 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
         std::unordered_map<EntityId, EntityId> idMap;
         std::vector<std::pair<EntityId, EntityId>> parentLinks;  // (novo id, id antigo do pai)
 
-        for (const json& je : root.value("entities", json::array())) {
+        // Pela referência: root.value("entities", ...) devolvia uma cópia da lista inteira (Fase 27).
+        static const json kNoEntities = json::array();
+        const auto entitiesIt = root.find("entities");
+        const json& entities = entitiesIt != root.end() && entitiesIt->is_array() ? *entitiesIt : kNoEntities;
+        for (const json& je : entities) {
             Entity& e = out.CreateEntity(je.value("name", std::string("Entidade")));
             Read(je, "active", e.active);
 
@@ -302,12 +323,18 @@ size_t ResolveMissingComponents(Scene& scene, AssetLibrary& assets, std::vector<
 
 bool Save(const std::filesystem::path& path, const Scene& scene, const AssetLibrary& assets, std::string* error,
           const JsonOptions& options) {
+    const auto start = std::chrono::steady_clock::now();
     const std::string text = ToJson(scene, assets, options);
+    const auto json = std::chrono::steady_clock::now();
 
     // Escreve num arquivo temporário e troca no fim, para não corromper a cena se algo falhar no meio.
     if (!WriteFileAtomic(path, text, error)) return false;
 
-    log::Info("{}: {}", std::string_view(options.format) == kPrefabFormat ? "Prefab salvo" : "Cena salva", ToUtf8(path));
+    using Ms = std::chrono::duration<double, std::milli>;
+    log::Info("{}: {} ({:.0f} ms: JSON {:.0f}, gravar {:.0f})",
+              std::string_view(options.format) == kPrefabFormat ? "Prefab salvo" : "Cena salva", ToUtf8(path),
+              Ms(std::chrono::steady_clock::now() - start).count(), Ms(json - start).count(),
+              Ms(std::chrono::steady_clock::now() - json).count());
     return true;
 }
 

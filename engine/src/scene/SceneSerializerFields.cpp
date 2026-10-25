@@ -329,6 +329,97 @@ json ComponentToJson(const ComponentPtr& component, const AssetLibrary& assets, 
     return j;
 }
 
+namespace {
+// Chave repetida (ou um campo chamado "type"): no objeto do nlohmann a última ganha, no mesmo lugar. Esses componentes
+// passam pela árvore para o arquivo continuar igual.
+bool HasRepeatedKeys(const ComponentType& type) {
+    const auto& fields = type.fields;
+    for (size_t i = 0; i < fields.size(); ++i) {
+        if (fields[i].key == "type") return true;
+        for (size_t j = 0; j < i; ++j) {
+            if (fields[j].key == fields[i].key) return true;
+        }
+    }
+    return false;
+}
+
+void WriteField(JsonWriter& w, const FieldInfo& f, const void* c, const AssetLibrary& assets,
+                const JsonOptions& options, const std::string& owner) {
+    switch (f.type) {
+        case FieldType::Bool: w.Bool(f.As<bool>(c)); return;
+        case FieldType::Int: w.Int(f.As<int>(c)); return;
+        case FieldType::Float: w.Number(Num(f.As<float>(c))); return;
+        case FieldType::Vec2: {
+            const glm::vec2& v = f.As<glm::vec2>(c);
+            const double values[] = {Num(v.x), Num(v.y)};
+            w.Numbers(values, 2);
+            return;
+        }
+        case FieldType::Vec3: {
+            const glm::vec3& v = f.As<glm::vec3>(c);
+            const double values[] = {Num(v.x), Num(v.y), Num(v.z)};
+            w.Numbers(values, 3);
+            return;
+        }
+        case FieldType::Vec4: {
+            const glm::vec4& v = f.As<glm::vec4>(c);
+            const double values[] = {Num(v.x), Num(v.y), Num(v.z), Num(v.w)};
+            w.Numbers(values, 4);
+            return;
+        }
+        case FieldType::String: w.String(f.As<std::string>(c)); return;
+        case FieldType::Mesh:
+        case FieldType::Texture: {
+            std::optional<AssetRef> ref;
+            if (f.type == FieldType::Mesh) {
+                const auto& mesh = f.As<std::shared_ptr<Mesh>>(c);
+                ref = assets.RefOf(mesh.get());
+                if (mesh && !ref) log::Warn("Salvar cena: malha de '{}' não está no AssetLibrary", owner);
+            } else {
+                const auto& texture = f.As<std::shared_ptr<Texture2D>>(c);
+                ref = assets.RefOf(texture.get());
+                if (texture && !ref) log::Warn("Salvar cena: textura de '{}' não está no AssetLibrary", owner);
+            }
+            if (ref && ref->guid.empty()) {
+                w.String(ref->name);  // embutido: "Cubo"
+            } else {
+                w.Value(RefToJson(ref, options));
+            }
+            return;
+        }
+        case FieldType::Custom: {
+            const std::string text = f.custom->toJson(f.Get(c), assets);
+            if (text != "-0" && w.RawSimple(text)) return;
+            const json value = json::parse(text, nullptr, false);
+            if (value.is_discarded()) {
+                log::Warn("Salvar cena: campo '{}' de '{}' ({}) gerou JSON inválido", f.key, owner, f.custom->name);
+                w.Null();
+                return;
+            }
+            w.Value(value);
+            return;
+        }
+    }
+    w.Null();
+}
+} // namespace
+
+void WriteComponent(JsonWriter& writer, const ComponentPtr& component, const AssetLibrary& assets,
+                    const JsonOptions& options, const std::string& owner) {
+    if (&component.Type() == &ComponentRegistry::MissingType() || HasRepeatedKeys(component.Type())) {
+        writer.Value(ComponentToJson(component, assets, options, owner));
+        return;
+    }
+    writer.BeginObject();
+    writer.Key("type");
+    writer.String(component.Type().name);
+    for (const FieldInfo& f : component.Type().fields) {
+        writer.Key(f.key);
+        WriteField(writer, f, component.Data(), assets, options, owner);
+    }
+    writer.EndObject();
+}
+
 void ReadFields(const ComponentType& type, void* data, const json& obj, AssetLibrary& assets, const std::string& owner) {
     for (const FieldInfo& f : type.fields) {
         if (auto it = StoredField(f, obj); it != obj.end()) FieldFromJson(f, data, *it, assets, owner);
