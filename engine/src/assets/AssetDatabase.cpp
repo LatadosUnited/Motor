@@ -43,6 +43,12 @@ bool AssetDatabase::IsTrackedAsset(const fs::path& path) {
     return AssetTypeFromPath(path) != AssetType::Unknown;
 }
 
+bool AssetDatabase::LooksLikeGuid(std::string_view text) {
+    return text.size() == 32 && std::all_of(text.begin(), text.end(), [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    });
+}
+
 std::string AssetDatabase::NewGuid() {
     static std::mt19937_64 rng = [] {
         std::random_device rd;

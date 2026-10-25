@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <fstream>
@@ -180,6 +181,23 @@ bool FromJson(std::string_view text, Scene& out, AssetLibrary& assets, std::stri
         if (version < 1 || version > kFormatVersion) {
             SetError(error, std::format("Versão de cena não suportada: {} (esperado até {}).", version, kFormatVersion));
             return false;
+        }
+
+        // Texturas da cena (direto ou pelos materiais) decodificadas em paralelo antes de ler as entidades, que
+        // depois as acham já carregadas (Fase 26).
+        {
+            std::vector<std::string> guids;
+            const std::function<void(const json&)> collect = [&](const json& j) {
+                if (j.is_string()) {
+                    if (const auto& s = j.get_ref<const std::string&>(); AssetDatabase::LooksLikeGuid(s)) guids.push_back(s);
+                } else if (j.is_structured()) {
+                    for (const json& item : j) collect(item);
+                }
+            };
+            collect(root);
+            std::sort(guids.begin(), guids.end());
+            guids.erase(std::unique(guids.begin(), guids.end()), guids.end());
+            assets.PreloadTextures(guids);
         }
 
         if (auto it = root.find("environment"); it != root.end() && it->is_object()) {
