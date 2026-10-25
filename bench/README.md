@@ -86,6 +86,24 @@ powershell -File bench/comparar.ps1 -Projeto "C:/temp/bench/Motor Bench"
 
 ## Resultados
 
+### 25/10/2026 — Fase 25: cena, dados e física
+
+Máquina de referência parada, Player Release do `main` (4eea721) contra o player da Unity de 18/10, uma rodada do
+`comparar.ps1` (detalhes e a rodada com 20 iterações do solucionador na nota da Fase 25).
+
+| Cena | Motor | Unity | Motor em % da Unity | 20/10 |
+|---|---|---|---|---|
+| vazia | 13,2 ms | 13,8 ms | 105% | 100 a 102% |
+| cubos1000 | 14,4 ms | 16,7 ms | 116% | 107 a 112% |
+| cubos1000sombra | 16,8 ms | 21,4 ms | 128% | 110 a 112% |
+| cubos10000 | 18,6 ms | 36,7 ms | **197%** | 98 a 100% |
+| fisica1000 | 16,7 ms | 17,4 ms | **104%** | 84 a 85% |
+| scripts1000 | 13,7 ms | 16,8 ms | 122% | 112% |
+| spawn200 | 13,0 ms | 14,6 ms | 112% | 101% |
+
+Base do `test_desempenho` regravada nesta sessão (`jogo_passo` 0,77 ms; `cena_filhos`, `cena_nomes` e
+`cena_estrutura` novas).
+
 ### 21/10/2026 — Fase 23: renderer em lote (só o Motor)
 
 Sem a Unity nesta rodada: Player Release do `main` (39ef6fc) contra o fim da Fase 23 (branch `fase-23-renderer-em-lote`),

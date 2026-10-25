@@ -3,11 +3,12 @@ tipo: fase
 alpha: 3
 fase: 25
 titulo: Cena, dados e física
-status: em andamento
+status: pronta
 prioridade: 3
 areas: [scene, physics]
-branch: fase-25-cena
+branch: fase-25-fisica-passos
 inicio: 2026-10-21
+fim: 2026-10-25
 ---
 
 # Fase 25 — Cena, dados e física
@@ -148,6 +149,46 @@ escala mal porque cada objeto lê entidade, componente, material e malha espalha
 é limitado pela GPU, então o ganho não aparece no quadro. Foi para a Fase 28 (alpha 4), com o mundo aberto e os
 objetos guardados entre quadros no renderer.
 
+**Medição final (25/10, máquina parada):** Player Release do `main` (4eea721), o mesmo método de 21/10; Unity com o
+player de `bench/unity/Build`, alternando cena a cena (`comparar.ps1`).
+
+Primeiro, com as 20 iterações de velocidade da Tarefa 12, a `fisica1000` ficou em **71% da Unity** (24,4 contra
+17,3 ms; era 84% em 20/10). Com o CSV do `--perf`: de 1,7 s a 8,8 s, com 900 a 1000 caixas acordadas, cada quadro
+gastava 32 a 38 ms de física (dois passos de ~17 ms). As 20 iterações dobram o custo de cada corpo acordado. Mesmo
+Player, só o número de iterações trocado, duas rodadas alternadas:
+
+| | `fisica1000` (quadro) | Referência: física por quadro | Referência: corpos acordados | Referência: quadro |
+|---|---|---|---|---|
+| 10 iterações | **14,3 ms** | 8,1 ms | 270 | 44,3 a 44,6 ms |
+| 20 iterações | 21,9 a 23,6 ms | 5,9 ms | 60 | 44,3 a 44,6 ms |
+
+O solucionador voltou às 10 do Jolt (4eea721); o sono a 5 cm/s ficou. As pilhas altas de caixas giradas da
+referência balançam de novo (270 acordadas), mas a cena é limitada pela GPU e o quadro não muda.
+
+Comparação com a Unity no código final (Motor em % da Unity; acima de 100% = Motor mais rápido):
+
+| Cena | Motor | Unity | % | 20/10 |
+|---|---|---|---|---|
+| vazia | 13,2 ms | 13,8 ms | 105% | 100 a 102% |
+| cubos1000 | 14,4 ms | 16,7 ms | 116% | 107 a 112% |
+| cubos1000sombra | 16,8 ms | 21,4 ms | 128% | 110 a 112% |
+| cubos10000 | 18,6 ms | 36,7 ms | **197%** | 98 a 100% |
+| fisica1000 | 16,7 ms | 17,4 ms | **104%** | 84 a 85% |
+| scripts1000 | 13,7 ms | 16,8 ms | 122% | 112% |
+| spawn200 | 13,0 ms | 14,6 ms | 112% | 101% |
+
+`test_desempenho` (Release, ms, a menor de 3; base regravada com estes números): `jogo_passo` 1,37 → **0,77**
+(0,40 com 20 iterações), `cena_json` 337 → 255, `cena_ler` 314 → 232, `cena_comparar` 1,76 → 0,93, `cena_copiar`
+4,70 → 3,46; novos: `cena_filhos` 0,30, `cena_nomes` 0,32, `cena_estrutura` 0,24.
+
+Pronto quando:
+
+- `fisica1000` acima de 85% da Unity: **sim**, 104%.
+- `test_desempenho` sem piora: **sim**, todos abaixo da base antiga.
+- Física da referência ≤ 3 ms por quadro: **não**, 8,1 ms. São 3 passos fixos por quadro porque o quadro leva 44 ms
+  (limitado pela GPU); cada passo custa ~2,7 ms. A 60 FPS (um passo por quadro, meta da alpha) fica abaixo de 3 ms:
+  depende da Fase 24.
+
 ## Limitações
 
 - `FindByName` com nomes repetidos: uma entidade renomeada direto (o nome é campo livre) para o nome de outra que vem
@@ -156,10 +197,11 @@ objetos guardados entre quadros no renderer.
 - `Children` não vê `Entity::parent` mudado direto (use `SetParent`); nenhum código da engine e do editor faz isso.
 - Os índices não são seguros entre threads: a consulta aplica a fila de mudanças (é `const`, mas escreve).
 
-- 20 iterações de velocidade custam mais por corpo acordado (no `test_physics_bench`, a queda do primeiro segundo
-  não ficou mais cara; o ganho vem de quase todos dormirem). 6 das 90 colunas da referência ainda balançam.
+- Com as 10 iterações do Jolt, pilhas altas de caixas giradas umas sobre as outras balançam sem dormir (270 corpos
+  acordados na referência). 20 iterações resolvem, mas dobram o custo de cada corpo acordado.
 - `velocitySteps`, `positionSteps` e `sleepVelocity` são globais (`PhysicsSettings`), sem campo no `.mproject` nem
-  no editor. Corpo que anda abaixo de 5 cm/s por meio segundo agora para (antes, 3 cm/s).
+  no editor: um projeto com pilhas altas não tem como subir as iterações. Corpo que anda abaixo de 5 cm/s por meio
+  segundo agora para (antes, 3 cm/s).
 
 - O cache da matriz de mundo confere o transform a cada consulta: numa hierarquia funda, consultar uma folha ainda
   sobe até a raiz (sem recalcular nem buscar no mapa).

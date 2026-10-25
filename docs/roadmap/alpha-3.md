@@ -35,7 +35,7 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 | — | Fase 22 — Medição | pronta (20/10) | Tracy, `--perf`, cena de referência, `test_desempenho` | — |
 | — | [Fase 23 — Renderer em lote](alpha-3/fase-23-renderer-em-lote.md) | pronta (21/10) | `cubos10000`: 10 001 → 2 draws, Render 33 → 12,7 ms; referência 7927 → 16 draws, quadro 49 → 44 ms | — |
 | 2 | Fase 24 — GPU: pós, sombras e LOD | planejada | 8 ms de pós numa cena vazia; 47 ms de GPU na referência | 25, 27 |
-| 3 | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | em andamento | física de 11,6 ms na referência (passos fixos acumulados) | 23, 24, 27 |
+| — | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | pronta (25/10) | `fisica1000` 84 → 104% da Unity, `jogo_passo` 1,37 → 0,77 ms, filhos e nomes sem percorrer a cena; física da referência 8,1 ms (3 passos por quadro, espera a Fase 24) | — |
 | 4 | Fase 26 — Várias threads | planejada | tudo menos a física roda numa thread; 3 núcleos parados | 27 |
 | 5 | Fase 27 — Editor que escala | planejada | gravar a referência em JSON leva 337 ms, a cada 0,5 s | 23, 24, 25, 26 |
 | — | [Organização do código 2](alpha-3/organizacao-do-codigo-2.md) | planejada | `SetError` em 14 arquivos, leitura de arquivo em 8, `DrawScene` com 186 linhas; sem mudar comportamento | tarefas 1 a 4 já; a 5 depois da 26 e fora da 24 |
@@ -132,7 +132,9 @@ Objetivo: baixar o custo fixo da GPU (8 ms de pós numa cena vazia) e os 47 ms d
 
 ## Fase 25 — Cena, dados e física
 
-**Em andamento:** tarefas na [nota da fase](alpha-3/fase-25-cena.md).
+**Pronta (25/10/2026):** [nota da fase](alpha-3/fase-25-cena.md). Passos fixos limitados e interpolados, física
+sincronizando só o que mudou, índices de filhos, nomes e tipos na `Scene`. Todas as cenas do bench acima de 100% da
+Unity. Falta a física da referência ≤ 3 ms por quadro, que depende do quadro mais rápido (Fase 24).
 
 ## Fase 26 — Várias threads
 
