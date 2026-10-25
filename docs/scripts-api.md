@@ -595,6 +595,10 @@ script faz com `MakeNoise` (passos, um tiro, uma pedra jogada) e também o som q
 paredes. Ninguém ouve os próprios ruídos (nem os dos filhos), e o ruído de um alvo só chega a quem percebe o grupo dele;
 o ruído sem dono (`source` vazio) chega a todos.
 
+De cada alvo que viu ou ouviu, o agente lembra onde ele estava da última vez e há quanto tempo foi, até passar
+`memory` segundos sem percebê-lo de novo (ou o alvo sair da cena). Com a memória, o guarda vai até onde viu o jogador
+sumir atrás da parede. Ruídos sem dono não ficam na memória.
+
 ```cpp
 // Veado que foge de quem vê.
 if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
@@ -602,6 +606,8 @@ if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
     if (!vistos.empty()) Fugir(vistos.front());  // o mais perto
     else if (const auto ouvidos = sentidos->GetHeard(GetId()); !ouvidos.empty()) Olhar(ouvidos.front().position);
 }
+// Guarda que perdeu o jogador de vista: vai até onde o percebeu da última vez.
+if (auto lembra = sentidos->Recall(GetId(), jogador); lembra && !lembra->seen) nav->SetDestination(GetId(), lembra->position);
 // No script do jogador, a cada passo dado: quem está a até 6 m ouve.
 sentidos->MakeNoise(glm::vec3(GetScene().WorldMatrix(GetId())[3]), 6.0f, GetId());
 ```
@@ -614,6 +620,9 @@ sentidos->MakeNoise(glm::vec3(GetScene().WorldMatrix(GetId())[3]), 6.0f, GetId()
 | `void MakeNoise(glm::vec3 posicao, float alcance, EntityId fonte = kNullEntity)` | faz um ruído que chega até `alcance` metros (vezes a audição de quem ouve); `fonte`, quem fez (vazio: sem dono). Os agentes ouvem no próximo passo fixo, e o ruído dura esse passo |
 | `std::vector<motor::HeardNoise> GetHeard(EntityId agente) const` | o que ouviu no último passo, do mais perto ao mais longe; de cada fonte, só o ruído mais perto. Cada um com `source` (quem fez), `position` (onde) e `distance` (dos olhos até lá) |
 | `bool CanHear(EntityId agente, EntityId fonte) const` | ouviu algum ruído da fonte no último passo |
+| `std::vector<motor::PerceptionMemory> GetMemory(EntityId agente) const` | o que o agente lembra, do mais recente ao mais antigo (no empate, do mais perto). Cada um com `target`, `position` (a origem do alvo, se visto; onde fez o ruído, se ouvido), `age` (s desde a última vez; 0 = neste passo), `seen` e `heard` (neste passo) e `bySight` (a última posição veio da visão) |
+| `std::optional<motor::PerceptionMemory> Recall(EntityId agente, EntityId alvo) const` | o que lembra do alvo; `nullopt` se nunca o percebeu ou já esqueceu |
+| `void Forget(EntityId agente, EntityId alvo = kNullEntity)` | esquece o alvo (chegou onde o viu e não achou nada) ou, sem alvo, tudo; percebê-lo de novo volta a lembrar |
 | `const motor::PerceptionStats& Stats() const` | o último passo: `perceivers` (com `Perception` ativos), `targets` (alvos ativos), `checks` (pares do mesmo grupo), `raycasts` (pares que passaram pelo alcance e pelo cone), `noises` (ruídos do passo, dos scripts e das Fontes de áudio), `ms` |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 

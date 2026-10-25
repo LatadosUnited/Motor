@@ -1,6 +1,7 @@
 // Percepção (Fase 37): os componentes Perception e PerceptionTarget (campos, padrões, grupos e a ida e volta pela
 // cena) e o PerceptionSystem no SceneRuntime: visão por alcance, cone e linha de visada (Tarefa 2) e audição, com os
-// ruídos dos scripts e os sons das Fontes de áudio dos alvos (Tarefa 3). Não usa OpenGL, janela nem placa de som.
+// ruídos dos scripts e os sons das Fontes de áudio dos alvos (Tarefa 3) e a memória (Tarefa 4). Não usa OpenGL,
+// janela nem placa de som.
 #include "TestUtil.h"
 
 #include <motor/ai/PerceptionSystem.h>
@@ -330,6 +331,83 @@ int main(int argc, char** argv) {
             CHECK(audio->Stop(player));
             runtime.FixedUpdate(kDt);
             CHECK(!senses->CanHear(guard, player));
+        }
+        runtime.Stop();
+    }
+
+    SECTION("Memória: última posição, há quanto tempo e esquecer");
+    {
+        Scene scene;
+        AddRoom(scene);
+        Entity& guardEntity = scene.CreateEntity("Guarda");
+        guardEntity.transform.position = {0.0f, 0.0f, 5.0f};
+        guardEntity.Add<Perception>().memory = 1.0f;
+        const EntityId guard = guardEntity.id;
+        const EntityId player = AddTarget(scene, "Jogador", {1.0f, 0.0f, 2.0f});
+        const EntityId sheep = AddTarget(scene, "Ovelha", {-8.0f, 0.0f, -3.0f});  // atrás da parede
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        PerceptionSystem* senses = runtime.GetSystem<PerceptionSystem>();
+        CHECK(senses != nullptr);
+        if (senses) {
+            CHECK(!senses->Recall(guard, player).has_value() && senses->GetMemory(guard).empty());
+            runtime.FixedUpdate(kDt);
+            auto seen = senses->Recall(guard, player);
+            CHECK(seen && seen->seen && !seen->heard && seen->bySight && seen->age == 0.0f);
+            CHECK(seen && seen->position == glm::vec3(1.0f, 0.0f, 2.0f));  // a origem do alvo
+            CHECK(!senses->Recall(guard, sheep).has_value());
+
+            // O jogador some atrás da parede: o guarda lembra onde o viu da última vez.
+            scene.Find(player)->transform.position = {1.0f, 0.0f, 2.5f};
+            runtime.FixedUpdate(kDt);
+            scene.Find(player)->transform.position = {1.0f, 0.0f, -4.0f};
+            for (int i = 0; i < 30; ++i) runtime.FixedUpdate(kDt);
+            seen = senses->Recall(guard, player);
+            CHECK(seen && !seen->seen && seen->bySight);
+            CHECK(seen && seen->position == glm::vec3(1.0f, 0.0f, 2.5f));
+            CHECK(seen && std::abs(seen->age - 30 * kDt) < 1e-4f);
+
+            // A ovelha faz barulho: lembrada pelo ruído; o ruído sem dono não fica.
+            senses->MakeNoise({-8.0f, 0.5f, -3.0f}, 20.0f, sheep);
+            senses->MakeNoise({5.0f, 0.5f, 5.0f}, 20.0f);
+            runtime.FixedUpdate(kDt);
+            const auto heard = senses->Recall(guard, sheep);
+            CHECK(heard && heard->heard && !heard->seen && !heard->bySight && heard->age == 0.0f);
+            CHECK(heard && heard->position == glm::vec3(-8.0f, 0.5f, -3.0f));
+            std::vector<PerceptionMemory> memory = senses->GetMemory(guard);
+            CHECK(memory.size() == 2 && memory[0].target == sheep && memory[1].target == player);  // a mais recente antes
+
+            // Passou da memória (1 s) sem perceber: esquece o jogador, mas ainda lembra a ovelha.
+            for (int i = 0; i < 31; ++i) runtime.FixedUpdate(kDt);
+            CHECK(!senses->Recall(guard, player).has_value());
+            CHECK(senses->Recall(guard, sheep).has_value());
+
+            // Visto e ouvido no mesmo passo: a posição é a de quem viu.
+            scene.Find(player)->transform.position = {0.0f, 0.0f, 3.0f};
+            senses->MakeNoise({0.0f, 0.0f, 2.0f}, 20.0f, player);
+            runtime.FixedUpdate(kDt);
+            seen = senses->Recall(guard, player);
+            CHECK(seen && seen->seen && seen->heard && seen->bySight && seen->position == glm::vec3(0.0f, 0.0f, 3.0f));
+
+            senses->Forget(guard, player);
+            CHECK(!senses->Recall(guard, player).has_value() && senses->Recall(guard, sheep).has_value());
+            runtime.FixedUpdate(kDt);  // ainda vê: volta a lembrar
+            CHECK(senses->Recall(guard, player).has_value());
+            senses->Forget(guard);
+            CHECK(senses->GetMemory(guard).empty());
+
+            // Quem sai da cena é esquecido; sem memória (0), só lembra enquanto percebe.
+            runtime.FixedUpdate(kDt);
+            scene.DestroyEntity(player);
+            runtime.FixedUpdate(kDt);
+            CHECK(senses->GetMemory(guard).empty());
+            senses->MakeNoise({-8.0f, 0.5f, -3.0f}, 20.0f, sheep);
+            scene.Find(guard)->Get<Perception>()->memory = 0.0f;
+            runtime.FixedUpdate(kDt);
+            CHECK(senses->Recall(guard, sheep).has_value());
+            runtime.FixedUpdate(kDt);
+            CHECK(!senses->Recall(guard, sheep).has_value());
         }
         runtime.Stop();
     }

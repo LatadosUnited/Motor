@@ -320,7 +320,7 @@ int main(int argc, char** argv) {
             {&uiH, "struct UiPointer {"}, {&audioH, "struct AudioSettings {"}, {&audioH, "struct AudioVoiceInfo {"},
             {&optionsH, "struct GameOptions {"}, {&navH, "struct NavStats {"},
             {&perceptionH, "struct PerceptionStats {"}, {&perceptionH, "struct PerceptionEye {"},
-            {&perceptionH, "struct HeardNoise {"}};
+            {&perceptionH, "struct HeardNoise {"}, {&perceptionH, "struct PerceptionMemory {"}};
         for (const auto& [header, type] : structs) {
             const std::string body = Between(*header, type, "};");
             CHECK(!body.empty());

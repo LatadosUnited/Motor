@@ -52,13 +52,14 @@ void PerceptionSystem::OnStart(SceneRuntime& runtime) {
 void PerceptionSystem::OnStop(SceneRuntime&) {
     m_seen.clear();
     m_heard.clear();
+    m_memory.clear();
     m_pending.clear();
     m_scene = nullptr;
     m_physics = nullptr;
     m_audio = nullptr;
 }
 
-void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float) {
+void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float dt) {
     if (!m_scene) return;
     const auto start = std::chrono::steady_clock::now();
     m_stats = {};
@@ -68,13 +69,14 @@ void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float) {
         if (m_scene->IsActiveInHierarchy(id)) targets.push_back(id);
     m_stats.targets = static_cast<int>(targets.size());
 
-    // Quem saiu da cena, perdeu a Percepção ou foi desligado não vê nem ouve mais nada.
+    // Quem saiu da cena, perdeu a Percepção ou foi desligado não vê nem ouve mais nada (e esquece tudo).
     const auto gone = [&](const auto& entry) {
         const Entity* e = m_scene->Find(entry.first);
         return !e || !e->Get<Perception>() || !m_scene->IsActiveInHierarchy(entry.first);
     };
     std::erase_if(m_seen, gone);
     std::erase_if(m_heard, gone);
+    std::erase_if(m_memory, gone);
 
     std::vector<Noise> noises = std::move(m_pending);
     m_pending.clear();
@@ -99,6 +101,7 @@ void PerceptionSystem::OnFixedUpdate(SceneRuntime&, float) {
         // O mais perto primeiro: é quase sempre o que o script quer.
         std::sort(seen.begin(), seen.end(), [](const Sight& a, const Sight& b) { return a.distance < b.distance; });
         Hear(agent, senses, noises);
+        Remember(agent, senses, dt);
     }
 
     m_stats.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -171,6 +174,67 @@ void PerceptionSystem::Hear(EntityId agent, const Perception& senses, const std:
     }
     std::sort(heard.begin(), heard.end(),
               [](const HeardNoise& a, const HeardNoise& b) { return a.distance < b.distance; });
+}
+
+void PerceptionSystem::Remember(EntityId agent, const Perception& senses, float dt) {
+    std::vector<PerceptionMemory>& memory = m_memory[agent];
+    for (PerceptionMemory& m : memory) {
+        m.age += dt;
+        m.seen = m.heard = false;
+    }
+    const auto entry = [&](EntityId target) -> PerceptionMemory& {
+        const auto it = std::find_if(memory.begin(), memory.end(),
+                                     [&](const PerceptionMemory& m) { return m.target == target; });
+        if (it != memory.end()) return *it;
+        memory.push_back({});
+        memory.back().target = target;
+        return memory.back();
+    };
+    // Ouvido primeiro: se também foi visto, a posição de quem viu é a que vale.
+    for (const HeardNoise& noise : m_heard[agent]) {
+        if (noise.source == kNullEntity) continue;
+        PerceptionMemory& m = entry(noise.source);
+        m.position = noise.position;
+        m.age = 0.0f;
+        m.heard = true;
+        m.bySight = false;
+    }
+    for (const Sight& sight : m_seen[agent]) {
+        PerceptionMemory& m = entry(sight.target);
+        m.position = glm::vec3(m_scene->WorldMatrix(sight.target)[3]);
+        m.age = 0.0f;
+        m.seen = true;
+        m.bySight = true;
+    }
+    // Esquece quem passou da memória sem ser percebido e quem saiu da cena.
+    std::erase_if(memory, [&](const PerceptionMemory& m) {
+        return m.age > senses.memory || !m_scene->Find(m.target);
+    });
+    const glm::vec3 eye = PerceptionEyeOf(*m_scene, agent).position;
+    std::sort(memory.begin(), memory.end(), [&](const PerceptionMemory& a, const PerceptionMemory& b) {
+        if (a.age != b.age) return a.age < b.age;
+        return glm::distance(eye, a.position) < glm::distance(eye, b.position);
+    });
+}
+
+std::vector<PerceptionMemory> PerceptionSystem::GetMemory(EntityId agent) const {
+    const auto it = m_memory.find(agent);
+    return it == m_memory.end() ? std::vector<PerceptionMemory>{} : it->second;
+}
+
+std::optional<PerceptionMemory> PerceptionSystem::Recall(EntityId agent, EntityId target) const {
+    const auto it = m_memory.find(agent);
+    if (it == m_memory.end()) return std::nullopt;
+    for (const PerceptionMemory& m : it->second)
+        if (m.target == target) return m;
+    return std::nullopt;
+}
+
+void PerceptionSystem::Forget(EntityId agent, EntityId target) {
+    const auto it = m_memory.find(agent);
+    if (it == m_memory.end()) return;
+    if (target == kNullEntity) it->second.clear();
+    else std::erase_if(it->second, [&](const PerceptionMemory& m) { return m.target == target; });
 }
 
 void PerceptionSystem::MakeNoise(const glm::vec3& position, float range, EntityId source) {

@@ -13,10 +13,15 @@
 // alvo vezes o volume da fonte. O som atravessa paredes. Ninguém ouve os próprios ruídos, e um ruído de um alvo só
 // chega a quem percebe o grupo dele.
 //
+// Memória: de cada alvo que viu ou ouviu, o agente lembra onde ele estava da última vez e há quanto tempo foi, até
+// passar a memória dele (Perception::memory) sem perceber o alvo de novo. É o que deixa um guarda ir até onde viu o
+// jogador sumir atrás da parede. Ruídos sem dono não ficam na memória.
+//
 // O que fazer com o que o agente percebe (fugir, perseguir) é do script dele:
 //   if (auto* sentidos = GetSystem<motor::PerceptionSystem>()) {
 //       for (motor::EntityId alvo : sentidos->GetSeen(GetId())) { /* ... */ }
 //       for (const motor::HeardNoise& ruido : sentidos->GetHeard(GetId())) { /* ruido.position */ }
+//       if (auto lembra = sentidos->Recall(GetId(), jogador)) { /* lembra->position, lembra->age */ }
 //   }
 
 #include "motor/scene/RuntimeSystem.h"
@@ -24,6 +29,7 @@
 
 #include <glm/vec3.hpp>
 
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -48,6 +54,16 @@ struct HeardNoise {
     EntityId source = kNullEntity;  // quem fez (kNullEntity: ruído sem dono, como uma explosão)
     glm::vec3 position{0.0f};       // onde foi feito, no mundo
     float distance = 0.0f;          // dos olhos de quem ouviu até lá
+};
+
+// O que um agente lembra de um alvo.
+struct PerceptionMemory {
+    EntityId target = kNullEntity;
+    glm::vec3 position{0.0f};  // onde estava da última vez: a origem dele, se visto; onde fez o ruído, se ouvido
+    float age = 0.0f;          // s desde a última vez que foi visto ou ouvido (0: neste passo)
+    bool seen = false;         // visto neste passo
+    bool heard = false;        // ouvido neste passo
+    bool bySight = false;      // a última posição veio da visão (false: de um ruído)
 };
 
 // O último passo, para a barra de estatísticas e os testes.
@@ -80,6 +96,13 @@ public:
     std::vector<HeardNoise> GetHeard(EntityId agent) const;
     bool CanHear(EntityId agent, EntityId source) const;  // ouviu algum ruído de `source` no último passo
 
+    // O que o agente lembra, do mais recente ao mais antigo (no empate, do mais perto ao mais longe).
+    std::vector<PerceptionMemory> GetMemory(EntityId agent) const;
+    // O que lembra de um alvo; nullopt se nunca o percebeu ou já esqueceu.
+    std::optional<PerceptionMemory> Recall(EntityId agent, EntityId target) const;
+    // Esquece um alvo (chegou onde o viu e não achou nada) ou, com kNullEntity, tudo. Percebê-lo de novo volta a lembrar.
+    void Forget(EntityId agent, EntityId target = kNullEntity);
+
     const PerceptionStats& Stats() const { return m_stats; }
 
 private:
@@ -98,12 +121,14 @@ private:
     };
     void CollectSounds(std::vector<Noise>& noises) const;  // os sons tocando nas Fontes de áudio dos alvos
     void Hear(EntityId agent, const Perception& senses, const std::vector<Noise>& noises);
+    void Remember(EntityId agent, const Perception& senses, float dt);
 
     const Scene* m_scene = nullptr;
     const PhysicsSystem* m_physics = nullptr;
     const AudioSystem* m_audio = nullptr;
     std::unordered_map<EntityId, std::vector<Sight>> m_seen;
     std::unordered_map<EntityId, std::vector<HeardNoise>> m_heard;
+    std::unordered_map<EntityId, std::vector<PerceptionMemory>> m_memory;
     std::vector<Noise> m_pending;  // de MakeNoise, ouvidos no próximo passo
     PerceptionStats m_stats;
 };
