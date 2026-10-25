@@ -3,6 +3,7 @@
 #include "motor/renderer/Renderer.h"
 #include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
+#include "renderer/GpuProfile.h"
 
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
@@ -170,6 +171,7 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
     for (size_t i = 0; i < lights.size(); ++i) {
         const Light& light = lights[i];
         if (light.type != LightType::Directional || !light.castShadows) continue;
+        MOTOR_PROFILE_GPU("Sombras cascatas");
         const int resolution = ShadowResolution(LightType::Directional, light.shadowQuality);
         EnsureCascades(resolution);
         const std::vector<float> splits = CascadeSplits(camera.nearPlane, distance, kCascades, kCascadeLambda);
@@ -213,6 +215,7 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
     if (candidates.size() > kMaxPointShadows) candidates.resize(kMaxPointShadows);
 
     if (!candidates.empty()) {
+        MOTOR_PROFILE_GPU("Sombras cubos");
         int resolution = 1;
         for (const Candidate& c : candidates) {
             resolution = std::max(resolution, ShadowResolution(lights[c.light].type, lights[c.light].shadowQuality));
