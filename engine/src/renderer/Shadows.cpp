@@ -180,11 +180,13 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
         MOTOR_PROFILE_GPU("Sombras cascatas");
         const int resolution = ShadowResolution(LightType::Directional, light.shadowQuality);
         EnsureCascades(resolution);
-        const std::vector<float> splits = CascadeSplits(camera.nearPlane, distance, kCascades, kCascadeLambda);
+        // Qualidade baixa: 2 cascatas (metade das passadas); as outras, 4. O filtro (PCF, mistura nas divisas) é variante do lit.frag.
+        const int cascades = light.shadowQuality == ShadowQuality::Low ? 2 : kCascades;
+        const std::vector<float> splits = CascadeSplits(camera.nearPlane, distance, cascades, kCascadeLambda);
         glViewport(0, 0, resolution, resolution);
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(1.5f, 2.0f);
-        for (int c = 0; c < kCascades; ++c) {
+        for (int c = 0; c < cascades; ++c) {
             const float nearDist = c == 0 ? camera.nearPlane : splits[static_cast<size_t>(c - 1)];
             const Cascade cascade = ComputeCascade(camera, nearDist, splits[static_cast<size_t>(c)], light.direction,
                                                    resolution, std::max(50.0f, distance));
@@ -198,7 +200,8 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
             result.data.cascadeTexels[c] = cascade.texelSize;
         }
         glDisable(GL_POLYGON_OFFSET_FILL);
-        result.data.params = glm::vec4(static_cast<float>(kCascades), 1.0f / static_cast<float>(resolution), 0.0f, distance);
+        result.data.params = glm::vec4(static_cast<float>(cascades), 1.0f / static_cast<float>(resolution), 0.0f, distance);
+        result.cascadeQuality = light.shadowQuality;
         result.cascadeLight = static_cast<int>(i);
         break;
     }

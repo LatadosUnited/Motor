@@ -37,6 +37,7 @@ public:
     struct Result {
         Data data;
         int cascadeLight = -1;            // índice (em `lights`) da direcional com cascatas
+        ShadowQuality cascadeQuality = ShadowQuality::High;  // da direcional: filtro das cascatas no lit.frag
         std::vector<int> cubeLayer;       // por luz: camada do cubo de sombra, -1 = sem
     };
 

@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace motor {
@@ -111,19 +112,8 @@ Renderer::Renderer() {
     GpuTimers::SetCurrent(m_gpuTimers.get());
 
     const std::filesystem::path dir = EngineAssetsDir() / "shaders";
-    m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
-    m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag");  // animação esquelética (Fase 11)
-    // Materiais sem nenhum mapa (o comum): sem as leituras de textura no shader. Um if pela uniform não basta (o
-    // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
-    m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", "#define NO_MAPS\n");
+    LoadLitShaders(ShadowQuality::High);
     m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag", "#define SINGLE_MODEL\n");
-    auto findLitUniforms = [](Shader& shader) {
-        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
-                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
-    };
-    m_litUniforms = findLitUniforms(*m_litShader);
-    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
-    m_litPlainUniforms = findLitUniforms(*m_litPlainShader);
     m_unlitModel = m_unlitShader->Uniform("uModel");
     m_unlitColor = m_unlitShader->Uniform("uColor");
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
@@ -152,6 +142,26 @@ Renderer::~Renderer() {
     glDeleteBuffers(1, &m_shadowsUbo);
     glDeleteBuffers(1, &m_lightsUbo);
     glDeleteBuffers(1, &m_frameUbo);
+}
+
+// As três variantes do lit.frag com o filtro das cascatas da qualidade dada (SHADOW_FILTER). Recompiladas só quando a
+// qualidade da direcional muda (trocar a cena ou as opções), não a cada quadro.
+void Renderer::LoadLitShaders(ShadowQuality cascadeFilter) {
+    const std::filesystem::path dir = EngineAssetsDir() / "shaders";
+    const std::string filter = "#define SHADOW_FILTER " + std::to_string(static_cast<int>(cascadeFilter)) + "\n";
+    m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter);
+    m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag", filter);  // animação esquelética (Fase 11)
+    // Materiais sem nenhum mapa (o comum): sem as leituras de textura no shader. Um if pela uniform não basta (o
+    // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
+    m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define NO_MAPS\n");
+    auto findLitUniforms = [](Shader& shader) {
+        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
+                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
+    };
+    m_litUniforms = findLitUniforms(*m_litShader);
+    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
+    m_litPlainUniforms = findLitUniforms(*m_litPlainShader);
+    m_litShadowFilter = cascadeFilter;
 }
 
 void Renderer::BeginFrame(int width, int height) {
@@ -373,6 +383,7 @@ void Renderer::DrawScene() {
     // Só o cabeçalho e as luzes usadas: o resto do bloco o shader não lê.
     glNamedBufferSubData(m_lightsUbo, 0, static_cast<GLsizeiptr>(sizeof(glm::ivec4) + m_lights.size() * sizeof(LightData)), &lightsData);
     glBindBufferBase(GL_UNIFORM_BUFFER, kLightsBinding, m_lightsUbo);
+    if (shadows.cascadeLight >= 0 && shadows.cascadeQuality != m_litShadowFilter) LoadLitShaders(shadows.cascadeQuality);
     glNamedBufferSubData(m_shadowsUbo, 0, sizeof(ShadowRenderer::Data), &shadows.data);
     glBindBufferBase(GL_UNIFORM_BUFFER, kShadowsBinding, m_shadowsUbo);
 

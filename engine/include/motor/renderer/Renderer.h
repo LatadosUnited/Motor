@@ -107,6 +107,7 @@ private:
         int alphaMode = -1, drawBase = -1, color = -1, pbr = -1, emissive = -1;
     };
 
+    void LoadLitShaders(ShadowQuality cascadeFilter);
     void DrawScene();
     void DrawWireframes();
     void BindTarget() const;
@@ -118,6 +119,7 @@ private:
     std::unique_ptr<Shader> m_litPlainShader; // lit.frag com NO_MAPS: materiais sem nenhum mapa
     std::unique_ptr<Shader> m_unlitShader;
     LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms;
+    ShadowQuality m_litShadowFilter = ShadowQuality::High;  // SHADOW_FILTER dos shaders acima
     int m_unlitModel = -1, m_unlitColor = -1;
     std::shared_ptr<Texture2D> m_whiteTexture;
     std::unique_ptr<PostProcess> m_post;

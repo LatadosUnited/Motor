@@ -39,6 +39,12 @@ layout(std140, binding = 3) uniform Shadows {
     vec4 uShadowParams;   // x = nº de cascatas, y = 1 / resolução das cascatas, z = 1 / resolução dos cubos, w = distância das sombras
 };
 
+// Filtro das cascatas pela qualidade da direcional (variante do Renderer): 0 baixa, 1 média, 2 alta. Pela uniform, com
+// if, a Intel compilava os três caminhos e a cena ficava ~3 ms mais lenta na referência.
+#ifndef SHADOW_FILTER
+#define SHADOW_FILTER 2
+#endif
+
 layout(binding = 0) uniform sampler2D uAlbedo;        // sRGB => amostrada já linear
 layout(binding = 1) uniform sampler2D uNormalMap;     // linear
 layout(binding = 2) uniform sampler2D uMetalRoughMap; // linear: G = rugosidade, B = metal
@@ -87,6 +93,19 @@ float SampleCascade(int c, vec3 worldPos, vec3 N) {
     vec3 proj = p.xyz / p.w * 0.5 + 0.5;
     if (proj.z >= 1.0) return 1.0;
     float texel = uShadowParams.y;
+    // A comparação com filtro linear já mistura 2x2 texels por leitura. Qualidade baixa: uma leitura; média: 4 a meio
+    // texel (cobre 3x3); alta: 9 (4x4). Na HD 530 as 9 custavam ~0,5 ms a mais que as 4 na referência.
+#if SHADOW_FILTER == 0
+    return texture(uCascades, vec4(proj.xy, float(c), proj.z));
+#elif SHADOW_FILTER == 1
+    float sum = 0.0;
+    for (int y = 0; y < 2; ++y) {
+        for (int x = 0; x < 2; ++x) {
+            sum += texture(uCascades, vec4(proj.xy + (vec2(x, y) - 0.5) * texel, float(c), proj.z));
+        }
+    }
+    return sum * 0.25;
+#else
     float sum = 0.0;
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
@@ -94,6 +113,7 @@ float SampleCascade(int c, vec3 worldPos, vec3 N) {
         }
     }
     return sum / 9.0;
+#endif
 }
 
 float DirectionalShadow(vec3 worldPos, vec3 N) {
@@ -105,11 +125,14 @@ float DirectionalShadow(vec3 worldPos, vec3 N) {
     int c = 0;
     while (c < count - 1 && depth > uCascadeSplits[c]) ++c;
     float shadow = SampleCascade(c, worldPos, N);
-    // Mistura com a próxima cascata perto da divisa (sem degrau visível).
+    // Qualidade alta: mistura com a próxima cascata perto da divisa (sem degrau visível). Ler duas cascatas nessa faixa
+    // custava ~1 ms na referência (HD 530); nas outras qualidades o degrau fica.
+#if SHADOW_FILTER == 2
     float start = c == 0 ? 0.0 : uCascadeSplits[c - 1];
     float band = (uCascadeSplits[c] - start) * 0.15;
     float t = (depth - (uCascadeSplits[c] - band)) / max(band, 1e-4);
     if (c < count - 1 && t > 0.0) shadow = mix(shadow, SampleCascade(c + 1, worldPos, N), clamp(t, 0.0, 1.0));
+#endif
     // Some aos poucos no fim da distância das sombras.
     return mix(shadow, 1.0, clamp((depth - maxDist * 0.85) / (maxDist * 0.15), 0.0, 1.0));
 }
