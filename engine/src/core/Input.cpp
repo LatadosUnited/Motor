@@ -1,12 +1,12 @@
 #include "motor/core/Input.h"
 
 #include "motor/core/Log.h"
+#include "motor/common/Text.h"
 
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -116,12 +116,6 @@ void DisconnectPad(int pad) {
     p.prevButtons = prevButtons;
     p.prevAxes = prevAxes;
     if (g.lastGamepad == pad) g.lastGamepad = -1;
-}
-
-std::string Lower(std::string_view text) {
-    std::string out(text);
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-    return out;
 }
 
 void AppendUtf8(std::string& out, unsigned int cp) {
@@ -560,7 +554,7 @@ const char* KeyName(Key key) {
 }
 
 std::optional<Key> ParseKeyName(std::string_view name) {
-    const std::string lower = Lower(name);
+    const std::string lower = Lower(std::string(name));
     if (lower.empty()) return std::nullopt;
     const auto& names = KeyNames();
     for (int k = 0; k < kMaxKeys; ++k) {
@@ -575,7 +569,7 @@ const char* GamepadButtonName(GamepadButton button) {
 }
 
 std::optional<GamepadButton> ParseGamepadButton(std::string_view name) {
-    const std::string lower = Lower(name);
+    const std::string lower = Lower(std::string(name));
     for (int b = 0; b < kGamepadButtonCount; ++b) {
         if (Lower(kPadButtonNames[b]) == lower) return static_cast<GamepadButton>(b);
     }
@@ -588,7 +582,7 @@ const char* GamepadAxisName(GamepadAxis axis) {
 }
 
 std::optional<GamepadAxis> ParseGamepadAxis(std::string_view name) {
-    const std::string lower = Lower(name);
+    const std::string lower = Lower(std::string(name));
     for (int a = 0; a < kGamepadAxisCount; ++a) {
         if (Lower(kPadAxisNames[a]) == lower) return static_cast<GamepadAxis>(a);
     }
@@ -601,7 +595,7 @@ const char* MouseButtonName(MouseButton button) {
 }
 
 std::optional<MouseButton> ParseMouseButton(std::string_view name) {
-    const std::string lower = Lower(name);
+    const std::string lower = Lower(std::string(name));
     for (int b = 0; b < kMouseButtonCount; ++b) {
         if (Lower(kMouseNames[b]) == lower) return static_cast<MouseButton>(b);
     }
