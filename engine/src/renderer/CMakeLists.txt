@@ -20,5 +20,6 @@ motor_add_layer(renderer
         Sky.cpp
         GpuTimers.cpp
         GpuMemory.cpp
+        SpatialGrid.cpp
     DEPENDS core
     PRIVATE_LIBS glfw)
