@@ -80,8 +80,8 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 - [x] Tarefa 2: Criar `motor/common/FileRead.h` (texto e bytes) e trocar as 8 leituras — 4653ffb
 - [ ] Tarefa 3: Pôr `Lower` e `LowerExtension` no `Text.h` e trocar as 6 cópias — 4653ffb (falta o `Input.cpp`)
 - [x] Tarefa 4: Trocar a cópia do `ExecutableDir` no `ScriptProject` pela do `EngineAssets.h` — 4653ffb
-- [ ] Tarefa 5: Dividir o `Renderer::DrawScene` nas etapas que ele já numera
-- [ ] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw`
+- [x] Tarefa 5: Dividir o `Renderer::DrawScene` nas etapas que ele já numera — 957b452
+- [ ] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw` — 957b452 (falta o `DrawControlsWindow`)
 - [ ] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta
 - [ ] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2
 - [ ] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo
@@ -124,10 +124,39 @@ As cinco tarefas foram num commit só: mexem nos mesmos arquivos (o `ScriptProje
 delas) e uma cópia velha visível junto da nova deixa a chamada ambígua, então não dá para trocar uma de cada vez
 sem um estado intermediário que não compila.
 
+### Funções longas (tarefas 5 e 6, 25/10/2026)
+
+Na conferência de 25/10 havia duas funções novas acima de 120 linhas (`ShadowRenderer::Render` e
+`PhysicsSystem::World::SyncBodies`), divididas junto. Cada parte saiu com o código como estava; o que muda é só
+onde ele mora:
+
+| Função | Linhas antes | Depois | Partes novas |
+|---|---|---|---|
+| `Renderer::DrawScene` | 182 | 71 | `SortDrawOrder`, `UploadFrameData`, `CollectSceneBatches`, `DrawSceneBatches` |
+| `NavMesh::Build` | 182 | 43 | `MakeConfig`, `Voxelize`, `BuildRegions`, `BuildPolygons`, `CreateDetourData` (soltas no `.cpp`) |
+| `SceneViewport::Draw` | 131 | 84 | `DrawStatsOverlay`, `DrawPlayIndicator` |
+| `ShadowRenderer::Render` | 128 | 34 | `AddCascadePasses`, `AddCubePasses` |
+| `GameExport::Export` | 124 | 42 | `CheckOptions`, `CopyGameFiles`, `WriteGameProject`, `WriteMarker` (soltas no `.cpp`) |
+| `PhysicsSystem::World::SyncBodies` | 123 | 79 | `MoveBody`, `RemoveUnseenBodies` |
+
+Detalhes que não mudam o resultado:
+
+- O `DrawSceneBatches` desenha uma faixa de lotes e começa sem lembrar shader, material nem texturas. Antes, o
+  mesmo laço zerava essa lembrança antes dos transparentes (o céu troca o estado); agora ela zera a cada chamada,
+  uma para os opacos e outra para os transparentes.
+- No `Renderer.h` (header público) entraram só funções privadas e a declaração `struct DrawBatch`: o tamanho da
+  classe e o ABI dos scripts não mudam.
+- O `RemoveUnseenBodies` só roda quando o `SyncBodies` já ia varrer os corpos (`sweep`).
+
+Conferido: build sem avisos, `ctest` 57/57 em Debug e 56/56 em Release (sem o `test_desempenho`). Capturas do
+editor Release com a referência, no `main` e no branch: mesma imagem, 19 draws e 136.812 triângulos. O
+`test_desempenho`, alternado com o `main` (5 rodadas), dá o mesmo `cena_ler` (~218 ms) e um `cena_json` ~5% maior
+(mediana 38,8 contra 36,8 ms). Nenhuma das divisões toca no JSON da cena; a base não foi regravada.
+
 ## Limitações
 
-- **`Lower` do `Input.cpp`** (recebe `std::string_view`) e **`DrawControlsWindow`** ficam para depois do branch
-  `entrada-base`, que mexe nos dois arquivos.
+- **`Lower` do `Input.cpp`** (recebe `std::string_view`) e **`DrawControlsWindow`** (131 linhas, a única acima de 120
+  fora as `Add*Tools`) ficam para depois do branch `entrada-base`, que mexe nos dois arquivos.
 - **Leituras no meio de outras funções:** ~14 lugares ainda abrem o arquivo e leem com `rdbuf()` direto (projeto,
   opções, save, prefab, cena, recuperação, `.meta`, configurações do editor, plano de instalação). Cada um tem a sua
   mensagem de erro e não era uma função copiada; dá para trocar pelo `ReadTextFile` aos poucos, quando mexer neles.
