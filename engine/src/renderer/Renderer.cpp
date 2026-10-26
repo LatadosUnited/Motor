@@ -427,22 +427,10 @@ void Renderer::EndScene() {
 void Renderer::DrawScene() {
     const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
 
-    // 0) Ordem de desenho: a lista é ordenada por (shader, material, malha) com os números de material dados no
-    //    Submit (valores iguais, o mesmo número), uma vez para a cena e outra para as sombras (que só olham recorte e
-    //    alfa). Itens que podem ir no mesmo draw ficam seguidos. As chaves (e o resto por item) saem em paralelo.
+    // 0) Ordem de desenho (SortDrawOrder).
     const glm::mat4 view = m_camera.View();
     const glm::mat4 projection = m_camera.Projection();
-    const Frustum frustum = Frustum::FromMatrix(projection * view);
-    PrepareItems(frustum);
-    // Cena parada: as mesmas chaves do quadro anterior dão a mesma ordem.
-    auto sortIfChanged = [](const std::vector<DrawKey>& keys, std::vector<DrawKey>& lastKeys,
-                            std::vector<uint32_t>& order) {
-        if (keys == lastKeys && order.size() == keys.size()) return;
-        SortByKey(keys, order);
-        lastKeys = keys;
-    };
-    sortIfChanged(m_sceneKeys, m_lastSceneKeys, m_sceneOrder);
-    sortIfChanged(m_shadowKeys, m_lastShadowKeys, m_shadowOrder);
+    SortDrawOrder(Frustum::FromMatrix(projection * view));
 
     // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
     m_instances->UploadObjects(std::span(m_objects.data(), 2 * m_items.size()));
@@ -453,23 +441,7 @@ void Renderer::DrawScene() {
     }();
 
     // 2) Blocos de dados do quadro.
-    const Environment& env = m_environment;
-    const float skyIntensity = std::max(env.skyIntensity, 0.0f);
-    const float skyLight = skyIntensity * std::max(env.skyLight, 0.0f);
-    FrameData frame{};
-    frame.view = view;
-    frame.projection = projection;
-    frame.cameraPosition = glm::vec4(m_camera.position, 1.0f);
-    frame.ambient = glm::vec4(env.ambient, 1.0f);
-    frame.fog = glm::vec4(m_sky->HorizonColor() * skyIntensity, std::max(env.fogDensity, 0.0f));
-    frame.invViewProjection = glm::inverse(projection * view);
-    frame.sky = glm::vec4(skyIntensity, skyLight, glm::radians(env.skyRotation), m_sky->MaxReflectionMip());
-    for (size_t i = 0; i < 9; ++i) frame.sh[i] = glm::vec4(m_sky->Irradiance().c[i] * skyLight, 0.0f);
-    frame.viewport = glm::vec4(static_cast<float>(m_post->Width()), static_cast<float>(m_post->Height()),
-                               1.0f / static_cast<float>(m_post->Width()), 1.0f / static_cast<float>(m_post->Height()));
-    glNamedBufferSubData(m_frameUbo, 0, sizeof(FrameData), &frame);
-    glBindBufferBase(GL_UNIFORM_BUFFER, kFrameBinding, m_frameUbo);
-
+    UploadFrameData(view, projection);
     LightsData lightsData{};
     lightsData.count = glm::ivec4(static_cast<int>(m_lights.size()), 0, 0, 0);
     for (size_t i = 0; i < m_lights.size(); ++i) {
@@ -497,11 +469,72 @@ void Renderer::DrawScene() {
     glBindTextureUnit(kUnitPrefiltered, m_sky->PrefilteredCube());
     glBindTextureUnit(kUnitBrdf, m_sky->BrdfLut());
 
+    std::vector<uint32_t> indices;
+    std::vector<DrawBatch> batches;
+    const size_t opaqueBatches = CollectSceneBatches(indices, batches);
+    m_instances->UploadIndices(indices);
+    DrawSceneBatches(std::span(batches).first(opaqueBatches));
+
+    // 4) Céu ao fundo, onde não há nada.
+    m_sky->DrawBackground(*m_post);
+
+    // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
+    //    vidro continua aparecendo pelo vidro seguinte).
+    if (batches.size() > opaqueBatches) {
+        MOTOR_PROFILE_GPU("Transparentes");
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        DrawSceneBatches(std::span(batches).subspan(opaqueBatches));  // o céu trocou o shader e as texturas
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        m_stats.transparent += static_cast<uint32_t>(batches.size() - opaqueBatches);
+    }
+}
+
+void Renderer::SortDrawOrder(const Frustum& frustum) {
+    // A lista é ordenada por (shader, material, malha) com os números de material dados no Submit (valores iguais,
+    // o mesmo número), uma vez para a cena e outra para as sombras (que só olham recorte e alfa). Itens que podem
+    // ir no mesmo draw ficam seguidos. As chaves (e o resto por item) saem em paralelo.
+    PrepareItems(frustum);
+    // Cena parada: as mesmas chaves do quadro anterior dão a mesma ordem.
+    auto sortIfChanged = [](const std::vector<DrawKey>& keys, std::vector<DrawKey>& lastKeys,
+                            std::vector<uint32_t>& order) {
+        if (keys == lastKeys && order.size() == keys.size()) return;
+        SortByKey(keys, order);
+        lastKeys = keys;
+    };
+    sortIfChanged(m_sceneKeys, m_lastSceneKeys, m_sceneOrder);
+    sortIfChanged(m_shadowKeys, m_lastShadowKeys, m_shadowOrder);
+}
+
+void Renderer::UploadFrameData(const glm::mat4& view, const glm::mat4& projection) {
+    const Environment& env = m_environment;
+    const float skyIntensity = std::max(env.skyIntensity, 0.0f);
+    const float skyLight = skyIntensity * std::max(env.skyLight, 0.0f);
+    FrameData frame{};
+    frame.view = view;
+    frame.projection = projection;
+    frame.cameraPosition = glm::vec4(m_camera.position, 1.0f);
+    frame.ambient = glm::vec4(env.ambient, 1.0f);
+    frame.fog = glm::vec4(m_sky->HorizonColor() * skyIntensity, std::max(env.fogDensity, 0.0f));
+    frame.invViewProjection = glm::inverse(projection * view);
+    frame.sky = glm::vec4(skyIntensity, skyLight, glm::radians(env.skyRotation), m_sky->MaxReflectionMip());
+    for (size_t i = 0; i < 9; ++i) frame.sh[i] = glm::vec4(m_sky->Irradiance().c[i] * skyLight, 0.0f);
+    frame.viewport = glm::vec4(static_cast<float>(m_post->Width()), static_cast<float>(m_post->Height()),
+                               1.0f / static_cast<float>(m_post->Width()), 1.0f / static_cast<float>(m_post->Height()));
+    glNamedBufferSubData(m_frameUbo, 0, sizeof(FrameData), &frame);
+    glBindBufferBase(GL_UNIFORM_BUFFER, kFrameBinding, m_frameUbo);
+}
+
+size_t Renderer::CollectSceneBatches(std::vector<uint32_t>& indices, std::vector<DrawBatch>& batches) {
     // Lotes: na ordem da cena, itens seguidos com a mesma chave (shader, material, malha) viram um draw
     // instanciado. Com pele, cada item é um lote (as juntas são dele). Transparentes: um por vez, de trás para
     // frente, depois do céu. O recorte da câmera já saiu no PrepareItems (m_visible).
-    std::vector<uint32_t> indices;
-    std::vector<DrawBatch> batches;
     std::vector<std::pair<float, uint32_t>> transparent;
     indices.reserve(m_items.size());
     auto add = [&](uint32_t index, bool join) {
@@ -533,8 +566,10 @@ void Renderer::DrawScene() {
     // Transparentes ordenados pelo centro: do mais longe ao mais perto.
     std::stable_sort(transparent.begin(), transparent.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
     for (const auto& [distance, index] : transparent) add(index, false);
-    m_instances->UploadIndices(indices);
+    return opaqueBatches;
+}
 
+void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches) {
     const Shader* bound = nullptr;
     // Material e texturas do lote anterior: lotes seguidos com o mesmo material não reenviam nada disso. Os
     // uniforms são de cada programa, por isso a lembrança vale para um shader só.
@@ -547,8 +582,7 @@ void Renderer::DrawScene() {
         glBindTextureUnit(unit, texture);
     };
     const Texture2D& white = *m_whiteTexture;
-    auto draw = [&](size_t b) {
-        const DrawBatch& batch = batches[b];
+    for (const DrawBatch& batch : batches) {
         const DrawItem& item = *batch.first;
         const uint32_t variant = m_sceneKeys[batch.firstIndex].shader;
         Shader& shader = variant == 1 ? *m_skinnedShader : variant == 2 ? *m_litPlainShader : *m_litShader;
@@ -580,30 +614,6 @@ void Renderer::DrawScene() {
         if (doubleSided) glEnable(GL_CULL_FACE);
         ++m_stats.drawCalls;
         m_stats.triangles += item.mesh->IndexCount() / 3 * batch.count;
-    };
-    for (size_t b = 0; b < opaqueBatches; ++b) draw(b);
-
-    // 4) Céu ao fundo, onde não há nada.
-    m_sky->DrawBackground(*m_post);
-
-    // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
-    //    vidro continua aparecendo pelo vidro seguinte).
-    if (!transparent.empty()) {
-        MOTOR_PROFILE_GPU("Transparentes");
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LESS);
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(GL_FALSE);
-        bound = nullptr;  // o céu trocou o shader e as texturas
-        paramsShader = nullptr;
-        std::fill(std::begin(lastTexture), std::end(lastTexture), 0u);
-        for (size_t b = opaqueBatches; b < batches.size(); ++b) draw(b);
-        glDepthMask(GL_TRUE);
-        glDisable(GL_BLEND);
-        m_stats.transparent += static_cast<uint32_t>(transparent.size());
     }
 }
 

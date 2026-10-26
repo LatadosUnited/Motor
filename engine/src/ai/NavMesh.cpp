@@ -63,29 +63,15 @@ bool Fail(std::string* error, const char* message) {
     return false;
 }
 
-} // namespace
+// Triângulos da geometria como a Recast os quer: floats soltos e índices int.
+struct RecastInput {
+    const float* verts = nullptr;
+    int vertCount = 0;
+    std::vector<int> tris;
+    int triCount = 0;
+};
 
-void NavGeometry::AddTriangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
-    const auto base = static_cast<uint32_t>(vertices.size());
-    vertices.insert(vertices.end(), {a, b, c});
-    indices.insert(indices.end(), {base, base + 1, base + 2});
-}
-
-NavMesh::NavMesh() : m_detour(std::make_unique<Detour>()) {}
-NavMesh::~NavMesh() = default;
-
-std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMeshBuildSettings& s, std::string* error) {
-    if (geometry.Empty()) {
-        Fail(error, "nenhum triângulo para gerar o navmesh");
-        return nullptr;
-    }
-
-    // A Recast quer floats soltos e índices int.
-    const auto* verts = &geometry.vertices[0].x;
-    const int vertCount = static_cast<int>(geometry.vertices.size());
-    const std::vector<int> tris(geometry.indices.begin(), geometry.indices.end());
-    const int triCount = static_cast<int>(tris.size() / 3);
-
+rcConfig MakeConfig(const NavMeshBuildSettings& s, const RecastInput& in) {
     rcConfig cfg{};
     cfg.cs = std::max(s.cellSize, 0.01f);
     cfg.ch = std::max(s.cellHeight, 0.01f);
@@ -101,44 +87,41 @@ std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMe
     cfg.maxVertsPerPoly = DT_VERTS_PER_POLYGON;
     cfg.detailSampleDist = s.detailSampleDistance < 0.9f ? 0.0f : cfg.cs * s.detailSampleDistance;
     cfg.detailSampleMaxError = cfg.ch * s.detailMaxError;
-    rcCalcBounds(verts, vertCount, cfg.bmin, cfg.bmax);
+    rcCalcBounds(in.verts, in.vertCount, cfg.bmin, cfg.bmax);
     rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
-    if (cfg.width <= 0 || cfg.height <= 0) {
-        Fail(error, "a geometria não tem extensão no plano");
-        return nullptr;
-    }
+    return cfg;
+}
 
-    rcContext ctx(false);
-    RecastScratch scratch;
-
-    // 1. Triângulos -> voxels, com a marca de "andável" nos que não são íngremes demais.
+// 1 e 2: triângulos -> voxels, sem o que o agente não alcança.
+bool Voxelize(rcContext& ctx, const rcConfig& cfg, const RecastInput& in, RecastScratch& scratch, std::string* error) {
+    // Marca de "andável" nos triângulos que não são íngremes demais.
     scratch.solid = rcAllocHeightfield();
     if (!scratch.solid || !rcCreateHeightfield(&ctx, *scratch.solid, cfg.width, cfg.height, cfg.bmin, cfg.bmax, cfg.cs, cfg.ch)) {
-        Fail(error, "sem memória para a grade de voxels");
-        return nullptr;
+        return Fail(error, "sem memória para a grade de voxels");
     }
-    std::vector<unsigned char> areas(static_cast<size_t>(triCount), 0);
-    rcMarkWalkableTriangles(&ctx, cfg.walkableSlopeAngle, verts, vertCount, tris.data(), triCount, areas.data());
-    if (!rcRasterizeTriangles(&ctx, verts, vertCount, tris.data(), areas.data(), triCount, *scratch.solid, cfg.walkableClimb)) {
-        Fail(error, "falha ao rasterizar os triângulos");
-        return nullptr;
+    std::vector<unsigned char> areas(static_cast<size_t>(in.triCount), 0);
+    rcMarkWalkableTriangles(&ctx, cfg.walkableSlopeAngle, in.verts, in.vertCount, in.tris.data(), in.triCount, areas.data());
+    if (!rcRasterizeTriangles(&ctx, in.verts, in.vertCount, in.tris.data(), areas.data(), in.triCount, *scratch.solid,
+                              cfg.walkableClimb)) {
+        return Fail(error, "falha ao rasterizar os triângulos");
     }
-
-    // 2. Tira o que o agente não alcança: obstáculos baixos viram degrau, bordas de queda e vãos baixos saem.
+    // Obstáculos baixos viram degrau, bordas de queda e vãos baixos saem.
     rcFilterLowHangingWalkableObstacles(&ctx, cfg.walkableClimb, *scratch.solid);
     rcFilterLedgeSpans(&ctx, cfg.walkableHeight, cfg.walkableClimb, *scratch.solid);
     rcFilterWalkableLowHeightSpans(&ctx, cfg.walkableHeight, *scratch.solid);
+    return true;
+}
 
-    // 3. Superfícies andáveis, afastadas das paredes pelo raio do agente, divididas em regiões.
+// 3: superfícies andáveis, afastadas das paredes pelo raio do agente, divididas em regiões.
+bool BuildRegions(rcContext& ctx, const rcConfig& cfg, const NavGeometry& geometry, RecastScratch& scratch,
+                  std::string* error) {
     scratch.compact = rcAllocCompactHeightfield();
     if (!scratch.compact ||
         !rcBuildCompactHeightfield(&ctx, cfg.walkableHeight, cfg.walkableClimb, *scratch.solid, *scratch.compact)) {
-        Fail(error, "falha ao compactar a grade de voxels");
-        return nullptr;
+        return Fail(error, "falha ao compactar a grade de voxels");
     }
     if (!rcErodeWalkableArea(&ctx, cfg.walkableRadius, *scratch.compact)) {
-        Fail(error, "falha ao afastar o chão das paredes");
-        return nullptr;
+        return Fail(error, "falha ao afastar o chão das paredes");
     }
     // Caixas de área: o chão dentro delas ganha a área (e as regiões não misturam áreas diferentes).
     for (const NavAreaBox& box : geometry.areas) {
@@ -154,40 +137,43 @@ std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMe
     }
     if (!rcBuildDistanceField(&ctx, *scratch.compact) ||
         !rcBuildRegions(&ctx, *scratch.compact, 0, cfg.minRegionArea, cfg.mergeRegionArea)) {
-        Fail(error, "falha ao dividir o chão em regiões");
-        return nullptr;
+        return Fail(error, "falha ao dividir o chão em regiões");
     }
+    return true;
+}
 
-    // 4. Contornos das regiões -> polígonos -> detalhe de altura.
+// 4: contornos das regiões -> polígonos -> detalhe de altura.
+bool BuildPolygons(rcContext& ctx, const rcConfig& cfg, RecastScratch& scratch, std::string* error) {
     scratch.contours = rcAllocContourSet();
     if (!scratch.contours ||
         !rcBuildContours(&ctx, *scratch.compact, cfg.maxSimplificationError, cfg.maxEdgeLen, *scratch.contours)) {
-        Fail(error, "falha ao montar os contornos");
-        return nullptr;
+        return Fail(error, "falha ao montar os contornos");
     }
     scratch.polys = rcAllocPolyMesh();
     if (!scratch.polys || !rcBuildPolyMesh(&ctx, *scratch.contours, cfg.maxVertsPerPoly, *scratch.polys)) {
-        Fail(error, "falha ao montar os polígonos");
-        return nullptr;
+        return Fail(error, "falha ao montar os polígonos");
     }
     if (scratch.polys->npolys == 0) {
-        Fail(error, "nenhum lugar onde o agente caiba (chão pequeno, inclinado ou baixo demais?)");
-        return nullptr;
+        return Fail(error, "nenhum lugar onde o agente caiba (chão pequeno, inclinado ou baixo demais?)");
     }
     scratch.detail = rcAllocPolyMeshDetail();
     if (!scratch.detail ||
         !rcBuildPolyMeshDetail(&ctx, *scratch.polys, *scratch.compact, cfg.detailSampleDist, cfg.detailSampleMaxError,
                                *scratch.detail)) {
-        Fail(error, "falha ao montar o detalhe de altura");
-        return nullptr;
+        return Fail(error, "falha ao montar o detalhe de altura");
     }
     rcPolyMesh& pm = *scratch.polys;
     for (int i = 0; i < pm.npolys; ++i) pm.flags[i] = pm.areas[i] == RC_NULL_AREA ? 0 : AreaFlag(pm.areas[i]);
+    return true;
+}
 
-    // 5. Polígonos da Recast -> navmesh do Detour (um bloco só; blocos entram com o TileCache, Fase 36).
+// 5: polígonos da Recast -> dados do navmesh do Detour (um bloco só; blocos entram com o TileCache, Fase 36).
+// `data` é do chamador (dtFree) se der certo.
+bool CreateDetourData(const NavGeometry& geometry, const NavMeshBuildSettings& s, const rcConfig& cfg,
+                      const RecastScratch& scratch, unsigned char*& data, int& dataSize, std::string* error) {
+    const rcPolyMesh& pm = *scratch.polys;
     if (pm.nverts >= 0xffff) {
-        Fail(error, "navmesh grande demais para um bloco só (mais de 65535 vértices)");
-        return nullptr;
+        return Fail(error, "navmesh grande demais para um bloco só (mais de 65535 vértices)");
     }
     // Ligações (off-mesh connections do Detour): mesma marca e área do chão, para as consultas aceitarem.
     const size_t linkCount = geometry.links.size();
@@ -233,10 +219,47 @@ std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMe
     params.ch = cfg.ch;
     params.buildBvTree = true;
 
+    if (!dtCreateNavMeshData(&params, &data, &dataSize)) {
+        return Fail(error, "falha ao montar os dados do navmesh");
+    }
+    return true;
+}
+
+} // namespace
+
+void NavGeometry::AddTriangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
+    const auto base = static_cast<uint32_t>(vertices.size());
+    vertices.insert(vertices.end(), {a, b, c});
+    indices.insert(indices.end(), {base, base + 1, base + 2});
+}
+
+NavMesh::NavMesh() : m_detour(std::make_unique<Detour>()) {}
+NavMesh::~NavMesh() = default;
+
+std::unique_ptr<NavMesh> NavMesh::Build(const NavGeometry& geometry, const NavMeshBuildSettings& s, std::string* error) {
+    if (geometry.Empty()) {
+        Fail(error, "nenhum triângulo para gerar o navmesh");
+        return nullptr;
+    }
+
+    RecastInput in;
+    in.verts = &geometry.vertices[0].x;
+    in.vertCount = static_cast<int>(geometry.vertices.size());
+    in.tris.assign(geometry.indices.begin(), geometry.indices.end());
+    in.triCount = static_cast<int>(in.tris.size() / 3);
+
+    const rcConfig cfg = MakeConfig(s, in);
+    if (cfg.width <= 0 || cfg.height <= 0) {
+        Fail(error, "a geometria não tem extensão no plano");
+        return nullptr;
+    }
+
+    rcContext ctx(false);
+    RecastScratch scratch;
     unsigned char* data = nullptr;
     int dataSize = 0;
-    if (!dtCreateNavMeshData(&params, &data, &dataSize)) {
-        Fail(error, "falha ao montar os dados do navmesh");
+    if (!Voxelize(ctx, cfg, in, scratch, error) || !BuildRegions(ctx, cfg, geometry, scratch, error) ||
+        !BuildPolygons(ctx, cfg, scratch, error) || !CreateDetourData(geometry, s, cfg, scratch, data, dataSize, error)) {
         return nullptr;
     }
 

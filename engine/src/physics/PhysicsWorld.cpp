@@ -207,7 +207,7 @@ bool PhysicsSystem::World::RefreshSlots(Scene& scene) {
 void PhysicsSystem::World::SyncBodies(Scene& scene, float dt) {
     ++frame;
     JPH::BodyInterface& bi = Bodies();
-    std::vector<JPH::BodyID> addStatic, addMoving, remove;
+    std::vector<JPH::BodyID> addStatic, addMoving;
     // Corpos sem entidade só sobram se a estrutura mudou (entidade ou componente saiu) ou se alguma foi desativada:
     // fora disso não precisa percorrer `bodies` atrás deles.
     bool sweep = RefreshSlots(scene);
@@ -268,54 +268,10 @@ void PhysicsSystem::World::SyncBodies(Scene& scene, float dt) {
             continue;
         }
         r->seen = frame;
-        if (r->motion == JPH::EMotionType::Dynamic) {
-            // Transform mexido por script ou pelo editor: teleporta (a velocidade continua).
-            r->parent = entity.parent;
-            if (!SameTransform(entity.transform, r->written)) {
-                WakeAround(r->id);
-                bi.SetPositionAndRotation(r->id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
-                r->written = entity.transform;
-            }
-        } else if (r->motion == JPH::EMotionType::Kinematic) {
-            const bool moved = pose.position != r->pose.position || pose.rotation != r->pose.rotation;
-            // MoveKinematic dá a velocidade para chegar lá neste passo (e empurrar os outros); parado,
-            // mais uma chamada zera a velocidade.
-            if ((moved || r->kinematicMoving) && dt > 0.0f) {
-                bi.MoveKinematic(r->id, ToJolt(pose.position), ToJolt(pose.rotation), dt);
-            } else if (moved) {
-                bi.SetPositionAndRotation(r->id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
-            }
-            r->kinematicMoving = moved;
-            r->pose = pose;
-            r->world = world;
-        } else {
-            if (pose.position != r->pose.position || pose.rotation != r->pose.rotation) {
-                WakeAround(r->id);  // antes e depois: quem estava em cima e quem está no lugar novo
-                bi.SetPositionAndRotation(r->id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::DontActivate);
-                WakeAround(r->id);
-                r->pose = pose;
-            }
-            r->world = world;
-        }
+        MoveBody(*r, entity, pose, world, dt);
     }
 
-    if (sweep) {
-        for (auto it = bodies.begin(); it != bodies.end();) {
-            if (it->second.seen != frame) {
-                WakeAround(it->second.id);
-                DropPairsOf(it->second.id);
-                remove.push_back(it->second.id);
-                it = bodies.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-    if (!remove.empty()) {
-        for (ColliderSlot& s : slots) s.record = nullptr;  // procurados de novo no próximo passo
-        bi.RemoveBodies(remove.data(), static_cast<int>(remove.size()));
-        bi.DestroyBodies(remove.data(), static_cast<int>(remove.size()));
-    }
+    if (sweep) RemoveUnseenBodies();
 
     auto addBatch = [&](std::vector<JPH::BodyID>& ids, JPH::EActivation activation) {
         if (ids.empty()) return;
@@ -326,6 +282,63 @@ void PhysicsSystem::World::SyncBodies(Scene& scene, float dt) {
     addBatch(addMoving, JPH::EActivation::Activate);
     // Muitos corpos de uma vez (início do Play): reorganiza a árvore da broad phase.
     if (addStatic.size() + addMoving.size() >= 64) physics.OptimizeBroadPhase();
+}
+
+// Corpo que já existia e continua igual: segue o Transform da entidade (teleporte, MoveKinematic ou estático
+// mudado de lugar).
+void PhysicsSystem::World::MoveBody(BodyRecord& r, const Entity& entity, const Pose& pose, const glm::mat4& world,
+                                     float dt) {
+    JPH::BodyInterface& bi = Bodies();
+    if (r.motion == JPH::EMotionType::Dynamic) {
+        // Transform mexido por script ou pelo editor: teleporta (a velocidade continua).
+        r.parent = entity.parent;
+        if (!SameTransform(entity.transform, r.written)) {
+            WakeAround(r.id);
+            bi.SetPositionAndRotation(r.id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
+            r.written = entity.transform;
+        }
+    } else if (r.motion == JPH::EMotionType::Kinematic) {
+        const bool moved = pose.position != r.pose.position || pose.rotation != r.pose.rotation;
+        // MoveKinematic dá a velocidade para chegar lá neste passo (e empurrar os outros); parado,
+        // mais uma chamada zera a velocidade.
+        if ((moved || r.kinematicMoving) && dt > 0.0f) {
+            bi.MoveKinematic(r.id, ToJolt(pose.position), ToJolt(pose.rotation), dt);
+        } else if (moved) {
+            bi.SetPositionAndRotation(r.id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::Activate);
+        }
+        r.kinematicMoving = moved;
+        r.pose = pose;
+        r.world = world;
+    } else {
+        if (pose.position != r.pose.position || pose.rotation != r.pose.rotation) {
+            WakeAround(r.id);  // antes e depois: quem estava em cima e quem está no lugar novo
+            bi.SetPositionAndRotation(r.id, ToJolt(pose.position), ToJolt(pose.rotation), JPH::EActivation::DontActivate);
+            WakeAround(r.id);
+            r.pose = pose;
+        }
+        r.world = world;
+    }
+}
+
+// Corpos que não foram vistos neste passo (entidade, componente ou estrutura saiu, ou entidade desativada).
+void PhysicsSystem::World::RemoveUnseenBodies() {
+    JPH::BodyInterface& bi = Bodies();
+    std::vector<JPH::BodyID> remove;
+    for (auto it = bodies.begin(); it != bodies.end();) {
+        if (it->second.seen != frame) {
+            WakeAround(it->second.id);
+            DropPairsOf(it->second.id);
+            remove.push_back(it->second.id);
+            it = bodies.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (!remove.empty()) {
+        for (ColliderSlot& s : slots) s.record = nullptr;  // procurados de novo no próximo passo
+        bi.RemoveBodies(remove.data(), static_cast<int>(remove.size()));
+        bi.DestroyBodies(remove.data(), static_cast<int>(remove.size()));
+    }
 }
 
 PhysicsSystem::World::BodyRecord* PhysicsSystem::World::CreateBody(

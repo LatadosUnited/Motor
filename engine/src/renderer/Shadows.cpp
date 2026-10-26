@@ -201,9 +201,32 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
     static_assert(kCascades + 6 * kMaxPointShadows <= 32);
     m_passes.resize(kCascades + 6 * kMaxPointShadows);
     m_passCount = 0;
-    size_t cascadePasses = 0;
+    const size_t cascadePasses = AddCascadePasses(camera, lights, distance, result);
+    AddCubePasses(camera, lights, distance, result);
+    if (m_passCount > 0) BuildPasses(items, order);
 
-    // --- Direcional: a primeira com sombra, em cascatas ---
+    glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_CULL_FACE);  // planos de um lado só também projetam sombra
+    glDisable(GL_BLEND);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    // Desvio de profundidade só nas cascatas (as primeiras passadas).
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.5f, 2.0f);
+    for (size_t p = 0; p < m_passCount; ++p) {
+        if (p == cascadePasses) glDisable(GL_POLYGON_OFFSET_FILL);
+        DrawPass(m_passes[p], instances, order, uploadJoints, stats);
+    }
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glNamedFramebufferTexture(m_fbo, GL_DEPTH_ATTACHMENT, 0, 0);
+    return result;
+}
+
+// Direcional: a primeira com sombra, em cascatas. Devolve quantas passadas são de cascata (as primeiras).
+size_t ShadowRenderer::AddCascadePasses(const Camera& camera, std::span<const Light> lights, float distance,
+                                        Result& result) {
     for (size_t i = 0; i < lights.size(); ++i) {
         const Light& light = lights[i];
         if (light.type != LightType::Directional || !light.castShadows) continue;
@@ -245,16 +268,19 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
             result.data.cascadeSplits[c] = farDist;
             result.data.cascadeTexels[c] = cascade.texelSize;
         }
-        cascadePasses = m_passCount;
         result.data.params = glm::vec4(static_cast<float>(cascades), 1.0f / static_cast<float>(resolution), 0.0f, distance);
         result.cascadeQuality = light.shadowQuality;
         m_drawnCount = cascades;
         m_drawnDirection = light.direction;
         result.cascadeLight = static_cast<int>(i);
-        break;
+        return m_passCount;
     }
+    return 0;
+}
 
-    // --- Pontuais e spots: as mais perto da câmera que iluminam algo visível ---
+// Pontuais e spots: as mais perto da câmera que iluminam algo visível, seis faces de cubo cada.
+void ShadowRenderer::AddCubePasses(const Camera& camera, std::span<const Light> lights, float distance,
+                                   Result& result) {
     const Frustum view = Frustum::FromMatrix(camera.Projection() * camera.View());
     struct Candidate {
         size_t light;
@@ -297,25 +323,6 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
         }
         result.data.params.z = 1.0f / static_cast<float>(resolution);
     }
-    if (m_passCount > 0) BuildPasses(items, order);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_CULL_FACE);  // planos de um lado só também projetam sombra
-    glDisable(GL_BLEND);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    // Desvio de profundidade só nas cascatas (as primeiras passadas).
-    glEnable(GL_POLYGON_OFFSET_FILL);
-    glPolygonOffset(1.5f, 2.0f);
-    for (size_t p = 0; p < m_passCount; ++p) {
-        if (p == cascadePasses) glDisable(GL_POLYGON_OFFSET_FILL);
-        DrawPass(m_passes[p], instances, order, uploadJoints, stats);
-    }
-    glDisable(GL_POLYGON_OFFSET_FILL);
-    glNamedFramebufferTexture(m_fbo, GL_DEPTH_ATTACHMENT, 0, 0);
-    return result;
 }
 
 } // namespace motor

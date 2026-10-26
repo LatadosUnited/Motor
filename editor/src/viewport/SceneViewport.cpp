@@ -216,8 +216,16 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     if (m_boxPending) UpdateBoxSelection(ctx, origin, gameView);
     if (!gameView) m_uiTool.Update(ctx, m_size);
 
-    // Overlay com estatísticas.
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    DrawStatsOverlay(dl, origin, playLeft, gameView, stats, fps);
+    DrawPlayIndicator(dl, origin, play, gameView);
+
+    ImGui::End();
+}
+
+// Texto do canto (FPS, draws, triângulos) e, com a preferência, os contadores à direita.
+void SceneViewport::DrawStatsOverlay(ImDrawList* dl, const ImVec2& origin, float playLeft, bool gameView,
+                                     const RenderStats& stats, float fps) {
     char text[200];
     const ImVec2 pad{8.0f, 6.0f};
     // Em cima, o texto vai até os botões de Play: no viewport estreito fica mais curto e, se nem o FPS couber, vai
@@ -246,28 +254,28 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         const float top = gameView ? 44.0f : 84.0f;
         m_statsPanel.Draw(dl, ImVec2(origin.x + m_size.x - 8.0f, origin.y + top), m_size.y - top - 8.0f);
     }
+}
 
-    // Indicação de Play: borda colorida em volta da imagem, e aviso se a cena não tem câmera.
-    if (play.IsActive()) {
-        const ImVec2 p1{origin.x + m_size.x, origin.y + m_size.y};
-        dl->AddRect(ImVec2(origin.x + 1.5f, origin.y + 1.5f), ImVec2(p1.x - 1.5f, p1.y - 1.5f), play.StateColor(),
-                    0.0f, 0, 3.0f);
-        const char* warning = nullptr;
-        if (m_missingGameCamera) {
-            warning = "Nenhuma câmera ativa na cena: mostrando pela câmera do editor (adicione o componente Câmera)";
-        } else if (!gameView && !play.SideBySide()) {  // lado a lado, o jogo está na janela Jogo
-            warning = "Vendo pela câmera do editor (F8 volta para a câmera do jogo)";
-        }
-        if (warning) {
-            const ImVec2 ws = ImGui::CalcTextSize(warning);
-            const ImVec2 wp{origin.x + (m_size.x - ws.x) * 0.5f, p1.y - ws.y - 16.0f};
-            dl->AddRectFilled(ImVec2(wp.x - 8.0f, wp.y - 5.0f), ImVec2(wp.x + ws.x + 8.0f, wp.y + ws.y + 5.0f),
-                              IM_COL32(0, 0, 0, 150), 4.0f);
-            dl->AddText(wp, IM_COL32(255, 220, 120, 255), warning);
-        }
+// No Play: borda colorida em volta da imagem, e aviso se a cena não tem câmera.
+void SceneViewport::DrawPlayIndicator(ImDrawList* dl, const ImVec2& origin, const PlayController& play,
+                                      bool gameView) const {
+    if (!play.IsActive()) return;
+    const ImVec2 p1{origin.x + m_size.x, origin.y + m_size.y};
+    dl->AddRect(ImVec2(origin.x + 1.5f, origin.y + 1.5f), ImVec2(p1.x - 1.5f, p1.y - 1.5f), play.StateColor(),
+                0.0f, 0, 3.0f);
+    const char* warning = nullptr;
+    if (m_missingGameCamera) {
+        warning = "Nenhuma câmera ativa na cena: mostrando pela câmera do editor (adicione o componente Câmera)";
+    } else if (!gameView && !play.SideBySide()) {  // lado a lado, o jogo está na janela Jogo
+        warning = "Vendo pela câmera do editor (F8 volta para a câmera do jogo)";
     }
-
-    ImGui::End();
+    if (warning) {
+        const ImVec2 ws = ImGui::CalcTextSize(warning);
+        const ImVec2 wp{origin.x + (m_size.x - ws.x) * 0.5f, p1.y - ws.y - 16.0f};
+        dl->AddRectFilled(ImVec2(wp.x - 8.0f, wp.y - 5.0f), ImVec2(wp.x + ws.x + 8.0f, wp.y + ws.y + 5.0f),
+                          IM_COL32(0, 0, 0, 150), 4.0f);
+        dl->AddText(wp, IM_COL32(255, 220, 120, 255), warning);
+    }
 }
 
 std::optional<ImVec2> SceneViewport::Project(const glm::vec3& world) const {

@@ -27,6 +27,7 @@ class InstanceBuffers;
 class PostProcess;
 class ShadowRenderer;
 class SkyRenderer;
+struct DrawBatch;
 struct DrawItem;
 struct Frustum;
 
@@ -122,7 +123,13 @@ private:
     };
 
     void LoadLitShaders(ShadowQuality cascadeFilter);
+    // Quadro da cena (DrawScene): ordem de desenho, bloco Frame, lotes da cena e o desenho deles (opacos e
+    // transparentes; o estado de shader, material e texturas lembrado vale dentro de uma chamada).
     void DrawScene();
+    void SortDrawOrder(const Frustum& frustum);
+    void UploadFrameData(const glm::mat4& view, const glm::mat4& projection);
+    size_t CollectSceneBatches(std::vector<uint32_t>& indices, std::vector<DrawBatch>& batches);  // devolve os opacos
+    void DrawSceneBatches(std::span<const DrawBatch> batches);
     void DrawWireframes();
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);
