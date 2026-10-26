@@ -67,3 +67,10 @@ o número da fase sai quando a alpha 4 for numerada de novo.
 - [x] Tarefa 5: Segurar, toque, toque duplo e buffer nas ações — f527117
 - [x] Tarefa 6: Remapear as ações no jogo exportado, salvo com as opções do jogador — 436de33
 - [x] Tarefa 7: Mandar mouse, eixos e texto pelo MCP — b7791bb
+
+## Hub residente com MCP (sem número ainda)
+
+**Planejada (26/10/2026), a pedido do usuário, para antes da 0.4:** [nota da fase](alpha-4/hub-residente.md). O Hub
+inicia com o Windows na bandeja, é dono da porta 47600 (`/mcphub` e `/mcpengine/<Projeto>`, repassado ao editor) e
+o Claude Code não precisa reconectar quando o editor fecha ou reabre; o Hub se atualiza sozinho pelo instalador
+silencioso. A autoatualização veio da [Fase 32](alpha-5.md). Branch `hub-residente`.

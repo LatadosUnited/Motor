@@ -37,7 +37,8 @@ Hoje o editor depende do MSYS2 (GCC 15.2 UCRT64) e do CMake instalados nos camin
 
 *(Limitações das Fases 14 e 15.)*
 
-- **Hub se atualiza** sozinho a partir do servidor (hoje só avisa e abre o link do instalador).
+- ~~**Hub se atualiza** sozinho a partir do servidor~~: foi para o [Hub residente com MCP](alpha-4/hub-residente.md)
+  (alpha 4, antes da 0.4), em 26/10/2026.
 - **https e assinatura** dos arquivos, para servidores fora da rede local.
 - **Ícones próprios** do Hub, do instalador e do editor.
 - Hub como repositório próprio (opcional).
