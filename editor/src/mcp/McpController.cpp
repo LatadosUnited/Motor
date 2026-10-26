@@ -187,14 +187,39 @@ void McpController::ApplyGameInput() {
     });
     for (const auto& [key, down] : m_pendingKeys) Input::SetKeyState(key, down);
     m_pendingKeys.clear();
+    if (m_pendingPadCount >= 0) {
+        Input::SetGamepadSimulated(m_pendingPadCount > 0, m_pendingPadCount);
+        m_pendingPadCount = -1;
+    }
+    for (const PendingAxis& a : m_pendingAxes) Input::SetGamepadAxisState(a.axis, a.value, a.pad);
+    m_pendingAxes.clear();
     std::erase_if(m_heldPad, [&](const HeldPadButton& h) {
         if (now < h.releaseAt) return false;
-        Input::SetGamepadButtonState(h.button, false);
+        Input::SetGamepadButtonState(h.button, false, h.pad);
         return true;
     });
-    for (const auto& [button, down] : m_pendingPad) Input::SetGamepadButtonState(button, down);
+    for (const PendingPadButton& p : m_pendingPad) Input::SetGamepadButtonState(p.button, p.down, p.pad);
     m_pendingPad.clear();
-    m_host.play.SetExternalInput(!m_heldKeys.empty() || m_clickStage != 0 || Input::IsGamepadSimulated());
+    // Mouse: botões como as teclas; movimento até onde já devia estar; roda e texto uma vez.
+    std::erase_if(m_heldMouse, [&](const HeldMouseButton& h) {
+        if (now < h.releaseAt) return false;
+        Input::SetMouseButtonState(h.button, false);
+        return true;
+    });
+    for (const auto& [button, down] : m_pendingMouse) Input::SetMouseButtonState(button, down);
+    m_pendingMouse.clear();
+    std::erase_if(m_mouseMoves, [&](MouseMove& m) {
+        const double elapsed = std::chrono::duration<double>(now - m.start).count();
+        const float progress = m.seconds <= 0.0 ? 1.0f : static_cast<float>(std::min(elapsed / m.seconds, 1.0));
+        const glm::vec2 target = m.delta * progress;
+        Input::SetMousePosition(Input::MousePosition() + (target - m.done));
+        m.done = target;
+        return progress >= 1.0f;
+    });
+    if (m_pendingScroll != 0.0f) Input::AddScroll(std::exchange(m_pendingScroll, 0.0f));
+    if (!m_pendingText.empty()) Input::AddTextInput(std::exchange(m_pendingText, {}));
+    m_host.play.SetExternalInput(!m_heldKeys.empty() || !m_heldMouse.empty() || !m_mouseMoves.empty() ||
+                                 m_clickStage != 0 || Input::IsGamepadSimulated());
 }
 
 void McpController::OnPlayStopped() {
@@ -203,6 +228,14 @@ void McpController::OnPlayStopped() {
     m_pendingKeys.clear();
     m_heldPad.clear();
     m_pendingPad.clear();
+    m_pendingPadCount = -1;
+    m_pendingAxes.clear();
+    for (const HeldMouseButton& h : m_heldMouse) Input::SetMouseButtonState(h.button, false);
+    m_heldMouse.clear();
+    m_pendingMouse.clear();
+    m_mouseMoves.clear();
+    m_pendingScroll = 0.0f;
+    m_pendingText.clear();
     Input::SetGamepadSimulated(false);  // volta o controle de verdade
     m_clickStage = 0;
     m_host.play.SetExternalInput(false);

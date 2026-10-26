@@ -303,11 +303,12 @@ Dentro do script:
 
 | Chamada | Devolve |
 |---|---|
-| `GetAxis("Horizontal")` | a ação do projeto de -1 a 1: A/D, setas, analógico esquerdo ou direcional (veja abaixo) |
+| `GetVector("Mover")` | a ação do projeto em X e Y, de -1 a 1: WASD, setas, analógico esquerdo ou direcional, com a diagonal limitada (veja abaixo) |
+| `GetAxis("Horizontal")` | a ação do projeto de -1 a 1: A/D, setas, analógico esquerdo ou direcional |
 | `IsActionDown("Correr")`, `WasActionPressed("Pular")` | a ação apertada (Shift ou o analógico apertado; Espaço ou o botão A) |
 | `IsKeyDown(motor::Key::W)` | `true` enquanto a tecla está apertada |
 | `WasKeyPressed(motor::Key::Space)` | `true` só no frame em que a tecla desceu |
-| `IsMouseDown(motor::MouseButton::Left)` | `true` enquanto o botão está apertado (`Left`, `Right`, `Middle`) |
+| `IsMouseDown(motor::MouseButton::Left)` | `true` enquanto o botão está apertado (`Left`, `Right`, `Middle`, `Back`, `Forward`) |
 | `MouseDelta()` | quanto o mouse andou neste frame, em pixels (`glm::vec2`) |
 | `SetCursorMode(motor::CursorMode::Locked)` | prende e esconde o cursor (câmera em primeira pessoa); `Hidden` só esconde, `Normal` devolve (menus). No editor, Esc solta e um clique no jogo prende de novo |
 | `Time().delta` | segundos desde o último `OnUpdate` (o mesmo `dt`) |
@@ -317,25 +318,87 @@ Dentro do script:
 
 **Ações e controle.** Em vez de perguntar por uma tecla, pergunte pela ação: o mesmo script funciona no
 teclado e no controle (gamepad), e quem joga pode trocar as teclas. As ações ficam no projeto, em **Arquivo >
-Controles** (o padrão já traz `Horizontal`, `Vertical`, `Olhar X`, `Olhar Y`, `Pular`, `Correr`, `Interagir` e
-`Pausa`, com teclado e controle). Na janela, **Adicionar (aperte)** liga a próxima tecla ou botão apertado, e
-uma barra mostra o valor de cada ação na hora, para conferir sem dar Play. Uma entrada marcada como
-**Negativo** empurra o eixo para o outro lado (a tecla A em `Horizontal`).
+Controles** (o padrão já traz `Mover`, `Olhar`, `Horizontal`, `Vertical`, `Olhar X`, `Olhar Y`, `Pular`,
+`Correr`, `Interagir`, `Pausa`, `Navegar`, `Confirmar` e `Voltar`, com teclado, mouse e controle). Cada ação tem um tipo: **Botão** (0 a 1),
+**Eixo** (-1 a 1) ou **Vetor 2D** (X e Y, para `GetVector`; W+D não anda mais rápido que W). Na janela,
+**Adicionar (aperte)** liga a próxima tecla ou botão apertado, e uma barra mostra o valor de cada ação na hora,
+para conferir sem dar Play. Em cada entrada: a **escala** (negativa empurra para o outro lado, como a tecla A em
+`Horizontal`; no mouse e nos analógicos é a sensibilidade), o **lado** X ou Y num Vetor 2D e uma tecla para
+apertar **junto** (Ctrl, Shift ou Alt: Ctrl+S).
+
+O mouse entra como eixo (`MouseX`, `MouseY`, `MouseScroll`) na mesma medida do analógico: 1000 pixels por
+segundo valem 1. Por isso `Olhar` serve aos dois do mesmo jeito: multiplique por uma velocidade e pelo `dt`.
 
 | Chamada | Devolve |
 |---|---|
-| `GetAxis("Vertical")` | -1 a 1: a soma das entradas (W = +1, S = -1, analógico para a frente = até +1) |
+| `GetVector("Olhar")` | X e Y do mouse e do analógico direito; o mouse rápido passa de 1 (não é cortado) |
+| `GetAxis("Vertical")` | -1 a 1: a soma das entradas (W = +1, S = -1, analógico para a frente = até +1); num Vetor 2D, o comprimento |
+| `TextInput()` | o texto digitado neste frame (UTF-8, com acentos), para campos de texto |
 | `IsActionDown("Pular")`, `WasActionPressed`, `WasActionReleased` | apertada (valor acima de 0,5), apertou ou soltou neste frame |
-| `IsGamepadConnected()` | há um controle (o primeiro conectado; Xbox, PlayStation e outros, no padrão Xbox) |
+| `IsGamepadConnected()`, `GamepadCount()` | há um controle (Xbox, PlayStation e outros, no padrão Xbox); quantos, até 4 |
+| `WasGamepadConnected(1)`, `WasGamepadDisconnected(0)` | o controle 1 ligou / o 0 desligou neste frame ("Jogador 2 entrou", pausar) |
+| `LastInputDevice()` | `motor::InputDevice::KeyboardMouse` ou `Gamepad`: o último usado, para a tela mostrar "Espaço" ou "A" |
 | `IsGamepadButtonDown(motor::GamepadButton::A)`, `WasGamepadButtonPressed` | um botão do controle direto: `A`, `B`, `X`, `Y`, `LeftBumper`, `Start`, `DpadUp`... |
 | `GamepadAxisValue(motor::GamepadAxis::LeftX)` | analógico de -1 a 1 (Y para cima é positivo), com zona morta; gatilhos (`LeftTrigger`, `RightTrigger`) de 0 a 1 |
 
-Ação com nome errado devolve zero e avisa uma vez no log. No editor, a ferramenta MCP `game_gamepad` simula um
-controle (para testar sem ter um).
+**Contextos.** Cada ação pode ter um **contexto**: o padrão põe Mover, Olhar, Pular e as outras do jogo em
+`Jogo`, e `Navegar`, `Confirmar` e `Voltar` em `Menu`. Só valem as ações do contexto ativo (e as sem contexto),
+então ao abrir um menu o jogador não pula nem atira atrás dele
+([examples/MenuPausa.cpp](examples/MenuPausa.cpp)):
+
+```cpp
+    void AbrirPausa(motor::UiSystem* ui) {
+        pausado = true;
+        SetInputContext("Menu");  // Pular, Mover... ficam soltos; Navegar, Confirmar e Voltar passam a valer
+        if (ui) ui->SetVisible("PainelPausa", true);
+    }
+
+    void FecharPausa(motor::UiSystem* ui) {
+        pausado = false;
+        SetInputContext("Jogo");
+        if (ui) ui->SetVisible("PainelPausa", false);
+    }
+```
+
+E um clique num botão ou imagem da interface do jogo é da interface: o `IsMouseDown(Left)` e uma ação "Atirar"
+no botão esquerdo não veem esse clique. `IsPointerOverUi()` diz se o mouse está sobre a interface.
+
+**No tempo.** Para o que um frame só não diz, as ações guardam um histórico: `WasActionHeld("Interagir", 1.0f)`
+vale no frame em que completou 1 s apertada (abrir uma porta trancada), `WasActionTapped("Correr")` num toque
+curto, `WasActionDoubleTapped("Correr")` em dois toques rápidos (esquiva), e `ConsumeBufferedAction("Pular")`
+diz se o pulo foi apertado até 0,15 s atrás e ainda não foi usado: chame quando o personagem toca o chão, e o
+pulo apertado um pouco antes não se perde. `GetActionHeldTime("Atirar")` dá quanto tempo está apertada (tiro
+carregado).
+
+**Trocar as teclas.** Um menu de controles no jogo deixa o jogador escolher as próprias teclas
+([examples/MenuControles.cpp](examples/MenuControles.cpp)): `GetPressedBinding()` devolve a primeira tecla ou
+botão apertado no frame, `RebindAction("Pular", 0, nova)` troca a primeira entrada de Pular (o lado num vetor e
+o sentido ficam), `GetBindingConflicts` diz quais outras ações já usam essa tecla e `ResetActionBindings()`
+volta às do projeto. No jogo exportado a troca fica gravada em `controles.json`, ao lado das opções; no editor
+vale só até parar o Play.
+
+```cpp
+        if (esperando) {
+            if (auto nova = GetPressedBinding()) {
+                for (const std::string& outra : GetBindingConflicts("Pular", *nova)) {
+                    Log("aviso: {} já usa {}", outra, nova->Label());
+                }
+                RebindAction("Pular", 0, *nova);
+                esperando = false;
+            }
+```
+
+Jogo de uma pessoa: qualquer controle serve, sem fazer nada. Duas ou mais pessoas na mesma tela: passe o
+número do jogador, `GetVector("Mover", 0)` para o controle 0, `GetVector("Mover", motor::kKeyboardMouse)` para
+quem joga no teclado. Os botões do controle direto também aceitam o número: `IsGamepadButtonDown(motor::GamepadButton::A, 1)`.
+
+Ação com nome errado devolve zero e avisa uma vez no log. No editor, as ferramentas MCP `game_mouse`
+(movimento, botões e roda) e `game_text` simulam o mouse e o texto, e `game_gamepad` (com `pad` e `count` para
+vários) simula um controle (para testar sem ter um).
 
 Teclas: `motor::Key::A` a `Z`, `D0` a `D9` (números), `Space`, `Enter`, `Escape`, `Tab`, `Backspace`,
-`Up`/`Down`/`Left`/`Right` (setas), `LeftShift`, `LeftControl`, `LeftAlt` (e os `Right...`), `F1` a `F12`
-e outras (lista completa na [referência](scripts-api.md#teclas)).
+`Up`/`Down`/`Left`/`Right` (setas), `LeftShift`, `LeftControl`, `LeftAlt` (e os `Right...`), `F1` a `F24`,
+`Numpad0` a `Numpad9` e outras (lista completa na [referência](scripts-api.md#teclas)).
 
 Quando o jogo não tem o foco (você está digitando num campo do editor, por exemplo), essas chamadas
 devolvem "solto"/zero: o jogo não reage ao que você digita no editor.

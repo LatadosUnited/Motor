@@ -6,5 +6,6 @@ motor_add_layer(project
         GameOptions.cpp
         SaveData.cpp
         InputActions.cpp
+        InputActionTracker.cpp
     DEPENDS core
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

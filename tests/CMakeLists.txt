@@ -277,3 +277,10 @@ motor_add_test(test_asset_preload)
 # Fase 27: vigia da pasta do projeto do editor (a varredura dos arquivos só roda quando algo mudou).
 motor_add_test(test_folder_watcher ${PROJECT_SOURCE_DIR}/editor/src/FolderWatcher.cpp)
 target_include_directories(test_folder_watcher PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
+# Entrada bruta: eventos do quadro (toque mais curto que um quadro), teclas e botões novos, texto digitado e zona
+# morta radial, vários controles (simulados). Sem janela.
+motor_add_test(test_input)
+
+# Ações no tempo (InputActionTracker): segurar, toque, toque duplo, buffer, e o buffer de pulo nos scripts.
+motor_add_test(test_input_interactions)

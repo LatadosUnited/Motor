@@ -11,6 +11,10 @@
 //
 // Clique: apertar e soltar o botão esquerdo em cima do mesmo botão (UiButton clicável). O elemento de cima
 // ganha: uma imagem por cima de um botão bloqueia o clique; texto sozinho não bloqueia.
+//
+// Clique da interface não vai para o jogo: antes dos scripts (UiPointerSystem), a UI diz ao runtime se o mouse
+// está sobre um botão ou imagem e se o clique começou num deles; até soltar, o botão esquerdo fica solto para
+// os scripts (IsMouseDown, ações). Com o cursor preso (Locked), a interface não pega o mouse.
 
 #include "motor/scene/RuntimeSystem.h"
 #include "motor/ui/UiLayout.h"
@@ -40,6 +44,8 @@ public:
     void OnStart(SceneRuntime& runtime) override;
     void OnUpdate(SceneRuntime& runtime, float dt) override;
     void OnStop(SceneRuntime& runtime) override;
+    // Antes dos scripts (UiPointerSystem): o mouse sobre a interface e o clique que é dela.
+    void UpdatePointer(SceneRuntime& runtime);
 
     // --- Quem roda o jogo ---
     void SetPointer(const UiPointer& pointer) { m_pointer = pointer; }
@@ -71,6 +77,8 @@ private:
     EntityId m_hovered = 0;
     EntityId m_pressed = 0;        // botão onde o clique começou
     bool m_wasDown = false;
+    bool m_captured = false;       // o clique começou sobre a interface: é dela até soltar
+    bool m_captureWasDown = false;
 };
 
 } // namespace motor

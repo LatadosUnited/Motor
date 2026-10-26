@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -157,18 +158,61 @@ protected:
     bool WasKeyPressed(Key key) const;
     bool IsMouseDown(MouseButton button) const;
     glm::vec2 MouseDelta() const;
-    // Ações do projeto (Arquivo > Controles): o mesmo código no teclado e no controle.
+    // Ações do projeto (Arquivo > Controles): o mesmo código no teclado, no mouse e no controle.
+    //   GetVector("Mover")     X e Y, -1 a 1, diagonal limitada ao círculo (WASD, setas, analógico esquerdo)
+    //   GetVector("Olhar")     mouse e analógico direito, na mesma medida: multiplique por velocidade * dt
     //   GetAxis("Horizontal")  -1 a 1 (A/D, setas, analógico esquerdo, direcional)
     //   if (WasActionPressed("Pular")) ...   (Espaço ou botão A)
-    bool IsActionDown(std::string_view action) const;
-    bool WasActionPressed(std::string_view action) const;
-    bool WasActionReleased(std::string_view action) const;
-    float GetAxis(std::string_view action) const;
-    // Controle direto (o primeiro conectado; padrão Xbox): botões, analógicos (-1 a 1, Y para cima +) e gatilhos (0 a 1).
-    bool IsGamepadConnected() const;
-    bool IsGamepadButtonDown(GamepadButton button) const;
-    bool WasGamepadButtonPressed(GamepadButton button) const;
-    float GamepadAxisValue(GamepadAxis axis) const;
+    // `device` separa os jogadores na mesma tela: motor::kAnyDevice (padrão: tudo), motor::kKeyboardMouse ou o
+    // controle 0..3 (GetVector("Mover", 1) é o jogador do controle 2).
+    bool IsActionDown(std::string_view action, int device = kAnyDevice) const;
+    bool WasActionPressed(std::string_view action, int device = kAnyDevice) const;
+    bool WasActionReleased(std::string_view action, int device = kAnyDevice) const;
+    float GetAxis(std::string_view action, int device = kAnyDevice) const;  // num Vector2, o comprimento
+    glm::vec2 GetVector(std::string_view action, int device = kAnyDevice) const;
+    // No tempo: segurar, toque, toque duplo e buffer.
+    //   if (WasActionHeld("Interagir", 1.0f)) ...        segurou 1 s (abrir a porta trancada)
+    //   if (WasActionDoubleTapped("Correr")) ...         dois toques rápidos (esquiva)
+    //   if (noChao && ConsumeBufferedAction("Pular"))    apertou até 0,15 s antes de tocar o chão: pula assim mesmo
+    float GetActionHeldTime(std::string_view action, int device = kAnyDevice) const;  // 0 se solta
+    bool WasActionHeld(std::string_view action, float seconds, int device = kAnyDevice) const;  // completou agora
+    bool WasActionTapped(std::string_view action, float maxSeconds = 0.25f, int device = kAnyDevice) const;
+    bool WasActionDoubleTapped(std::string_view action, float interval = 0.3f, int device = kAnyDevice) const;
+    // Apertada nos últimos `seconds` e ainda não usada: true uma vez (o aperto é gasto).
+    bool ConsumeBufferedAction(std::string_view action, float seconds = 0.15f, int device = kAnyDevice);
+    // Menu de controles: o jogador troca as teclas. A troca fica por cima do mapa do projeto e é gravada pelo
+    // jogo exportado (controles.json, ao lado das opções); no editor vale só neste Play.
+    //   if (auto b = GetPressedBinding()) RebindAction("Pular", 0, *b);   // "aperte a nova tecla"
+    std::vector<InputBinding> GetActionBindings(std::string_view action) const;  // as entradas de agora
+    // Troca a tecla/botão da entrada `index` (escala, lado do vetor e tecla de junto ficam). false se a ação ou o
+    // índice não existe, ou se não há quem rode o jogo.
+    bool RebindAction(std::string_view action, int index, const InputBinding& binding);
+    void ResetActionBindings(std::string_view action = {});  // volta às do projeto ("" = todas)
+    std::optional<InputBinding> GetPressedBinding() const;   // o primeiro apertado neste frame, ou nada
+    // Outras ações que já usam essa entrada no mesmo contexto ("Espaço já é Pular").
+    std::vector<std::string> GetBindingConflicts(std::string_view action, const InputBinding& binding) const;
+    // Texto digitado neste frame (UTF-8, com acentos), para campos de texto.
+    const std::string& TextInput() const;
+    // Contextos (Arquivo > Controles, coluna Contexto): grupos de ações que valem juntos. O jogo começa no
+    // contexto inicial do mapa ("Jogo"); ao abrir um menu, SetInputContext("Menu") desliga as ações do Jogo (Pular
+    // não pula atrás do menu) e liga as do Menu. Ações sem contexto valem sempre.
+    void SetInputContext(std::string_view context);  // só este fica ativo ("" = só as sem contexto)
+    void EnableInputContext(std::string_view context, bool enabled);  // liga/desliga um, sem mexer nos outros
+    bool IsInputContextActive(std::string_view context) const;
+    // O mouse está sobre um botão ou imagem da interface do jogo. Um clique que começa num deles é da interface:
+    // até soltar, IsMouseDown(Left) e as ações do botão esquerdo ficam soltos (atirar não dispara no "Jogar").
+    bool IsPointerOverUi() const;
+    // Controle direto (padrão Xbox): botões, analógicos (-1 a 1, Y para cima +) e gatilhos (0 a 1). Sem `pad`,
+    // qualquer controle; com `pad` (0 a 3), só aquele. Cada controle mantém o número enquanto estiver ligado.
+    bool IsGamepadConnected(int pad = kAnyDevice) const;
+    int GamepadCount() const;
+    bool WasGamepadConnected(int pad) const;     // ligou neste frame (ex.: "Jogador 2 entrou")
+    bool WasGamepadDisconnected(int pad) const;  // desligou neste frame (ex.: pausar o jogo)
+    bool IsGamepadButtonDown(GamepadButton button, int pad = kAnyDevice) const;
+    bool WasGamepadButtonPressed(GamepadButton button, int pad = kAnyDevice) const;
+    float GamepadAxisValue(GamepadAxis axis, int pad = kAnyDevice) const;
+    // O último usado (teclado/mouse ou controle), para mostrar "Espaço" ou "A" na tela.
+    InputDevice LastInputDevice() const;
     // Cursor do jogo: Locked (preso e escondido, para olhar com MouseDelta), Hidden ou Normal (menus). No editor
     // vale com o jogo em foco e Esc solta o cursor; ao parar o Play ele volta ao normal.
     void SetCursorMode(CursorMode mode);
@@ -245,6 +289,7 @@ private:
     void WriteLog(std::string_view fmt, const detail::LogArg* args, size_t count);
     bool InputEnabled() const;
     const InputActions& Actions() const;
+    InputFilter ActionFilter(int device) const;  // o jogador, os contextos ativos e o mouse da UI
     RuntimeSystem* FindSystem(const std::type_info& type);
 
     SceneRuntime* m_runtime = nullptr;

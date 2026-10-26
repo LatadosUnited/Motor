@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 20 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 21 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -139,9 +139,9 @@ Os eventos de física chegam depois do passo da física e antes do `OnFixedUpdat
 | Método | Devolve |
 |---|---|
 | `const GameTime& Time() const` | o tempo do jogo (abaixo) |
-| `bool IsKeyDown(Key key) const` | tecla apertada |
+| `bool IsKeyDown(Key key) const` | tecla apertada (ou apertada e solta dentro deste frame: um toque rápido não se perde) |
 | `bool WasKeyPressed(Key key) const` | tecla desceu neste frame (use no `OnUpdate`) |
-| `bool IsMouseDown(MouseButton button) const` | botão do mouse apertado: `MouseButton::Left`, `Right`, `Middle` |
+| `bool IsMouseDown(MouseButton button) const` | botão do mouse apertado: `MouseButton::Left`, `Right`, `Middle`, `Back`, `Forward` (os laterais) |
 | `glm::vec2 MouseDelta() const` | movimento do mouse neste frame, em pixels |
 | `void SetCursorMode(CursorMode mode)`, `CursorMode GetCursorMode() const` | cursor do jogo: `motor::CursorMode::Locked` (preso e escondido, para olhar com `MouseDelta`), `Hidden` ou `Normal`; no editor vale com o jogo em foco (Esc solta, clique prende de novo) e volta ao normal ao parar; continua ao trocar de cena |
 
@@ -150,18 +150,55 @@ controle:
 
 | Método | Devolve |
 |---|---|
-| `float GetAxis(std::string_view action) const` | valor da ação, -1 a 1: soma das entradas (tecla/botão = `scale`, eixo = valor x `scale`) |
+| `float GetAxis(std::string_view action) const` | valor da ação, -1 a 1: soma das entradas (tecla/botão = `scale`, eixo = valor x `scale`); Botão de 0 a 1; num Vetor 2D, o comprimento |
+| `glm::vec2 GetVector(std::string_view action) const` | X e Y de uma ação Vetor 2D (cada entrada vai no lado `part`), limitado ao círculo de raio 1; num Botão ou Eixo, `(valor, 0)` |
+| `const std::string& TextInput() const` | texto digitado neste frame, em UTF-8 (vazio sem o foco do jogo) |
+| `float GetActionHeldTime(std::string_view action, int device = kAnyDevice) const` | segundos com a ação apertada até agora (0 se solta) |
+| `bool WasActionHeld(std::string_view action, float seconds, int device = kAnyDevice) const` | a ação completou `seconds` apertada neste frame (uma vez por aperto e por limite) |
+| `bool WasActionTapped(std::string_view action, float maxSeconds = 0.25f, int device = kAnyDevice) const` | soltou neste frame depois de no máximo `maxSeconds` apertada |
+| `bool WasActionDoubleTapped(std::string_view action, float interval = 0.3f, int device = kAnyDevice) const` | apertou neste frame e o aperto anterior foi há no máximo `interval` s; um terceiro aperto rápido começa outra dupla |
+| `bool ConsumeBufferedAction(std::string_view action, float seconds = 0.15f, int device = kAnyDevice)` | apertou nos últimos `seconds` e o aperto ainda não foi usado: devolve true uma vez e o gasta (buffer de pulo) |
+| `std::vector<InputBinding> GetActionBindings(std::string_view action) const` | as entradas da ação agora (as do projeto, ou as trocadas pelo jogador); `InputBinding::Label()` dá o texto ("Tecla Space") |
+| `bool RebindAction(std::string_view action, int index, const InputBinding& binding)` | troca a tecla/botão da entrada `index` (escala, lado do vetor e tecla de junto ficam); grava no `controles.json` do jogo exportado; no editor vale só neste Play. false se a ação ou o índice não existe |
+| `void ResetActionBindings(std::string_view action = {})` | volta às entradas do projeto (`""` = todas as ações) |
+| `std::optional<InputBinding> GetPressedBinding() const` | a primeira tecla, botão do mouse ou do controle, ou analógico empurrado mais da metade, apertado neste frame ("aperte a nova tecla") |
+| `std::vector<std::string> GetBindingConflicts(std::string_view action, const InputBinding& binding) const` | outras ações que já usam essa entrada e valem junto (mesmo contexto ou sem contexto) |
+| `void SetInputContext(std::string_view context)` | deixa só este contexto ativo (`"Menu"`); `""` deixa só as ações sem contexto |
+| `void EnableInputContext(std::string_view context, bool enabled)`, `bool IsInputContextActive(std::string_view context) const` | liga ou desliga um contexto sem mexer nos outros; se está ativo |
+| `bool IsPointerOverUi() const` | o mouse está sobre um botão ou imagem da interface do jogo |
 | `bool IsActionDown(std::string_view action) const` | valor acima de 0,5 |
 | `bool WasActionPressed(std::string_view action) const`, `bool WasActionReleased(std::string_view action) const` | passou de 0,5 neste frame / voltou |
-| `bool IsGamepadConnected() const` | há um controle reconhecido como gamepad |
-| `bool IsGamepadButtonDown(GamepadButton button) const`, `bool WasGamepadButtonPressed(GamepadButton button) const` | botão do controle: `motor::GamepadButton::A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft` |
-| `float GamepadAxisValue(GamepadAxis axis) const` | `motor::GamepadAxis::LeftX`, `LeftY`, `RightX`, `RightY` (-1 a 1, Y para cima +, zona morta de 0,2) e `LeftTrigger`, `RightTrigger` (0 a 1) |
+| `bool IsGamepadConnected(int pad = kAnyDevice) const`, `int GamepadCount() const` | há um controle (ou o controle `pad`, de 0 a 3) reconhecido como gamepad; quantos estão ligados |
+| `bool WasGamepadConnected(int pad) const`, `bool WasGamepadDisconnected(int pad) const` | o controle `pad` ligou / desligou neste frame (valem mesmo sem o foco do jogo) |
+| `InputDevice LastInputDevice() const` | o último usado: `motor::InputDevice::KeyboardMouse` ou `Gamepad` (para mostrar "Espaço" ou "A") |
+| `bool IsGamepadButtonDown(GamepadButton button, int pad = kAnyDevice) const`, `bool WasGamepadButtonPressed(...)` | botão do controle: `motor::GamepadButton::A`, `B`, `X`, `Y`, `LeftBumper`, `RightBumper`, `Back`, `Start`, `Guide`, `LeftThumb`, `RightThumb`, `DpadUp`, `DpadRight`, `DpadDown`, `DpadLeft` |
+| `float GamepadAxisValue(GamepadAxis axis, int pad = kAnyDevice) const` | `motor::GamepadAxis::LeftX`, `LeftY`, `RightX`, `RightY` (-1 a 1, Y para cima +, zona morta radial de 0,2: a diagonal fraca não some) e `LeftTrigger`, `RightTrigger` (0 a 1) |
 
-Ação desconhecida devolve 0/falso e avisa uma vez no log. O controle é o primeiro conectado, no padrão do
-Xbox (a GLFW traduz PlayStation, Switch e outros: o `A` é o botão de baixo).
+O movimento do mouse (`MouseX`, `MouseY`, `MouseScroll`) entra como eixo: X e Y valem a velocidade sobre
+`motor::kMouseAxisPixelsPerSecond` (1000 px/s = 1, Y para cima +) e somam depois do limite de -1..1, então
+`GetVector("Olhar") * velocidade * dt` gira igual com mouse ou analógico; a roda vale os entalhes do frame.
+Uma entrada com `with` (Ctrl, Shift, Alt) só vale com essa tecla apertada junto, de qualquer lado.
+
+**Contextos.** Cada ação pode ter um contexto (`"Jogo"`, `"Menu"`): fora do contexto ativo ela fica
+solta/zero. O jogo começa no contexto inicial do mapa (`startContext`, padrão `"Jogo"`) e o script troca
+com `SetInputContext`. Ação sem contexto vale sempre. Uma tecla segurada desde antes de o contexto ligar não
+conta como `WasActionPressed` nele (o Espaço de Pular não confirma o menu que acabou de abrir).
+
+**Clique da interface.** Um clique que começa num botão ou imagem da interface do jogo é dela: até soltar,
+`IsMouseDown(MouseButton::Left)` e as ações ligadas ao botão esquerdo ficam soltos. Com o cursor preso
+(`CursorMode::Locked`) a interface não pega o mouse.
+
+Ação desconhecida devolve 0/falso e avisa uma vez no log. Controles no padrão do Xbox (a GLFW traduz
+PlayStation, Switch e outros: o `A` é o botão de baixo), até `motor::kMaxGamepads` (4). Cada um ganha um número
+(0 a 3) ao ligar e o mantém até desligar. Sem número, as funções valem para qualquer controle (o botão de
+qualquer um; o eixo do mais empurrado). As de ação também recebem `device` para separar os jogadores na mesma
+tela: `motor::kAnyDevice` (padrão), `motor::kKeyboardMouse` ou o número do controle, como em
+`GetVector("Mover", 1)`.
 
 As de entrada (teclado, mouse, ações e controle) devolvem falso/zero quando o jogo não tem o foco. `motor::Input` (`motor/core/Input.h`)
-tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`...), mas sem esse filtro de foco.
+tem mais funções (`WasKeyReleased`, `MousePosition`, `ScrollDelta`, `TextInput` com o texto digitado no frame, `SetGamepadDeadZone`...),
+mas sem esse filtro de foco. Os nomes das teclas (`motor::Key`) são as posições do teclado americano: no ABNT2, `Semicolon` é o Ç;
+há também `F13` a `F24`, `Numpad0` a `Numpad9`, `NumpadEnter` e os outros do teclado numérico.
 
 `motor::GameTime`:
 
@@ -478,6 +515,7 @@ nome da entidade (a primeira com esse nome) ou pelo id. O sistema roda depois do
 | `EntityId HoveredButton() const` | o botão sob o mouse, ou 0 |
 | `bool ScreenRect(EntityId entity, UiBox& out) const` | retângulo do elemento na tela (pixels de verdade, `out.min`/`out.max`) no último passo; `false` se não estava visível |
 | `void SetPointer(const UiPointer& pointer)`, `const UiPointer& Pointer() const` | o mouse em relação à imagem do jogo; quem chama é o editor (ou o jogo exportado), não um script |
+| `void UpdatePointer(SceneRuntime& runtime)` | diz ao runtime, antes dos scripts, se o mouse está sobre a interface e se o clique é dela; quem chama é a própria engine, não um script |
 | `OnStart`, `OnUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 `motor::UiPointer`: `screenSize` (pixels da imagem do jogo), `position` (mouse, a partir do canto superior

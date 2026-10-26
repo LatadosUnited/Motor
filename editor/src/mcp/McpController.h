@@ -93,6 +93,24 @@ private:
     struct HeldPadButton {
         motor::GamepadButton button;
         std::chrono::steady_clock::time_point releaseAt;
+        int pad = 0;
+    };
+    struct PendingPadButton {
+        motor::GamepadButton button;
+        bool down = false;
+        int pad = 0;
+    };
+    struct HeldMouseButton {
+        motor::MouseButton button;
+        std::chrono::steady_clock::time_point releaseAt;
+    };
+    // Movimento do mouse (game_mouse move), espalhado em `seconds` pelo tempo de verdade: cada quadro anda o que
+    // falta até onde já devia estar.
+    struct MouseMove {
+        glm::vec2 delta{0.0f};
+        std::chrono::steady_clock::time_point start;
+        double seconds = 0.0;
+        glm::vec2 done{0.0f};
     };
 
     // Ferramentas por grupo: editor e vista em McpController.cpp, arquivos em McpFileTools.cpp, jogo e scripts
@@ -128,8 +146,24 @@ private:
     std::vector<std::pair<motor::Key, bool>> m_pendingKeys;
     std::vector<HeldKey> m_heldKeys;
     // Controle simulado (game_gamepad): botões a apertar/soltar no próximo quadro e os presos.
-    std::vector<std::pair<motor::GamepadButton, bool>> m_pendingPad;
+    std::vector<PendingPadButton> m_pendingPad;
     std::vector<HeldPadButton> m_heldPad;
+    // Ligar/desligar controles simulados e mover eixos também esperam o começo do quadro: feito no meio dele, o
+    // BeginFrame seguinte apagaria o WasGamepadConnected antes de o script ler. -1 = sem mudança; 0 = os de verdade.
+    int m_pendingPadCount = -1;
+    struct PendingAxis {
+        motor::GamepadAxis axis;
+        float value = 0.0f;
+        int pad = 0;
+    };
+    std::vector<PendingAxis> m_pendingAxes;
+    // Mouse e texto simulados (game_mouse, game_text): botões, movimentos em andamento, roda e texto do próximo
+    // quadro.
+    std::vector<std::pair<motor::MouseButton, bool>> m_pendingMouse;
+    std::vector<HeldMouseButton> m_heldMouse;
+    std::vector<MouseMove> m_mouseMoves;
+    float m_pendingScroll = 0.0f;
+    std::string m_pendingText;
     // Imagem do viewport_capture, desenhada na hora (com MSAA, como o Viewport).
     std::unique_ptr<motor::Framebuffer> m_capture;
     // Clique num botão da UI do jogo: posição na tela do jogo e etapa (1 = apertar, 2 = soltar, 0 = nada).

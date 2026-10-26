@@ -3,12 +3,12 @@ tipo: fase
 alpha: 3
 fase: 
 titulo: Organização do código 2
-status: em andamento
+status: pronta
 prioridade: 
 areas: [common, core, assets, project, scene, renderer, ai, editor, hub, distrib, docs]
 branch: refactor/organizacao-2
 inicio: 2026-10-25
-fim: 
+fim: 2026-10-25
 ---
 
 # Organização do código 2
@@ -78,10 +78,10 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 
 - [x] Tarefa 1: Criar `motor/common/Text.h` com o `SetError` e trocar as 14 cópias — 4653ffb
 - [x] Tarefa 2: Criar `motor/common/FileRead.h` (texto e bytes) e trocar as 8 leituras — 4653ffb
-- [ ] Tarefa 3: Pôr `Lower` e `LowerExtension` no `Text.h` e trocar as 6 cópias — 4653ffb (falta o `Input.cpp`)
+- [x] Tarefa 3: Pôr `Lower` e `LowerExtension` no `Text.h` e trocar as 6 cópias — 4653ffb, 9cd819d
 - [x] Tarefa 4: Trocar a cópia do `ExecutableDir` no `ScriptProject` pela do `EngineAssets.h` — 4653ffb
 - [x] Tarefa 5: Dividir o `Renderer::DrawScene` nas etapas que ele já numera — 957b452
-- [ ] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw` — 957b452 (falta o `DrawControlsWindow`)
+- [x] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw` — 957b452, f8baab9
 - [x] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta — 7efa412
 - [x] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2 — 95674e5
 - [x] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo — 601c36d, 95674e5, grafo depois do merge 3024c1b
@@ -166,10 +166,22 @@ Markdown só entram de novo num `/graphify --update` completo.
 
 Conferido: build sem avisos e `ctest` 57/57 em Debug (o `test_desempenho` pulado, como sempre no Debug).
 
+### `Input.cpp` e `DrawControlsWindow` (resto das tarefas 3 e 6, 25/10/2026)
+
+Feitos no branch `entrada-base`, depois de trazer o `main` para ele (merge `2becfda`), porque a entrada v2 reescreve
+os dois arquivos. O `Lower(std::string_view)` do `Input.cpp` saiu: as quatro buscas por nome chamam o
+`motor::Lower(std::string(name))` do `Text.h`. O `DrawControlsWindow`, que com a janela reorganizada da entrada v2
+tinha chegado a 204 linhas, ficou com 81: `ControlsHeader` (ajuda, controles ligados, contexto inicial),
+`ActionHeader` (a tabela com nome, valor ao vivo e Excluir), `ActionFields` (nome, tipo, contexto),
+`AddBindingButtons` ("+ Apertar" e "+ Escolher...") e `RestoreDefaultsButton`, soltas no `.cpp`, com o código como
+estava. Fora as `Add*Tools` do MCP, nenhuma função de `engine/src` ou `editor/src` passa de 120 linhas.
+
+Conferido: build sem avisos e `ctest` 59/59 em Debug (o `test_desempenho` pulado, como sempre no Debug). O
+`test_desempenho` em Release não foi rodado de novo depois dessas duas mudanças (nenhuma toca na cena nem no
+renderer); a medição das tarefas 1 a 6 está acima.
+
 ## Limitações
 
-- **`Lower` do `Input.cpp`** (recebe `std::string_view`) e **`DrawControlsWindow`** (131 linhas, a única acima de 120
-  fora as `Add*Tools`) ficam para depois do branch `entrada-base`, que mexe nos dois arquivos.
 - **Leituras no meio de outras funções:** ~14 lugares ainda abrem o arquivo e leem com `rdbuf()` direto (projeto,
   opções, save, prefab, cena, recuperação, `.meta`, configurações do editor, plano de instalação). Cada um tem a sua
   mensagem de erro e não era uma função copiada; dá para trocar pelo `ReadTextFile` aos poucos, quando mexer neles.

@@ -25,8 +25,13 @@ public:
     // Saves do jogo: %APPDATA%\<Jogo>\saves\ no Player, <projeto>/.motor/saves/ no editor. Gravados também
     // ao fechar o jogo e ao parar o Play.
     virtual SaveStore& Saves() = 0;
-    // Mapa de ações do projeto (Script::IsActionDown, GetAxis...).
+    // Mapa de ações do projeto, com as teclas trocadas pelo jogador por cima (Script::IsActionDown, GetAxis...).
     virtual const InputActions& Actions() const = 0;
+    // Teclas trocadas pelo jogador (só as ações que ele mudou, com todas as entradas delas; ver
+    // InputActions::WithPlayerBindings). O Player grava em %APPDATA%\<Jogo>\controles.json e abre o jogo com
+    // elas; o editor só guarda neste Play. Sem suporte (testes), não guarda nada.
+    virtual InputActions PlayerBindings() const { return {}; }
+    virtual void SetPlayerBindings(const InputActions&) {}
     // Versão do jogo (Configurações do jogo), para mostrar no menu.
     virtual std::string GameVersion() const = 0;
     // Fecha o jogo depois deste passo (no editor, para o Play).

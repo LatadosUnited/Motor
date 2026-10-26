@@ -25,7 +25,11 @@ public:
     std::string GameVersion() const override { return m_version; }
     motor::SaveStore& Saves() override { return m_saves; }
     const motor::InputActions& Actions() const override { return m_actions; }
-    void SetActions(const motor::InputActions& actions) { m_actions = actions; }
+    // O mapa do projeto, no começo de cada Play: as trocas do jogador de um Play anterior não ficam.
+    void SetActions(const motor::InputActions& actions);
+    // No editor, as trocas valem só neste Play (o jogo exportado é quem grava o controles.json).
+    motor::InputActions PlayerBindings() const override { return m_player; }
+    void SetPlayerBindings(const motor::InputActions& player) override;
 
     bool TakeQuit() { return std::exchange(m_quit, false); }
 
@@ -33,7 +37,9 @@ private:
     motor::GameOptions m_options;
     std::string m_version;
     motor::SaveStore m_saves;
-    motor::InputActions m_actions = motor::InputActions::Defaults();
+    motor::InputActions m_projectActions = motor::InputActions::Defaults();
+    motor::InputActions m_player;
+    motor::InputActions m_actions = motor::InputActions::Defaults();  // as do projeto com as do jogador por cima
     bool m_quit = false;
     bool m_warnedDisplay = false;
 };

@@ -142,6 +142,7 @@ private:
     bool m_identityEditing = false;
     bool m_showControlsWindow = false;
     int m_listeningAction = -1;  // ação esperando "aperte uma tecla"
+    double m_listeningSince = 0.0;  // quando começou a esperar (desiste sozinha depois de uns segundos)
 };
 
 } // namespace editor

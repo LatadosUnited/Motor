@@ -725,12 +725,20 @@ Exportado/
   **Configurações do jogo > Tela de carregamento** (MCP `game_settings`, `loading_scene`), uma cena do projeto
   feita no editor com UI (imagem, texto) e, se quiser, câmera e objetos. Ela é só desenhada: scripts e física
   não rodam nela. No Play do editor a troca de cena não mostra a tela.
-- **Controle e ações** (Fase 21): os scripts perguntam por ações (`GetAxis("Horizontal")`,
-  `WasActionPressed("Pular")`) do mapa do projeto (**Arquivo > Controles**, `.mproject` em `"input"`, MCP
-  `input_actions`), que liga teclas, mouse e o controle (gamepad, padrão Xbox, pela GLFW). O padrão traz
-  Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa. Controle direto: `IsGamepadButtonDown`,
-  `GamepadAxisValue`. Os modelos Jogador e MoverWASD andam com o teclado ou o analógico. O MCP `game_gamepad`
-  simula um controle no Play.
+- **Controle e ações** (Fase 21; v2 na alpha 4): os scripts perguntam por ações (`GetVector("Mover")`,
+  `GetAxis("Horizontal")`, `WasActionPressed("Pular")`) do mapa do projeto (**Arquivo > Controles**, `.mproject`
+  em `"input"` versão 2, MCP `input_actions`), que liga teclas, botões e movimento do mouse e o controle
+  (gamepad, padrão Xbox, pela GLFW). Ações de botão, eixo ou vetor 2D (diagonal limitada), com escala, tecla de
+  junto (Ctrl+S) e o mouse na medida do analógico. O padrão traz Mover, Olhar, Horizontal, Vertical, Olhar X/Y,
+  Pular, Correr, Interagir e Pausa (contexto Jogo) e Navegar, Confirmar e Voltar (contexto Menu); o script troca
+  com `SetInputContext("Menu")`, e um clique na interface do jogo não chega às ações. No tempo: segurar,
+  toque, toque duplo e buffer (`WasActionHeld`, `WasActionDoubleTapped`, `ConsumeBufferedAction("Pular")`).
+  O jogador troca as teclas no jogo (`RebindAction`, `GetPressedBinding`), gravadas em `controles.json` ao lado
+  do `opcoes.json`, por cima do mapa do projeto. Até 4 controles, cada um
+  com seu número, aviso de ligar/desligar, ações por jogador (`GetVector("Mover", 1)`) e o último dispositivo
+  usado. Controle direto: `IsGamepadButtonDown`, `GamepadAxisValue`. Os modelos Jogador e MoverWASD andam com o
+  teclado ou o analógico. No Play, o MCP simula controles (`game_gamepad`, até 4), o mouse (`game_mouse`:
+  movimento, botões e roda) e texto (`game_text`), só para o jogo.
 - **Progresso salvo** (Fase 21): os scripts guardam chave/valor em "slots" com `SaveSlot()` (`motor::SaveData`:
   `GetInt`/`SetInt`, `GetString`, `GetVec3`... e `Save()`), `HasSave`, `DeleteSave` e `SaveFolder`. No jogo
   exportado ficam em `%APPDATA%\<Jogo>\saves\<slot>.json`; no Play do editor, em `<projeto>/.motor/saves/`
@@ -834,7 +842,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Situação | `editor_status`, `scene_tree`, `entity_get` (no Play, também o estado do jogo: clipe do Animator, no chão, velocidade), `component_types`, `log_read`, `events_read` (o que mudou no editor: seleção, cena, Play, scripts), `docs_read` (documentação de scripts desta versão; o `editor_status` mostra em `script_reference` as pastas da documentação e dos headers do SDK) |
   | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
-  | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
+  | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `game_mouse` (movimento, botões e roda), `game_text` (texto digitado), `game_gamepad` (até 4 controles), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
 | Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia), `ai_perception` (olhos, cone e alcances de cada Percepção e os alvos; no Play, quem vê, o que ouviu e o que lembra) |
   | Scripts | `scripts_build` (`wait` responde quando a compilação termina), `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |

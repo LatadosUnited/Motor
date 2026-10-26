@@ -10,6 +10,7 @@
 #include "motor/scene/Scene.h"
 
 #include <algorithm>
+#include <cctype>
 #include <exception>
 #include <random>
 #include <format>
@@ -195,6 +196,20 @@ void SceneRuntime::RunSystems(bool beforeScripts, void (RuntimeSystem::*hook)(Sc
     }
 }
 
+const std::vector<std::string>& SceneRuntime::InputContexts() {
+    if (!m_inputContextsSet) {
+        m_inputContextsSet = true;
+        const std::string start = m_host ? m_host->Actions().startContext : InputActions::Defaults().startContext;
+        m_inputContexts = start.empty() ? std::vector<std::string>{} : std::vector<std::string>{start};
+    }
+    return m_inputContexts;
+}
+
+void SceneRuntime::SetInputContexts(std::vector<std::string> contexts) {
+    m_inputContexts = std::move(contexts);
+    m_inputContextsSet = true;
+}
+
 RuntimeSystem* SceneRuntime::FindSystem(const std::type_info& type) {
     for (SystemSlot& slot : m_systems) {
         if (*slot.info.cppType == type) return slot.system.get();
@@ -211,6 +226,10 @@ void SceneRuntime::Start() {
     m_hasNewError = false;
     m_errorCount = 0;
     m_timers.clear();
+    m_inputContexts.clear();
+    m_inputContextsSet = false;
+    m_pointerOverUi = m_uiHasMouse = false;
+    m_actionTracker.Clear();
     m_random.seed(std::random_device{}());
     // Instâncias novas a cada Start: o estado dos sistemas é deste runtime e deste Play.
     for (RuntimeSystemInfo& info : RegisteredRuntimeSystems()) {
@@ -237,6 +256,14 @@ void SceneRuntime::Update(float dt) {
     m_time.elapsed += dt;
     StartPending();
     RunSystems(true, &RuntimeSystem::OnUpdate, dt);
+    {
+        // Depois da UI dizer se pegou o mouse (sistema antes dos scripts), antes dos scripts lerem.
+        static const InputActions defaults = InputActions::Defaults();
+        InputFilter filter;
+        filter.contexts = &InputContexts();
+        filter.uiHasMouse = m_uiHasMouse;
+        m_actionTracker.Update(m_host ? m_host->Actions() : defaults, filter, m_inputEnabled, dt);
+    }
     RunTimers();
     {
         MOTOR_PROFILE_STAT("Scripts OnUpdate");
@@ -599,7 +626,11 @@ bool Script::InputEnabled() const {
 
 bool Script::IsKeyDown(Key key) const { return InputEnabled() && Input::IsKeyDown(key); }
 bool Script::WasKeyPressed(Key key) const { return InputEnabled() && Input::WasKeyPressed(key); }
-bool Script::IsMouseDown(MouseButton button) const { return InputEnabled() && Input::IsMouseDown(button); }
+bool Script::IsMouseDown(MouseButton button) const {
+    if (button == MouseButton::Left && m_runtime && m_runtime->UiHasMouse()) return false;  // clique na interface
+    return InputEnabled() && Input::IsMouseDown(button);
+}
+bool Script::IsPointerOverUi() const { return m_runtime && m_runtime->PointerOverUi(); }
 glm::vec2 Script::MouseDelta() const { return InputEnabled() ? Input::MouseDelta() : glm::vec2(0.0f); }
 void Script::SetCursorMode(CursorMode mode) {
     if (m_runtime) m_runtime->SetCursorMode(mode);
@@ -632,18 +663,129 @@ const InputActions& Script::Actions() const {
     GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
     return host ? host->Actions() : defaults;
 }
-bool Script::IsActionDown(std::string_view action) const { return InputEnabled() && Actions().IsDown(action); }
-bool Script::WasActionPressed(std::string_view action) const { return InputEnabled() && Actions().WasPressed(action); }
-bool Script::WasActionReleased(std::string_view action) const { return InputEnabled() && Actions().WasReleased(action); }
-float Script::GetAxis(std::string_view action) const { return InputEnabled() ? Actions().Value(action) : 0.0f; }
-bool Script::IsGamepadConnected() const { return Input::IsGamepadConnected(); }
-bool Script::IsGamepadButtonDown(GamepadButton button) const {
-    return InputEnabled() && Input::IsGamepadButtonDown(button);
+InputFilter Script::ActionFilter(int device) const {
+    InputFilter filter(device);
+    if (m_runtime) {
+        filter.contexts = &m_runtime->InputContexts();
+        filter.uiHasMouse = m_runtime->UiHasMouse();
+    }
+    return filter;
 }
-bool Script::WasGamepadButtonPressed(GamepadButton button) const {
-    return InputEnabled() && Input::WasGamepadButtonPressed(button);
+bool Script::IsActionDown(std::string_view action, int device) const {
+    return InputEnabled() && Actions().IsDown(action, ActionFilter(device));
 }
-float Script::GamepadAxisValue(GamepadAxis axis) const { return InputEnabled() ? Input::GamepadAxisValue(axis) : 0.0f; }
+bool Script::WasActionPressed(std::string_view action, int device) const {
+    return InputEnabled() && Actions().WasPressed(action, ActionFilter(device));
+}
+bool Script::WasActionReleased(std::string_view action, int device) const {
+    return InputEnabled() && Actions().WasReleased(action, ActionFilter(device));
+}
+float Script::GetAxis(std::string_view action, int device) const {
+    return InputEnabled() ? Actions().Value(action, ActionFilter(device)) : 0.0f;
+}
+glm::vec2 Script::GetVector(std::string_view action, int device) const {
+    return InputEnabled() ? Actions().Vector(action, ActionFilter(device)) : glm::vec2(0.0f);
+}
+namespace {
+bool SameContext(std::string_view a, std::string_view b) {
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+               return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+           });
+}
+} // namespace
+float Script::GetActionHeldTime(std::string_view action, int device) const {
+    return InputEnabled() ? m_runtime->ActionTracker().HeldTime(action, device) : 0.0f;
+}
+bool Script::WasActionHeld(std::string_view action, float seconds, int device) const {
+    return InputEnabled() && m_runtime->ActionTracker().WasHeld(action, seconds, device);
+}
+bool Script::WasActionTapped(std::string_view action, float maxSeconds, int device) const {
+    return InputEnabled() && m_runtime->ActionTracker().WasTapped(action, maxSeconds, device);
+}
+bool Script::WasActionDoubleTapped(std::string_view action, float interval, int device) const {
+    return InputEnabled() && m_runtime->ActionTracker().WasDoubleTapped(action, interval, device);
+}
+bool Script::ConsumeBufferedAction(std::string_view action, float seconds, int device) {
+    return InputEnabled() && m_runtime->ActionTracker().ConsumeBuffered(action, seconds, device);
+}
+std::vector<InputBinding> Script::GetActionBindings(std::string_view action) const {
+    const InputAction* found = Actions().Find(action);
+    return found ? found->bindings : std::vector<InputBinding>{};
+}
+bool Script::RebindAction(std::string_view action, int index, const InputBinding& binding) {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    const InputAction* current = host ? host->Actions().Find(action) : nullptr;
+    if (!current || index < 0 || index >= static_cast<int>(current->bindings.size())) return false;
+    InputAction mine = *current;
+    InputBinding& b = mine.bindings[static_cast<size_t>(index)];
+    // Só a tecla/botão muda: W em "Mover" continua no Y, A continua negativa. Um analógico escolhido traz o
+    // sentido em que foi empurrado (sobre o da entrada antiga).
+    const float sign = binding.source == InputBinding::Source::GamepadAxis && binding.scale < 0.0f ? -1.0f : 1.0f;
+    b.source = binding.source;
+    b.code = binding.code;
+    b.scale *= sign;
+    InputActions player = host->PlayerBindings();
+    std::erase_if(player.actions, [&](const InputAction& a) { return a.name == mine.name; });
+    player.actions.push_back({mine.name, mine.bindings, mine.type, mine.context});
+    host->SetPlayerBindings(player);
+    return true;
+}
+void Script::ResetActionBindings(std::string_view action) {
+    GameHost* host = m_runtime ? m_runtime->Host() : nullptr;
+    if (!host) return;
+    InputActions player = host->PlayerBindings();
+    if (action.empty()) {
+        player.actions.clear();
+    } else {
+        const InputAction* found = host->Actions().Find(action);
+        if (!found) return;
+        std::erase_if(player.actions, [&](const InputAction& a) { return a.name == found->name; });
+    }
+    host->SetPlayerBindings(player);
+}
+std::optional<InputBinding> Script::GetPressedBinding() const {
+    return InputEnabled() ? InputActions::FirstPressed() : std::nullopt;
+}
+std::vector<std::string> Script::GetBindingConflicts(std::string_view action, const InputBinding& binding) const {
+    return Actions().Conflicts(action, binding);
+}
+void Script::SetInputContext(std::string_view context) {
+    if (!m_runtime) return;
+    m_runtime->SetInputContexts(context.empty() ? std::vector<std::string>{} : std::vector<std::string>{std::string(context)});
+}
+void Script::EnableInputContext(std::string_view context, bool enabled) {
+    if (!m_runtime || context.empty()) return;
+    std::vector<std::string> contexts = m_runtime->InputContexts();
+    std::erase_if(contexts, [&](const std::string& c) { return SameContext(c, context); });
+    if (enabled) contexts.emplace_back(context);
+    m_runtime->SetInputContexts(std::move(contexts));
+}
+bool Script::IsInputContextActive(std::string_view context) const {
+    if (!m_runtime) return true;
+    const auto& contexts = m_runtime->InputContexts();
+    return std::any_of(contexts.begin(), contexts.end(), [&](const std::string& c) { return SameContext(c, context); });
+}
+const std::string& Script::TextInput() const {
+    static const std::string none;
+    return InputEnabled() ? Input::TextInput() : none;
+}
+bool Script::IsGamepadConnected(int pad) const {
+    return pad == kAnyDevice ? Input::IsGamepadConnected() : Input::IsGamepadConnected(pad);
+}
+int Script::GamepadCount() const { return Input::GamepadCount(); }
+// Ligar e desligar não dependem do foco: o jogo precisa saber mesmo com o editor em outro painel.
+bool Script::WasGamepadConnected(int pad) const { return Input::WasGamepadConnected(pad); }
+bool Script::WasGamepadDisconnected(int pad) const { return Input::WasGamepadDisconnected(pad); }
+bool Script::IsGamepadButtonDown(GamepadButton button, int pad) const {
+    return InputEnabled() && Input::IsGamepadButtonDown(button, pad);
+}
+bool Script::WasGamepadButtonPressed(GamepadButton button, int pad) const {
+    return InputEnabled() && Input::WasGamepadButtonPressed(button, pad);
+}
+float Script::GamepadAxisValue(GamepadAxis axis, int pad) const {
+    return InputEnabled() ? Input::GamepadAxisValue(axis, pad) : 0.0f;
+}
+InputDevice Script::LastInputDevice() const { return Input::LastDevice(); }
 
 SaveData& Script::SaveSlot(std::string_view slot) {
     GameHost* host = m_runtime ? m_runtime->Host() : nullptr;

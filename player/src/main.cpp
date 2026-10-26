@@ -15,7 +15,8 @@
 //
 // Opções do jogador (tela cheia, resolução, vsync, MSAA, sombras): as padrão do projeto, trocadas pelas do
 // opcoes.json se ele existir; os scripts mudam e gravam com Script::ApplyOptions (GameHost). Saves dos scripts
-// (Script::SaveSlot) em %APPDATA%\<Jogo>\saves\, gravados também ao fechar.
+// (Script::SaveSlot) em %APPDATA%\<Jogo>\saves\, gravados também ao fechar. Teclas trocadas pelo jogador
+// (Script::RebindAction) em controles.json, ao lado do opcoes.json, por cima do mapa de ações do projeto.
 
 #include <motor/Motor.h>
 #include <motor/app/GameQuality.h>
@@ -54,11 +55,13 @@ struct LaunchOptions {
     double seconds = 0.0;  // > 0: fecha depois desse tempo (--segundos)
     bool windowed = false;  // --janela
     fs::path optionsFile;   // --opcoes; vazio = %APPDATA%\<Jogo>\opcoes.json
+    fs::path controlsFile;  // controles.json na pasta do optionsFile; vazio = não grava
     bool stats = false;     // --stats
     fs::path perfFile;      // --perf; vazio = não grava
 };
 
 constexpr const char* kOptionsFile = "opcoes.json";
+constexpr const char* kControlsFile = "controles.json";
 constexpr const char* kSavesFolder = "saves";
 
 std::vector<std::string> Arguments(int argc, char** argv) {
@@ -183,6 +186,17 @@ public:
         : Application(desc), m_project(std::move(project)), m_options(options), m_gameOptions(gameOptions) {
         // Saves em %APPDATA%\<Jogo>\saves\ (sem pasta de usuário: só na memória).
         if (const fs::path data = PlayerDataDir(m_project.Name()); !data.empty()) m_saves = SaveStore(data / kSavesFolder);
+        // Teclas trocadas pelo jogador, por cima do mapa do projeto.
+        if (!m_options.controlsFile.empty()) {
+            std::string error;
+            std::error_code ec;
+            if (LoadPlayerBindings(m_options.controlsFile, m_playerBindings, &error)) {
+                log::Info("Controles do jogador: {}", ToUtf8(m_options.controlsFile));
+            } else if (fs::exists(m_options.controlsFile, ec)) {
+                log::Warn("Controles do jogador ignorados ({}): usando os do projeto", error);
+            }
+        }
+        m_actions = m_project.Actions().WithPlayerBindings(m_playerBindings);
     }
 
     // GameHost (scripts)
@@ -213,7 +227,16 @@ public:
     }
     std::string GameVersion() const override { return m_project.Identity().version; }
     SaveStore& Saves() override { return m_saves; }
-    const InputActions& Actions() const override { return m_project.Actions(); }
+    const InputActions& Actions() const override { return m_actions; }
+    InputActions PlayerBindings() const override { return m_playerBindings; }
+    void SetPlayerBindings(const InputActions& player) override {
+        m_playerBindings = player;
+        m_actions = m_project.Actions().WithPlayerBindings(m_playerBindings);
+        std::string error;
+        if (!m_options.controlsFile.empty() && !SavePlayerBindings(m_options.controlsFile, m_playerBindings, &error)) {
+            log::Warn("Não foi possível gravar os controles: {}", error);
+        }
+    }
     void QuitGame() override {
         log::Info("Jogo: fechado por um script (QuitGame)");
         Quit();
@@ -380,6 +403,8 @@ private:
     Project m_project;
     LaunchOptions m_options;
     GameOptions m_gameOptions;
+    InputActions m_playerBindings;  // só as ações que o jogador mudou
+    InputActions m_actions;         // as do projeto com as do jogador por cima
     SaveStore m_saves;
     AssetLibrary m_assets;
     ScriptLibrary m_scripts;  // declarado antes da cena: é destruído depois dela
@@ -430,6 +455,7 @@ int main(int argc, char** argv) {
         const fs::path dataDir = PlayerDataDir(project->Name());
         if (!dataDir.empty()) options.optionsFile = dataDir / kOptionsFile;
     }
+    if (!options.optionsFile.empty()) options.controlsFile = options.optionsFile.parent_path() / kControlsFile;
     GameOptions gameOptions = project->DefaultOptions();
     gameOptions.Clamp();
     if (!options.optionsFile.empty()) {

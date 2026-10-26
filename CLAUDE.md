@@ -133,8 +133,9 @@ ctest --test-dir build --output-on-failure
 - **Prefira o servidor MCP do editor** para ver e testar: abra `MotorEditor.exe "<projeto>" --mcp` (porta
   47800) e chame as ferramentas por HTTP (`POST http://127.0.0.1:47800/mcp`, JSON-RPC `tools/call`), ou pelo
   Claude Code se o servidor `motor` estiver configurado. `viewport_capture` substitui o PrintWindow; `play`,
-  `game_key`, `ui_click` e `log_read` testam o jogo sem entrada sintética global. Recurso novo do editor que
-  um agente precise usar ganha ferramenta em `McpController` (ou `McpSceneTools`, se for só cena).
+  `game_key`, `game_mouse`, `game_text`, `game_gamepad`, `ui_click` e `log_read` testam o jogo sem entrada
+  sintética global. Recurso novo do editor que um agente precise usar ganha ferramenta em `McpController` (ou
+  `McpSceneTools`, se for só cena).
 - **Nunca simule teclado ou mouse globais** (SendKeys, keybd_event, SetCursorPos...) para testar o editor:
   o foco pode ir para outra janela e o texto vai parar em outro lugar (já aconteceu). Peça confirmação
   explícita antes de qualquer entrada sintética.
@@ -235,7 +236,8 @@ Alphas 4 (mundo aberto e renderização 2, Fases 28 a 30) e 5 (ferramentas, Fase
 
 Prioridade atual (ver `docs/roadmap/alpha-3.md`, "Fases"): alphas 1 e 2 fechadas (Fases 0 a 21); alpha 3 com a
 Fases 22 (medição), 23 (renderer em lote), 24 (GPU), 25 (cena, dados e física), 26 (threads) e 27 (editor que
-escala) prontas; falta a Organização do código 2.
+escala) prontas, e a Organização do código 2 também; falta só atingir as metas da alpha (a referência a 60 FPS
+espera a Fase 30).
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com
