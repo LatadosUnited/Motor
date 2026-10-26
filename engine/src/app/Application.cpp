@@ -46,6 +46,10 @@ void Application::Quit() {
     m_running = false;
 }
 
+void Application::NoteActivity() {
+    m_lastActivity = std::chrono::steady_clock::now();
+}
+
 void Application::SetWindowTitle(const std::string& title) {
     m_desc.window.title = title;
     m_window->SetTitle(title);
@@ -74,14 +78,27 @@ void Application::Run() {
         {
             MOTOR_PROFILE_STAT("Eventos");
             Input::BeginFrame();
-            m_window->PollEvents();
+            if (m_idleWait > 0.0 && frameStart - m_lastActivity > std::chrono::duration<double>(kIdleGrace)) {
+                m_window->WaitEvents(m_idleWait);
+            } else {
+                m_window->PollEvents();
+            }
         }
 
         const auto now = Clock::now();
         // Limita o dt para evitar a "espiral da morte" após travamentos/breakpoints.
-        double dt = std::min(std::chrono::duration<double>(now - last).count(), 0.25);
+        const double realDt = std::chrono::duration<double>(now - last).count();
+        double dt = std::min(realDt, 0.25);
         last = now;
         m_elapsed += dt;
+        // Entrada do usuário (ou a janela mudou de tamanho): os próximos quadros não esperam.
+        if (Input::EventCount() != m_lastEventCount || Input::IsAnyHeld() || m_window->Width() != m_lastWidth ||
+            m_window->Height() != m_lastHeight) {
+            m_lastEventCount = Input::EventCount();
+            m_lastWidth = m_window->Width();
+            m_lastHeight = m_window->Height();
+            m_lastActivity = now;
+        }
 
         const int fixedSteps = fixedClock.Advance(dt);  // acima de maxFixedSteps, dt diminui (jogo mais lento)
         for (int i = 0; i < fixedSteps; ++i) {
@@ -141,7 +158,7 @@ void Application::Run() {
         lastFrameEnd = frameEnd;
 
         ++fpsFrames;
-        fpsTimer += dt;
+        fpsTimer += realDt;  // o relógio de verdade: o dt pode ter sido encurtado pelo passo fixo
         if (fpsTimer >= 1.0) {
             m_fps = static_cast<float>(fpsFrames / fpsTimer);
             const auto& s = m_renderer->GetStats();

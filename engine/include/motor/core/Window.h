@@ -41,6 +41,10 @@ public:
     void RequestClose();
     void CancelClose();
     void PollEvents();
+    // Como PollEvents, mas dorme até chegar um evento ou passar `timeoutSeconds` (sem gastar processador nem GPU).
+    void WaitEvents(double timeoutSeconds);
+    // Acorda o WaitEvents de outra thread (ex.: o servidor MCP com um pedido para a thread principal).
+    static void Wake();
     void SwapBuffers();
 
     void SetTitle(const std::string& title);

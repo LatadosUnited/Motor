@@ -130,6 +130,7 @@ std::string Server::Submit(std::string body) {
         if (!m_http || !m_http->is_running()) return BusyError();
         m_jobs.push_back(job);
     }
+    if (m_wake) m_wake();
     job->deadline = Ticks(std::chrono::steady_clock::now() + kMainThreadTimeout);
     while (reply.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready) {
         if (Ticks(std::chrono::steady_clock::now()) < job->deadline) continue;

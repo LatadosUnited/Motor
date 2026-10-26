@@ -55,6 +55,7 @@ public:
     void Start(int port);  // erro vai para o log e para o popup do editor
     void Stop();
     bool IsRunning() const { return m_server.IsRunning(); }
+    bool HasPending() const { return m_server.HasParked(); }  // pedido esperando: o editor não dorme
 
     void ApplyGameInput();  // início do quadro (antes do jogo rodar): teclas simuladas pedidas pelo agente
     bool Pump();            // depois do viewport desenhar: atende as mensagens (true se atendeu alguma)

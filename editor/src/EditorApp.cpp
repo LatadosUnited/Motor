@@ -174,6 +174,12 @@ void EditorApp::OnUpdate(float dt) {
     } else {
         SetFrameLimit(m_scripts.IsBuilding() ? 20.0 : 0.0);  // um segundo de "Compilando..." não precisa de 60 FPS
     }
+    // Parado (ninguém mexe, fora do Play), o editor dorme até o próximo evento em vez de redesenhar a cena e os
+    // painéis na taxa do monitor; acorda pelo menos 4 vezes por segundo para o que muda sozinho (arquivos
+    // alterados fora, o cursor piscando). O servidor MCP acorda na hora (Window::Wake).
+    const bool busy = m_play.IsActive() || m_scripts.IsBuilding() || m_mcp.HasPending() || m_export.IsBusy() ||
+                      !m_perfFile.empty();
+    SetIdleWait(busy ? 0.0 : 0.25);
     m_mcp.ApplyGameInput();
     if (motor::SceneRuntime* runtime = m_play.Runtime()) runtime->SetFixedAlpha(FixedAlpha());  // interpolação
     m_play.Update(dt, m_viewport.IsFocused(), m_gameView.IsFocused(), GetWindow());
@@ -259,7 +265,10 @@ void EditorApp::UpdateMinimized() {
     // Minimizado o OnImGui não roda: o que não é interface roda aqui, para o servidor MCP continuar atendendo
     // (antes os pedidos esperavam até a janela voltar, e o agente via o editor como travado).
     ApplyRequests();
-    if (m_mcp.Pump()) m_history.NoteActivity();
+    if (m_mcp.Pump()) {
+        m_history.NoteActivity();
+        NoteActivity();  // a resposta pode precisar dos próximos quadros (captura de tela, Play)
+    }
     ApplyPendingChanges(true);  // ninguém está arrastando nada com a janela minimizada
 }
 
@@ -333,7 +342,10 @@ void EditorApp::OnImGui() {
     // quadro, que transforma as mudanças deles em passos de desfazer.
     {
         MOTOR_PROFILE_STAT("ImGui: MCP");
-        if (m_mcp.Pump()) m_history.NoteActivity();  // as ferramentas mexem na cena
+        if (m_mcp.Pump()) {  // as ferramentas mexem na cena
+            m_history.NoteActivity();
+            NoteActivity();  // a resposta pode precisar dos próximos quadros (captura de tela, Play)
+        }
     }
     MOTOR_PROFILE_STAT("ImGui: popups");
     if (!m_ctx.pendingError.empty()) m_document.ShowError(std::exchange(m_ctx.pendingError, {}));

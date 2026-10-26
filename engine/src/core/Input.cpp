@@ -57,6 +57,7 @@ struct State {
     bool ignoreDeltaRequested = false;
     bool ignoreDeltaThisFrame = false;
     std::string text;
+    uint64_t events = 0;  // EventCount
     InputDevice lastDevice = InputDevice::KeyboardMouse;
     int lastGamepad = -1;
     // Controles, um por vaga
@@ -185,22 +186,26 @@ const std::array<std::string, kMaxKeys>& KeyNames() {
 }
 
 void OnKey(GLFWwindow*, int key, int, int action, int) {
+    ++g.events;  // até a repetição: segurar uma tecla mantém o editor acordado
     if (!ValidKey(key) || action == GLFW_REPEAT) return;
     if (action == GLFW_PRESS) UseKeyboardMouse();
     g.keys.Set(key, action == GLFW_PRESS);
 }
 
 void OnChar(GLFWwindow*, unsigned int codepoint) {
+    ++g.events;
     AppendUtf8(g.text, codepoint);
 }
 
 void OnMouseButton(GLFWwindow*, int button, int action, int) {
+    ++g.events;
     if (!ValidButton(button)) return;
     if (action == GLFW_PRESS) UseKeyboardMouse();
     g.buttons.Set(button, action == GLFW_PRESS);
 }
 
 void OnCursorPos(GLFWwindow*, double x, double y) {
+    ++g.events;
     const glm::vec2 pos{static_cast<float>(x), static_cast<float>(y)};
     // Só um movimento de verdade troca o dispositivo (esbarrar no mouse jogando de controle, não).
     if (g.hasMousePos && std::abs(pos.x - g.mousePos.x) + std::abs(pos.y - g.mousePos.y) > 4.0f) UseKeyboardMouse();
@@ -212,11 +217,13 @@ void OnCursorPos(GLFWwindow*, double x, double y) {
 }
 
 void OnScroll(GLFWwindow*, double, double yOffset) {
+    ++g.events;
     UseKeyboardMouse();
     g.scroll += static_cast<float>(yOffset);
 }
 
 void OnFocus(GLFWwindow*, int focused) {
+    ++g.events;
     // Evita teclas "presas" quando a janela perde o foco: soltam (o jogo vê o WasKeyReleased).
     if (!focused) {
         g.keys.ReleaseAll();
@@ -230,6 +237,20 @@ glm::vec2 ShapeStick(glm::vec2 raw, float deadZone) {
     if (magnitude <= deadZone || magnitude <= 0.0f) return glm::vec2{0.0f};
     const float scaled = std::min((magnitude - deadZone) / (1.0f - deadZone), 1.0f);
     return raw * (scaled / magnitude);
+}
+
+uint64_t Input::EventCount() {
+    return g.events;
+}
+
+bool Input::IsAnyHeld() {
+    for (int i = 0; i < kMaxKeys; ++i) {
+        if (g.keys.Held(i)) return true;
+    }
+    for (int i = 0; i < kMaxButtons; ++i) {
+        if (g.buttons.Held(i)) return true;
+    }
+    return false;
 }
 
 void Input::Attach(GLFWwindow* window) {

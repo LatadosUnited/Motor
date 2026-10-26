@@ -2,6 +2,7 @@
 
 #include <glm/vec2.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -128,6 +129,10 @@ public:
     static float ScrollDeltaLastFrame();
 
     // --- Uso interno da engine ---
+    // Eventos de teclado, mouse e foco recebidos desde o início: mudou entre dois quadros, o usuário mexeu em algo
+    // (a Application usa para dormir quando ninguém mexe, ver SetIdleWait).
+    static uint64_t EventCount();
+    static bool IsAnyHeld();  // alguma tecla ou botão do mouse apertado (segurar sem mexer também é uso)
     static void Attach(GLFWwindow* window);
     // Chamar antes de processar os eventos do frame. `frameSeconds` > 0 fixa o tempo do quadro (testes); sem ele,
     // é medido no relógio.

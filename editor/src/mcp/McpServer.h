@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -40,6 +41,9 @@ public:
 
     // Thread principal: atende as mensagens que chegaram e confere as que esperam (wait). Devolve quantas atendeu.
     size_t Pump();
+    bool HasParked() const { return !m_parked.empty(); }  // pedidos esperando algo (Play, compilação)
+    // Chamado na thread do HTTP quando chega um pedido: o editor parado dorme no WaitEvents e precisa acordar.
+    void SetWake(std::function<void()> wake) { m_wake = std::move(wake); }
 
 private:
     struct Job;
@@ -51,6 +55,7 @@ private:
     std::unique_ptr<httplib::Server> m_http;
     std::thread m_thread;
     int m_port = 0;
+    std::function<void()> m_wake;
 
     std::mutex m_mutex;
     std::deque<std::shared_ptr<Job>> m_jobs;

@@ -2,6 +2,8 @@
 
 #include "motor/core/Window.h"
 
+#include <chrono>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -49,6 +51,13 @@ public:
     // Limite de quadros por segundo (0 = sem limite além do vsync). O editor usa um limite baixo em segundo
     // plano para não roubar processador de quem compila os scripts.
     void SetFrameLimit(double fps) { m_frameLimit = fps; }
+    // Espera ociosa (0 = desligada): sem entrada do usuário há kIdleGrace, cada quadro dorme até o próximo evento
+    // (no máximo `seconds`) em vez de desenhar na taxa do monitor. O editor parado não precisa de 60 FPS.
+    void SetIdleWait(double seconds) { m_idleWait = seconds; }
+    // Conta como entrada do usuário: o que muda a tela sem evento da janela (ex.: um pedido do MCP) mantém os
+    // próximos quadros na velocidade normal.
+    void NoteActivity();
+    static constexpr double kIdleGrace = 0.5;  // segundos depois da última entrada até começar a esperar
 
 protected:
     virtual void OnInit() {}
@@ -69,6 +78,11 @@ private:
     float m_fps = 0.0f;
     float m_fixedAlpha = 1.0f;
     double m_frameLimit = 0.0;
+    double m_idleWait = 0.0;
+    std::chrono::steady_clock::time_point m_lastActivity{};  // última entrada do usuário
+    uint64_t m_lastEventCount = 0;
+    int m_lastWidth = 0;
+    int m_lastHeight = 0;
     bool m_running = false;
 };
 

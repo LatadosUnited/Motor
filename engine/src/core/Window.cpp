@@ -98,6 +98,16 @@ void Window::PollEvents() {
     glfwGetFramebufferSize(m_window, &m_width, &m_height);
 }
 
+void Window::WaitEvents(double timeoutSeconds) {
+    glfwWaitEventsTimeout(timeoutSeconds);
+    Input::PollGamepads();
+    glfwGetFramebufferSize(m_window, &m_width, &m_height);
+}
+
+void Window::Wake() {
+    glfwPostEmptyEvent();
+}
+
 void Window::SwapBuffers() {
     glfwSwapBuffers(m_window);
 }

@@ -17,6 +17,7 @@
 #include <motor/core/EngineAssets.h>
 #include <motor/core/FrameStats.h>
 #include <motor/core/Paths.h>
+#include <motor/core/Window.h>
 #include <motor/core/Version.h>
 #include <motor/renderer/Framebuffer.h>
 #include <motor/audio/AudioSystem.h>
@@ -158,6 +159,7 @@ McpController::~McpController() {
 
 void McpController::Start(int port) {
     std::string error;
+    m_server.SetWake(&motor::Window::Wake);
     if (!m_server.Start(port, error)) {
         log::Error("Servidor MCP: {}", error);
         m_host.ctx.pendingError = "Servidor MCP: " + error;
