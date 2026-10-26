@@ -143,7 +143,12 @@ ctest --test-dir build --output-on-failure
 
 - **Prefira o servidor MCP do editor** para ver e testar: abra `MotorEditor.exe "<projeto>" --mcp` (porta
   47800) e chame as ferramentas por HTTP (`POST http://127.0.0.1:47800/mcp`, JSON-RPC `tools/call`), ou pelo
-  Claude Code se o servidor `motor` estiver configurado. `viewport_capture` substitui o PrintWindow; `play`,
+  Claude Code se os servidores estiverem configurados (`docs/claude-code.md`): `motor-hub`
+  (`http://127.0.0.1:47600/mcphub`: projetos, versões, abrir e fechar o editor) e `motor`
+  (`http://127.0.0.1:47600/mcpengine`, ou `/mcpengine/<Projeto>`: as ferramentas do editor, repassadas pelo Hub do
+  usuário, que abre o editor se estiver fechado). Pelos servidores do Claude Code o projeto e os dados são os
+  **reais** do usuário: para testes, prefira um editor com `--mcp` e `--no-settings` num projeto da pasta
+  temporária, ou um Hub de teste (`--data`, `--mcp-porta`). `viewport_capture` substitui o PrintWindow; `play`,
   `game_key`, `game_mouse`, `game_text`, `game_gamepad`, `ui_click` e `log_read` testam o jogo sem entrada
   sintética global. Recurso novo do editor que um agente precise usar ganha ferramenta em `McpController` (ou
   `McpSceneTools`, se for só cena).

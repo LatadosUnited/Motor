@@ -831,11 +831,18 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
 - **Ligar:** menu **Ver > Servidor MCP**. Fica ligado nas próximas vezes que o editor abrir. Outra opção é a
   linha de comando `MotorEditor <projeto> --mcp` (ou `--mcp=<porta>`). A porta padrão é **47800**, e enquanto
   o servidor estiver ligado aparece "MCP" na barra de menus.
-- **Conectar o Claude Code** (uma vez):
+- **Conectar o Claude Code** (uma vez): pelo **Hub**, que fica na bandeja e repassa para o editor, o endereço não
+  muda e o editor abre sozinho quando o agente precisa dele (ver "MCP dos editores pelo Hub", na seção do Hub). O
+  passo a passo, com o token e um `.mcp.json` sem o token no git, está no
+  [guia de configuração do Claude Code](docs/claude-code.md):
 
   ```bash
-  claude mcp add --transport http motor http://127.0.0.1:47800/mcp
+  claude mcp add --transport http --scope user motor-hub http://127.0.0.1:47600/mcphub --header "Authorization: Bearer <token>"
+  claude mcp add --transport http --scope user motor http://127.0.0.1:47600/mcpengine --header "Authorization: Bearer <token>"
   ```
+
+  Direto no editor, sem o Hub (testes automáticos; cai a cada vez que o editor fecha):
+  `claude mcp add --transport http motor-direto http://127.0.0.1:47800/mcp`.
 
 - **Ferramentas:**
 
@@ -856,8 +863,9 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   do pedido. `play` e `scripts_build` com `wait: true` só respondem quando o pedido valeu (o servidor confere a
   cada quadro, sem travar os outros pedidos), o que dispensa esperar com `sleep` em testes automáticos.
 - **Segurança:** o servidor só escuta em `127.0.0.1` e recusa pedidos vindos de páginas da web (cabeçalhos
-  `Origin`/`Host` de fora). Ele não tem senha: enquanto estiver ligado, qualquer programa deste computador pode
-  usá-lo. Desligue quando não estiver usando.
+  `Origin`/`Host` de fora). Ligado pelo Ver > Servidor MCP ou `--mcp`, ele não tem senha: enquanto estiver ligado,
+  qualquer programa deste computador pode usá-lo. Desligue quando não estiver usando. O editor aberto pelo Hub
+  usa uma porta interna com um token só dele, e o Hub pede o token do `mcp-token`.
 - **Como funciona:** o protocolo JSON-RPC (`McpProtocol`) e o HTTP (`McpServer`) ficam na biblioteca `mcp/`
   (`motor_mcp`, sem a engine, para o Hub usar também), e as ferramentas do editor em `McpSceneTools`, `McpNavTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
   thread principal, uma vez por quadro. A captura sai em PNG com um compressor próprio (`ImageEncode`).
@@ -923,6 +931,7 @@ qualquer versão do editor, inclusive as futuras.
   pede para reconectar. A aba MCP copia o comando do servidor `motor`
   (`claude mcp add --transport http motor http://127.0.0.1:47600/mcpengine --header "Authorization: Bearer <token>"`)
   e a URL de cada projeto; o `projects_list` traz o `mcpUrl`. Dois projetos com o mesmo nome: renomeie um.
+  Configuração passo a passo e problemas comuns: [guia do Claude Code](docs/claude-code.md).
 - **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 2, ...}`, com a lista
   `servers`; o formato 1 é lido com o servidor local na lista), separada da do editor.
 

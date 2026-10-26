@@ -75,3 +75,6 @@ Fase 27; o jogo de exemplo da Fase 18, para a Fase 33.
 - 2026-10-23 — Claude (estudo da engine) — editor: miniaturas e prévia de materiais e modelos no painel Projeto,
   um gráfico dos contadores por quadro dentro do editor (hoje só no Tracy, à parte) e um console de variáveis
   (ex.: `r.shadows 0`) mudáveis em tempo real, também pelo MCP — `editor/src/panels/`, `editor/src/viewport/`
+- 2026-10-26 — Claude (Hub residente) — Hub: um editor aberto direto pelo `MotorEditor.exe` não é visto pelo Hub, e
+  uma ferramenta do `/mcpengine/<Projeto>` abre outro editor no mesmo projeto; o editor poderia avisar o Hub ao abrir
+  sozinho (ou o Hub achar o editor pela pasta do projeto) — `hub/src/HubEngineProxy.cpp`, `mcp/include/motor/mcp/HubLink.h`

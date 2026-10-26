@@ -203,7 +203,31 @@ biblioteca pequena sem a engine, usada pelos dois.
   realmente de outra versão (o publicado era o mesmo .exe com outro número, então o Hub novo ainda oferece o
   0.3.1), o botão da janela (só pelo MCP), o caminho de erro de verdade (instalador falhando com o Hub antigo de
   volta) e o Claude Code como cliente durante a troca (Tarefa 10).
+- Tarefa 10: guia [Configurar o Claude Code](../../claude-code.md) (`docs/claude-code.md`, com link no
+  `docs/inicio.md`): os servidores `motor-hub` (`/mcphub`) e `motor` (`/mcpengine`) com `--scope user` e o token,
+  trocar o `motor` antigo da porta 47800, a URL de um projeto, um `.mcp.json` com o token numa variável de ambiente
+  (`${MOTOR_HUB_TOKEN}`) para não ir ao git, conferir com `claude mcp list`, como se comporta (editor fechado, Hub
+  atualizando ou fechado, editor aberto fora do Hub) e uma tabela de problemas com as mensagens do Hub. O README
+  (Servidor MCP) passou a mandar conectar pelo Hub, com o caminho direto pela porta 47800 para testes, e o
+  `CLAUDE.md` diz quais são os dois servidores e que eles mexem nos dados reais do usuário (testes continuam com o
+  `--mcp` do editor ou um Hub de teste). Medido de novo, no fim da fase: o Hub do build (Debug) parado na bandeja,
+  com o MCP ligado, gastou 0,42% de um núcleo em 60 s, com 52,0 MB de working set (26,2 MB de memória privada) e
+  18 threads.
 
 ## Limitações
 
-(Preencher ao terminar: o que ficou para trás e para onde foi.)
+- O Claude Code de verdade como cliente não foi conferido: configurar os servidores muda a configuração do usuário
+  (`claude mcp add`), e um teste à parte (`claude -p --mcp-config`) gasta a conta dele. Os caminhos foram conferidos
+  com o `curl` e com o teste fazendo papel de cliente, como o Claude Code faz (initialize com sessão, notificação
+  202, tools/list, chamadas). Também não conferido: reiniciar o Windows e achar o Hub na bandeja (a linha do Run foi
+  conferida no registro).
+- Memória parado na bandeja: 52 MB de working set no build Debug, um pouco acima dos 50 MB do Pronto quando (a
+  memória privada é 26 MB; o resto são DLLs do sistema e do driver de vídeo, divididas com outros programas). O Release
+  não foi medido.
+- A autoatualização foi conferida com o mesmo `.exe` publicado com outro número de versão; o botão da janela e o
+  caminho de erro de verdade (instalador falhando) não foram exercitados.
+- Um editor aberto fora do Hub (direto pelo `MotorEditor.exe`) no mesmo projeto não é visto pelo Hub: uma ferramenta
+  do `motor` abre outro editor. Foi para a [caixa de entrada](../entrada.md) (o editor avisar o Hub ao
+  abrir sozinho).
+- Versões do Motor de antes do Hub residente (sem `hubLink` no `mcp-ferramentas.json`) abrem pelo Hub sem a ligação:
+  o `/mcpengine` não chega nelas (erro claro).
