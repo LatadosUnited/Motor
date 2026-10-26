@@ -57,7 +57,7 @@ biblioteca pequena sem a engine, usada pelos dois.
 - [x] Tarefa 3: Modo bandeja (`--bandeja`): ícone, menu, janela escondida, uma instância só — 8da3a80
 - [x] Tarefa 4: MCP do Hub na porta 47600 (`/mcphub`) com sessão e token — dd6f26b
 - [x] Tarefa 5: Ferramentas do `/mcphub`: projetos, versões, abrir e fechar o editor, estado — 2a17c2f
-- [ ] Tarefa 6: Lista de ferramentas do editor sem janela (`--mcp-ferramentas`), gravada no pacote da versão
+- [x] Tarefa 6: Lista de ferramentas do editor sem janela (`--mcp-ferramentas`), gravada no pacote da versão — 0c33bae
 - [ ] Tarefa 7: Editor numa porta interna que o Hub escolhe, avisando o Hub quando está pronto e quando fecha
 - [ ] Tarefa 8: Repasse de `/mcpengine/<Projeto>` e `/mcpengine` para o editor, abrindo o editor fechado
 - [ ] Tarefa 9: Autoatualização do Hub: procurar, baixar o instalador, conferir, instalar em silêncio e voltar à bandeja
