@@ -61,7 +61,7 @@ biblioteca pequena sem a engine, usada pelos dois.
 - [x] Tarefa 7: Editor numa porta interna que o Hub escolhe, avisando o Hub quando está pronto e quando fecha — eabe5dc
 - [x] Tarefa 8: Repasse de `/mcpengine/<Projeto>` e `/mcpengine` para o editor, abrindo o editor fechado — d3640f7
 - [x] Tarefa 9: Autoatualização do Hub: procurar, baixar o instalador, conferir, instalar em silêncio e voltar à bandeja — fd4bea4
-- [ ] Tarefa 10: README, guia de configuração do Claude Code e `CLAUDE.md` (servidores `motor-hub` e `motor`)
+- [x] Tarefa 10: README, guia de configuração do Claude Code e `CLAUDE.md` (servidores `motor-hub` e `motor`) — da90a33
 
 ## Pronto quando
 
