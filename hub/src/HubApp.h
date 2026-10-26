@@ -6,6 +6,7 @@
 
 #include "HubCore.h"
 #include "HubPlatform.h"
+#include "HubTray.h"
 
 #include <Download.h>
 #include <Manifest.h>
@@ -25,8 +26,9 @@ namespace hub {
 class HubApp {
 public:
     // `editorArgs`: argumentos a mais para o editor em toda abertura (os que vêm depois de "--" na linha de
-    // comando do hub, ex.: --no-settings --mcp para testes automáticos).
-    HubApp(platform::Paths paths, std::vector<std::string> editorArgs);
+    // comando do hub, ex.: --no-settings --mcp para testes automáticos). `dataOverride`: a pasta do --data (ou a
+    // do instalacao.json), vazia com a padrão; entra na linha do iniciar com o Windows.
+    HubApp(platform::Paths paths, std::vector<std::string> editorArgs, fs::path dataOverride = {});
 
     void Reload();  // relê a configuração, as versões instaladas e os projetos
 
@@ -60,7 +62,18 @@ public:
     bool DownloadVersion(const std::string& version, const std::string& server,
                          const std::function<void(const distrib::ReleaseProgress&)>& progress, std::string& message);
 
-        int RunWindow(int initialTab = 0);  // abre a janela (0 Projetos, 1 Versões) e roda até fechar
+    // Iniciar com o Windows: o valor do Run no HKCU aponta para este hub e esta pasta de dados.
+    bool StartsWithWindows() const;
+    bool SetStartWithWindows(bool on, std::string& message);
+
+    struct WindowOptions {
+        int initialTab = 0;  // 0 Projetos, 1 Versões
+        bool tray = false;   // --bandeja: abre escondido, só o ícone na bandeja
+    };
+    // Abre a janela e roda até fechar. Residente (com --bandeja ou iniciando com o Windows), fechar a janela só a
+    // esconde e o hub sai pelo menu do ícone. Com outro hub da mesma pasta de dados aberto, mostra a janela dele
+    // e sai.
+    int RunWindow(const WindowOptions& options);
 
 private:
     void SaveConfig();
@@ -81,17 +94,25 @@ private:
     void DrawRemoteSection();
     void DrawServersSection();
     void DrawHubUpdateNotice();
+    void DrawStartupOption();
+    void ShowWindow();
+    std::string OwnStartupCommand() const;
     void StartFetch();
     void PollBackground();
     void StartDownload(const std::string& server, const distrib::Release& release);
 
     platform::Paths m_paths;
     std::vector<std::string> m_editorArgs;
+    fs::path m_dataOverride;
     HubConfig m_config;
     std::vector<InstalledVersion> m_versions;
     std::vector<ProjectInfo> m_projects;
 
     GLFWwindow* m_window = nullptr;
+    std::unique_ptr<platform::Tray> m_tray;  // só com a janela aberta
+    bool m_startedInTray = false;
+    bool m_startsWithWindows = false;  // lido ao abrir a janela e quando muda pela caixa
+    bool m_toldAboutTray = false;      // balão "o Hub continua na bandeja", uma vez por execução
     double m_lastRefresh = 0.0;
     int m_selectTab = -1;  // aba a selecionar no próximo quadro (--aba)
     std::string m_search;

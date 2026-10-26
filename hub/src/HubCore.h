@@ -155,4 +155,13 @@ std::vector<std::string> CreateProjectArgs(const fs::path& parent, std::string_v
 // Junta os argumentos numa linha de comando do Windows (aspas e barras como o CommandLineToArgvW espera).
 std::wstring BuildCommandLine(const fs::path& exe, const std::vector<std::string>& args);
 
+// --- Hub residente (bandeja e iniciar com o Windows) ---------------------------------------------------------
+
+// Um hub aberto por pasta de dados: a chave (16 dígitos hexadecimais) nomeia a trava e a janela escondida que
+// recebe os pedidos. A mesma pasta escrita de outro jeito ("C:\Dados\" e "c:/dados") dá a mesma chave; um hub de
+// teste com --data convive com o do usuário.
+std::string InstanceKey(const fs::path& dataDir);
+// As duas linhas do Run são a mesma (sem diferenciar maiúsculas nem / e \ no Windows)?
+bool SameStartupCommand(std::string_view a, std::string_view b);
+
 } // namespace hub

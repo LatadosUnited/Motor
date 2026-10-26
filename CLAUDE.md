@@ -148,7 +148,9 @@ ctest --test-dir build --output-on-failure
 - Abrir o editor grava `%APPDATA%\Motor\editor.json` (último projeto, recentes). **Use `--no-settings`** (ou
   `--settings <arquivo>`) em testes automáticos e, mesmo assim, faça cópia antes e restaure depois — é a
   configuração real do usuário. Projeto de teste novo: `--create <pasta-pai> <nome>` ou a ferramenta MCP
-  `project_create`. O Hub (`MotorHub.exe`) tem `--data <pasta>` para não mexer no `%LOCALAPPDATA%\Motor`.
+  `project_create`. O Hub (`MotorHub.exe`) tem `--data <pasta>` para não mexer no `%LOCALAPPDATA%\Motor` (e abre
+  um Hub por pasta de dados: o de teste não esbarra no do usuário). No `MotorSetup.exe` de teste, passe
+  `--sem-iniciar-com-windows` (ou `--chave-registro <nome>`): senão ele troca o Hub que inicia com o Windows.
 - O que o MCP não cobre (menus, arrastar, atalhos, gizmo) fica como "não testado" no relatório, com passos
   para o usuário conferir.
 

@@ -6,6 +6,7 @@
 #include <HubCore.h>
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <fstream>
 #include <string>
@@ -263,6 +264,26 @@ int main(int argc, char** argv) {
         CHECK(same);
     }
 #endif
+
+    SECTION("Hub residente: chave da instância e linha do iniciar com o Windows");
+    {
+        const fs::path data = base / PathFromUtf8("Dados Ação");
+        const std::string key = InstanceKey(data);
+        CHECK(key.size() == 16 && key.find_first_not_of("0123456789abcdef") == std::string::npos);
+        CHECK(InstanceKey(data) == key);                           // estável
+        CHECK(InstanceKey(base / "Outra") != key);                 // outra pasta, outro hub
+        CHECK(InstanceKey(data / "sub" / "..") == key);            // normalizada
+        CHECK(InstanceKey(PathFromUtf8(ToUtf8(data) + "\\")) == key);  // barra no fim não conta
+#ifdef _WIN32
+        std::string upper = ToUtf8(data);
+        for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        CHECK(InstanceKey(PathFromUtf8(upper)) == key);  // o Windows não diferencia maiúsculas
+        CHECK(SameStartupCommand(R"("C:\Hub\MotorHub.exe" --bandeja)", R"("c:/hub/motorhub.exe" --bandeja)"));
+#endif
+        CHECK(SameStartupCommand(R"("C:\Hub\MotorHub.exe" --bandeja)", R"("C:\Hub\MotorHub.exe" --bandeja)"));
+        CHECK(!SameStartupCommand(R"("C:\Hub\MotorHub.exe" --bandeja)",
+                                  R"("C:\Hub\MotorHub.exe" --bandeja --data "C:\Dados")"));
+    }
 
     return TestResult();
 }

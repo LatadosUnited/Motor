@@ -50,6 +50,7 @@ std::optional<InstallRecord> InstallRecord::Load(const fs::path& file, std::stri
             if (s.is_string()) r.shortcuts.push_back(PathFromUtf8(s.get<std::string>()));
         }
         r.registryKey = root.value("registryKey", std::string());
+        r.startupValue = root.value("startupValue", std::string());  // a versão 1 não tinha
         for (const json& s : root.value("servers", json::array())) {
             if (s.is_string()) r.servers.push_back(s.get<std::string>());
         }
@@ -72,6 +73,7 @@ bool InstallRecord::Save(const fs::path& file, std::string* error) const {
     for (const fs::path& s : shortcuts) links.push_back(ToUtf8(s));
     root["shortcuts"] = std::move(links);
     root["registryKey"] = registryKey;
+    root["startupValue"] = startupValue;
     root["servers"] = servers;
 
     std::error_code ec;
@@ -85,6 +87,12 @@ std::string HubArguments(const fs::path& dataDir) {
     std::string path = ToUtf8(dataDir);
     while (path.size() > 3 && (path.back() == '\\' || path.back() == '/')) path.pop_back();
     return "--data \"" + path + "\"";
+}
+
+std::string StartupCommand(const fs::path& hubExe, const fs::path& dataDir) {
+    std::string command = "\"" + ToUtf8(hubExe.lexically_normal()) + "\" " + kTrayArgument;
+    if (const std::string args = HubArguments(dataDir); !args.empty()) command += " " + args;
+    return command;
 }
 
 InstallPlan PlanInstall(const InstallOptions& o, const fs::path& startMenuDir, const fs::path& desktopDir) {
@@ -127,12 +135,18 @@ InstallPlan PlanInstall(const InstallOptions& o, const fs::path& startMenuDir, c
         number("EstimatedSize", static_cast<uint32_t>(o.installedBytes / 1024));
     }
 
+    if (o.startWithWindows && !o.startupValue.empty()) {
+        plan.startupValue = o.startupValue;
+        plan.startupCommand = StartupCommand(plan.hubExe, o.dataDir);
+    }
+
     InstallRecord& r = plan.record;
     r.hubVersion = o.hubVersion;
     r.installDir = dir;
     r.dataDir = o.dataDir;
     for (const Shortcut& s : plan.shortcuts) r.shortcuts.push_back(s.link);
     r.registryKey = plan.registryKey;
+    r.startupValue = plan.startupValue;
     if (!o.server.empty()) r.servers.push_back(o.server);
     return plan;
 }
@@ -143,6 +157,7 @@ UninstallPlan PlanUninstall(const InstallRecord& record, bool removeData, const 
         if (link.extension() == ".lnk") plan.shortcuts.push_back(link);  // só atalhos
     }
     plan.registryKey = record.registryKey;
+    plan.startupValue = record.startupValue;
 
     std::error_code ec;
     const fs::path dir = record.installDir.lexically_normal();

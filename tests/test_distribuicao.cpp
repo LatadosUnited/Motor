@@ -247,13 +247,19 @@ int main(int argc, char** argv) {
         CHECK(uninstallString && size);
         CHECK(plan.record.shortcuts.size() == 2 && plan.record.registryKey == kUninstallKey);
         CHECK(plan.record.servers.size() == 1);
+        // Iniciar com o Windows (padrão): o hub na bandeja, com a pasta de dados.
+        CHECK(plan.startupValue == kStartupValue && plan.record.startupValue == kStartupValue);
+        const std::string hubExe = ToUtf8((installDir / "MotorHub.exe").lexically_normal());
+        CHECK(plan.startupCommand == "\"" + hubExe + "\" --bandeja --data \"" + ToUtf8(dataDir) + "\"");
+        CHECK(StartupCommand(installDir / "MotorHub.exe", {}) == "\"" + hubExe + "\" --bandeja");
 
-        // Sem atalhos, sem registro, pasta de dados padrão.
+        // Sem atalhos, sem registro, sem iniciar com o Windows, pasta de dados padrão.
         InstallOptions quiet = o;
-        quiet.startMenuShortcut = quiet.desktopShortcut = quiet.registerUninstall = false;
+        quiet.startMenuShortcut = quiet.desktopShortcut = quiet.registerUninstall = quiet.startWithWindows = false;
         quiet.dataDir.clear();
         const InstallPlan q = PlanInstall(quiet, base / "Menu", base / "Desktop");
         CHECK(q.shortcuts.empty() && q.registryKey.empty() && q.registryValues.empty() && q.record.dataDir.empty());
+        CHECK(q.startupValue.empty() && q.startupCommand.empty() && q.record.startupValue.empty());
         CHECK(HubArguments({}).empty());
         CHECK(HubArguments(PathFromUtf8("C:\\Dados\\")) == "--data \"C:\\Dados\"");
 
@@ -262,7 +268,12 @@ int main(int argc, char** argv) {
         const auto record = InstallRecord::Load(plan.recordFile);
         CHECK(record && record->dataDir == dataDir && record->installDir == installDir.lexically_normal());
         CHECK(record && record->shortcuts.size() == 2 && record->hubVersion == "0.2.0" && record->servers.size() == 1);
+        CHECK(record && record->startupValue == kStartupValue);
         CHECK(!InstallRecord::Load(base / "nao-existe.json"));
+        // Versão 1 (sem startupValue) continua lendo: não inicia com o Windows.
+        WriteText(base / "v1.json", R"({"format": "motor-hub-install", "version": 1, "registryKey": "MotorHub"})");
+        const auto v1 = InstallRecord::Load(base / "v1.json");
+        CHECK(v1 && v1->registryKey == "MotorHub" && v1->startupValue.empty());
 
         // Desinstalar sem os dados: a pasta do hub (tem o instalacao.json) e os atalhos.
         fs::create_directories(dataDir / PathFromUtf8("Versões") / "0.2.0");
@@ -271,6 +282,7 @@ int main(int argc, char** argv) {
         UninstallPlan u = PlanUninstall(*record, false, base / "padrao");
         CHECK(u.toTrash.size() == 1 && u.toTrash[0] == installDir.lexically_normal());
         CHECK(u.shortcuts.size() == 2 && u.registryKey == kUninstallKey && u.emptyDirToRemove.empty());
+        CHECK(u.startupValue == kStartupValue);
         // Com os dados: só Versões\ e hub.json (outro.txt fica).
         u = PlanUninstall(*record, true, base / "padrao");
         CHECK(u.toTrash.size() == 3 && u.toTrash[1] == (dataDir / PathFromUtf8("Versões")).lexically_normal() &&

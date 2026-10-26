@@ -42,11 +42,13 @@ constexpr const char* kUsage =
     "  --sem-atalhos              não cria atalhos\n"
     "  --area-de-trabalho         cria também o atalho na área de trabalho\n"
     "  --sem-registro             não registra a desinstalação em Aplicativos instalados\n"
+    "  --sem-iniciar-com-windows  o Hub não abre na bandeja ao entrar no Windows\n"
     "  --abrir-hub                abre o Hub no fim\n"
     "  --desinstalar [--apagar-dados]\n"
     "                             desinstala (pasta do Hub, atalhos e registro para a Lixeira; com --apagar-dados,\n"
     "                             também as versões do Motor e o hub.json)\n"
-    "Para testes: --atalhos-em <dir> (atalhos nesta pasta), --chave-registro <nome> (outra chave de desinstalação)\n"
+    "Para testes: --atalhos-em <dir> (atalhos nesta pasta), --chave-registro <nome> (outra chave de desinstalação e\n"
+    "  outro valor do Run)\n"
     "  --version                  mostra a versão e sai\n";
 
 void Print(const std::string& text) {
@@ -166,6 +168,8 @@ int SetupMain() {
             o.install.desktopShortcut = true;
         } else if (arg == "--sem-registro") {
             o.install.registerUninstall = false;
+        } else if (arg == "--sem-iniciar-com-windows") {
+            o.install.startWithWindows = false;
         } else if (arg == "--abrir-hub") {
             openHub = true;
         } else if (arg == "--copia-temporaria") {
@@ -187,6 +191,7 @@ int SetupMain() {
             o.shortcutsDir = PathFromUtf8(value);
         } else if (arg == "--chave-registro" && next()) {
             o.install.registryKey = value;
+            o.install.startupValue = value;  // testes: nem o Run do usuário é tocado
         } else if (arg == "--esperar" && next()) {
             waitPid = static_cast<DWORD>(std::stoul(value));
             continue;

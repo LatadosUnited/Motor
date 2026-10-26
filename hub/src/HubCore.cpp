@@ -500,4 +500,36 @@ std::wstring BuildCommandLine(const fs::path& exe, const std::vector<std::string
     return line;
 }
 
+// ---------------------------------------------------------------------------
+// Hub residente
+// ---------------------------------------------------------------------------
+
+namespace {
+std::wstring FoldPathText(std::wstring s) {
+#ifdef _WIN32
+    std::transform(s.begin(), s.end(), s.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+    std::replace(s.begin(), s.end(), L'/', L'\\');
+#endif
+    return s;
+}
+} // namespace
+
+std::string InstanceKey(const fs::path& dataDir) {
+    std::error_code ec;
+    std::wstring text = fs::absolute(dataDir, ec).lexically_normal().wstring();
+    while (text.size() > 1 && (text.back() == L'\\' || text.back() == L'/')) text.pop_back();
+    text = FoldPathText(std::move(text));
+    // FNV-1a de 64 bits: estável entre execuções e versões (o std::hash não promete isso).
+    uint64_t hash = 14695981039346656037ull;
+    for (wchar_t c : text) {
+        hash ^= static_cast<uint64_t>(c);
+        hash *= 1099511628211ull;
+    }
+    return std::format("{:016x}", hash);
+}
+
+bool SameStartupCommand(std::string_view a, std::string_view b) {
+    return FoldPathText(PathFromUtf8(std::string(a)).wstring()) == FoldPathText(PathFromUtf8(std::string(b)).wstring());
+}
+
 } // namespace hub

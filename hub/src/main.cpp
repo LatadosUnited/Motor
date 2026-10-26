@@ -24,6 +24,7 @@ constexpr const char* kUsage =
     "  --data <pasta>             pasta de dados do hub (padrão %LOCALAPPDATA%\\Motor: hub.json e Versões\\;\n"
     "                             o hub instalado usa a do instalacao.json ao lado do MotorHub.exe)\n"
     "  --aba <projetos|versões>   abre a janela nesta aba\n"
+    "  --bandeja                  abre escondido, só com o ícone na bandeja (é assim que inicia com o Windows)\n"
     "  --version                  mostra a versão do hub e sai\n"
     "Ações (feitas na ordem; para na primeira que falhar):\n"
     "  --list                     lista as versões instaladas e os projetos\n"
@@ -175,7 +176,7 @@ int HubMain() {
     std::filesystem::path dataDir;
     std::vector<Action> actions;
     std::vector<std::string> editorArgs;
-    int initialTab = 0;
+    hub::HubApp::WindowOptions window;
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string& arg = args[i];
         const size_t remaining = args.size() - i - 1;
@@ -200,7 +201,9 @@ int HubMain() {
         } else if (arg == "--aba") {
             if (!needs(1)) return 2;
             const std::string tab = args[++i];
-            initialTab = tab == "versões" || tab == "versoes" ? 1 : 0;
+            window.initialTab = tab == "versões" || tab == "versoes" ? 1 : 0;
+        } else if (arg == distrib::kTrayArgument) {
+            window.tray = true;
         } else if (arg == "--servidor") {
             if (!needs(1)) return 2;
             if (actions.empty() || (actions.back().name != "--baixar" && actions.back().name != "--disponiveis")) {
@@ -242,8 +245,8 @@ int HubMain() {
     }
 
     try {
-        hub::HubApp app(hub::platform::DefaultPaths(dataDir), std::move(editorArgs));
-        if (!console) return app.RunWindow(initialTab);
+        hub::HubApp app(hub::platform::DefaultPaths(dataDir), std::move(editorArgs), dataDir);
+        if (!console) return app.RunWindow(window);
 
         hub::platform::AttachParentConsole();
         for (const Action& action : actions) {

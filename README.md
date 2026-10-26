@@ -884,6 +884,11 @@ qualquer versão do editor, inclusive as futuras.
   conferido pelo SHA-256 do manifesto, e a versão só aparece instalada quando tudo confere (é baixada em
   `Versões\.baixando\<versão>\` e renomeada no fim). Um Hub mais novo publicado num servidor aparece no topo,
   com o link do instalador.
+- **Iniciar com o Windows:** a caixa no canto do cabeçalho (ou o instalador) põe o Hub no
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (valor `MotorHub`, sem pedir administrador), que o abre
+  escondido, só com o ícone na **bandeja** (`MotorHub --bandeja`). Residente (iniciado assim ou com a caixa marcada),
+  fechar a janela só a esconde: o ícone abre o Hub de novo com um clique, e o menu dele (botão direito) tem **Sair do
+  Hub**. Há um Hub aberto por pasta de dados: abrir o atalho com ele na bandeja traz a janela dele.
 - **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 2, ...}`, com a lista
   `servers`; o formato 1 é lido com o servidor local na lista), separada da do editor.
 
@@ -913,10 +918,10 @@ MotorHub --data "C:/temp/Hub Teste" ... -- --no-settings --mcp   # outra pasta d
 ```
 
 Também: `--remove-version`, `--set-default`, `--add-project`, `--remove-project`, `--aba versões` (abre a janela
-nessa aba), `--version`, `--disponiveis [--servidor URL]` (versões publicadas nos servidores) e
+nessa aba), `--bandeja` (abre escondido, na bandeja), `--version`, `--disponiveis [--servidor URL]` (versões publicadas nos servidores) e
 `--baixar <versão|mais-recente> [--servidor URL]` (baixa, confere e instala; retoma um download interrompido).
 O hub instalado pelo `MotorSetup` com outra pasta de dados a lê do `instalacao.json` ao lado do `MotorHub.exe`. Código em `hub/`: `HubCore` (lógica sem janela, `tests/test_hub.cpp`),
-`HubPlatform` (Windows: processos, Explorer, Lixeira), `HubApp` (janela e ações), `main.cpp` (linha de comando).
+`HubPlatform` (Windows: processos, Explorer, Lixeira), `HubTray` (bandeja e um Hub por pasta de dados), `HubApp` (janela e ações), `main.cpp` (linha de comando).
 
 ## Instalar
 
@@ -927,7 +932,7 @@ seu usuário, sem pedir administrador, e pode já instalar uma versão do Motor.
    `build/bin/MotorSetup.exe` de um build.
 2. Rode e confira: pasta do Hub (padrão `%LOCALAPPDATA%\Programs\Motor Hub\`), pasta de dados (padrão
    `%LOCALAPPDATA%\Motor`: versões do Motor e `hub.json`), atalho no menu Iniciar e, se quiser, na área de
-   trabalho. Em **Versão do Motor**, escolha baixar a mais recente de um servidor (botão **Verificar** mostra o
+   trabalho, e **Iniciar com o Windows** (o Hub fica na bandeja; marcado por padrão). Em **Versão do Motor**, escolha baixar a mais recente de um servidor (botão **Verificar** mostra o
    que ele tem) ou instalar de uma pasta montada (`motor_package`), ou deixe para depois.
 3. **Instalar**. No fim, **Abrir o Hub agora**.
 
@@ -938,7 +943,7 @@ scripts dos projetos (<https://www.msys2.org/>; no terminal UCRT64:
 `pacman -S mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake make`), mas não os instala.
 
 **Desinstalar:** pelo Aplicativos instalados ou `MotorSetup.exe --desinstalar`. A pasta do Hub vai para a
-Lixeira e os atalhos e o registro saem; a pergunta "também as versões do Motor e o hub.json" decide se
+Lixeira e os atalhos, o registro e o iniciar com o Windows saem; a pergunta "também as versões do Motor e o hub.json" decide se
 `Versões\` e `hub.json` da pasta de dados vão junto. Projetos nunca são tocados. Rodando de dentro da pasta do
 Hub, o desinstalador continua numa cópia em `%TEMP%` (o Windows não move a pasta de um programa aberto), que se
 apaga sozinha no fim.
@@ -946,13 +951,15 @@ apaga sozinha no fim.
 Sem janela (testes e agentes; o resultado sai no console):
 
 ```bash
-MotorSetup --silencioso --pasta "C:/temp/Hub" --dados "C:/temp/Dados" --servidor http://127.0.0.1:47900 --sem-atalhos --sem-registro
+MotorSetup --silencioso --pasta "C:/temp/Hub" --dados "C:/temp/Dados" --servidor http://127.0.0.1:47900 --sem-atalhos --sem-registro --sem-iniciar-com-windows
 MotorSetup --silencioso --versao-local build/package/Motor-0.2.0 ...   # versão de uma pasta montada
 MotorSetup --desinstalar --silencioso --pasta "C:/temp/Hub" [--apagar-dados]
 ```
 
 Também: `--area-de-trabalho`, `--abrir-hub`, e para testes `--atalhos-em <pasta>` (atalhos numa pasta qualquer)
-e `--chave-registro <nome>` (outra chave em `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall`).
+e `--chave-registro <nome>` (outra chave em `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall` e outro
+valor no `...\Run`). **Em testes, passe `--sem-iniciar-com-windows` ou `--chave-registro`**: senão o Hub de teste
+passa a iniciar com o Windows no lugar do instalado.
 Código em `installer/` (`Setup`: instalar e desinstalar; `SetupApp`: janela) sobre o plano de
 `distrib/InstallPlan` (testado em `tests/test_distribuicao.cpp`).
 

@@ -30,8 +30,12 @@ namespace {
 constexpr double kRefreshSeconds = 3.0;  // relê projetos e versões (mudam fora do hub: editor, Explorer)
 } // namespace
 
-HubApp::HubApp(platform::Paths paths, std::vector<std::string> editorArgs)
+HubApp::HubApp(platform::Paths paths, std::vector<std::string> editorArgs, fs::path dataOverride)
     : m_paths(std::move(paths)), m_editorArgs(std::move(editorArgs)) {
+    if (!dataOverride.empty()) {
+        std::error_code ec;
+        m_dataOverride = fs::absolute(dataOverride, ec).lexically_normal();  // como o instalador grava
+    }
     Reload();
 }
 
@@ -297,15 +301,69 @@ bool HubApp::SetDefaultVersion(const std::string& version, std::string& message)
 }
 
 // ---------------------------------------------------------------------------
+// Iniciar com o Windows
+// ---------------------------------------------------------------------------
+
+std::string HubApp::OwnStartupCommand() const {
+    return distrib::StartupCommand(distrib::platform::ExecutablePath(), m_dataOverride);
+}
+
+bool HubApp::StartsWithWindows() const {
+    const auto current = distrib::platform::ReadStartupValue(distrib::kStartupValue);
+    return current && SameStartupCommand(*current, OwnStartupCommand());
+}
+
+bool HubApp::SetStartWithWindows(bool on, std::string& message) {
+    if (on) {
+        if (!distrib::platform::WriteStartupValue(distrib::kStartupValue, OwnStartupCommand(), &message)) return false;
+        message = "O Hub vai iniciar com o Windows, na bandeja.";
+    } else {
+        if (!distrib::platform::DeleteStartupValue(distrib::kStartupValue)) {
+            message = "Não foi possível tirar o Hub do início do Windows.";
+            return false;
+        }
+        message = "O Hub não inicia mais com o Windows.";
+    }
+    m_startsWithWindows = on;
+    // Ligado agora, este hub já fica residente; desligado, só continua na bandeja se abriu nela.
+    if (m_tray) {
+        if (on || m_startedInTray) {
+            m_tray->ShowIcon(std::format("Hub do Motor {}", MOTOR_HUB_VERSION));
+        } else {
+            m_tray->HideIcon();
+        }
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Janela
 // ---------------------------------------------------------------------------
 
-int HubApp::RunWindow(int initialTab) {
-    m_selectTab = initialTab;
+void HubApp::ShowWindow() {
+    if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) glfwRestoreWindow(m_window);
+    glfwShowWindow(m_window);
+    glfwFocusWindow(m_window);
+    m_lastRefresh = 0.0;  // a lista pode ter mudado enquanto estava escondida
+}
+
+int HubApp::RunWindow(const WindowOptions& options) {
+    m_selectTab = options.initialTab;
+    m_startedInTray = options.tray;
+    m_tray = std::make_unique<platform::Tray>(InstanceKey(m_paths.dataDir));
+    // Já há um hub desta pasta de dados: o atalho traz a janela dele; o --bandeja do Windows não faz nada.
+    if (!m_tray->Claim(!options.tray)) {
+        m_tray.reset();
+        return 0;
+    }
+    m_startsWithWindows = StartsWithWindows();
+    if (options.tray || m_startsWithWindows) m_tray->ShowIcon(std::format("Hub do Motor {}", MOTOR_HUB_VERSION));
+
     if (!glfwInit()) throw std::runtime_error("Não foi possível iniciar o GLFW.");
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_VISIBLE, options.tray ? GLFW_FALSE : GLFW_TRUE);
     const std::string title = std::format("Hub do Motor {}", MOTOR_HUB_VERSION);
     m_window = glfwCreateWindow(1040, 680, title.c_str(), nullptr, nullptr);
     if (!m_window) {
@@ -327,12 +385,27 @@ int HubApp::RunWindow(int initialTab) {
 
     m_lastRefresh = glfwGetTime();
     StartFetch();
-    while (!glfwWindowShouldClose(m_window)) {
-        // O hub fica parado quase sempre: espera eventos em vez de girar o loop.
+    while (true) {
+        // O hub fica parado quase sempre: espera eventos em vez de girar o loop. Escondido, só o ícone e os pedidos
+        // de outro hub o acordam (são mensagens da janela da bandeja, atendidas aqui).
         const bool busy = m_adding.valid() || m_download || m_fetching.valid();
-        glfwWaitEventsTimeout(busy ? 0.05 : 0.5);
+        const bool visible = glfwGetWindowAttrib(m_window, GLFW_VISIBLE) != 0;
+        glfwWaitEventsTimeout(busy ? 0.05 : visible ? 0.5 : 2.0);
+        if (m_tray->TakeQuitRequest()) break;
+        if (m_tray->TakeShowRequest()) ShowWindow();
+        if (glfwWindowShouldClose(m_window)) {
+            if (!m_tray->IconVisible()) break;
+            // Residente: fechar a janela só a esconde.
+            glfwSetWindowShouldClose(m_window, GLFW_FALSE);
+            glfwHideWindow(m_window);
+            if (!m_toldAboutTray) {
+                m_toldAboutTray = true;
+                m_tray->Notify("O Hub continua na bandeja",
+                               "Clique no ícone para abrir. Para fechar de vez, use \"Sair do Hub\" no menu do ícone.");
+            }
+        }
         PollBackground();
-        if (glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) continue;
+        if (!glfwGetWindowAttrib(m_window, GLFW_VISIBLE) || glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) continue;
         if (glfwGetTime() - m_lastRefresh > kRefreshSeconds) {
             m_lastRefresh = glfwGetTime();
             RefreshProjects();
@@ -364,6 +437,7 @@ int HubApp::RunWindow(int initialTab) {
     ImGui::DestroyContext();
     glfwDestroyWindow(m_window);
     glfwTerminate();
+    m_tray.reset();  // tira o ícone e solta a trava
     return 0;
 }
 
@@ -382,6 +456,7 @@ void HubApp::DrawFrame() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextColored(kDim, "%s", MOTOR_HUB_VERSION);
     DrawHubUpdateNotice();
+    DrawStartupOption();
 
     if (ImGui::BeginTabBar("Abas")) {
         const auto flags = [&](int tab) { return m_selectTab == tab ? ImGuiTabItemFlags_SetSelected : 0; };
@@ -402,6 +477,24 @@ void HubApp::DrawFrame() {
     DrawRemoveVersionPopup();
     DrawAddingVersionPopup();
     ImGui::End();
+}
+
+void HubApp::DrawStartupOption() {
+    // No canto direito do cabeçalho.
+    constexpr const char* kLabel = "Iniciar com o Windows";
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float width = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + ImGui::CalcTextSize(kLabel).x;
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - width));
+    bool on = m_startsWithWindows;
+    if (ImGui::Checkbox(kLabel, &on)) {
+        std::string message;
+        const bool ok = SetStartWithWindows(on, message);
+        SetStatus(message, !ok);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Abre o Hub escondido, na bandeja, ao entrar no Windows.\n"
+                          "Com ele residente, fechar a janela só a esconde.");
+    }
 }
 
 } // namespace hub

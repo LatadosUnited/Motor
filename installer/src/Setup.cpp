@@ -167,6 +167,10 @@ bool Install(const Options& options, const LogFn& log, const ProgressFn& progres
         if (!distrib::platform::WriteUninstallKey(plan.registryKey, plan.registryValues, &error)) return false;
         Say(log, "Desinstalação registrada em Aplicativos instalados (HKCU\\...\\Uninstall\\" + plan.registryKey + ").");
     }
+    if (!plan.startupValue.empty()) {
+        if (!distrib::platform::WriteStartupValue(plan.startupValue, plan.startupCommand, &error)) return false;
+        Say(log, "O Hub inicia com o Windows, na bandeja (HKCU\\...\\Run\\" + plan.startupValue + ").");
+    }
 
     // 3. Registro da instalação: a desinstalação desfaz exatamente isso. Gravado antes do download: se ele falhar,
     // o hub já está instalado e desinstalável.
@@ -224,6 +228,9 @@ bool Uninstall(const fs::path& installDir, bool removeData, const LogFn& log, st
         if (distrib::platform::DeleteUninstallKey(plan.registryKey)) {
             Say(log, "Desinstalação tirada de Aplicativos instalados.");
         }
+    }
+    if (!plan.startupValue.empty() && distrib::platform::ReadStartupValue(plan.startupValue)) {
+        if (distrib::platform::DeleteStartupValue(plan.startupValue)) Say(log, "O Hub não inicia mais com o Windows.");
     }
     for (const fs::path& path : plan.toTrash) {
         if (!distrib::platform::MoveToTrash(path, &error)) {

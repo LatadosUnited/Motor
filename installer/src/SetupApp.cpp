@@ -97,6 +97,7 @@ SetupApp::SetupApp(Options defaults, bool uninstall) : m_uninstall(uninstall), m
     m_dataDir = ToUtf8(m_defaults.install.dataDir.empty() ? DefaultDataDir() : m_defaults.install.dataDir);
     m_startMenu = m_defaults.install.startMenuShortcut;
     m_desktop = m_defaults.install.desktopShortcut;
+    m_startup = m_defaults.install.startWithWindows;
     m_server = m_defaults.server.empty() ? std::string(distrib::kDefaultServer) : m_defaults.server;
     m_localVersion = ToUtf8(m_defaults.localVersion);
     m_motor = m_defaults.motor == MotorSource::Server ? 1 : m_defaults.motor == MotorSource::Folder ? 2 : 0;
@@ -126,6 +127,7 @@ Options SetupApp::CurrentOptions() const {
     o.install.dataDir = hub::SamePath(data, DefaultDataDir()) ? fs::path() : data;
     o.install.startMenuShortcut = m_startMenu;
     o.install.desktopShortcut = m_desktop;
+    o.install.startWithWindows = m_startup;
     o.motor = m_motor == 1 ? MotorSource::Server : m_motor == 2 ? MotorSource::Folder : MotorSource::None;
     o.server = m_motor == 1 ? m_server : std::string();
     o.localVersion = PathFromUtf8(m_localVersion);
@@ -238,6 +240,7 @@ void SetupApp::DrawOptions() {
     ImGui::Checkbox("Atalho no menu Iniciar", &m_startMenu);
     ImGui::SameLine(0.0f, 24.0f);
     ImGui::Checkbox("Atalho na área de trabalho", &m_desktop);
+    ImGui::Checkbox("Iniciar com o Windows (o Hub fica na bandeja)", &m_startup);
 
     ImGui::SeparatorText("Versão do Motor (opcional)");
     ImGui::RadioButton("Agora não (dá para baixar depois, na aba Versões do Hub)", &m_motor, 0);

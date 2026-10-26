@@ -1,7 +1,7 @@
 #pragma once
 
 // Instalador do Hub (Fase 15), sem janela nem efeitos: o que instalar (arquivos, atalhos, chave de
-// desinstalação no HKCU), o registro da instalação (instalacao.json, ao lado do MotorHub.exe) e o que a
+// desinstalação e iniciar com o Windows no HKCU), o registro da instalação (instalacao.json, ao lado do MotorHub.exe) e o que a
 // desinstalação manda para a Lixeira. O MotorSetup.exe executa estes planos; os testes só os conferem.
 
 #include "Manifest.h"
@@ -16,13 +16,15 @@ namespace distrib {
 
 inline constexpr const char* kInstallRecordFile = "instalacao.json";
 inline constexpr const char* kUninstallKey = "MotorHub";  // HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\<>
+inline constexpr const char* kStartupValue = "MotorHub";  // HKCU\Software\Microsoft\Windows\CurrentVersion\Run\<>
+inline constexpr const char* kTrayArgument = "--bandeja";  // o hub abre escondido, na bandeja
 inline constexpr const char* kShortcutName = "Motor Hub.lnk";
 inline constexpr const char* kMsys2Url = "https://www.msys2.org/";
 
 // instalacao.json: o que esta instalação criou, para a desinstalação desfazer exatamente isso.
 struct InstallRecord {
     static constexpr const char* kFormat = "motor-hub-install";
-    static constexpr int kVersion = 1;
+    static constexpr int kVersion = 2;  // 2: startupValue (iniciar com o Windows)
 
     std::string hubVersion;
     std::string installed;              // data ISO
@@ -30,6 +32,7 @@ struct InstallRecord {
     fs::path dataDir;                   // vazio = a padrão do hub (%LOCALAPPDATA%\Motor)
     std::vector<fs::path> shortcuts;    // .lnk criados
     std::string registryKey;            // vazio = não registrou a desinstalação
+    std::string startupValue;           // valor do Run no HKCU; vazio = não inicia com o Windows
     std::vector<std::string> servers;   // servidores configurados na instalação
 
     static std::optional<InstallRecord> Load(const fs::path& file, std::string* error = nullptr);
@@ -43,6 +46,8 @@ struct InstallOptions {
     bool desktopShortcut = false;
     bool registerUninstall = true;
     std::string registryKey = kUninstallKey;
+    bool startWithWindows = true;      // o hub abre na bandeja ao entrar no Windows
+    std::string startupValue = kStartupValue;
     std::string hubVersion;
     uint64_t installedBytes = 0;       // EstimatedSize (KB) no Painel de Controle
     std::string server;                // para o hub.json (vazio = nenhum a mais)
@@ -70,6 +75,8 @@ struct InstallPlan {
     std::vector<Shortcut> shortcuts;
     std::string registryKey;  // vazio = não registra
     std::vector<RegistryValue> registryValues;
+    std::string startupValue;    // vazio = não inicia com o Windows
+    std::string startupCommand;  // linha do Run: "<MotorHub.exe>" --bandeja [--data "<pasta>"]
     InstallRecord record;
 };
 
@@ -79,6 +86,7 @@ InstallPlan PlanInstall(const InstallOptions& options, const fs::path& startMenu
 struct UninstallPlan {
     std::vector<fs::path> shortcuts;  // apagados (são só atalhos criados pelo instalador)
     std::string registryKey;
+    std::string startupValue;         // valor do Run apagado
     std::vector<fs::path> toTrash;    // para a Lixeira: a pasta do hub e, se pedido, Versões\ e hub.json
     fs::path emptyDirToRemove;        // pasta de dados, se ficar vazia
 };
@@ -102,5 +110,8 @@ std::vector<BuildTool> CheckBuildTools(const fs::path& sdkJson, const fs::path& 
 
 // Linha de argumentos do hub instalado (vazia com a pasta de dados padrão).
 std::string HubArguments(const fs::path& dataDir);
+// Linha que o Windows roda ao entrar (valor do Run): o hub na bandeja, com a pasta de dados se não for a padrão. O
+// hub compara a do registro com a dele para saber se é ele quem inicia com o Windows.
+std::string StartupCommand(const fs::path& hubExe, const fs::path& dataDir);
 
 } // namespace distrib

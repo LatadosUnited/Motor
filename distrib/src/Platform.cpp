@@ -27,6 +27,7 @@ using hub::ToUtf8;
 #ifdef _WIN32
 namespace {
 constexpr const wchar_t* kUninstallRoot = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\";
+constexpr const wchar_t* kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
 std::wstring Wide(const std::string& utf8) { return PathFromUtf8(utf8).wstring(); }
 
@@ -168,6 +169,39 @@ bool UninstallKeyExists(const std::string& key) {
     return true;
 }
 
+bool WriteStartupValue(const std::string& name, const std::string& command, std::string* error) {
+    const std::wstring value = Wide(command);
+    const LSTATUS st = RegSetKeyValueW(HKEY_CURRENT_USER, kRunKey, Wide(name).c_str(), REG_SZ, value.c_str(),
+                                       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+    if (st != ERROR_SUCCESS) {
+        if (error) *error = std::format("Não foi possível pôr o Hub para iniciar com o Windows (erro {}).", st);
+        return false;
+    }
+    return true;
+}
+
+bool DeleteStartupValue(const std::string& name) {
+    if (name.empty()) return true;
+    const LSTATUS st = RegDeleteKeyValueW(HKEY_CURRENT_USER, kRunKey, Wide(name).c_str());
+    return st == ERROR_SUCCESS || st == ERROR_FILE_NOT_FOUND;
+}
+
+std::optional<std::string> ReadStartupValue(const std::string& name) {
+    const std::wstring wname = Wide(name);
+    DWORD bytes = 0;
+    if (RegGetValueW(HKEY_CURRENT_USER, kRunKey, wname.c_str(), RRF_RT_REG_SZ, nullptr, nullptr, &bytes) !=
+        ERROR_SUCCESS) {
+        return std::nullopt;
+    }
+    std::wstring value(bytes / sizeof(wchar_t), L'\0');
+    if (RegGetValueW(HKEY_CURRENT_USER, kRunKey, wname.c_str(), RRF_RT_REG_SZ, nullptr, value.data(), &bytes) !=
+        ERROR_SUCCESS) {
+        return std::nullopt;
+    }
+    value.resize(wcsnlen(value.c_str(), value.size()));  // o tamanho lido conta o \0 do fim
+    return ToUtf8(fs::path(value));
+}
+
 void OpenUrl(const std::string& url) {
     ShellExecuteW(nullptr, L"open", Wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
@@ -209,6 +243,12 @@ bool WriteUninstallKey(const std::string&, const std::vector<RegistryValue>&, st
 }
 bool DeleteUninstallKey(const std::string&) { return true; }
 bool UninstallKeyExists(const std::string&) { return false; }
+bool WriteStartupValue(const std::string&, const std::string&, std::string* error) {
+    if (error) *error = "Registro só no Windows.";
+    return false;
+}
+bool DeleteStartupValue(const std::string&) { return true; }
+std::optional<std::string> ReadStartupValue(const std::string&) { return std::nullopt; }
 void OpenUrl(const std::string&) {}
 std::vector<std::string> CommandLineArgs() { return {}; }
 void AttachParentConsole() {}

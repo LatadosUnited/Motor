@@ -4,7 +4,7 @@
 # e não pode ficar preso a uma. Usa só GLFW, ImGui e nlohmann_json, estáticos (as mesmas bibliotecas do Motor,
 # baixadas pelo CMakeLists.txt da raiz). Pode virar um repositório próprio: este CMakeLists só precisa dos alvos
 # glfw, imgui (objetos), nlohmann_json::nlohmann_json e motor_common (common/, sem dependências).
-set(MOTOR_HUB_VERSION 0.2.0)  # versão do hub, separada da do Motor (0.2: baixa versões de servidores)
+set(MOTOR_HUB_VERSION 0.3.0)  # versão do hub, separada da do Motor (0.2: baixa versões de servidores; 0.3: residente)
 set(MOTOR_HUB_VERSION ${MOTOR_HUB_VERSION} PARENT_SCOPE)  # o instalador (installer/) leva este hub
 
 # Núcleo sem janela (testado em tests/test_hub.cpp).
@@ -19,7 +19,8 @@ add_executable(MotorHub
     src/HubProjectsTab.cpp
     src/HubVersionsTab.cpp
     src/HubWidgets.cpp
-    src/HubPlatform.cpp)
+    src/HubPlatform.cpp
+    src/HubTray.cpp)
 # Objetos do ImGui (os mesmos que vão na libMotor.dll, aqui ligados direto no .exe) e o GLFW estático.
 # motor_distrib (Fase 15, distrib/): baixar versões dos servidores; vem depois no CMakeLists da raiz, mas o alvo é
 # resolvido pelo nome.
