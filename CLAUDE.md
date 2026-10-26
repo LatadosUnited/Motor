@@ -236,7 +236,8 @@ Alphas 4 (mundo aberto e renderização 2, Fases 28 a 30) e 5 (ferramentas, Fase
 
 Prioridade atual (ver `docs/roadmap/alpha-3.md`, "Fases"): alphas 1 e 2 fechadas (Fases 0 a 21); alpha 3 com a
 Fases 22 (medição), 23 (renderer em lote), 24 (GPU), 25 (cena, dados e física), 26 (threads) e 27 (editor que
-escala) prontas; falta a Organização do código 2.
+escala) prontas, e a Organização do código 2 também; falta só atingir as metas da alpha (a referência a 60 FPS
+espera a Fase 30).
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com
