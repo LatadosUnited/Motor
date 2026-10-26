@@ -183,6 +183,14 @@ bool SameStartupCommand(std::string_view a, std::string_view b);
 
 inline constexpr int kHubMcpPort = 47600;
 inline constexpr const char* kHubMcpPath = "/mcphub";
+// MCP do editor de um projeto, repassado pelo Hub: /mcpengine/<nome do projeto, codificado> e /mcpengine (o editor
+// aberto por último).
+inline constexpr const char* kHubEnginePath = "/mcpengine";
+
+// Nome de projeto na URL: igual sem diferenciar maiúsculas (como a busca: "JOGO AÇÃO" é "Jogo Ação").
+bool SameProjectName(std::string_view a, std::string_view b);
+// Codifica para um pedaço de caminho de URL: letras, números e "-._~" ficam; o resto vira %XX dos bytes UTF-8.
+std::string UrlEncodePathSegment(std::string_view text);
 inline constexpr const char* kHubMcpTokenFile = "mcp-token";  // na pasta de dados
 
 std::string NewToken();  // 64 dígitos hexadecimais aleatórios (o do Hub e o de cada editor que ele abre)

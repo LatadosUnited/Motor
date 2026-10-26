@@ -78,6 +78,7 @@ std::string NewSessionId(uint64_t count) {
 struct Server::Job {
     std::string body;
     const Route* route = nullptr;  // rota a mais (AddRoute); nullptr = mensagem do MCP
+    std::string path;              // da rota
     std::string authorization;     // da rota
     int status = 200;              // da rota, lido depois do `done`
     std::promise<std::string> done;
@@ -87,7 +88,8 @@ struct Server::Job {
 
 struct Server::Parked {
     std::shared_ptr<Job> job;
-    Deferred deferred;
+    Deferred deferred;                               // mensagem do MCP
+    std::function<bool(RouteReply&)> routeLater;     // ou rota (RouteReply::later)
 };
 
 Server::Server(Protocol& protocol) : m_protocol(protocol) {}
@@ -142,19 +144,36 @@ bool Server::Start(int port, std::string& error) {
         if (allowed(req, res)) res.status = m_sessions ? 200 : 405;
     });
 
+    const auto localOnly = [](const httplib::Request& req, httplib::Response& res) {
+        if (IsLocalOrigin(req.get_header_value("Origin")) && IsLocalHost(req.get_header_value("Host"))) return true;
+        res.status = 403;
+        return false;
+    };
     for (const NamedRoute& named : m_routes) {
-        http->Post(named.path, [this, route = &named.route](const httplib::Request& req, httplib::Response& res) {
-            if (!IsLocalOrigin(req.get_header_value("Origin")) || !IsLocalHost(req.get_header_value("Host"))) {
-                res.status = 403;
-                return;
-            }
+        http->Post(named.path, [this, localOnly, route = &named.route](const httplib::Request& req,
+                                                                       httplib::Response& res) {
+            if (!localOnly(req, res)) return;
             auto job = std::make_shared<Job>();
             job->body = req.body;
             job->route = route;
+            job->path = req.path;
             job->authorization = req.get_header_value("Authorization");
+            const bool initialize = m_sessions && IsInitialize(req.body);
             const std::string reply = Submit(job);
             res.status = job->status;
+            if (reply.empty() && res.status == 200) {
+                res.status = 202;  // notificação repassada: nada a responder
+                return;
+            }
+            if (initialize && res.status == 200) res.set_header("Mcp-Session-Id", NewSessionId(++m_sessionCount));
             res.set_content(reply, "application/json");
+        });
+        // Como o caminho do MCP: sem fluxo SSE e nada guardado por sessão.
+        http->Get(named.path, [localOnly](const httplib::Request& req, httplib::Response& res) {
+            if (localOnly(req, res)) res.status = 405;
+        });
+        http->Delete(named.path, [this, localOnly](const httplib::Request& req, httplib::Response& res) {
+            if (localOnly(req, res)) res.status = m_sessions ? 200 : 405;
         });
     }
 
@@ -180,7 +199,10 @@ void Server::Stop() {
         }
         m_jobs.clear();
     }
-    for (Parked& p : m_parked) p.job->done.set_value(BusyError());
+    for (Parked& p : m_parked) {
+        p.job->status = 503;
+        p.job->done.set_value(BusyError());
+    }
     m_parked.clear();
     if (m_thread.joinable()) m_thread.join();
     m_http.reset();
@@ -213,6 +235,17 @@ std::string Server::Submit(const std::shared_ptr<Job>& job) {
 size_t Server::Pump() {
     // Primeiro os que esperam (Play começar, compilação acabar): um quadro já passou desde a última conferência.
     size_t handled = std::erase_if(m_parked, [](Parked& p) {
+        if (p.routeLater) {
+            RouteReply reply;
+            try {
+                if (!p.routeLater(reply)) return false;
+            } catch (const std::exception& e) {
+                reply = {500, Json{{"error", e.what()}}.dump(), {}};
+            }
+            p.job->status = reply.status;
+            p.job->done.set_value(std::move(reply.body));
+            return true;
+        }
         std::optional<std::string> reply = p.deferred.Poll();
         if (!reply) return false;
         p.job->done.set_value(std::move(*reply));
@@ -228,9 +261,25 @@ size_t Server::Pump() {
         if (job->route) {
             RouteReply reply;
             try {
-                reply = (*job->route)(job->authorization, job->body);
+                reply = (*job->route)({job->path, job->authorization, job->body});
             } catch (const std::exception& e) {
-                reply = {500, Json{{"error", e.what()}}.dump()};
+                reply = {500, Json{{"error", e.what()}}.dump(), {}};
+            }
+            if (reply.later) {
+                // Confere já uma vez (o editor aberto pode responder sem esperar a próxima volta do loop).
+                std::function<bool(RouteReply&)> later = std::move(reply.later);
+                bool ready = false;
+                try {
+                    ready = later(reply);
+                } catch (const std::exception& e) {
+                    reply = {500, Json{{"error", e.what()}}.dump(), {}};
+                    ready = true;
+                }
+                if (!ready) {
+                    job->deadline = Ticks(std::chrono::steady_clock::now() + kParkedTimeout);
+                    m_parked.push_back({job, {}, std::move(later)});
+                    continue;
+                }
             }
             job->status = reply.status;
             job->done.set_value(std::move(reply.body));
@@ -241,7 +290,7 @@ size_t Server::Pump() {
         if (deferred) {
             // Antes de a thread do HTTP desistir (kMainThreadTimeout), ela passa a esperar mais.
             job->deadline = Ticks(std::chrono::steady_clock::now() + kParkedTimeout);
-            m_parked.push_back({job, std::move(*deferred)});
+            m_parked.push_back({job, std::move(*deferred), {}});
             continue;
         }
         job->done.set_value(std::move(reply));

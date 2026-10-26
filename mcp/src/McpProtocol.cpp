@@ -161,15 +161,17 @@ std::string Protocol::HandleText(std::string_view body, std::optional<Deferred>*
     return response ? Dump(*response) : std::string{};
 }
 
-Json Protocol::Initialize(const Json& params) const {
-    // Responde com a versão pedida se a conhecemos; senão, com a mais nova (o cliente decide se aceita).
-    std::string version = kLatestVersion;
-    const std::string asked = params.value("protocolVersion", "");
+std::string Protocol::NegotiateVersion(std::string_view asked) {
+    // A versão pedida se a conhecemos; senão, a mais nova (o cliente decide se aceita).
     for (const char* v : kVersions) {
-        if (asked == v) version = v;
+        if (asked == v) return v;
     }
+    return kLatestVersion;
+}
+
+Json Protocol::Initialize(const Json& params) const {
     Json result = {
-        {"protocolVersion", version},
+        {"protocolVersion", NegotiateVersion(params.value("protocolVersion", ""))},
         {"capabilities", {{"tools", {{"listChanged", false}}}}},
         {"serverInfo", {{"name", m_name}, {"version", m_version}}},
     };

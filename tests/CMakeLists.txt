@@ -195,7 +195,11 @@ add_test(NAME test_mcp_servidor COMMAND test_mcp_servidor ${CMAKE_CURRENT_BINARY
 # a pasta da versão: com --project ou --create ele só espera, e o teste o abre e fecha.
 add_executable(test_hub_mcp test_hub_mcp.cpp)
 target_link_libraries(test_hub_mcp PRIVATE motor_hub_app)
-target_include_directories(test_hub_mcp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# O cliente da cpp-httplib faz o papel do Claude Code no /mcpengine.
+target_include_directories(test_hub_mcp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${httplib_SOURCE_DIR})
+if(WIN32)
+    target_compile_definitions(test_hub_mcp PRIVATE _WIN32_WINNT=0x0A00)
+endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(test_hub_mcp PRIVATE -Wall -Wextra)
 endif()

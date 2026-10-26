@@ -80,9 +80,14 @@ bool HubMcp::Start(int port, std::function<void()> wake, std::string& error) {
     m_server.SetPath(kHubMcpPath);
     m_server.SetToken(m_token);
     m_server.SetSessions(true);
+    m_wake = wake;  // o repasse do /mcpengine acorda o hub quando o editor responde
     m_server.SetWake(std::move(wake));
-    m_server.AddRoute(motor::mcp::hublink::kNotifyPath, [this](const std::string& authorization, const std::string& body) {
-        return OnEditorNotice(authorization, body);
+    m_server.AddRoute(motor::mcp::hublink::kNotifyPath, [this](const motor::mcp::Server::RouteRequest& request) {
+        return OnEditorNotice(request);
+    });
+    // "/mcpengine" e "/mcpengine/<Projeto>" (a httplib casa a expressão inteira com o caminho).
+    m_server.AddRoute(std::string(kHubEnginePath) + "(/.*)?", [this](const motor::mcp::Server::RouteRequest& request) {
+        return OnEngineRequest(request);
     });
     if (!m_server.Start(port, error)) {
         error = "MCP do Hub desligado: " + error;
@@ -97,15 +102,15 @@ void HubMcp::Stop() {
     m_app.m_linkPort = 0;
 }
 
-motor::mcp::Server::RouteReply HubMcp::OnEditorNotice(const std::string& authorization, const std::string& body) {
+motor::mcp::Server::RouteReply HubMcp::OnEditorNotice(const motor::mcp::Server::RouteRequest& request) {
     namespace link = motor::mcp::hublink;
     HubApp::OpenEditor* editor = nullptr;
     for (HubApp::OpenEditor& e : m_app.m_editors) {
-        if (!e.token.empty() && link::SameSecret(authorization, "Bearer " + e.token)) editor = &e;
+        if (!e.token.empty() && link::SameSecret(request.authorization, "Bearer " + e.token)) editor = &e;
     }
-    if (!editor) return {401, Json{{"error", "token de editor desconhecido"}}.dump()};
-    const Json notice = Json::parse(body, nullptr, false);
-    if (!notice.is_object()) return {400, Json{{"error", "aviso inválido"}}.dump()};
+    if (!editor) return {401, Json{{"error", "token de editor desconhecido"}}.dump(), {}};
+    const Json notice = Json::parse(request.body, nullptr, false);
+    if (!notice.is_object()) return {400, Json{{"error", "aviso inválido"}}.dump(), {}};
 
     const std::string event = notice.value("event", std::string());
     const fs::path project = PathFromUtf8(notice.value("project", std::string())).lexically_normal();
@@ -122,14 +127,24 @@ motor::mcp::Server::RouteReply HubMcp::OnEditorNotice(const std::string& authori
     } else if (event == link::kEventClosing) {
         editor->ready = false;
     } else {
-        return {400, Json{{"error", "evento desconhecido: " + event}}.dump()};
+        return {400, Json{{"error", "evento desconhecido: " + event}}.dump(), {}};
     }
-    return {200, Json{{"ok", true}}.dump()};
+    return {200, Json{{"ok", true}}.dump(), {}};
 }
 
 std::string HubMcp::ClaudeCommand() const {
     return std::format("claude mcp add --transport http motor-hub {} --header \"Authorization: Bearer {}\"", Url(),
                        m_token);
+}
+
+std::string HubMcp::EngineUrl(const std::string& projectName) const {
+    const std::string base = std::format("http://127.0.0.1:{}{}", m_server.Port(), kHubEnginePath);
+    return projectName.empty() ? base : base + "/" + UrlEncodePathSegment(projectName);
+}
+
+std::string HubMcp::ClaudeEngineCommand(const std::string& projectName) const {
+    return std::format("claude mcp add --transport http motor {} --header \"Authorization: Bearer {}\"",
+                       EngineUrl(projectName), m_token);
 }
 
 Json HubMcp::EditorsJson() {
@@ -182,6 +197,7 @@ void HubMcp::AddStateTools() {
                     {"editors", EditorsJson()},
                     {"download", std::move(download)},
                     {"startsWithWindows", m_app.StartsWithWindows()},
+                    {"engineUrl", EngineUrl()},  // o editor aberto por último; /<Projeto> para um projeto
                 });
             },
     });
@@ -195,7 +211,8 @@ void HubMcp::AddProjectTools() {
     m_protocol.AddTool({
         .name = "projects_list",
         .description = "Projetos da lista do Hub, dos abertos por último para os mais antigos: nome, pasta, versão do "
-                       "Motor, última abertura e se o editor dele está aberto (aberto pelo Hub).",
+                       "Motor, última abertura, se o editor dele está aberto (aberto pelo Hub) e mcpUrl, o endereço "
+                       "do MCP do editor dele pelo Hub (/mcpengine/<Projeto>; abre o editor se estiver fechado).",
         .inputSchema = Schema({{"query", Prop("string", "filtra por nome ou pasta (opcional)")}}),
         .readOnly = true,
         .run =
@@ -213,6 +230,11 @@ void HubMcp::AddProjectTools() {
                                  {"engineVersion", p.engineVersion},
                                  {"lastOpened", FormatLastOpened(m_app.Config().projects[i].lastOpened, NowSeconds())}};
                     if (!p.found) item["error"] = p.error;
+                    const size_t sameName = std::count_if(
+                        m_app.Projects().begin(), m_app.Projects().end(),
+                        [&](const ProjectInfo& other) { return SameProjectName(other.name, p.name); });
+                    item["mcpUrl"] = EngineUrl(p.name);
+                    if (sameName > 1) item["mcpUrlError"] = "outro projeto com o mesmo nome: renomeie um (vai na URL)";
                     const HubApp::OpenEditor* editor = m_app.FindEditor(p.root);
                     item["editorOpen"] = editor != nullptr;
                     if (editor) {

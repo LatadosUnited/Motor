@@ -149,6 +149,27 @@ biblioteca pequena sem a engine, usada pelos dois.
   pronto em 2,5 s na porta 47801, um segundo editor ficou na 47802, a porta interna recusou sem token e com o
   token do Hub (401), os dois fecharam pelo `editor_close`, e `--hub` sem o token é recusado. Não conferido com o
   editor real: o aviso "projeto" (Arquivo > Abrir projeto pela interface) e o item fixo no menu Ver.
+- Tarefa 8: `/mcpengine/<Projeto>` e `/mcpengine` no servidor do Hub (`hub/src/HubEngineProxy.cpp`), com o token do
+  Hub. O nome é o da lista do Hub, sem diferenciar maiúsculas (`SameProjectName`); a httplib entrega o caminho já
+  decodificado. Nome desconhecido ou repetido dá erro JSON-RPC claro; `/mcpengine` vai para o editor aberto por
+  último. O Hub responde sozinho o `initialize` (com a versão do protocolo negociada, `Protocol::NegotiateVersion`),
+  o `ping` e o `tools/list` com o `mcp-ferramentas.json` da versão do projeto (sem editor aberto, a padrão), e as
+  notificações com 202. O resto é repassado ao editor na porta interna, com o token dele; com o editor fechado, o
+  Hub o abre (`OpenProjectAuto`) e espera o "pronto" (até 90 s). O repasse roda numa thread solta (um future do
+  `std::async` travaria o Hub fechando) que acorda o Hub ao terminar. Versão sem a lista: tudo é repassado. A
+  `motor_mcp` ganhou nas rotas o caminho, padrão de expressão regular, resposta para depois (`RouteReply::later`,
+  conferida já no mesmo `Pump`), `Mcp-Session-Id` no `initialize`, 202, GET 405 e DELETE. URLs: `mcpUrl` no
+  `projects_list` (e `mcpUrlError` com nome repetido), `engineUrl` no `hub_status`, e na aba MCP o comando do
+  servidor `motor` e a URL de cada projeto. Teste: no `test_hub_mcp` o editor falso serve um MCP de verdade na porta
+  interna e o teste faz o papel do Claude Code pelo HTTP (sem token 401, initialize com sessão e versão negociada,
+  notificação 202, tools/list sem abrir o editor, a primeira ferramenta abre e repassa, maiúsculas, `/mcpengine`,
+  nome desconhecido, fechar e reabrir sem novo initialize, `/mcpengine` sem editor). Conferido com o `MotorHub.exe`
+  na bandeja e o editor do build: `initialize` e `tools/list` (53 ferramentas) com o editor fechado; o primeiro
+  `editor_status` abriu o editor e respondeu em 3,2 s; `scene_tree` e `viewport_capture` (PNG de 430 KB, íntegro)
+  repassados; fechado pelo `editor_close`, a chamada seguinte o reabriu (2,7 s). Com o editor aberto, cada chamada
+  leva de 20 a 120 ms (era 150 a 200 ms antes de conferir a resposta no mesmo `Pump` e acordar o Hub). Não
+  conferido: o Claude Code de verdade como cliente (o `claude mcp add` muda a configuração do usuário; fica para a
+  Tarefa 10) e um editor aberto fora do Hub com o mesmo projeto (o Hub não o vê e abriria outro).
 
 ## Limitações
 

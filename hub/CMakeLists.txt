@@ -22,7 +22,8 @@ add_library(motor_hub_app STATIC
     src/HubPlatform.cpp
     src/HubTray.cpp
     src/HubMcp.cpp
-    src/HubMcpTab.cpp)
+    src/HubMcpTab.cpp
+    src/HubEngineProxy.cpp)
 # Objetos do ImGui (os mesmos que vão na libMotor.dll, aqui ligados direto no .exe) e o GLFW estático.
 # motor_distrib (Fase 15, distrib/): baixar versões dos servidores; vem depois no CMakeLists da raiz, mas o alvo é
 # resolvido pelo nome.

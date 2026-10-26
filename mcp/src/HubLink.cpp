@@ -11,25 +11,39 @@
 
 #include <motor/mcp/HubLink.h>
 
+#include <algorithm>
+
 namespace motor::mcp::hublink {
 
-bool PostJson(int port, std::string_view path, std::string_view token, const Json& body, std::string* error,
-              int timeoutMs) {
+HttpReply Post(int port, std::string_view path, std::string_view token, const std::string& body, int timeoutMs) {
     httplib::Client client("127.0.0.1", port);
     const time_t seconds = timeoutMs / 1000;
     const time_t micros = (timeoutMs % 1000) * 1000;
-    client.set_connection_timeout(seconds, micros);
+    client.set_connection_timeout(std::min<time_t>(seconds, 5), seconds >= 5 ? 0 : micros);  // loopback: conecta já
     client.set_read_timeout(seconds, micros);
     client.set_write_timeout(seconds, micros);
-    httplib::Headers headers;
+    httplib::Headers headers{{"Accept", "application/json, text/event-stream"}};
     if (!token.empty()) headers.emplace("Authorization", "Bearer " + std::string(token));
-    const auto res = client.Post(std::string(path), headers, body.dump(), "application/json");
+    HttpReply reply;
+    const auto res = client.Post(std::string(path), headers, body, "application/json");
     if (!res) {
-        if (error) *error = "sem resposta de 127.0.0.1:" + std::to_string(port) + " (" + httplib::to_string(res.error()) + ")";
+        reply.error = "sem resposta de 127.0.0.1:" + std::to_string(port) + " (" + httplib::to_string(res.error()) + ")";
+        return reply;
+    }
+    reply.status = res->status;
+    reply.body = res->body;
+    return reply;
+}
+
+bool PostJson(int port, std::string_view path, std::string_view token, const Json& body, std::string* error,
+              int timeoutMs) {
+    const HttpReply reply = Post(port, path, token, body.dump(), timeoutMs);
+    if (reply.status == 0) {
+        if (error) *error = reply.error;
         return false;
     }
-    if (res->status < 200 || res->status >= 300) {
-        if (error) *error = "resposta " + std::to_string(res->status) + ": " + res->body;
+    if (reply.status < 200 || reply.status >= 300) {
+        if (error) *error = "resposta " + std::to_string(reply.status) + ": " + reply.body;
         return false;
     }
     return true;

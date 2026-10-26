@@ -46,15 +46,25 @@ public:
     void SetToken(std::string token) { m_token = std::move(token); }  // vazio = sem token
     void SetSessions(bool on) { m_sessions = on; }
 
-    // Rota a mais (POST), fora do MCP: no Hub, os avisos dos editores (HubLink.h). Atendida na thread principal, no
-    // Pump, como as mensagens. Recusa origem de fora, mas não confere o token do servidor: a rota decide pelo
-    // cabeçalho Authorization que recebe.
+    // Rota a mais (POST), fora do MCP: no Hub, os avisos dos editores (HubLink.h) e o repasse de /mcpengine/<Projeto>.
+    // Atendida na thread principal, no Pump, como as mensagens. Recusa origem de fora, mas não confere o token do
+    // servidor: a rota decide pelo cabeçalho Authorization que recebe. `pattern` é uma expressão regular da httplib
+    // ("/mcpengine(/.*)?"); o caminho chega já decodificado (UTF-8). Como no MCP: corpo vazio vira 202, initialize
+    // ganha o Mcp-Session-Id (com SetSessions), GET dá 405 e DELETE encerra a sessão.
+    struct RouteRequest {
+        std::string path;
+        std::string authorization;
+        std::string body;
+    };
     struct RouteReply {
         int status = 200;
-        std::string body;  // JSON
+        std::string body;  // JSON; vazio = 202
+        // Resposta que fica para depois (o editor abrindo, a ferramenta repassada): chamada a cada Pump até devolver
+        // true com a resposta final em `out`.
+        std::function<bool(RouteReply& out)> later;
     };
-    using Route = std::function<RouteReply(const std::string& authorization, const std::string& body)>;
-    void AddRoute(std::string path, Route route) { m_routes.push_back({std::move(path), std::move(route)}); }
+    using Route = std::function<RouteReply(const RouteRequest& request)>;
+    void AddRoute(std::string pattern, Route route) { m_routes.push_back({std::move(pattern), std::move(route)}); }
 
     bool Start(int port, std::string& error);  // false se a porta não abriu
     void Stop();

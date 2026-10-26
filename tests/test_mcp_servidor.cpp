@@ -144,12 +144,12 @@ int main(int, char**) {
         const std::thread::id mainThread = std::this_thread::get_id();
         bool onMainThread = false;
         std::string seenAuth, seenBody;
-        server.AddRoute("/mcphub/editor", [&](const std::string& authorization, const std::string& body) {
+        server.AddRoute("/mcphub/editor", [&](const Server::RouteRequest& request) {
             onMainThread = std::this_thread::get_id() == mainThread;
-            seenAuth = authorization;
-            seenBody = body;
-            if (authorization != "Bearer do-editor") return Server::RouteReply{401, R"({"error": "quem?"})"};
-            return Server::RouteReply{200, R"({"ok": true})"};
+            seenAuth = request.authorization;
+            seenBody = request.body;
+            if (request.authorization != "Bearer do-editor") return Server::RouteReply{401, R"({"error": "quem?"})", {}};
+            return Server::RouteReply{200, R"({"ok": true})", {}};
         });
         const int port = StartFree(server, 47620);
         CHECK(port > 0);

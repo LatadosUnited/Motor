@@ -26,10 +26,15 @@ public:
     motor::mcp::Protocol& GetProtocol() { return m_protocol; }  // testes: chamar as ferramentas sem HTTP
 
     bool IsRunning() const { return m_server.IsRunning(); }
+    int Port() const { return m_server.Port(); }
     std::string Url() const { return m_server.Url(); }
     const std::string& Token() const { return m_token; }
     // Linha para o Claude Code ligar neste servidor (claude mcp add ...).
     std::string ClaudeCommand() const;
+    // MCP do editor pelo Hub: /mcpengine/<projeto> (vazio = /mcpengine, o editor aberto por último) e a linha do
+    // Claude Code para ele (servidor "motor").
+    std::string EngineUrl(const std::string& projectName = {}) const;
+    std::string ClaudeEngineCommand(const std::string& projectName = {}) const;
 
 private:
     void AddTools();
@@ -38,12 +43,16 @@ private:
     void AddVersionTools();
     motor::mcp::Json EditorsJson();
     // Aviso de um editor aberto por este hub (POST em hublink::kNotifyPath), na thread do hub.
-    motor::mcp::Server::RouteReply OnEditorNotice(const std::string& authorization, const std::string& body);
+    motor::mcp::Server::RouteReply OnEditorNotice(const motor::mcp::Server::RouteRequest& request);
+    // /mcpengine e /mcpengine/<Projeto> (HubEngineProxy.cpp): initialize e tools/list da lista da versão, o resto
+    // repassado ao editor do projeto, que abre se estiver fechado.
+    motor::mcp::Server::RouteReply OnEngineRequest(const motor::mcp::Server::RouteRequest& request);
 
     HubApp& m_app;
     motor::mcp::Protocol m_protocol;
     motor::mcp::Server m_server;
     std::string m_token;
+    std::function<void()> m_wake;
 };
 
 } // namespace hub

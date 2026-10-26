@@ -62,6 +62,8 @@ struct Deferred {
 class Protocol {
 public:
     static constexpr const char* kLatestVersion = "2025-06-18";
+    // Versão do protocolo da resposta ao initialize (o Hub responde pelo editor fechado com ela).
+    static std::string NegotiateVersion(std::string_view asked);
 
     Protocol(std::string serverName, std::string serverVersion, std::string instructions = {});
 

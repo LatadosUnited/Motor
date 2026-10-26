@@ -28,7 +28,16 @@ inline constexpr const char* kEventReady = "pronto";
 inline constexpr const char* kEventProject = "projeto";
 inline constexpr const char* kEventClosing = "fechando";
 
-// POST de `body` em http://127.0.0.1:<port><path> com "Authorization: Bearer <token>". true com resposta 2xx.
+// POST de `body` (JSON) em http://127.0.0.1:<port><path> com "Authorization: Bearer <token>", como veio e como
+// volta: o repasse de /mcpengine para o editor. status 0 = sem resposta (`error` diz por quê).
+struct HttpReply {
+    int status = 0;
+    std::string body;
+    std::string error;
+};
+HttpReply Post(int port, std::string_view path, std::string_view token, const std::string& body, int timeoutMs);
+
+// O mesmo, para os avisos: true com resposta 2xx.
 bool PostJson(int port, std::string_view path, std::string_view token, const Json& body, std::string* error = nullptr,
               int timeoutMs = 1000);
 

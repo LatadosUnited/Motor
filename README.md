@@ -906,6 +906,14 @@ qualquer versão do editor, inclusive as futuras.
   dele, e avisa o Hub quando fica pronto, quando abre outro projeto e quando fecha (`MotorEditor --hub <porta>`,
   com o token em `MOTOR_MCP_TOKEN`); o `hub_status` mostra `ready` e `mcpPort`, e `project_open` com `wait`
   responde quando o editor está pronto. No editor aberto assim, Ver > Servidor MCP fica sempre ligado.
+- **MCP dos editores pelo Hub:** `http://127.0.0.1:47600/mcpengine/<Projeto>` é o MCP do editor daquele projeto
+  (o nome da lista do Hub, codificado na URL: `Jogo%20A%C3%A7%C3%A3o`; maiúsculas não contam), e
+  `http://127.0.0.1:47600/mcpengine`, o do editor aberto por último. Com o mesmo token do Hub. O Hub responde o
+  `initialize` e o `tools/list` com a lista da versão, então o Claude Code conecta com o editor fechado; a primeira
+  ferramenta abre o editor (janela normal), espera ele ficar pronto e repassa. Fechar e abrir o editor de novo não
+  pede para reconectar. A aba MCP copia o comando do servidor `motor`
+  (`claude mcp add --transport http motor http://127.0.0.1:47600/mcpengine --header "Authorization: Bearer <token>"`)
+  e a URL de cada projeto; o `projects_list` traz o `mcpUrl`. Dois projetos com o mesmo nome: renomeie um.
 - **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 2, ...}`, com a lista
   `servers`; o formato 1 é lido com o servidor local na lista), separada da do editor.
 

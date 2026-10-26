@@ -52,6 +52,29 @@ void HubApp::DrawMcpTab() {
         SetStatus("Comando copiado: cole no terminal.", false);
     }
 
+    ImGui::SeparatorText("MCP dos editores");
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextColored(kDim, "O MCP do editor de cada projeto, pelo Hub: funciona com o editor fechado (o Hub o abre "
+                             "na primeira ferramenta) e não pede para reconectar quando ele fecha e abre de novo. %s "
+                             "vai para o editor aberto por último.",
+                       m_mcp->EngineUrl().c_str());
+    ImGui::PopTextWrapPos();
+    if (ImGui::Button("Copiar o comando (editor aberto por último)")) {
+        ImGui::SetClipboardText(m_mcp->ClaudeEngineCommand().c_str());
+        SetStatus("Comando do servidor \"motor\" copiado: cole no terminal.", false);
+    }
+    for (size_t i = 0; i < m_projects.size(); ++i) {
+        const ProjectInfo& p = m_projects[i];
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::SmallButton("Copiar URL")) {
+            ImGui::SetClipboardText(m_mcp->EngineUrl(p.name).c_str());
+            SetStatus("URL de '" + p.name + "' copiada.", false);
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted(m_mcp->EngineUrl(p.name).c_str());
+        ImGui::PopID();
+    }
+
     DrawStatusLine(m_status, m_statusError);
 }
 

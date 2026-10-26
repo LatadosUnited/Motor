@@ -100,6 +100,25 @@ bool MatchesSearch(std::string_view text, std::string_view query) {
     return FoldCase(text).find(FoldCase(query)) != std::string::npos;
 }
 
+bool SameProjectName(std::string_view a, std::string_view b) {
+    return FoldCase(a) == FoldCase(b);
+}
+
+std::string UrlEncodePathSegment(std::string_view text) {
+    std::string out;
+    for (const char c : text) {
+        const auto byte = static_cast<unsigned char>(c);
+        if (std::isalnum(byte) && byte < 0x80) {
+            out += c;
+        } else if (c == '-' || c == '.' || c == '_' || c == '~') {
+            out += c;
+        } else {
+            out += std::format("%{:02X}", byte);
+        }
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Versões
 // ---------------------------------------------------------------------------
