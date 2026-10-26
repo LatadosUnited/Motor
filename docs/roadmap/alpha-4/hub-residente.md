@@ -3,11 +3,11 @@ tipo: fase
 alpha: 4
 fase:
 titulo: Hub residente com MCP
-status: planejada
+status: em andamento
 prioridade: 1
 areas: [hub, distrib, editor-mcp]
 branch: hub-residente
-inicio:
+inicio: 2026-10-26
 fim:
 ---
 
@@ -52,7 +52,7 @@ biblioteca pequena sem a engine, usada pelos dois.
 
 ## Tarefas
 
-- [ ] Tarefa 1: Tirar o `McpProtocol` e o `McpServer` do editor para uma biblioteca sem a engine (log por callback)
+- [x] Tarefa 1: Tirar o `McpProtocol` e o `McpServer` do editor para uma biblioteca sem a engine (log por callback) — 18ac51a
 - [ ] Tarefa 2: Iniciar com o Windows (chave `Run` do HKCU) pelo instalador e pelas configurações do Hub
 - [ ] Tarefa 3: Modo bandeja (`--bandeja`): ícone, menu, janela escondida, uma instância só
 - [ ] Tarefa 4: MCP do Hub na porta 47600 (`/mcphub`) com sessão e token
@@ -78,7 +78,10 @@ biblioteca pequena sem a engine, usada pelos dois.
 
 ## Feito
 
-(Preencher ao terminar: o que mudou, arquivos principais, testes, números de antes e depois.)
+- Tarefa 1: o protocolo e o transporte HTTP saíram de `editor/src/mcp/` para a biblioteca `mcp/` (`motor_mcp`,
+  namespace `motor::mcp`), sem a engine: só nlohmann_json, o header da cpp-httplib e o Winsock. O log de ligado e
+  desligado vai por `Server::SetLog` (o editor manda para o `motor::log`); o editor continua com os nomes de
+  `editor::mcp` pelo `editor/src/mcp/Mcp.h`. Sem mudar comportamento: `test_mcp` e `test_mcp_nav` passam como antes.
 
 ## Limitações
 
