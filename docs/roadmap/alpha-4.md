@@ -16,7 +16,8 @@ Foco: cenários abertos e luz mais bonita, sobre o que a alpha 3 deixa pronto: i
 
 **A alpha 4 está pronta quando:** uma ilha com terreno pintado, água, árvores, grama e uma fogueira com fumaça roda
 no Player a 60 FPS na máquina de referência; e uma sala fechada com janela fica escura nos cantos, reflete o
-ambiente de dentro e a câmera se adapta ao sair para o sol.
+ambiente de dentro e a câmera se adapta ao sair para o sol. Herdada da alpha 3: a cena de referência
+(`bench/referencia`) a 60 FPS no Player, sombra Média (fechou em ~22,6 ms, limitada pela GPU).
 
 ## Fase 28 — Terreno e água
 

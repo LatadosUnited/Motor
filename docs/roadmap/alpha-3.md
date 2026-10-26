@@ -1,7 +1,7 @@
 ---
 tipo: alpha
 alpha: 3
-status: em andamento
+status: fechada
 foco: Desempenho
 ---
 
@@ -27,6 +27,17 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 - o quadro **usa mais de um núcleo**: com 10 000 objetos, a thread principal abaixo de 50% de um núcleo e o trabalho
   de montar o quadro dividido entre as threads;
 - o editor edita a cena de referência (~5000 entidades) **sem travar** (nenhum quadro acima de 100 ms parado).
+
+## Fechamento (25/10/2026, versão 0.3.0)
+
+Fechada com todas as fases prontas e quatro das cinco metas atingidas (números das notas das fases):
+
+- referência a 60 FPS: **não atingida**. Quadro 49 → ~22,6 ms (~44 FPS), limitado pela GPU integrada; a meta passa
+  para a [alpha 4](alpha-4.md) (Fase 30);
+- `cubos10000` a 60 FPS: atingida (33,6 → ~15 ms);
+- pelo menos 70% do FPS da Unity: atingida (todas as cenas do bench de 157 a 290%);
+- mais de um núcleo: atingida (`cubos10000` com a thread principal em 46–50% de um núcleo, quadro em tarefas);
+- editor sem travar na referência: atingida parado (0 quadros acima de 100 ms); salvar ainda leva 90–157 ms.
 
 ## Fases
 
