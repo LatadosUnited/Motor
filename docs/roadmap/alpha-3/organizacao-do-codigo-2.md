@@ -82,9 +82,9 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 - [x] Tarefa 4: Trocar a cópia do `ExecutableDir` no `ScriptProject` pela do `EngineAssets.h` — 4653ffb
 - [x] Tarefa 5: Dividir o `Renderer::DrawScene` nas etapas que ele já numera — 957b452
 - [ ] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw` — 957b452 (falta o `DrawControlsWindow`)
-- [ ] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta
-- [ ] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2
-- [ ] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo
+- [x] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta — 7efa412
+- [x] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2 — 95674e5
+- [ ] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo — 601c36d, 95674e5 (falta o grafo, depois do merge)
 - [x] Tarefa 10: Juntar os dois `ToUtf8` e `PathFromUtf8` (engine e Hub) num `motor/common/Utf8.h` — 4653ffb
 
 ## Pronto quando
@@ -152,6 +152,15 @@ Conferido: build sem avisos, `ctest` 57/57 em Debug e 56/56 em Release (sem o `t
 editor Release com a referência, no `main` e no branch: mesma imagem, 19 draws e 136.812 triângulos. O
 `test_desempenho`, alternado com o `main` (5 rodadas), dá o mesmo `cena_ler` (~218 ms) e um `cena_json` ~5% maior
 (mediana 38,8 contra 36,8 ms). Nenhuma das divisões toca no JSON da cena; a base não foi regravada.
+
+### Pasta `nav/` e `CLAUDE.md` (tarefas 7 a 9, 25/10/2026)
+
+O `NavMeshBake.cpp/.h` foi para `editor/src/nav/` (`#include "nav/NavMeshBake.h"`, como as outras subpastas); o
+código não mudou. No `CLAUDE.md`, a pasta entrou na lista do editor e na área IA, e as tabelas de onde cada fase
+das alphas 1 e 2 mexia viraram uma linha apontando para o histórico do git. Os auxiliares do `common/` já tinham
+entrado no `601c36d`. O grafo se atualiza com `/graphify . --update` depois do merge no `main`.
+
+Conferido: build sem avisos e `ctest` 57/57 em Debug (o `test_desempenho` pulado, como sempre no Debug).
 
 ## Limitações
 
