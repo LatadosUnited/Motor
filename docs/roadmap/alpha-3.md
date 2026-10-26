@@ -34,10 +34,11 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 |---|---|---|---|---|
 | — | Fase 22 — Medição | pronta (20/10) | Tracy, `--perf`, cena de referência, `test_desempenho` | — |
 | — | [Fase 23 — Renderer em lote](alpha-3/fase-23-renderer-em-lote.md) | pronta (21/10) | `cubos10000`: 10 001 → 2 draws, Render 33 → 12,7 ms; referência 7927 → 16 draws, quadro 49 → 44 ms | — |
-| 2 | Fase 24 — GPU: pós, sombras e LOD | planejada | 8 ms de pós numa cena vazia; 47 ms de GPU na referência | 25, 27 |
-| 3 | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | em andamento | física de 11,6 ms na referência (passos fixos acumulados) | 23, 24, 27 |
-| 4 | Fase 26 — Várias threads | planejada | tudo menos a física roda numa thread; 3 núcleos parados | 27 |
-| 5 | Fase 27 — Editor que escala | planejada | gravar a referência em JSON leva 337 ms, a cada 0,5 s | 23, 24, 25, 26 |
+| — | [Fase 24 — GPU: pós, sombras e LOD](alpha-3/fase-24-gpu.md) | pronta (25/10) | GPU da cena vazia 9,2 → 4,4 ms, da referência 47 → ~19,5 ms (quadro 44 → 22 ms); todas as cenas do bench de 157 a 290% da Unity | — |
+| — | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | pronta (25/10) | `fisica1000` 84 → 104% da Unity, `jogo_passo` 1,37 → 0,77 ms, filhos e nomes sem percorrer a cena; física da referência 8,1 ms (3 passos por quadro, espera a Fase 24) | — |
+| — | [Fase 26 — Várias threads](alpha-3/fase-26-threads.md) | pronta (25/10) | `cubos10000`: thread principal ~80 → 46–50% de um núcleo; referência 23,3 → 22,6 ms; texturas da cena decodificadas em paralelo (−22% na carga) | — |
+| — | [Fase 27 — Editor que escala](alpha-3/fase-27-editor.md) | pronta (25/10) | referência no editor: quadros acima de 100 ms parado 37 em 20 s → 0; CPU por quadro ~21 → ~10,5 ms; JSON 255 → 31 ms; salvar ainda 90–157 ms | — |
+| — | [Organização do código 2](alpha-3/organizacao-do-codigo-2.md) | em andamento | `SetError` em 14 arquivos, leitura de arquivo em 8, `DrawScene` com 186 linhas; sem mudar comportamento | tarefas 1 a 10 feitas, menos o `Input.cpp` e o `DrawControlsWindow` (esperam o `entrada-base`) |
 
 ## Ordem e dependências
 
@@ -114,50 +115,31 @@ alpha 4.
 
 ## Fase 24 — GPU: pós, sombras e LOD
 
-Objetivo: baixar o custo fixo da GPU (8 ms de pós numa cena vazia) e os 47 ms de GPU da referência.
-
-- [ ] Tarefa 1: Medir numa máquina com GPU dedicada
-- [ ] Tarefa 2: Bloom em meia resolução e com menos níveis
-- [ ] Tarefa 3: Juntar tone mapping e FXAA numa passada só
-- [ ] Tarefa 4: Níveis de qualidade (Baixa, Média, Alta) nas opções do jogador
-- [ ] Tarefa 5: Cascatas de sombra ajustáveis (número e distância)
-- [ ] Tarefa 6: Profundidade de sombra em 16/24 bits
-- [ ] Tarefa 7: Cache das cascatas distantes e dos objetos estáticos
-- [ ] Tarefa 8: "Projeta sombra" e "Recebe sombra" no Mesh Renderer
-- [ ] Tarefa 9: Sombra de spot com uma face só
-- [ ] Tarefa 10: LOD por distância e geração de níveis na importação
-
-**Pronto quando:** a referência com GPU ≤ 14 ms (hoje 47) na sombra Média, e a cena vazia ≤ 5 ms.
+**Pronta (25/10/2026):** [nota da fase](alpha-3/fase-24-gpu.md). Profundidade do MSAA copiada só quando alguém lê,
+cena HDR em R11G11B10F, bloom mais barato, LOD por distância (primitivas com níveis gerados), sombras em 16/24 bits,
+filtro e número de cascatas pela qualidade, cascatas distantes reaproveitadas, spot só nas faces que o cone alcança,
+lit.frag sem leituras de mapas que não existem. Cena vazia: GPU 4,4 ms (meta ≤ 5). Referência: GPU ~19,5 ms (meta
+≤ 14, não atingida: luzes pontuais e MSAA, Fase 30), quadro 44 → 22 ms, física 8,1 → 3,8 ms por quadro.
 
 ## Fase 25 — Cena, dados e física
 
-**Em andamento:** tarefas na [nota da fase](alpha-3/fase-25-cena.md).
+**Pronta (25/10/2026):** [nota da fase](alpha-3/fase-25-cena.md). Passos fixos limitados e interpolados, física
+sincronizando só o que mudou, índices de filhos, nomes e tipos na `Scene`. Todas as cenas do bench acima de 100% da
+Unity. Falta a física da referência ≤ 3 ms por quadro, que depende do quadro mais rápido (Fase 24).
 
 ## Fase 26 — Várias threads
 
-Objetivo: usar os 4 núcleos; hoje só a física sai da thread principal (92% de um núcleo com 10 000 cubos).
-
-- [ ] Tarefa 1: Criar o sistema de tarefas (job system), dividido com a Jolt
-- [ ] Tarefa 2: Paralelizar a montagem do quadro (matrizes, recorte, lotes)
-- [ ] Tarefa 3: Paralelizar a sincronização da física e a animação
-- [ ] Tarefa 4: Estudar uma thread só para o render
-- [ ] Tarefa 5: Carregar texturas, malhas e sons em segundo plano
-- [ ] Tarefa 6: Documentar que os scripts continuam numa thread só
-- [ ] Tarefa 7: Mostrar as threads e os scripts no Tracy
-
-**Pronto quando:** em `cubos10000` e na referência, a thread principal abaixo de 50% de um núcleo e o quadro mais
-rápido; `ctest` repetido sem corrida de dados.
+**Pronta (25/10/2026):** [nota da fase](alpha-3/fase-26-threads.md). Sistema de tarefas único (`JobSystem`, dividido
+com a Jolt), montagem do quadro, sombras, animação e envio da cena em paralelo, texturas da cena decodificadas em
+paralelo, scripts com nome no Tracy. `cubos10000`: thread principal ~80% → 46–50% de um núcleo, quadro igual
+(~15 ms); referência: quadro 23,3 → 22,6 ms, thread principal 50%. Nesta máquina a GPU integrada limita o quadro;
+thread de render e componentes em blocos contínuos ficaram para depois.
 
 ## Fase 27 — Editor que escala
 
-Objetivo: editar a cena de referência (~5000 entidades) sem travar.
-
-- [ ] Tarefa 1: Desfazer por diferenças, sem comparar a cena inteira
-- [ ] Tarefa 2: Checar "não salvo" sem gravar a cena em JSON a cada 0,5 s
-- [ ] Tarefa 3: Acelerar gravar e ler a cena em JSON (hoje ~330 ms)
-- [ ] Tarefa 4: Cortar os 6 a 7 ms de CPU do ImGui
-- [ ] Tarefa 5: Lista virtual na Hierarquia com milhares de entidades
-- [ ] Tarefa 6: Corrigir o FPS por baixo dos botões de Play no viewport estreito
-
-**Pronto quando:** com a referência aberta no editor Release, nenhum quadro acima de 100 ms e o editor parado
-abaixo de 16 ms.
+**Pronta (25/10/2026):** [nota da fase](alpha-3/fase-27-editor.md). "Não salvo" pela versão do desfazer (sem gravar
+a cena em JSON a cada 0,5 s), desfazer guardando só as entidades que mudaram e comparando a cena só depois de
+entrada, JSON escrito direto no texto (mesmo arquivo), Hierarquia como lista virtual, arquivos do projeto relidos só
+quando a pasta muda. Referência no editor Release: parado, 0 quadros acima de 100 ms (antes 37 em 20 s) e ~10,5 ms
+de CPU por quadro (o quadro fica em ~30 ms pela GPU do viewport); editando pelo MCP, só o salvar passa de 100 ms
+(90–157 ms, antes ~460).

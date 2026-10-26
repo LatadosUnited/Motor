@@ -2,6 +2,7 @@
 
 #include "McpProtocol.h"
 
+#include <cstddef>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -37,7 +38,8 @@ public:
     int Port() const { return m_port; }
     std::string Url() const;
 
-    void Pump();  // thread principal: atende as mensagens que chegaram e confere as que esperam (wait)
+    // Thread principal: atende as mensagens que chegaram e confere as que esperam (wait). Devolve quantas atendeu.
+    size_t Pump();
 
 private:
     struct Job;

@@ -41,6 +41,7 @@ Máquina de referência (i5 de 4 núcleos, Intel HD 530), Release.
 |---|---|---|---|---|---|---|
 | base.txt | 3,1 | 5,4 | 4,7 | 1,8 | **337** | **314** |
 | base.txt depois da Fase 25 (listas por tipo, 21/10) | 2,0 | | | | | |
+| base.txt depois da Fase 25 (sincronizar só o que mudou, 22/10) | 1,4 (1,1 a 1,4 entre rodadas) | | | | | |
 
 Player 1280×720, vsync desligado, 900 quadros com `--perf`, medianas depois de 4 s:
 
@@ -51,7 +52,8 @@ Player 1280×720, vsync desligado, 900 quadros com `--perf`, medianas depois de 
 Leitura: a GPU é o limite (56 ms; as 1000 esferas de 2300 triângulos pesam na Cena HDR: LOD e instancing, Fases 24 e
 27), as sombras custam 15 ms (Fase 23) e a CPU do render gasta 33 ms montando 7927 draws (Fase 24). A física mede 19 ms
 por quadro porque o quadro lento pede 3 a 4 passos fixos (no `test_desempenho`, com 1 passo, o quadro inteiro do jogo
-custa 3,1 ms). No editor, gravar a cena em JSON leva 337 ms, e a checagem de "não salvo" faz isso a cada 0,5 s (Fase 26).
+custa 3,1 ms). No editor, gravar a cena em JSON leva 337 ms, e a checagem de "não salvo" faz isso a cada 0,5 s (Fase 27:
+agora 31 ms, e o "não salvo" não usa mais o JSON).
 
 ## Cenas
 
@@ -84,6 +86,77 @@ powershell -File bench/comparar.ps1 -Projeto "C:/temp/bench/Motor Bench"
 ```
 
 ## Resultados
+
+### 25/10/2026 — Fase 27: editor com a cena de referência (só o Motor)
+
+Editor Release com `--perf` e `--segundos` (novos nesta fase), `--no-settings`, o projeto do bench com a referência
+como cena inicial; `main` (bd7f696) contra o branch `fase-27-editor`, alternados. Parado = 25 s sem mexer, sem MCP;
+editando = mover, renomear, duplicar, desfazer, refazer e salvar pelo MCP (detalhes na nota da Fase 27).
+
+```bash
+build-release/bin/MotorEditor.exe "C:/temp/bench/Motor Bench" --no-settings --perf editor.csv --segundos 25
+```
+
+| Medida | `main` | Fase 27 |
+|---|---|---|
+| Parado: quadros acima de 100 ms em 20 s | 37–38 (até 830 ms) | 0 (máximo 34 ms) |
+| Parado: CPU por quadro (Update + Render + ImGui) | ~21 ms | ~10,5 ms |
+| Parado: quadro mediano | 30–31 ms | 30–31 ms (GPU 27–28 ms) |
+| Com o MCP ligado: quadro mediano | 305 ms | 30 ms |
+| Salvar | ~460 ms | 90–157 ms |
+| `test_desempenho` `cena_json` / `cena_ler` | 255 / 232 ms | 31 / 179 ms (base regravada) |
+
+### 25/10/2026 — Fase 26: várias threads (só o Motor)
+
+Player Release, `main` (0a5dfdc, com a Fase 24) contra o branch `fase-26-threads`, alternados, duas rodadas; CPU por
+thread entre os segundos 6 e 12, em % de um núcleo (detalhes na nota da Fase 26).
+
+| Cena | Build | Quadro | Thread principal | Outras threads |
+|---|---|---|---|---|
+| `cubos10000` | `main` | 14,9–15,3 ms | 79–80% | — |
+| `cubos10000` | Fase 26 | 15,0–15,1 ms | 46–50% | 21–23% cada |
+| referência | `main` | 23,3–23,4 ms | 53–58% | 5–8% cada (Jolt) |
+| referência | Fase 26 | 22,6 ms | 50% | 14–16% cada |
+
+Carga de uma cena com 16 texturas PNG de 2048×2048: 1,46–1,60 s → 1,18–1,20 s (decodificar 0,77 → 0,39 s; criar na
+GPU ~0,8 s, serial).
+
+### 25/10/2026 — Fase 24: GPU, pós, sombras e LOD
+
+Máquina de referência parada, Player Release do branch `fase-24-gpu` (0ce3a8a) contra o player da Unity de 18/10, uma
+rodada do `comparar.ps1` (detalhes de cada mudança na nota da Fase 24).
+
+| Cena | Motor | Unity | Motor em % da Unity | Fase 25 |
+|---|---|---|---|---|
+| vazia | 7,2 ms | 14,5 ms | **201%** | 105% |
+| cubos1000 | 9,5 ms | 17,2 ms | 182% | 116% |
+| cubos1000sombra | 10,8 ms | 22,7 ms | **211%** | 128% |
+| cubos10000 | 12,7 ms | 37,0 ms | **290%** | 197% |
+| fisica1000 | 12,3 ms | 19,3 ms | 157% | 104% |
+| scripts1000 | 9,4 ms | 17,3 ms | 185% | 122% |
+| spawn200 | 8,8 ms | 15,7 ms | 178% | 112% |
+
+Referência (sombra Média): quadro 44 → **22,1 ms**, GPU 47 → 19,5 ms (Cena HDR 11,0, sombras 2,9, pós 3,9), física
+8,1 → 3,8 ms por quadro (1 passo fixo em vez de 3). `test_desempenho` sem mudança (a fase não mexe no que ele mede);
+base mantida.
+
+### 25/10/2026 — Fase 25: cena, dados e física
+
+Máquina de referência parada, Player Release do `main` (4eea721) contra o player da Unity de 18/10, uma rodada do
+`comparar.ps1` (detalhes e a rodada com 20 iterações do solucionador na nota da Fase 25).
+
+| Cena | Motor | Unity | Motor em % da Unity | 20/10 |
+|---|---|---|---|---|
+| vazia | 13,2 ms | 13,8 ms | 105% | 100 a 102% |
+| cubos1000 | 14,4 ms | 16,7 ms | 116% | 107 a 112% |
+| cubos1000sombra | 16,8 ms | 21,4 ms | 128% | 110 a 112% |
+| cubos10000 | 18,6 ms | 36,7 ms | **197%** | 98 a 100% |
+| fisica1000 | 16,7 ms | 17,4 ms | **104%** | 84 a 85% |
+| scripts1000 | 13,7 ms | 16,8 ms | 122% | 112% |
+| spawn200 | 13,0 ms | 14,6 ms | 112% | 101% |
+
+Base do `test_desempenho` regravada nesta sessão (`jogo_passo` 0,77 ms; `cena_filhos`, `cena_nomes` e
+`cena_estrutura` novas).
 
 ### 21/10/2026 — Fase 23: renderer em lote (só o Motor)
 

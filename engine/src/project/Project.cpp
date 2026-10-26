@@ -1,6 +1,7 @@
 #include "motor/project/Project.h"
 
 #include "motor/common/FileWrite.h"
+#include "motor/common/Text.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/core/Version.h"
@@ -22,10 +23,6 @@ constexpr const char* kFormatName = "motor-project";
 constexpr int kFormatVersion = 4;  // 2: engineVersion (Fase 14). 3: camadas de colisão em "physics" (Fase 18).
                                    // 4: opções padrão do jogador em "player", identidade em "game" e mapa de
                                    //    ações em "input" (Fase 21)
-
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
 
 // "physics": {"layers": [{"index": 1, "name": "Jogador", "collidesWith": [0, 1, 3]}, ...]}. Só vão para o
 // arquivo as camadas com nome ou que não se chocam com alguma outra; as demais ficam no padrão.

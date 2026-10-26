@@ -1,4 +1,6 @@
 #include "motor/scene/Scene.h"
+
+#include "motor/core/FrameStats.h"
 #include "motor/scene/EntityRef.h"
 
 #include "motor/renderer/Camera.h"
@@ -13,6 +15,7 @@
 #include <glm/matrix.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <unordered_set>
@@ -21,7 +24,34 @@ namespace motor {
 
 namespace {
 uint64_t g_structureVersion = 0;  // SceneStructureVersion(); a cena só é mexida na thread principal
-uint64_t g_worldStamp = 0;        // EntityCache::stamp
+uint64_t g_indexVersion = 0;      // sobe só no MarkSceneStructureChanged: os índices das cenas são refeitos
+// EntityCache::stamp. Atômico: o SubmitTo atualiza o cache das entidades na raiz em várias threads (Fase 26).
+std::atomic<uint64_t> g_worldStamp{0};
+
+size_t NameHash(std::string_view name) {
+    return std::hash<std::string_view>{}(name);
+}
+
+// Listas de ids em ordem crescente (a ordem da cena).
+template <class Map, class Key>
+void InsertSorted(Map& map, const Key& key, EntityId id) {
+    std::vector<EntityId>& ids = map[key];
+    const auto it = std::lower_bound(ids.begin(), ids.end(), id);
+    if (it == ids.end() || *it != id) ids.insert(it, id);
+}
+
+// `dropEmpty`: tira a chave que ficou sem ids (filhos e nomes: ids não se repetem, e as chaves iriam se acumulando).
+template <class Map, class Key>
+void EraseSorted(Map& map, const Key& key, EntityId id, bool dropEmpty) {
+    const auto found = map.find(key);
+    if (found == map.end()) return;
+    std::vector<EntityId>& ids = found->second;
+    const auto it = std::lower_bound(ids.begin(), ids.end(), id);
+    if (it != ids.end() && *it == id) ids.erase(it);
+    if (dropEmpty && ids.empty()) map.erase(found);
+}
+
+} // namespace
 
 bool SameEntity(const Entity& a, const Entity& b) {
     if (a.id != b.id || a.name != b.name || a.active != b.active || a.parent != b.parent) return false;
@@ -34,7 +64,6 @@ bool SameEntity(const Entity& a, const Entity& b) {
     }
     return true;
 }
-} // namespace
 
 uint64_t SceneStructureVersion() {
     return g_structureVersion;
@@ -42,6 +71,7 @@ uint64_t SceneStructureVersion() {
 
 void MarkSceneStructureChanged() {
     ++g_structureVersion;
+    ++g_indexVersion;
 }
 
 // --- Entity -----------------------------------------------------------------------
@@ -60,11 +90,14 @@ const void* Entity::Get(const ComponentType& type) const {
 void* Entity::Add(const ComponentType& type) {
     if (void* existing = Get(type)) return existing;
     ++g_structureVersion;
+    if (cache.owner) cache.owner->Record({Scene::IndexChange::AddType, id, &type});
     return components.emplace_back(type).Data();
 }
 
 void Entity::Remove(const ComponentType& type) {
-    if (std::erase_if(components, [&](const ComponentPtr& c) { return &c.Type() == &type; })) ++g_structureVersion;
+    if (!std::erase_if(components, [&](const ComponentPtr& c) { return &c.Type() == &type; })) return;
+    ++g_structureVersion;
+    if (cache.owner) cache.owner->Record({Scene::IndexChange::RemoveType, id, &type});
 }
 
 // --- Scene ------------------------------------------------------------------------
@@ -74,12 +107,54 @@ Scene::Scene(const Scene& other) : environment(other.environment), m_nextId(othe
     m_entities.reserve(other.m_entities.size());
     for (const auto& e : other.m_entities) {
         m_entities.push_back(std::make_unique<Entity>(*e));
+        m_entities.back()->cache.owner = this;
         m_byId[e->id] = m_entities.back().get();
     }
 }
 
+Scene Scene::FromEntities(const std::vector<const Entity*>& entities, EntityId nextId, const Environment& environment) {
+    ++g_structureVersion;
+    Scene scene;
+    scene.environment = environment;
+    scene.m_entities.reserve(entities.size());
+    for (const Entity* e : entities) {
+        scene.m_entities.push_back(std::make_unique<Entity>(*e));
+        scene.m_entities.back()->cache.owner = &scene;
+        scene.m_byId[e->id] = scene.m_entities.back().get();
+        scene.m_nextId = std::max(scene.m_nextId, e->id + 1);
+    }
+    scene.m_nextId = std::max(scene.m_nextId, nextId);
+    return scene;  // o movimento aponta as entidades para a cena de quem recebe
+}
+
 Scene& Scene::operator=(const Scene& other) {
     if (this != &other) *this = Scene(other);  // copia e move
+    return *this;
+}
+
+Scene::Scene(Scene&& other) noexcept
+    : environment(std::move(other.environment)), m_entities(std::move(other.m_entities)),
+      m_byId(std::move(other.m_byId)), m_nextId(other.m_nextId), m_byType(std::move(other.m_byType)),
+      m_children(std::move(other.m_children)), m_byName(std::move(other.m_byName)),
+      m_pending(std::move(other.m_pending)), m_indexVersion(other.m_indexVersion) {
+    for (const auto& e : m_entities) e->cache.owner = this;
+    other.m_indexVersion = UINT64_MAX;
+}
+
+Scene& Scene::operator=(Scene&& other) noexcept {
+    if (this == &other) return *this;
+    environment = std::move(other.environment);
+    m_entities = std::move(other.m_entities);
+    m_byId = std::move(other.m_byId);
+    m_nextId = other.m_nextId;
+    m_byType = std::move(other.m_byType);
+    m_children = std::move(other.m_children);
+    m_byName = std::move(other.m_byName);
+    m_pending = std::move(other.m_pending);
+    m_indexVersion = other.m_indexVersion;
+    m_meshList = MeshList();
+    for (const auto& e : m_entities) e->cache.owner = this;
+    other.m_indexVersion = UINT64_MAX;
     return *this;
 }
 
@@ -98,10 +173,12 @@ Entity& Scene::CreateEntity(std::string name, EntityId parent) {
     entity->id = m_nextId++;
     entity->name = std::move(name);
     entity->parent = Find(parent) ? parent : kNullEntity;
+    entity->cache.owner = this;
 
     Entity& ref = *entity;
     m_byId[ref.id] = &ref;
     m_entities.push_back(std::move(entity));
+    RecordEntity(ref, true);
     return ref;
 }
 
@@ -114,6 +191,9 @@ void Scene::DestroyEntities(const std::vector<EntityId>& roots) {
     if (doomed.empty()) return;
     ++g_structureVersion;
 
+    if (Indexed()) {
+        for (EntityId d : doomed) RecordEntity(*Find(d), false);
+    }
     for (EntityId d : doomed) m_byId.erase(d);
     std::sort(doomed.begin(), doomed.end());
     std::erase_if(m_entities, [&](const auto& e) { return std::binary_search(doomed.begin(), doomed.end(), e->id); });
@@ -178,7 +258,10 @@ EntityId Scene::Duplicate(EntityId id) {
     const Entity copy = *source;  // cópia: CreateEntity pode realocar o vetor
     std::vector<std::pair<EntityId, EntityId>> copies;
     const EntityId clone = CloneRecursive(copy, copy.parent, copies);
-    Find(clone)->name = copy.name + " (cópia)";
+    Entity& cloned = *Find(clone);
+    Record({IndexChange::RemoveName, clone, nullptr, kNullEntity, NameHash(cloned.name)});
+    cloned.name = copy.name + " (cópia)";
+    Record({IndexChange::AddName, clone, nullptr, kNullEntity, NameHash(cloned.name)});
     // Referências para dentro da sub-árvore copiada apontam para as cópias (ex.: o script do inimigo e a arma filha).
     for (const auto& [original, duplicate] : copies) {
         RemapEntityRefs(*Find(duplicate), [&](EntityId id) {
@@ -200,6 +283,7 @@ EntityId Scene::CloneRecursive(const Entity& source, EntityId newParent,
     clone.transform = source.transform;
     clone.components = source.components;
     ++g_structureVersion;
+    for (const ComponentPtr& c : clone.components) Record({IndexChange::AddType, clone.id, &c.Type()});
     const EntityId cloneId = clone.id;
     copies.emplace_back(source.id, cloneId);
 
@@ -222,23 +306,69 @@ const Entity* Scene::Find(EntityId id) const {
     return it != m_byId.end() ? it->second : nullptr;
 }
 
+bool Scene::Indexed() const {
+    return m_indexVersion == g_indexVersion;
+}
+
+void Scene::RecordEntity(const Entity& e, bool added) {
+    if (!Indexed()) return;
+    using C = IndexChange;
+    m_pending.push_back({added ? C::AddChild : C::RemoveChild, e.id, nullptr, e.parent});
+    m_pending.push_back({added ? C::AddName : C::RemoveName, e.id, nullptr, kNullEntity, NameHash(e.name)});
+    for (const ComponentPtr& c : e.components) m_pending.push_back({added ? C::AddType : C::RemoveType, e.id, &c.Type()});
+}
+
+void Scene::UpdateIndex() const {
+    if (!Indexed()) {
+        // Monta tudo numa passada. Os tipos guardam a memória das listas; filhos e nomes começam do zero.
+        for (auto& [t, ids] : m_byType) ids.clear();
+        m_children.clear();
+        m_byName.clear();
+        for (const auto& e : m_entities) {
+            for (const ComponentPtr& c : e->components) m_byType[&c.Type()].push_back(e->id);
+            m_children[e->parent].push_back(e->id);
+            m_byName[NameHash(e->name)].push_back(e->id);
+        }
+        m_pending.clear();
+        m_indexVersion = g_indexVersion;
+        return;
+    }
+    // Uma mudança por vez, na ordem em que aconteceram (o mesmo id pode entrar e sair entre duas consultas).
+    for (const IndexChange& c : m_pending) {
+        switch (c.kind) {
+        case IndexChange::AddType: InsertSorted(m_byType, c.type, c.id); break;
+        case IndexChange::RemoveType: EraseSorted(m_byType, c.type, c.id, false); break;
+        case IndexChange::AddChild: InsertSorted(m_children, c.parent, c.id); break;
+        case IndexChange::RemoveChild: EraseSorted(m_children, c.parent, c.id, true); break;
+        case IndexChange::AddName: InsertSorted(m_byName, c.nameHash, c.id); break;
+        case IndexChange::RemoveName: EraseSorted(m_byName, c.nameHash, c.id, true); break;
+        }
+    }
+    m_pending.clear();
+}
+
 const std::vector<EntityId>& Scene::EntitiesWith(const ComponentType* type) const {
     static const std::vector<EntityId> kNone;
     if (!type) return kNone;  // tipo não registrado: ninguém tem
-    if (m_byTypeVersion != g_structureVersion) {
-        for (auto& [t, ids] : m_byType) ids.clear();  // mantém a memória das listas
-        for (const auto& e : m_entities) {
-            for (const ComponentPtr& c : e->components) m_byType[&c.Type()].push_back(e->id);
-        }
-        m_byTypeVersion = g_structureVersion;
-    }
+    UpdateIndex();
     auto it = m_byType.find(type);
     return it != m_byType.end() ? it->second : kNone;
 }
 
 Entity* Scene::FindByName(std::string_view name) {
+    UpdateIndex();
+    const size_t hash = NameHash(name);
+    // Os ids guardados podem ter sido renomeados (ou ter o mesmo hash por acaso): confere o nome de cada um.
+    if (auto it = m_byName.find(hash); it != m_byName.end()) {
+        for (EntityId id : it->second) {
+            Entity* e = Find(id);
+            if (e && e->name == name) return e;
+        }
+    }
     for (const auto& e : m_entities) {
-        if (e->name == name) return e.get();
+        if (e->name != name) continue;
+        InsertSorted(m_byName, hash, e->id);  // renomeada depois do índice: a próxima busca a acha direto
+        return e.get();
     }
     return nullptr;
 }
@@ -281,11 +411,9 @@ bool Scene::ApplyCamera(EntityId id, Camera& camera) const {
 }
 
 std::vector<EntityId> Scene::Children(EntityId parent) const {
-    std::vector<EntityId> result;
-    for (const auto& e : m_entities) {
-        if (e->parent == parent) result.push_back(e->id);
-    }
-    return result;
+    UpdateIndex();
+    auto it = m_children.find(parent);
+    return it != m_children.end() ? it->second : std::vector<EntityId>{};
 }
 
 bool Scene::IsDescendantOf(EntityId id, EntityId ancestor) const {
@@ -331,6 +459,8 @@ bool Scene::SetParent(EntityId id, EntityId newParent, bool keepWorldTransform) 
     if (e->parent == newParent) return true;
 
     const glm::mat4 world = WorldMatrix(id);
+    Record({IndexChange::RemoveChild, id, nullptr, e->parent});
+    Record({IndexChange::AddChild, id, nullptr, newParent});
     e->parent = newParent;
     if (keepWorldTransform) SetWorldMatrix(id, world);
     return true;
@@ -373,7 +503,7 @@ const glm::mat4& Scene::CachedWorld(const Entity& e) const {
     c.world = parentWorld ? *parentWorld * t.Matrix() : t.Matrix();
     c.local = t;
     c.parentStamp = parentStamp;
-    c.stamp = ++g_worldStamp;
+    c.stamp = g_worldStamp.fetch_add(1, std::memory_order_relaxed) + 1;
     c.valid = true;
     return c.world;
 }
@@ -396,16 +526,50 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
 }
 
 void Scene::SubmitTo(Renderer& renderer) const {
+    MOTOR_PROFILE_STAT("Render: enviar a cena");
+    // Entidades na raiz da hierarquia vão em paralelo (Fase 26): a matriz de mundo delas só depende do próprio
+    // transform, e cada uma só escreve no próprio cache. Filhos (o cache confere e pode recalcular o do pai, que
+    // outra thread estaria lendo) e malhas com pele (procuram o Animator acima) ficam para depois, nesta thread.
+    // O tipo e a lista saem aqui antes: as duas consultas guardam cache na primeira chamada.
+    const ComponentType* meshType = ComponentRegistry::TypeOf<MeshRenderer>();
+    const std::vector<EntityId>& ids = EntitiesWith<MeshRenderer>();
+    if (!meshType || ids.empty()) return;
+    MeshList& list = m_meshList;
+    if (list.version != SceneStructureVersion() || list.items.size() != ids.size()) {
+        list.items.resize(ids.size());
+        for (size_t i = 0; i < ids.size(); ++i) {
+            const Entity* e = Find(ids[i]);
+            list.items[i] = {e, e ? static_cast<const MeshRenderer*>(e->Get(*meshType)) : nullptr};
+        }
+        list.version = SceneStructureVersion();
+    }
+    std::vector<uint8_t> later(ids.size(), 0);
+    renderer.SubmitMany(ids.size(), [&](size_t i, Renderer::SubmitRequest& request) {
+        const auto [e, mr] = list.items[i];
+        if (!mr || !mr->mesh) return false;
+        if (e->parent != kNullEntity || mr->mesh->IsSkinned()) {
+            later[i] = 1;
+            return false;
+        }
+        if (!e->active) return false;
+        request.mesh = mr->mesh.get();
+        request.material = &mr->Resolved();
+        request.model = CachedWorld(*e);
+        request.shadows = mr->shadows;
+        return true;
+    });
+
     std::vector<glm::mat4> joints;
-    for (const auto& e : m_entities) {
-        const MeshRenderer* mr = e->Get<MeshRenderer>();
-        if (!mr || !mr->mesh || !IsActiveInHierarchy(*e)) continue;
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if (!later[i]) continue;
+        const auto [e, mr] = list.items[i];
+        if (!IsActiveInHierarchy(*e)) continue;
         if (mr->mesh->IsSkinned()) {
             // Pose do Animator mais próximo (a própria entidade ou acima) que anima o esqueleto desta pele;
             // sem ele, a pose de repouso. As juntas ficam no espaço da entidade da malha.
             const Skin& skin = *mr->mesh->GetSkin();
             std::span<const glm::mat4> globals = skin.skeleton->restGlobal;
-            for (const Entity* a = e.get(); a; a = Find(a->parent)) {
+            for (const Entity* a = e; a; a = Find(a->parent)) {
                 const Animator* animator = a->Get<Animator>();
                 if (animator && animator->PoseSkeleton() == skin.skeleton.get() && !animator->GlobalPose().empty()) {
                     globals = animator->GlobalPose();

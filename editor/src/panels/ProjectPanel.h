@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FolderWatcher.h"
+
 #include <motor/assets/AssetLoaders.h>
 
 #include <cstdint>
@@ -133,6 +135,7 @@ private:
     bool m_needsRefresh = true;
     bool m_revealCurrent = true;  // abre a árvore até a pasta atual no próximo frame
     double m_lastScanTime = 0.0;
+    FolderWatcher m_watcher;  // a pasta Assets: relida só quando algo mudou nela
     bool m_searchTruncated = false;
 
     std::vector<std::filesystem::path> m_selection;

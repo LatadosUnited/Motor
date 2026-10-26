@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -69,6 +70,10 @@ public:
     std::shared_ptr<Texture2D> GetTexture(std::string_view key, std::string* error = nullptr);
     std::shared_ptr<Mesh> GetMeshByGuid(std::string_view guid, std::string* error = nullptr);
     std::shared_ptr<Texture2D> GetTextureByGuid(std::string_view guid, std::string* error = nullptr);
+    // Carrega de uma vez as texturas destes GUIDs e as dos materiais (.mmat) entre eles, lendo e decodificando os
+    // arquivos em paralelo (JobSystem); só a criação na GPU fica nesta thread. GUIDs de outros tipos, já carregados
+    // ou que não existem são ignorados (quem pedir depois recebe o erro de sempre). Devolve quantas carregou.
+    size_t PreloadTextures(std::span<const std::string> guids);
 
     // Materiais (.mmat). Não há materiais embutidos: `key` é sempre um caminho relativo ao projeto.
     std::shared_ptr<Material> GetMaterial(std::string_view key, std::string* error = nullptr);

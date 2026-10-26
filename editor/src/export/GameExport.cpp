@@ -5,6 +5,8 @@
 #include <motor/assets/AssetLibrary.h>
 #include <motor/assets/AssetLoaders.h>
 #include <motor/assets/Model.h>
+#include <motor/common/FileRead.h>
+#include <motor/common/Text.h>
 #include <motor/core/EngineAssets.h>
 #include <motor/core/Log.h>
 #include <motor/core/Paths.h>
@@ -26,24 +28,13 @@ namespace editor::GameExport {
 namespace fs = std::filesystem;
 using json = nlohmann::ordered_json;
 using motor::IsInside;
+using motor::LowerExtension;
 using motor::PathFromUtf8;
+using motor::ReadTextFile;
 using motor::ToGenericUtf8;
 using motor::ToUtf8;
 
 namespace {
-
-std::string LowerExtension(const fs::path& path) {
-    std::string ext = ToUtf8(path.extension());
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return ext;
-}
-
-std::string ReadFile(const fs::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
-}
 
 // JSON de um .glb: o primeiro bloco depois do cabeçalho de 12 bytes. Vazio se o arquivo não for um glb.
 std::string GlbJsonChunk(const std::string& bytes) {
@@ -91,11 +82,12 @@ private:
         try {
             if (ext == motor::kSceneFileExtension || ext == motor::kPrefabFileExtension ||
                 ext == motor::kMaterialFileExtension) {
-                WalkRefs(json::parse(ReadFile(file)), rel);
+                WalkRefs(json::parse(ReadTextFile(file).value_or("")), rel);
             } else if (ext == ".gltf") {
-                GltfUris(json::parse(ReadFile(file)), file);
+                GltfUris(json::parse(ReadTextFile(file).value_or("")), file);
             } else if (ext == ".glb") {
-                if (const std::string chunk = GlbJsonChunk(ReadFile(file)); !chunk.empty()) GltfUris(json::parse(chunk), file);
+                const std::string chunk = GlbJsonChunk(ReadTextFile(file).value_or(""));
+                if (!chunk.empty()) GltfUris(json::parse(chunk), file);
             } else if (ext == ".fbx") {
                 FbxTextures(file);
             }
@@ -211,7 +203,7 @@ bool CopyTree(const fs::path& from, const fs::path& to, Result& result) {
 // Entradas de primeiro nível criadas pela exportação anterior (lidas da marca).
 std::vector<std::string> PreviousEntries(const fs::path& marker) {
     try {
-        const json root = json::parse(ReadFile(marker));
+        const json root = json::parse(ReadTextFile(marker).value_or(""));
         if (root.value("format", std::string()) != "motor-export") return {};
         return root.value("entries", std::vector<std::string>{});
     } catch (const json::exception&) {
@@ -275,7 +267,7 @@ Collection CollectAssets(const motor::Project& project, const motor::AssetDataba
     for (auto it = fs::recursive_directory_iterator(scripts, ec); !ec && it != fs::recursive_directory_iterator();
          it.increment(ec)) {
         if (!it->is_regular_file(ec)) continue;
-        const std::string source = ReadFile(it->path());
+        const std::string source = ReadTextFile(it->path()).value_or("");
         for (auto m = std::sregex_iterator(source.begin(), source.end(), literal); m != std::sregex_iterator(); ++m) {
             collector.Add(project.ToAbsolute((*m)[1].str()));
         }
@@ -288,52 +280,130 @@ fs::path DefaultOutputDir(const motor::Project& project) {
     return project.RootDir() / "Exportado";
 }
 
+namespace {
+
+// Conferências antes de mexer em qualquer arquivo. `out` recebe a pasta de saída absoluta.
+bool CheckOptions(const motor::Project& project, const Options& options, const std::string& startup, fs::path& out,
+                  Result& result) {
+    std::error_code ec;
+    if (!fs::is_regular_file(project.ToAbsolute(startup), ec)) {
+        SetError(result, std::format("A cena inicial '{}' não existe.", startup));
+        return false;
+    }
+    if (options.outputDir.empty()) {
+        SetError(result, "Escolha a pasta de saída.");
+        return false;
+    }
+    out = fs::absolute(options.outputDir, ec).lexically_normal();
+    if (IsInside(out, project.AssetsDir())) {
+        SetError(result, "A pasta de saída não pode ficar dentro de Assets/ (ela seria lida como assets do projeto).");
+        return false;
+    }
+    if (IsInside(project.RootDir(), out)) {
+        SetError(result, "A pasta de saída não pode conter o projeto.");
+        return false;
+    }
+    if (!fs::is_regular_file(options.playerExe, ec)) {
+        SetError(result, std::format("Player não encontrado: '{}'. Compile o alvo Player.", ToUtf8(options.playerExe)));
+        return false;
+    }
+    for (const char* dll : kRuntimeDlls) {
+        if (!fs::is_regular_file(options.runtimeDir / dll, ec)) {
+            SetError(result, std::format("'{}' não encontrada em '{}'.", dll, ToUtf8(options.runtimeDir)));
+            return false;
+        }
+    }
+    if (!fs::is_directory(options.engineAssetsDir / "shaders", ec)) {
+        SetError(result, std::format("Shaders da engine não encontrados em '{}'.", ToUtf8(options.engineAssetsDir)));
+        return false;
+    }
+    if (!options.scriptsDll.empty() && !fs::is_regular_file(options.scriptsDll, ec)) {
+        SetError(result, "A DLL de scripts não foi compilada. Compile os scripts antes de exportar.");
+        return false;
+    }
+    return true;
+}
+
+// Player, DLLs, shaders e fontes da engine, os assets usados (com os .meta) e a DLL de scripts.
+bool CopyGameFiles(const motor::Project& project, const Options& options, const Collection& assets,
+                   const std::vector<ExeResources::IconImage>& icon, const fs::path& out, const std::string& exeName,
+                   Result& result) {
+    std::error_code ec;
+    const fs::path data = out / kDataFolder;
+    if (!CopyFile(options.playerExe, out / PathFromUtf8(exeName), result)) return false;
+    if (options.exeResources) {
+        std::string resourceError;
+        const ExeResources::VersionInfo version{project.Name(), project.Identity().version, exeName};
+        if (!ExeResources::Apply(out / PathFromUtf8(exeName), icon, version, resourceError)) {
+            result.warnings.push_back("o jogo foi exportado sem o ícone e a versão: " + resourceError);
+        }
+    }
+    for (const char* dll : kRuntimeDlls) {
+        if (!CopyFile(options.runtimeDir / dll, out / dll, result)) return false;
+    }
+    for (const char* folder : {"shaders", "fonts"}) {
+        if (!CopyTree(options.engineAssetsDir / folder, out / motor::kEngineAssetsFolder / folder, result)) return false;
+    }
+    for (const std::string& rel : assets.files) {
+        const fs::path from = project.ToAbsolute(rel);
+        if (!CopyFile(from, data / PathFromUtf8(rel), result)) return false;
+        const fs::path meta = motor::AssetDatabase::MetaPathFor(from);
+        if (fs::is_regular_file(meta, ec) &&
+            !CopyFile(meta, data / PathFromUtf8(rel).parent_path() / meta.filename(), result)) {
+            return false;
+        }
+    }
+    if (!options.scriptsDll.empty() && !CopyFile(options.scriptsDll, data / kScriptsDllName, result)) return false;
+    return true;
+}
+
+// Projeto do jogo: o mesmo .mproject, com a cena inicial escolhida.
+bool WriteGameProject(const motor::Project& project, const fs::path& data, const std::string& startup,
+                      Result& result) {
+    if (!CopyFile(project.ProjectFile(), data / project.ProjectFile().filename(), result)) return false;
+    std::string error;
+    auto exported = motor::Project::Open(data, &error);
+    if (!exported) {
+        SetError(result, error);
+        return false;
+    }
+    exported->SetStartupScene(exported->ToAbsolute(startup));
+    if (!exported->Save(&error)) {
+        SetError(result, error);
+        return false;
+    }
+    return true;
+}
+
+// Marca: o que esta exportação criou (para a próxima limpar só isso).
+void WriteMarker(const motor::Project& project, const fs::path& out, const std::string& exeName,
+                 const std::string& startup) {
+    json entries = json::array({exeName, kDataFolder, motor::kEngineAssetsFolder});
+    for (const char* dll : kRuntimeDlls) entries.push_back(dll);
+    json marker;
+    marker["format"] = "motor-export";
+    marker["version"] = 1;
+    marker["game"] = project.Name();
+    marker["gameVersion"] = project.Identity().version;
+    marker["startupScene"] = startup;
+    marker["entries"] = std::move(entries);
+    std::ofstream(out / kMarkerFile, std::ios::binary) << marker.dump(2, ' ', false, json::error_handler_t::replace) << '\n';
+}
+
+} // namespace
+
 Result Export(const motor::Project& project, const motor::AssetDatabase& db, const Options& options) {
     Result result;
-    std::error_code ec;
 
-    // --- Conferências antes de mexer em qualquer arquivo ---
+    // --- Conferências (CheckOptions) ---
     const std::string startup = !options.startupScene.empty() ? options.startupScene
                                                               : project.ToRelative(project.StartupScene());
     if (startup.empty()) {
         SetError(result, "Escolha a cena inicial do jogo.");
         return result;
     }
-    if (!fs::is_regular_file(project.ToAbsolute(startup), ec)) {
-        SetError(result, std::format("A cena inicial '{}' não existe.", startup));
-        return result;
-    }
-    if (options.outputDir.empty()) {
-        SetError(result, "Escolha a pasta de saída.");
-        return result;
-    }
-    const fs::path out = fs::absolute(options.outputDir, ec).lexically_normal();
-    if (IsInside(out, project.AssetsDir())) {
-        SetError(result, "A pasta de saída não pode ficar dentro de Assets/ (ela seria lida como assets do projeto).");
-        return result;
-    }
-    if (IsInside(project.RootDir(), out)) {
-        SetError(result, "A pasta de saída não pode conter o projeto.");
-        return result;
-    }
-    if (!fs::is_regular_file(options.playerExe, ec)) {
-        SetError(result, std::format("Player não encontrado: '{}'. Compile o alvo Player.", ToUtf8(options.playerExe)));
-        return result;
-    }
-    for (const char* dll : kRuntimeDlls) {
-        if (!fs::is_regular_file(options.runtimeDir / dll, ec)) {
-            SetError(result, std::format("'{}' não encontrada em '{}'.", dll, ToUtf8(options.runtimeDir)));
-            return result;
-        }
-    }
-    if (!fs::is_directory(options.engineAssetsDir / "shaders", ec)) {
-        SetError(result, std::format("Shaders da engine não encontrados em '{}'.", ToUtf8(options.engineAssetsDir)));
-        return result;
-    }
-    if (!options.scriptsDll.empty() && !fs::is_regular_file(options.scriptsDll, ec)) {
-        SetError(result, "A DLL de scripts não foi compilada. Compile os scripts antes de exportar.");
-        return result;
-    }
+    fs::path out;
+    if (!CheckOptions(project, options, startup, out, result)) return result;
 
     // Ícone do jogo: lido antes de mexer na pasta, para um arquivo errado não deixar a exportação pela metade.
     std::vector<ExeResources::IconImage> icon;
@@ -350,58 +420,10 @@ Result Export(const motor::Project& project, const motor::AssetDatabase& db, con
     if (!PrepareOutput(out, result)) return result;
 
     // --- Cópia ---
-    const fs::path data = out / kDataFolder;
     const std::string exeName = project.ExecutableName() + ".exe";
-    if (!CopyFile(options.playerExe, out / PathFromUtf8(exeName), result)) return result;
-    if (options.exeResources) {
-        std::string resourceError;
-        const ExeResources::VersionInfo version{project.Name(), project.Identity().version, exeName};
-        if (!ExeResources::Apply(out / PathFromUtf8(exeName), icon, version, resourceError)) {
-            result.warnings.push_back("o jogo foi exportado sem o ícone e a versão: " + resourceError);
-        }
-    }
-    for (const char* dll : kRuntimeDlls) {
-        if (!CopyFile(options.runtimeDir / dll, out / dll, result)) return result;
-    }
-    for (const char* folder : {"shaders", "fonts"}) {
-        if (!CopyTree(options.engineAssetsDir / folder, out / motor::kEngineAssetsFolder / folder, result)) return result;
-    }
-    for (const std::string& rel : assets.files) {
-        const fs::path from = project.ToAbsolute(rel);
-        if (!CopyFile(from, data / PathFromUtf8(rel), result)) return result;
-        const fs::path meta = motor::AssetDatabase::MetaPathFor(from);
-        if (fs::is_regular_file(meta, ec) &&
-            !CopyFile(meta, data / PathFromUtf8(rel).parent_path() / meta.filename(), result)) {
-            return result;
-        }
-    }
-    if (!options.scriptsDll.empty() && !CopyFile(options.scriptsDll, data / kScriptsDllName, result)) return result;
-
-    // Projeto do jogo: o mesmo .mproject, com a cena inicial escolhida.
-    if (!CopyFile(project.ProjectFile(), data / project.ProjectFile().filename(), result)) return result;
-    std::string error;
-    auto exported = motor::Project::Open(data, &error);
-    if (!exported) {
-        SetError(result, error);
-        return result;
-    }
-    exported->SetStartupScene(exported->ToAbsolute(startup));
-    if (!exported->Save(&error)) {
-        SetError(result, error);
-        return result;
-    }
-
-    // Marca: o que esta exportação criou (para a próxima limpar só isso).
-    json entries = json::array({exeName, kDataFolder, motor::kEngineAssetsFolder});
-    for (const char* dll : kRuntimeDlls) entries.push_back(dll);
-    json marker;
-    marker["format"] = "motor-export";
-    marker["version"] = 1;
-    marker["game"] = project.Name();
-    marker["gameVersion"] = project.Identity().version;
-    marker["startupScene"] = startup;
-    marker["entries"] = std::move(entries);
-    std::ofstream(out / kMarkerFile, std::ios::binary) << marker.dump(2, ' ', false, json::error_handler_t::replace) << '\n';
+    if (!CopyGameFiles(project, options, assets, icon, out, exeName, result)) return result;
+    if (!WriteGameProject(project, out / kDataFolder, startup, result)) return result;
+    WriteMarker(project, out, exeName, startup);
 
     result.ok = true;
     result.executable = out / PathFromUtf8(exeName);

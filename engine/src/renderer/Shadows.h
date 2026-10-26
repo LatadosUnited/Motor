@@ -37,6 +37,7 @@ public:
     struct Result {
         Data data;
         int cascadeLight = -1;            // índice (em `lights`) da direcional com cascatas
+        ShadowQuality cascadeQuality = ShadowQuality::High;  // da direcional: filtro das cascatas no lit.frag
         std::vector<int> cubeLayer;       // por luz: camada do cubo de sombra, -1 = sem
     };
 
@@ -57,9 +58,26 @@ public:
 private:
     void EnsureCascades(int resolution);
     void EnsureCubes(int resolution);
-    void DrawItems(std::span<const DrawItem> items, const glm::mat4& viewProjection, const Frustum& frustum,
-                   bool point, const glm::vec4& lightPositionRange, InstanceBuffers& instances,
-                   const ShadowOrder& order, const JointUploader& uploadJoints, RenderStats& stats);
+    // Uma passada de sombra: uma cascata ou uma face de cubo. As listas de desenho de todas as passadas são montadas
+    // em paralelo (Fase 26) e desenhadas depois, em ordem, na thread do OpenGL.
+    struct Pass {
+        glm::mat4 viewProjection{1.0f};
+        Frustum frustum;
+        bool point = false;
+        bool skip = false;  // só limpar (face do cubo fora do cone do spot)
+        glm::vec4 positionRange{0.0f};
+        unsigned int texture = 0;
+        int layer = 0;
+        int resolution = 1;
+        std::vector<uint32_t> indices;  // reaproveitados entre quadros
+        std::vector<DrawBatch> batches;
+    };
+    // Passadas do quadro em m_passes (Render): as cascatas primeiro, depois as faces de cubo.
+    size_t AddCascadePasses(const Camera& camera, std::span<const Light> lights, float distance, Result& result);
+    void AddCubePasses(const Camera& camera, std::span<const Light> lights, float distance, Result& result);
+    void BuildPasses(std::span<const DrawItem> items, const ShadowOrder& order);
+    void DrawPass(const Pass& pass, InstanceBuffers& instances, const ShadowOrder& order,
+                  const JointUploader& uploadJoints, RenderStats& stats);
 
     // Posições dos uniforms do shadow.vert/.frag, resolvidas uma vez por variante.
     struct Uniforms {
@@ -72,12 +90,17 @@ private:
     static Variant MakeVariant(const std::filesystem::path& dir, std::string_view defines);
 
     Variant m_directional, m_directionalSkinned, m_point, m_pointSkinned;
-    // Lotes da passada atual (reaproveitados entre passadas e quadros).
-    std::vector<uint32_t> m_indices;
-    std::vector<DrawBatch> m_batches;
+    std::vector<Pass> m_passes;     // as do quadro: as primeiras m_passCount valem
+    size_t m_passCount = 0;
+    std::vector<uint32_t> m_masks;  // por item: um bit por passada em que ele aparece
     unsigned int m_fbo = 0;
     unsigned int m_cascades = 0;
     int m_cascadeResolution = 0;
+    // Cascadas distantes reaproveitadas (Fase 24): o que cada camada do mapa tem desenhado agora.
+    Cascade m_drawnCascades[kCascades]{};
+    glm::vec3 m_drawnDirection{0.0f};
+    int m_drawnCount = 0;
+    uint64_t m_frame = 0;
     unsigned int m_cubes = 0;
     int m_cubeResolution = 0;
 };

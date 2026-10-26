@@ -44,6 +44,12 @@ ctest --test-dir build --output-on-failure
     `imstb_truetype.h` do ImGui), `UiRenderer` (sobre o `renderer/Renderer2D`), `UiSystem` (cliques).
   - `audio/` (acima de scene): som do jogo com a miniaudio. `AudioSystem` (sistema do `SceneRuntime`);
     componentes `AudioSource` e `AudioListener` ficam em `scene/`.
+  - `ai/` (acima de scene, physics e audio): navegação com a Recast/Detour (Fases 34 e 35) e percepção (Fase 37).
+    `NavMesh` (gerar, caminho, raio, ligações, áreas, ponto ao acaso, ponto de fuga), `NavSystem` (sistema do
+    `SceneRuntime`: gera o navmesh no Play e move os agentes, pela física quando têm CharacterController),
+    `NavCrowd` (interno: a multidão do DetourCrowd), `PerceptionSystem` (visão pelo raio da física, audição, memória);
+    componentes `NavMeshSurface`, `NavMeshAgent`, `NavMeshLink`, `NavMeshArea`, `NavMeshAgentAnimation`,
+    `Perception` e `PerceptionTarget` ficam em `scene/`.
 - `editor/` — `MotorEditor`. `EditorApp` só monta as peças (loop, layout, barra de menus, atalhos,
   desfazer); `SceneViewport` (câmera livre, gizmo, seleção, arquivos soltos), `PlayController` (menu Jogo,
   botões e pedidos de Play), `SceneDocument` (cena/projeto abertos, menu Arquivo, popups, título),
@@ -54,7 +60,8 @@ ctest --test-dir build --output-on-failure
   `editor/src/` tem uma subpasta por área e os includes partem de `editor/src` (`#include "scripts/ScriptHost.h"`):
   `document/` (`SceneDocument`), `viewport/` (`SceneViewport`, `UiEditor`), `play/` (`PlayController`,
   `PlayMode`), `panels/` (Hierarquia, Inspector, Cena, Projeto), `drawers/` (`FieldDrawers` e os `*Drawer.cpp`),
-  `scripts/` (`Script*`), `export/` (`GameExport`, `ExportController`), `mcp/`; na raiz, as peças comuns
+  `scripts/` (`Script*`), `export/` (`GameExport`, `ExportController`), `mcp/`, `nav/` (`NavMeshBake`, o "Gerar
+  navmesh" do Inspector e do MCP); na raiz, as peças comuns
   (`EditorApp`, `EditorContext`, `EditorSettings`, `UndoHistory`, `FileDialog`). Peça grande se divide em
   `<Peça><Parte>.cpp` (ex.: `ProjectPanelDraw.cpp`, `SceneDocumentUi.cpp`), com o que as partes dividem num
   header interno (`ProjectPanelUtil.h`).
@@ -80,7 +87,9 @@ ctest --test-dir build --output-on-failure
   `installer/` é o `MotorSetup.exe` (Hub embutido como recurso, atalhos, registro de desinstalação no HKCU).
   Como o hub, não ligam na `libMotor.dll`.
 - `common/` — `motor_common`, código sem dependências usado pela engine e pelos programas que não ligam nela
-  (hub, distribuição, servidor, instalador): hoje só a gravação segura (`motor/common/FileWrite.h`).
+  (hub, distribuição, servidor, instalador): gravação segura (`FileWrite.h`), UTF-8 (`Utf8.h`, incluído pelo
+  `motor/core/Paths.h`), `SetError`/`Lower`/`LowerExtension` (`Text.h`) e ler o arquivo inteiro (`FileRead.h`), em
+  `motor/common/`. Precisou de uma dessas num `.cpp`? Use a daqui, não copie.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -104,8 +113,10 @@ ctest --test-dir build --output-on-failure
   desenhador do Inspector com `MOTOR_FIELD_DRAWER` (`editor/src/drawers/FieldDrawers.h`), cada um no seu
   `.cpp` em `drawers/`. Não acrescente valores ao enum `FieldType` (isso exigiria mexer em `ComponentsEqual`,
   `SceneSerializer` e `DrawField` ao mesmo tempo). Exemplo completo em `tests/test_component_extension.cpp`.
-- Desfazer é automático: `UndoHistory::Track` compara a cena a cada frame (`Scene::operator==`). Dado de
-  cena fora dos componentes (luz, ambiente) precisa entrar na cópia e no `operator==` de `Scene`.
+- Desfazer é automático: `UndoHistory::Track` compara a cena com a última foto (`SameEntity` por entidade e o
+  ambiente) depois de entrada do usuário ou pedido do MCP (`NoteActivity`) e a cada 0,25 s; a foto guarda só as
+  entidades que mudaram. "Não salvo" é a versão do desfazer (`UndoHistory::Version`), sem JSON. Dado de cena fora
+  dos componentes (luz, ambiente) precisa entrar na cópia, no `operator==` de `Scene` e na foto do `UndoHistory`.
 - Estilo: o do código vizinho (4 espaços, `m_` em membros, comentários curtos explicando o porquê).
 
 ## Testes
@@ -183,6 +194,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: exportação | `editor/src/export/`, `player/` |
 | Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
 | Distribuição | `distrib/`, `server/`, `installer/` (Fase 15: servidor de versões, download, instalador) |
+| IA | `engine/{include/motor,src}/ai/`, `scene/NavMesh*`, `editor/src/nav/` (Fase 34 em diante) |
 | Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
 
 Componente novo da engine = `scene/<Nome>.h` + `scene/<Nome>.cpp` próprios (`MOTOR_COMPONENT_MODULE`), não
@@ -205,33 +217,8 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 
 ### Fases do roteiro: onde cada uma mexe
 
-Alpha 1 (feitas; o roteiro foi apagado, histórico no git):
-
-| Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
-|---|---|---|---|
-| 4 Luzes | componentes de luz em `scene/`, `renderer/` (N luzes), shaders | `Scene` e `SceneSerializer` (a luz da cena vira componente; cenas antigas convertidas), `SceneViewport` (ícones), painel Cena | 7 |
-| 5 Física | camada nova `physics/` | **pré-requisito:** sistemas no `SceneRuntime` (abaixo); biblioteca nova | — |
-| 6 Materiais/prefabs | `assets/`, `ProjectPanel` | `SceneSerializer` (prefab), Inspector | 11 |
-| 7 Render avançado | `renderer/`, shaders | `Renderer` (mesmo arquivo da 4) | 4 |
-| 8 Áudio | camada nova `audio/` | sistemas no `SceneRuntime`; biblioteca nova (miniaudio) | — |
-| 9 HUD | camada nova `ui/` | `renderer/` (desenho 2D) | 7 |
-| 11 Modelos 3D/animação | `assets/` (importador glTF), `renderer/` (`Mesh` na CPU, skinning) | prefabs da 6, collider de malha (`physics/`) | 6, 7 |
-| 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
-| 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
-| 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
-| 15 Instalador | `distrib/`, `server/`, `installer/` | `hub/` (aba Versões, `hub.json` formato 2, `--baixar`) | 14 |
-
-Alpha 2 (feitas; o roteiro foi apagado, histórico no git):
-
-| Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
-|---|---|---|---|
-| 16 Robustez e correções | `SceneRuntime` (proteção dos scripts), `PlayMode`/`SceneDocument` (recuperação), cada correção na sua área | `kScriptApiVersion` se a API dos scripts mudar | 17 só no item do caminho longo |
-| 17 Scripts | `editor/src/scripts/`, `editor/templates/`, headers que os scripts incluem (`Script.h`, `ScriptModule.h`) | `motor_package` (SDK com o cabeçalho pré-compilado), `docs/`, painel Projeto (criar script), `kScriptApiVersion` | 16 (caminho longo) |
-| Organização do código | divisão de arquivos e funções grandes, subpastas de `editor/src` (sem mudar comportamento) | quase todas as áreas | todas (mexe em muitos arquivos) |
-| 18 Funcionalidades | `physics/` (camadas, consultas), `audio/` (vozes, grupos), `renderer/` (transparência), formas em `assets/` | API dos scripts (`kScriptApiVersion`), `docs/` | — |
-| 19 Validação | `docs/teste-manual.md` | correções pequenas viram itens da 16 | — |
-| 20 Editor produtivo | `SceneViewport`, painéis, `SceneDocument` (divididos antes) | prefabs (`assets/`), MCP | — |
-| 21 Jogo entregue | `player/`, exportação (`GameExport`) | entrada (`core/`), API dos scripts | — |
+Alphas 1 e 2 (Fases 0 a 21 e a primeira Organização do código): feitas; os roteiros e a tabela de onde cada fase
+mexia saíram daqui, estão no histórico do git.
 
 Alpha 3 (desempenho, replanejada em 21/10/2026; `docs/roadmap/alpha-3.md` e `docs/roadmap/alpha-3/`):
 
@@ -244,10 +231,12 @@ Alpha 3 (desempenho, replanejada em 21/10/2026; `docs/roadmap/alpha-3.md` e `doc
 | 27 Editor que escala | `UndoHistory`, `document/`, `panels/`, `viewport/` | `Scene::operator==`, `SceneSerializer` | — |
 
 Alphas 4 (mundo aberto e renderização 2, Fases 28 a 30) e 5 (ferramentas, Fases 31 a 33): rascunhos em
-`docs/roadmap/alpha-4.md` e `alpha-5.md`.
+`docs/roadmap/alpha-4.md` e `alpha-5.md`. Alpha 6 (inteligência artificial, Fases 34 a 38): rascunho em
+`docs/roadmap/alpha-6.md`; a Fase 34 (navmesh e agentes) começou antes, a pedido do usuário.
 
 Prioridade atual (ver `docs/roadmap/alpha-3.md`, "Fases"): alphas 1 e 2 fechadas (Fases 0 a 21); alpha 3 com a
-Fases 22 (medição) e 23 (renderer em lote) prontas e a 25 (cena, dados e física) em andamento.
+Fases 22 (medição), 23 (renderer em lote), 24 (GPU), 25 (cena, dados e física), 26 (threads) e 27 (editor que
+escala) prontas; falta a Organização do código 2.
 
 **Sistemas do `SceneRuntime` (feito, pré-requisito das Fases 5 e 8):** camada de cima (física, áudio, HUD)
 que precisa rodar a cada passo do jogo registra um `motor::RuntimeSystem` num `.cpp` próprio com

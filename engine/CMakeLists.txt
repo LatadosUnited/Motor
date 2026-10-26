@@ -9,6 +9,7 @@ set(MOTOR_LAYERS core renderer project assets scene app)
 list(APPEND MOTOR_LAYERS physics)  # Fase 5: física (Jolt), acima de scene
 list(APPEND MOTOR_LAYERS ui)       # Fase 9: interface do jogo (HUD), acima de scene
 list(APPEND MOTOR_LAYERS audio)    # Fase 8: áudio (miniaudio), acima de scene
+list(APPEND MOTOR_LAYERS ai)       # Fase 34: navegação e IA (Recast/Detour), acima de scene
 set(MOTOR_LAYERS ${MOTOR_LAYERS} PARENT_SCOPE)
 
 # motor_add_layer(<camada> SOURCES <arquivos...> DEPENDS <camadas...> [PRIVATE_LIBS <alvos...>])
@@ -63,6 +64,8 @@ target_link_libraries(Motor PRIVATE imgui glfw nlohmann_json::nlohmann_json)
 # O que quem usa o Motor precisa: headers da engine e do ImGui, GLM.
 target_include_directories(Motor PUBLIC include ${MOTOR_IMGUI_INCLUDE_DIRS})
 target_include_directories(Motor PUBLIC ${MOTOR_GENERATED_INCLUDE_DIR})  # motor/core/Version.h
+# Só os headers do common/ (o motor/core/Paths.h inclui o motor/common/Utf8.h); a biblioteca já está dentro da DLL.
+target_include_directories(Motor PUBLIC ${CMAKE_SOURCE_DIR}/common/include)
 target_link_libraries(Motor PUBLIC glm::glm)
 target_compile_definitions(Motor PUBLIC GLM_FORCE_RADIANS)
 
@@ -84,7 +87,9 @@ endif()
 # importado Motor::Motor) e lê MotorSDK.json para saber qual toolchain usar (o mesmo deste build).
 # ---------------------------------------------------------------------------
 set(MOTOR_SDK_DIR ${CMAKE_BINARY_DIR}/bin/sdk)
-set(MOTOR_SDK_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include ${glm_SOURCE_DIR} ${MOTOR_IMGUI_INCLUDE_DIRS})
+# common/include: o motor/core/Paths.h inclui o motor/common/Utf8.h.
+set(MOTOR_SDK_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/common/include ${glm_SOURCE_DIR}
+    ${MOTOR_IMGUI_INCLUDE_DIRS})
 list(APPEND MOTOR_SDK_INCLUDE_DIRS ${MOTOR_GENERATED_INCLUDE_DIR})
 
 set(MOTOR_SDK_PCH_HEADER "${MOTOR_SDK_DIR}/MotorScriptPch.h")
@@ -108,7 +113,8 @@ endif()
 
 file(GLOB_RECURSE MOTOR_PUBLIC_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/motor/*.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/motor/*.inl")
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/motor/*.inl"
+    "${CMAKE_SOURCE_DIR}/common/include/motor/common/Utf8.h")
 string(TOUPPER "${CMAKE_BUILD_TYPE}" MOTOR_BUILD_TYPE_UPPER)
 separate_arguments(MOTOR_PCH_CXX_FLAGS NATIVE_COMMAND "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${MOTOR_BUILD_TYPE_UPPER}}")
 # Mesma opção dos scripts (CMakeLists gerado pelo editor): .gch menor e ~10% mais rápido de carregar.

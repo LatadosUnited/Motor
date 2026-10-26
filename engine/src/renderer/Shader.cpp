@@ -1,5 +1,6 @@
 #include "motor/renderer/Shader.h"
 
+#include "motor/common/FileRead.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "renderer/GL.h"
@@ -13,12 +14,10 @@
 namespace motor {
 
 namespace {
-std::string ReadTextFile(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) throw std::runtime_error(std::format("Não foi possível abrir '{}'", ToUtf8(path)));
-    std::stringstream ss;
-    ss << file.rdbuf();
-    return ss.str();
+std::string ReadSource(const std::filesystem::path& path) {
+    std::optional<std::string> text = ReadTextFile(path);
+    if (!text) throw std::runtime_error(std::format("Não foi possível abrir '{}'", ToUtf8(path)));
+    return std::move(*text);
 }
 
 GLuint Compile(GLenum stage, std::string_view source, const std::string& name) {
@@ -85,7 +84,7 @@ namespace {
 // definições logo depois do `#version` (que tem de ser a primeira linha).
 std::string Preprocess(const std::filesystem::path& path, std::string_view defines, int depth = 0) {
     if (depth > 8) throw std::runtime_error(std::format("Shader '{}': #include aninhado demais", ToUtf8(path)));
-    const std::string text = ReadTextFile(path);
+    const std::string text = ReadSource(path);
     std::string out;
     size_t pos = 0;
     bool first = true;

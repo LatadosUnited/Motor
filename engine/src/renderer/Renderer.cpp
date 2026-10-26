@@ -1,6 +1,9 @@
 #include "motor/renderer/Renderer.h"
 
 #include "motor/core/EngineAssets.h"
+#include "motor/core/JobSystem.h"
+#include "motor/core/FrameStats.h"
+#include "motor/core/Profile.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Framebuffer.h"
 #include "motor/renderer/GpuMemory.h"
@@ -23,6 +26,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace motor {
@@ -111,15 +115,8 @@ Renderer::Renderer() {
     GpuTimers::SetCurrent(m_gpuTimers.get());
 
     const std::filesystem::path dir = EngineAssetsDir() / "shaders";
-    m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag");
-    m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag");  // animação esquelética (Fase 11)
+    LoadLitShaders(ShadowQuality::High);
     m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag", "#define SINGLE_MODEL\n");
-    auto findLitUniforms = [](Shader& shader) {
-        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
-                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
-    };
-    m_litUniforms = findLitUniforms(*m_litShader);
-    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
     m_unlitModel = m_unlitShader->Uniform("uModel");
     m_unlitColor = m_unlitShader->Uniform("uColor");
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
@@ -150,6 +147,26 @@ Renderer::~Renderer() {
     glDeleteBuffers(1, &m_frameUbo);
 }
 
+// As três variantes do lit.frag com o filtro das cascatas da qualidade dada (SHADOW_FILTER). Recompiladas só quando a
+// qualidade da direcional muda (trocar a cena ou as opções), não a cada quadro.
+void Renderer::LoadLitShaders(ShadowQuality cascadeFilter) {
+    const std::filesystem::path dir = EngineAssetsDir() / "shaders";
+    const std::string filter = "#define SHADOW_FILTER " + std::to_string(static_cast<int>(cascadeFilter)) + "\n";
+    m_litShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter);
+    m_skinnedShader = Shader::FromFiles(dir / "skinned.vert", dir / "lit.frag", filter);  // animação esquelética (Fase 11)
+    // Materiais sem nenhum mapa (o comum): sem as leituras de textura no shader. Um if pela uniform não basta (o
+    // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
+    m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define NO_MAPS\n");
+    auto findLitUniforms = [](Shader& shader) {
+        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
+                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
+    };
+    m_litUniforms = findLitUniforms(*m_litShader);
+    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
+    m_litPlainUniforms = findLitUniforms(*m_litPlainShader);
+    m_litShadowFilter = cascadeFilter;
+}
+
 void Renderer::BeginFrame(int width, int height) {
     MOTOR_PROFILE_GPU_COLLECT();  // as zonas de GPU do quadro anterior
     m_gpuTimers->BeginFrame();    // e as dos contadores, de alguns quadros atrás
@@ -169,6 +186,8 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_target = target;
     m_camera = camera;
     m_environment = environment;
+    // Tamanho na tela = diâmetro * m_lodScale / distância (altura vista a 1 m: 2 * tan(fov / 2)).
+    m_lodScale = m_lodBias / std::max(2.0f * std::tan(glm::radians(camera.fovY) * 0.5f), 1e-3f);
 
     if (lights.size() > kMaxLights && !std::exchange(m_warnedTooManyLights, true)) {
         log::Warn("Renderer: {} luzes na cena; só as primeiras {} são usadas", lights.size(), kMaxLights);
@@ -181,7 +200,8 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_items.clear();
     m_joints.clear();
     m_wires.clear();
-    m_objects.clear();
+    // m_objects não é esvaziado: vale até 2 * m_items.size(). Refazer 20 000 matrizes (o construtor do glm escreve a
+    // identidade) custava ~0,7 ms por quadro com 10 000 objetos.
     m_materialIds.Clear();
     m_shadowIds.Clear();
     m_lastMaterial = nullptr;
@@ -212,15 +232,81 @@ DrawItem& Renderer::AddItem(const Mesh& mesh, const Material& material, const gl
     item.shadowId = m_lastShadowId;
     item.transparent = material.blend == BlendMode::Transparent;
     item.shadows = shadows;
-    m_objects.push_back(model);
-    m_objects.push_back(glm::mat4(NormalMatrix(model)));
+    // A matriz da normal e a caixa no mundo saem no EndScene, em paralelo (PrepareItems): aqui só a de mundo.
+    const size_t object = 2 * (m_items.size() - 1);
+    if (m_objects.size() < object + 2) m_objects.resize(object + 2);
+    m_objects[object] = model;
     return item;
 }
 
 void Renderer::Submit(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows) {
     MOTOR_ASSERT(m_inScene, "Submit fora de BeginScene/EndScene");
-    DrawItem& item = AddItem(mesh, material, model, shadows);
-    item.bounds = TransformAabb({mesh.BoundsMin(), mesh.BoundsMax()}, model);
+    AddItem(mesh, material, model, shadows);
+}
+
+void Renderer::SubmitMany(size_t count, const SubmitFill& fill) {
+    MOTOR_ASSERT(m_inScene, "SubmitMany fora de BeginScene/EndScene");
+    MOTOR_PROFILE_SCOPE("Renderer: SubmitMany");
+    JobSystem& jobs = JobSystem::Get();
+    const size_t base = m_items.size();
+    m_items.resize(base + count);
+    if (m_objects.size() < 2 * (base + count)) m_objects.resize(2 * (base + count));
+    m_pending.resize(count);
+
+    // 1) Em paralelo: cada pedido já no seu lugar (base + i), com as chaves do material e os hashes delas. Ler os
+    //    objetos e materiais (espalhados na memória) é o que custa.
+    jobs.ParallelFor(count, 256, [&](size_t begin, size_t end) {
+        SubmitRequest request;
+        for (size_t i = begin; i < end; ++i) {
+            PendingSubmit& p = m_pending[i];
+            request = SubmitRequest{};
+            p.ok = fill(i, request) && request.mesh && request.material;
+            if (!p.ok) continue;
+            const Material& material = *request.material;
+            p.key = {MaterialParamsOf(material), material.doubleSided};
+            p.keyHash = MaterialKeyHash{}(p.key);
+            p.shadow = ShadowParamsOf(material);
+            p.shadowHash = ShadowParamsHash{}(p.shadow);
+            DrawItem& item = m_items[base + i];
+            item = DrawItem{};
+            item.mesh = request.mesh;
+            item.material = request.material;
+            item.transparent = material.blend == BlendMode::Transparent;
+            item.shadows = request.shadows;
+            m_objects[2 * (base + i)] = request.model;  // a matriz da normal sai no PrepareItems
+        }
+    });
+
+    // 2) Números de material na ordem dos pedidos (a tabela é uma só): serial, comparando primeiro os hashes. Mesmo
+    //    atalho do AddItem: o mesmo material, ou os mesmos valores, não consultam as tabelas. Pedido recusado (raro):
+    //    os seguintes descem uma posição.
+    size_t slot = base;
+    for (size_t i = 0; i < count; ++i) {
+        const PendingSubmit& p = m_pending[i];
+        if (!p.ok) continue;
+        const Material* material = m_items[base + i].material;
+        if (material != m_lastMaterial) {
+            const bool first = m_lastMaterial == nullptr;
+            m_lastMaterial = material;
+            if (first || p.keyHash != m_lastMaterialKeyHash || !(p.key == m_lastMaterialKey)) {
+                m_lastMaterialId = m_materialIds.Id(p.key, p.keyHash);
+                m_lastMaterialKey = p.key;
+                m_lastMaterialKeyHash = p.keyHash;
+            }
+            if (first || !(p.shadow == m_lastShadowParams)) {
+                m_lastShadowId = m_shadowIds.Id(p.shadow, p.shadowHash);
+                m_lastShadowParams = p.shadow;
+            }
+        }
+        if (slot != base + i) {
+            m_items[slot] = m_items[base + i];
+            m_objects[2 * slot] = m_objects[2 * (base + i)];
+        }
+        m_items[slot].materialId = m_lastMaterialId;
+        m_items[slot].shadowId = m_lastShadowId;
+        ++slot;
+    }
+    m_items.resize(slot);
 }
 
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
@@ -240,10 +326,48 @@ void Renderer::SubmitSkinned(const Mesh& mesh, const Material& material, const g
     item.jointOffset = static_cast<uint32_t>(m_joints.size());
     item.jointCount = static_cast<uint32_t>(count);
     m_joints.insert(m_joints.end(), joints.begin(), joints.begin() + static_cast<std::ptrdiff_t>(count));
-    // A pose animada sai da caixa de repouso: folga de 50% (e meio metro) para o recorte não sumir com ela.
-    const glm::vec3 center = (mesh.BoundsMin() + mesh.BoundsMax()) * 0.5f;
-    const glm::vec3 half = (mesh.BoundsMax() - mesh.BoundsMin()) * 0.75f + glm::vec3(0.5f);
-    item.bounds = TransformAabb({center - half, center + half}, model);
+}
+
+void Renderer::PrepareItems(const Frustum& view) {
+    MOTOR_PROFILE_STAT("Render: preparar");
+    // Por item: matriz da normal, caixa no mundo, chaves de ordem e recorte da câmera. Cada item só escreve no que é
+    // dele, então os itens se dividem entre as threads sem trava (Fase 26).
+    const size_t count = m_items.size();
+    m_sceneKeys.resize(count);
+    m_shadowKeys.resize(count);
+    m_visible.resize(count);
+    JobSystem::Get().ParallelFor(count, 256, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            DrawItem& item = m_items[i];
+            const glm::mat4& model = m_objects[2 * i];
+            m_objects[2 * i + 1] = glm::mat4(NormalMatrix(model));
+            const glm::vec3 min = item.mesh->BoundsMin(), max = item.mesh->BoundsMax();
+            if (item.skinned) {
+                // A pose animada sai da caixa de repouso: folga de 50% (e meio metro) para o recorte não sumir com ela.
+                const glm::vec3 center = (min + max) * 0.5f;
+                const glm::vec3 half = (max - min) * 0.75f + glm::vec3(0.5f);
+                item.bounds = TransformAabb({center - half, center + half}, model);
+            } else {
+                item.bounds = TransformAabb({min, max}, model);
+                if (!item.mesh->Lods().empty()) {
+                    // Nível de detalhe pelo tamanho na tela (Fase 24): diâmetro da caixa no mundo sobre a altura vista
+                    // na distância dela. A caixa continua a da malha base (os níveis têm os mesmos limites).
+                    const glm::vec3 center = (item.bounds.min + item.bounds.max) * 0.5f;
+                    const float diameter = glm::length(item.bounds.max - item.bounds.min);
+                    const float distance = std::max(glm::length(center - m_camera.position), 1e-3f);
+                    item.mesh = &item.mesh->ForScreenSize(diameter * m_lodScale / distance);
+                }
+            }
+            // Ordem de desenho: (shader, material, malha) para a cena e (shader, recorte/alfa, malha) para as sombras.
+            // Shader: 0 = lit, 1 = com pele, 2 = lit sem mapas.
+            const MaterialParams& params = m_materialIds[item.materialId].params;
+            const bool plain = params.alphaMode.z == 0.0f && params.pbr.w == 0.0f;
+            const uint32_t shader = item.skinned ? 1u : plain ? 2u : 0u;
+            m_sceneKeys[i] = {shader, item.materialId, item.mesh};
+            m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
+            m_visible[i] = item.shadows != ShadowCasting::ShadowsOnly && view.Intersects(item.bounds);
+        }
+    });
 }
 
 void Renderer::UploadJoints(const DrawItem& item) {
@@ -280,10 +404,13 @@ void Renderer::EndScene() {
         m_sky->Update(m_environment, *m_post);
     }
 
-    DrawScene();
+    {
+        MOTOR_PROFILE_STAT("Render: cena e sombras");
+        DrawScene();
+    }
     {
         MOTOR_PROFILE_GPU("Pós-processamento");
-        m_post->Resolve();
+        m_post->Resolve(m_keepSceneDepth || !m_wires.empty());  // a profundidade só para quem a lê
         m_post->Apply(m_environment, [this] { BindTarget(); });
     }
     DrawWireframes();
@@ -300,29 +427,13 @@ void Renderer::EndScene() {
 void Renderer::DrawScene() {
     const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
 
-    // 0) Ordem de desenho: a lista é ordenada por (shader, material, malha) com os números de material dados no
-    //    Submit (valores iguais, o mesmo número), uma vez para a cena e outra para as sombras (que só olham recorte e
-    //    alfa). Itens que podem ir no mesmo draw ficam seguidos.
-    m_sceneKeys.resize(m_items.size());
-    m_shadowKeys.resize(m_items.size());
-    for (size_t i = 0; i < m_items.size(); ++i) {
-        const DrawItem& item = m_items[i];
-        const uint32_t shader = item.skinned ? 1u : 0u;
-        m_sceneKeys[i] = {shader, item.materialId, item.mesh};
-        m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
-    }
-    // Cena parada: as mesmas chaves do quadro anterior dão a mesma ordem.
-    auto sortIfChanged = [](const std::vector<DrawKey>& keys, std::vector<DrawKey>& lastKeys,
-                            std::vector<uint32_t>& order) {
-        if (keys == lastKeys && order.size() == keys.size()) return;
-        SortByKey(keys, order);
-        lastKeys = keys;
-    };
-    sortIfChanged(m_sceneKeys, m_lastSceneKeys, m_sceneOrder);
-    sortIfChanged(m_shadowKeys, m_lastShadowKeys, m_shadowOrder);
+    // 0) Ordem de desenho (SortDrawOrder).
+    const glm::mat4 view = m_camera.View();
+    const glm::mat4 projection = m_camera.Projection();
+    SortDrawOrder(Frustum::FromMatrix(projection * view));
 
     // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
-    m_instances->UploadObjects(m_objects);
+    m_instances->UploadObjects(std::span(m_objects.data(), 2 * m_items.size()));
     const ShadowRenderer::Result shadows = [&] {
         MOTOR_PROFILE_GPU("Sombras");
         return m_shadows->Render(m_camera, m_lights, m_environment, m_items, *m_instances,
@@ -330,25 +441,7 @@ void Renderer::DrawScene() {
     }();
 
     // 2) Blocos de dados do quadro.
-    const Environment& env = m_environment;
-    const float skyIntensity = std::max(env.skyIntensity, 0.0f);
-    const float skyLight = skyIntensity * std::max(env.skyLight, 0.0f);
-    const glm::mat4 view = m_camera.View();
-    const glm::mat4 projection = m_camera.Projection();
-    FrameData frame{};
-    frame.view = view;
-    frame.projection = projection;
-    frame.cameraPosition = glm::vec4(m_camera.position, 1.0f);
-    frame.ambient = glm::vec4(env.ambient, 1.0f);
-    frame.fog = glm::vec4(m_sky->HorizonColor() * skyIntensity, std::max(env.fogDensity, 0.0f));
-    frame.invViewProjection = glm::inverse(projection * view);
-    frame.sky = glm::vec4(skyIntensity, skyLight, glm::radians(env.skyRotation), m_sky->MaxReflectionMip());
-    for (size_t i = 0; i < 9; ++i) frame.sh[i] = glm::vec4(m_sky->Irradiance().c[i] * skyLight, 0.0f);
-    frame.viewport = glm::vec4(static_cast<float>(m_post->Width()), static_cast<float>(m_post->Height()),
-                               1.0f / static_cast<float>(m_post->Width()), 1.0f / static_cast<float>(m_post->Height()));
-    glNamedBufferSubData(m_frameUbo, 0, sizeof(FrameData), &frame);
-    glBindBufferBase(GL_UNIFORM_BUFFER, kFrameBinding, m_frameUbo);
-
+    UploadFrameData(view, projection);
     LightsData lightsData{};
     lightsData.count = glm::ivec4(static_cast<int>(m_lights.size()), 0, 0, 0);
     for (size_t i = 0; i < m_lights.size(); ++i) {
@@ -357,6 +450,7 @@ void Renderer::DrawScene() {
     // Só o cabeçalho e as luzes usadas: o resto do bloco o shader não lê.
     glNamedBufferSubData(m_lightsUbo, 0, static_cast<GLsizeiptr>(sizeof(glm::ivec4) + m_lights.size() * sizeof(LightData)), &lightsData);
     glBindBufferBase(GL_UNIFORM_BUFFER, kLightsBinding, m_lightsUbo);
+    if (shadows.cascadeLight >= 0 && shadows.cascadeQuality != m_litShadowFilter) LoadLitShaders(shadows.cascadeQuality);
     glNamedBufferSubData(m_shadowsUbo, 0, sizeof(ShadowRenderer::Data), &shadows.data);
     glBindBufferBase(GL_UNIFORM_BUFFER, kShadowsBinding, m_shadowsUbo);
 
@@ -375,12 +469,72 @@ void Renderer::DrawScene() {
     glBindTextureUnit(kUnitPrefiltered, m_sky->PrefilteredCube());
     glBindTextureUnit(kUnitBrdf, m_sky->BrdfLut());
 
-    // Lotes: na ordem da cena, itens seguidos com a mesma chave (shader, material, malha) viram um draw
-    // instanciado. Com pele, cada item é um lote (as juntas são dele). Transparentes: um por vez, de trás para
-    // frente, depois do céu.
-    const Frustum frustum = Frustum::FromMatrix(projection * view);
     std::vector<uint32_t> indices;
     std::vector<DrawBatch> batches;
+    const size_t opaqueBatches = CollectSceneBatches(indices, batches);
+    m_instances->UploadIndices(indices);
+    DrawSceneBatches(std::span(batches).first(opaqueBatches));
+
+    // 4) Céu ao fundo, onde não há nada.
+    m_sky->DrawBackground(*m_post);
+
+    // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
+    //    vidro continua aparecendo pelo vidro seguinte).
+    if (batches.size() > opaqueBatches) {
+        MOTOR_PROFILE_GPU("Transparentes");
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        DrawSceneBatches(std::span(batches).subspan(opaqueBatches));  // o céu trocou o shader e as texturas
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        m_stats.transparent += static_cast<uint32_t>(batches.size() - opaqueBatches);
+    }
+}
+
+void Renderer::SortDrawOrder(const Frustum& frustum) {
+    // A lista é ordenada por (shader, material, malha) com os números de material dados no Submit (valores iguais,
+    // o mesmo número), uma vez para a cena e outra para as sombras (que só olham recorte e alfa). Itens que podem
+    // ir no mesmo draw ficam seguidos. As chaves (e o resto por item) saem em paralelo.
+    PrepareItems(frustum);
+    // Cena parada: as mesmas chaves do quadro anterior dão a mesma ordem.
+    auto sortIfChanged = [](const std::vector<DrawKey>& keys, std::vector<DrawKey>& lastKeys,
+                            std::vector<uint32_t>& order) {
+        if (keys == lastKeys && order.size() == keys.size()) return;
+        SortByKey(keys, order);
+        lastKeys = keys;
+    };
+    sortIfChanged(m_sceneKeys, m_lastSceneKeys, m_sceneOrder);
+    sortIfChanged(m_shadowKeys, m_lastShadowKeys, m_shadowOrder);
+}
+
+void Renderer::UploadFrameData(const glm::mat4& view, const glm::mat4& projection) {
+    const Environment& env = m_environment;
+    const float skyIntensity = std::max(env.skyIntensity, 0.0f);
+    const float skyLight = skyIntensity * std::max(env.skyLight, 0.0f);
+    FrameData frame{};
+    frame.view = view;
+    frame.projection = projection;
+    frame.cameraPosition = glm::vec4(m_camera.position, 1.0f);
+    frame.ambient = glm::vec4(env.ambient, 1.0f);
+    frame.fog = glm::vec4(m_sky->HorizonColor() * skyIntensity, std::max(env.fogDensity, 0.0f));
+    frame.invViewProjection = glm::inverse(projection * view);
+    frame.sky = glm::vec4(skyIntensity, skyLight, glm::radians(env.skyRotation), m_sky->MaxReflectionMip());
+    for (size_t i = 0; i < 9; ++i) frame.sh[i] = glm::vec4(m_sky->Irradiance().c[i] * skyLight, 0.0f);
+    frame.viewport = glm::vec4(static_cast<float>(m_post->Width()), static_cast<float>(m_post->Height()),
+                               1.0f / static_cast<float>(m_post->Width()), 1.0f / static_cast<float>(m_post->Height()));
+    glNamedBufferSubData(m_frameUbo, 0, sizeof(FrameData), &frame);
+    glBindBufferBase(GL_UNIFORM_BUFFER, kFrameBinding, m_frameUbo);
+}
+
+size_t Renderer::CollectSceneBatches(std::vector<uint32_t>& indices, std::vector<DrawBatch>& batches) {
+    // Lotes: na ordem da cena, itens seguidos com a mesma chave (shader, material, malha) viram um draw
+    // instanciado. Com pele, cada item é um lote (as juntas são dele). Transparentes: um por vez, de trás para
+    // frente, depois do céu. O recorte da câmera já saiu no PrepareItems (m_visible).
     std::vector<std::pair<float, uint32_t>> transparent;
     indices.reserve(m_items.size());
     auto add = [&](uint32_t index, bool join) {
@@ -396,7 +550,7 @@ void Renderer::DrawScene() {
     for (const uint32_t i : m_sceneOrder) {
         const DrawItem& item = m_items[i];
         if (item.shadows == ShadowCasting::ShadowsOnly) continue;  // só nos mapas de sombra
-        if (!frustum.Intersects(item.bounds)) {
+        if (!m_visible[i]) {
             ++m_stats.culled;
             continue;
         }
@@ -412,8 +566,10 @@ void Renderer::DrawScene() {
     // Transparentes ordenados pelo centro: do mais longe ao mais perto.
     std::stable_sort(transparent.begin(), transparent.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
     for (const auto& [distance, index] : transparent) add(index, false);
-    m_instances->UploadIndices(indices);
+    return opaqueBatches;
+}
 
+void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches) {
     const Shader* bound = nullptr;
     // Material e texturas do lote anterior: lotes seguidos com o mesmo material não reenviam nada disso. Os
     // uniforms são de cada programa, por isso a lembrança vale para um shader só.
@@ -426,11 +582,11 @@ void Renderer::DrawScene() {
         glBindTextureUnit(unit, texture);
     };
     const Texture2D& white = *m_whiteTexture;
-    auto draw = [&](size_t b) {
-        const DrawBatch& batch = batches[b];
+    for (const DrawBatch& batch : batches) {
         const DrawItem& item = *batch.first;
-        Shader& shader = item.skinned ? *m_skinnedShader : *m_litShader;
-        const LitUniforms& u = item.skinned ? m_skinnedUniforms : m_litUniforms;
+        const uint32_t variant = m_sceneKeys[batch.firstIndex].shader;
+        Shader& shader = variant == 1 ? *m_skinnedShader : variant == 2 ? *m_litPlainShader : *m_litShader;
+        const LitUniforms& u = variant == 1 ? m_skinnedUniforms : variant == 2 ? m_litPlainUniforms : m_litUniforms;
         if (bound != &shader) {
             shader.Bind();
             bound = &shader;
@@ -458,30 +614,6 @@ void Renderer::DrawScene() {
         if (doubleSided) glEnable(GL_CULL_FACE);
         ++m_stats.drawCalls;
         m_stats.triangles += item.mesh->IndexCount() / 3 * batch.count;
-    };
-    for (size_t b = 0; b < opaqueBatches; ++b) draw(b);
-
-    // 4) Céu ao fundo, onde não há nada.
-    m_sky->DrawBackground(*m_post);
-
-    // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
-    //    vidro continua aparecendo pelo vidro seguinte).
-    if (!transparent.empty()) {
-        MOTOR_PROFILE_GPU("Transparentes");
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LESS);
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(GL_FALSE);
-        bound = nullptr;  // o céu trocou o shader e as texturas
-        paramsShader = nullptr;
-        std::fill(std::begin(lastTexture), std::end(lastTexture), 0u);
-        for (size_t b = opaqueBatches; b < batches.size(); ++b) draw(b);
-        glDepthMask(GL_TRUE);
-        glDisable(GL_BLEND);
-        m_stats.transparent += static_cast<uint32_t>(transparent.size());
     }
 }
 

@@ -4,6 +4,7 @@
 #include "viewport/SceneViewport.h"
 
 #include "play/PlayController.h"
+#include "viewport/PerceptionOverlay.h"
 
 #include <ImGuizmo.h>
 
@@ -129,6 +130,7 @@ bool SceneViewport::RenderTo(Renderer& renderer, const EditorContext& ctx, bool 
         renderer.SubmitWireframe(*mr->mesh, scene.WorldMatrix(e->id), kSelectionColor);
     }
     if (!gameView && m_prefs.grid) SubmitGrid(renderer);
+    if (!gameView && m_prefs.navMesh) m_navOverlay.Submit(renderer);
     renderer.EndScene();
 
     // UI do jogo por cima, no mesmo framebuffer (no Play e na edição, para ver o HUD no lugar).
@@ -159,17 +161,23 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
 
     // Na visão do jogo não há gizmo, seleção pelo viewport nem câmera livre: o mouse é do jogo.
     const bool gameView = play.InGameView();
+    // A malha do navmesh vale para o próximo Render (o quadro da cena é desenhado antes desta janela).
+    m_navOverlay.Update(ctx, play.Runtime());
     if (!gameView) {
         CollectIcons(ctx);
         ImDrawList* overlay = ImGui::GetWindowDrawList();
         if (m_showUi) m_uiTool.Draw(ctx, overlay, origin, m_ui->Canvas().Layout());
         DrawColliders(ctx, overlay, origin);
+        if (m_prefs.navMesh) {
+            m_navOverlay.DrawPaths(ctx, play.Runtime(), overlay, origin, [this](const glm::vec3& p) { return Project(p); });
+            DrawPerception(ctx, play.Runtime(), overlay, origin, [this](const glm::vec3& p) { return Project(p); });
+        }
         DrawSelectedHelpers(ctx, overlay, origin);
         DrawIcons(ctx, overlay, origin);
         DrawGizmo(ctx, origin);
         DrawToolbar(ImVec2(origin.x + 8.0f, origin.y + 44.0f));
     }
-    play.DrawControls(origin, m_size.x);
+    const float playLeft = play.DrawControls(origin, m_size.x);
 
     // Mouse para a UI do jogo (botões): só na visão do jogo e fora dos botões de Play do viewport. Lado a lado,
     // quem informa é a janela Jogo (GameView).
@@ -208,16 +216,37 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     if (m_boxPending) UpdateBoxSelection(ctx, origin, gameView);
     if (!gameView) m_uiTool.Update(ctx, m_size);
 
-    // Overlay com estatísticas.
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    DrawStatsOverlay(dl, origin, playLeft, gameView, stats, fps);
+    DrawPlayIndicator(dl, origin, play, gameView);
+
+    ImGui::End();
+}
+
+// Texto do canto (FPS, draws, triângulos) e, com a preferência, os contadores à direita.
+void SceneViewport::DrawStatsOverlay(ImDrawList* dl, const ImVec2& origin, float playLeft, bool gameView,
+                                     const RenderStats& stats, float fps) {
     char text[200];
-    std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws (sombras: %u em %u passes)  |  %u tris  |  UI: %u draws  |  %dx%d",
-                  fps, stats.drawCalls, stats.shadowDrawCalls, stats.shadowPasses, stats.triangles,
-                  m_showUi ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(), m_framebuffer->Height());
     const ImVec2 pad{8.0f, 6.0f};
+    // Em cima, o texto vai até os botões de Play: no viewport estreito fica mais curto e, se nem o FPS couber, vai
+    // para baixo (antes passava por baixo dos botões).
+    const float room = playLeft - (origin.x + 8.0f) - pad.x * 2 - 8.0f;
+    bool bottom = gameView;  // na visão do jogo, embaixo: o canto de cima costuma ser do HUD do jogo
+    for (int detail = 0; detail < 3; ++detail) {
+        if (detail == 0) {
+            std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws (sombras: %u em %u passes)  |  %u tris  |  UI: %u draws  |  %dx%d",
+                          fps, stats.drawCalls, stats.shadowDrawCalls, stats.shadowPasses, stats.triangles,
+                          m_showUi ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(), m_framebuffer->Height());
+        } else if (detail == 1) {
+            std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws  |  %u tris", fps, stats.drawCalls, stats.triangles);
+        } else {
+            std::snprintf(text, sizeof(text), "%.0f FPS", fps);
+        }
+        if (gameView || ImGui::CalcTextSize(text).x <= room) break;
+        if (detail == 2) bottom = true;
+    }
     const ImVec2 size = ImGui::CalcTextSize(text);
-    // Na visão do jogo, embaixo: o canto de cima costuma ser do HUD do jogo.
-    const ImVec2 p0{origin.x + 8.0f, gameView ? origin.y + m_size.y - size.y - pad.y * 2 - 8.0f : origin.y + 8.0f};
+    const ImVec2 p0{origin.x + 8.0f, bottom ? origin.y + m_size.y - size.y - pad.y * 2 - 8.0f : origin.y + 8.0f};
     dl->AddRectFilled(p0, ImVec2(p0.x + size.x + pad.x * 2, p0.y + size.y + pad.y * 2), IM_COL32(0, 0, 0, 120), 4.0f);
     dl->AddText(ImVec2(p0.x + pad.x, p0.y + pad.y), IM_COL32(235, 235, 235, 255), text);
     // Contadores à direita, abaixo dos botões de Play e (fora da visão do jogo) da barra de ferramentas.
@@ -225,28 +254,28 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         const float top = gameView ? 44.0f : 84.0f;
         m_statsPanel.Draw(dl, ImVec2(origin.x + m_size.x - 8.0f, origin.y + top), m_size.y - top - 8.0f);
     }
+}
 
-    // Indicação de Play: borda colorida em volta da imagem, e aviso se a cena não tem câmera.
-    if (play.IsActive()) {
-        const ImVec2 p1{origin.x + m_size.x, origin.y + m_size.y};
-        dl->AddRect(ImVec2(origin.x + 1.5f, origin.y + 1.5f), ImVec2(p1.x - 1.5f, p1.y - 1.5f), play.StateColor(),
-                    0.0f, 0, 3.0f);
-        const char* warning = nullptr;
-        if (m_missingGameCamera) {
-            warning = "Nenhuma câmera ativa na cena: mostrando pela câmera do editor (adicione o componente Câmera)";
-        } else if (!gameView && !play.SideBySide()) {  // lado a lado, o jogo está na janela Jogo
-            warning = "Vendo pela câmera do editor (F8 volta para a câmera do jogo)";
-        }
-        if (warning) {
-            const ImVec2 ws = ImGui::CalcTextSize(warning);
-            const ImVec2 wp{origin.x + (m_size.x - ws.x) * 0.5f, p1.y - ws.y - 16.0f};
-            dl->AddRectFilled(ImVec2(wp.x - 8.0f, wp.y - 5.0f), ImVec2(wp.x + ws.x + 8.0f, wp.y + ws.y + 5.0f),
-                              IM_COL32(0, 0, 0, 150), 4.0f);
-            dl->AddText(wp, IM_COL32(255, 220, 120, 255), warning);
-        }
+// No Play: borda colorida em volta da imagem, e aviso se a cena não tem câmera.
+void SceneViewport::DrawPlayIndicator(ImDrawList* dl, const ImVec2& origin, const PlayController& play,
+                                      bool gameView) const {
+    if (!play.IsActive()) return;
+    const ImVec2 p1{origin.x + m_size.x, origin.y + m_size.y};
+    dl->AddRect(ImVec2(origin.x + 1.5f, origin.y + 1.5f), ImVec2(p1.x - 1.5f, p1.y - 1.5f), play.StateColor(),
+                0.0f, 0, 3.0f);
+    const char* warning = nullptr;
+    if (m_missingGameCamera) {
+        warning = "Nenhuma câmera ativa na cena: mostrando pela câmera do editor (adicione o componente Câmera)";
+    } else if (!gameView && !play.SideBySide()) {  // lado a lado, o jogo está na janela Jogo
+        warning = "Vendo pela câmera do editor (F8 volta para a câmera do jogo)";
     }
-
-    ImGui::End();
+    if (warning) {
+        const ImVec2 ws = ImGui::CalcTextSize(warning);
+        const ImVec2 wp{origin.x + (m_size.x - ws.x) * 0.5f, p1.y - ws.y - 16.0f};
+        dl->AddRectFilled(ImVec2(wp.x - 8.0f, wp.y - 5.0f), ImVec2(wp.x + ws.x + 8.0f, wp.y + ws.y + 5.0f),
+                          IM_COL32(0, 0, 0, 150), 4.0f);
+        dl->AddText(wp, IM_COL32(255, 220, 120, 255), warning);
+    }
 }
 
 std::optional<ImVec2> SceneViewport::Project(const glm::vec3& world) const {

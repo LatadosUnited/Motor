@@ -212,15 +212,22 @@ void SceneDocument::ReplaceScene(Scene&& scene, const fs::path& path) {
 }
 
 void SceneDocument::MarkSaved() {
-    m_savedSnapshot = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false});
+    m_history.Commit(m_ctx.scene, m_ctx.selected, &m_ctx.selection);  // a mudança ainda sem passo também foi salva
+    m_savedVersion = m_history.Version();
+    m_savedValid = true;
     m_dirty = false;
     m_autoSaveTimer = 0.0f;
     UpdateWindowTitle();
 }
 
 bool SceneDocument::HasUnsavedChanges() {
-    MOTOR_PROFILE_SCOPE("Checar alterações não salvas");  // serializa a cena inteira (alpha 3, Fase 26)
-    const bool dirty = SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false}) != m_savedSnapshot;
+    UpdateDirty(m_history.HasPendingChange(m_ctx.scene));
+    return m_dirty;
+}
+
+void SceneDocument::UpdateDirty(bool pendingChange) {
+    // Outra versão do desfazer (passo novo, desfazer até antes de salvar) ou mudança que ainda não virou passo.
+    const bool dirty = !m_savedValid || m_history.Version() != m_savedVersion || pendingChange;
     if (dirty != m_dirty) {
         m_dirty = dirty;
         if (!m_dirty) {
@@ -229,18 +236,14 @@ bool SceneDocument::HasUnsavedChanges() {
         }
         UpdateWindowTitle();
     }
-    return dirty;
 }
 
 void SceneDocument::PollChanges(float dt) {
-    // Compara o JSON da cena com o salvo a cada meio segundo (cenas pequenas, custo baixo).
-    // No Play a cena é a do jogo (descartada ao parar): não conta.
+    // A versão do desfazer a cada quadro (só um número: a mudança vira passo quando o usuário termina); a
+    // comparação da cena fica para quem precisa da resposta exata (fechar, MCP). No Play a cena é a do jogo
+    // (descartada ao parar): não conta.
     if (m_host.isPlaying()) return;
-    m_dirtyCheckTimer += dt;
-    if (m_dirtyCheckTimer >= 0.5f) {
-        m_dirtyCheckTimer = 0.0f;
-        HasUnsavedChanges();
-    }
+    UpdateDirty(false);
     if (m_dirty) {
         m_autoSaveTimer += dt;
         constexpr float kAutoSaveIntervalSeconds = 120.0f;

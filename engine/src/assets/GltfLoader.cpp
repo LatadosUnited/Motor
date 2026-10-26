@@ -2,6 +2,8 @@
 // malha por primitiva, materiais no modelo de iluminação do Motor, imagens, peles e clipes.
 #include "motor/assets/Model.h"
 
+#include "motor/common/FileRead.h"
+#include "motor/common/Text.h"
 #include "motor/core/Paths.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
@@ -40,10 +42,6 @@ namespace fs = std::filesystem;
 
 namespace {
 
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
-
 const char* ResultText(cgltf_result r) {
     switch (r) {
         case cgltf_result_success: return "ok";
@@ -60,20 +58,11 @@ const char* ResultText(cgltf_result r) {
     }
 }
 
-bool ReadBytes(const fs::path& path, std::vector<uint8_t>& out) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) return false;
-    const std::streamsize size = file.tellg();
-    file.seekg(0);
-    out.resize(static_cast<size_t>(std::max<std::streamsize>(size, 0)));
-    return size <= 0 || static_cast<bool>(file.read(reinterpret_cast<char*>(out.data()), size));
-}
-
 // Arquivos externos (.bin) pelo caminho UTF-8: o fopen padrão do cgltf não abre caminhos com acento no Windows.
 cgltf_result ReadExternal(const cgltf_memory_options*, const cgltf_file_options*, const char* path, cgltf_size* size,
                           void** data) {
     std::vector<uint8_t> bytes;
-    if (!ReadBytes(PathFromUtf8(path), bytes)) return cgltf_result_file_not_found;
+    if (!ReadBinaryFile(PathFromUtf8(path), bytes)) return cgltf_result_file_not_found;
     void* copy = std::malloc(std::max<size_t>(bytes.size(), 1));
     if (!copy) return cgltf_result_out_of_memory;
     if (!bytes.empty()) std::memcpy(copy, bytes.data(), bytes.size());
@@ -451,7 +440,7 @@ bool ParseGltf(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelDat
 
 bool LoadGltf(const fs::path& file, ModelData& out, std::string* error) {
     std::vector<uint8_t> bytes;
-    if (!ReadBytes(file, bytes)) {
+    if (!ReadBinaryFile(file, bytes)) {
         SetError(error, std::format("Não foi possível abrir '{}'.", ToUtf8(file)));
         return false;
     }

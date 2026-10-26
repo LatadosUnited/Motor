@@ -93,6 +93,16 @@ ParsedOptions ParseOptions(const std::vector<std::string>& args) {
                 motor::log::Warn("Porta inválida em {}: usando {}", arg, editor::mcp::Server::kDefaultPort);
                 options.mcpPort = editor::mcp::Server::kDefaultPort;
             }
+        } else if (arg == "--perf") {
+            if (remaining < 1) return fail("--perf precisa do arquivo.");
+            options.perfFile = motor::PathFromUtf8(args[++i]);
+        } else if (arg == "--segundos") {
+            if (remaining < 1) return fail("--segundos precisa do tempo.");
+            try {
+                options.seconds = std::stod(args[++i]);
+            } catch (const std::exception&) {
+                return fail("Tempo inválido em --segundos: " + args[i]);
+            }
         } else if (arg.starts_with("--")) {
             return fail("Opção desconhecida: " + arg);
         } else if (options.project.empty()) {

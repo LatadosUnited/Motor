@@ -2,6 +2,7 @@
 
 #include "panels/HierarchyFilter.h"
 
+#include <motor/common/Text.h>
 #include <motor/physics/PhysicsSystem.h>
 #include <motor/scene/Animator.h>
 #include <motor/scene/CharacterControllerComponent.h>
@@ -49,11 +50,6 @@ glm::vec3 ReadVec3(const Json& value, const char* what) {
         throw ToolError(std::format("'{}' deve ser uma lista de 3 números, ex.: [0, 1.5, -2]", what));
     }
     return {value[0].get<float>(), value[1].get<float>(), value[2].get<float>()};
-}
-
-std::string Lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-    return s;
 }
 
 // Tipo pelo nome registrado ("MeshRenderer") ou pelo rótulo do editor ("Mesh Renderer"), sem diferenciar

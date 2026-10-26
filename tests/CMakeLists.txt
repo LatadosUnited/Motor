@@ -38,7 +38,23 @@ motor_add_test(test_script_list)  # Fase 22: lista de scripts do SceneRuntime
 motor_add_test(test_frame_stats)  # Fase 22: contadores por quadro e CSV do --perf
 motor_add_test(test_entities_with)  # Fase 25: listas por tipo de componente da cena
 motor_add_test(test_destroy_batch)  # Fase 25: destruir em lote
+motor_add_test(test_scene_index)  # Fase 25: índices de filhos, nomes e tipos da cena
+motor_add_test(test_lod)  # Fase 24: níveis de detalhe das malhas
+motor_add_test(test_navigation)  # Fase 34: navmesh, caminhos e agentes
+# Fase 34: ferramentas de navegação do MCP (nav_bake, nav_path, nav_agents), sem janela como o test_mcp.
+motor_add_test(test_mcp_nav
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/nav/NavMeshBake.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpNavTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
+target_include_directories(test_mcp_nav PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_mcp_nav PRIVATE nlohmann_json::nlohmann_json)
 motor_add_test(test_world_cache)  # Fase 25: cache da matriz de mundo
+motor_add_test(test_perception)  # Fase 37: percepção dos agentes (visão, audição, memória)
 
 # Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o
 # ctest mostra "pulado". Rodar só ele: ctest --test-dir build-release -L desempenho
@@ -69,7 +85,8 @@ target_link_libraries(test_script_project PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(test_script_project PRIVATE
     MOTOR_TEST_SDK_JSON="${CMAKE_BINARY_DIR}/bin/sdk/MotorSDK.json"
     MOTOR_TEST_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/editor/templates/Scripts")
-set_tests_properties(test_script_project PROPERTIES TIMEOUT 600)
+# Sozinho: mede o tempo de compilar com e sem o cabeçalho pré-compilado, e falha com outros testes disputando a CPU.
+set_tests_properties(test_script_project PROPERTIES TIMEOUT 600 RUN_SERIAL TRUE)
 
 # Luzes: componente, tipo da luz, coleta para o renderer e conversão de cenas antigas.
 motor_add_test(test_lights)
@@ -79,6 +96,12 @@ motor_add_test(test_physics)
 
 # Desempenho da física: caixas caindo e empilhando (pequeno no ctest; números do relatório em Release).
 motor_add_test(test_physics_bench)
+
+# Passo fixo (Fase 25): limite de passos por quadro e interpolação da física no Update.
+motor_add_test(test_passo_fixo)
+
+# Sincronização da física (Fase 25): só o que mudou chega aos corpos, sem perder mudanças que não mexem na estrutura.
+motor_add_test(test_fisica_sincronizar)
 
 # Materiais (.mmat) e migração de cenas antigas; prefabs (.mprefab) com overrides e o histórico de desfazer.
 motor_add_test(test_materials)
@@ -242,6 +265,18 @@ motor_add_test(test_loading_screen)
 motor_add_test(test_fbx)
 target_compile_definitions(test_fbx PRIVATE MOTOR_ENGINE_ASSETS_DIR="${PROJECT_SOURCE_DIR}/engine/assets"
                                             MOTOR_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+# Fase 26: sistema de tarefas. A segunda execução roda sem threads de trabalho (tudo na thread que pede).
+motor_add_test(test_job_system)
+add_test(NAME test_job_system_sem_threads COMMAND test_job_system ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_job_system_sem_threads)
+set_tests_properties(test_job_system_sem_threads PROPERTIES ENVIRONMENT "MOTOR_THREADS=0")
+
+# Fase 26: texturas da cena lidas e decodificadas em paralelo (AssetLibrary::PreloadTextures).
+motor_add_test(test_asset_preload)
+
+# Fase 27: vigia da pasta do projeto do editor (a varredura dos arquivos só roda quando algo mudou).
+motor_add_test(test_folder_watcher ${PROJECT_SOURCE_DIR}/editor/src/FolderWatcher.cpp)
+target_include_directories(test_folder_watcher PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 
 # Entrada bruta: eventos do quadro (toque mais curto que um quadro), teclas e botões novos, texto digitado e zona
 # morta radial, vários controles (simulados). Sem janela.

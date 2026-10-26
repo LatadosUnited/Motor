@@ -6,6 +6,8 @@
 // pivôs e as "transformações de geometria" do FBX, e as animações amostradas em quadros (ufbx_bake_anim).
 #include "motor/assets/Model.h"
 
+#include "motor/common/FileRead.h"
+#include "motor/common/Text.h"
 #include "motor/core/Paths.h"
 
 #include <glm/geometric.hpp>
@@ -26,19 +28,6 @@ namespace motor {
 namespace fs = std::filesystem;
 
 namespace {
-
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
-
-bool ReadBytes(const fs::path& path, std::vector<uint8_t>& out) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) return false;
-    const std::streamsize size = file.tellg();
-    file.seekg(0);
-    out.resize(static_cast<size_t>(std::max<std::streamsize>(size, 0)));
-    return size <= 0 || static_cast<bool>(file.read(reinterpret_cast<char*>(out.data()), size));
-}
 
 struct SceneDeleter {
     void operator()(ufbx_scene* s) const { ufbx_free_scene(s); }
@@ -488,7 +477,7 @@ bool ParseFbx(std::span<const uint8_t> bytes, const fs::path& baseDir, ModelData
 
 bool LoadFbx(const fs::path& file, ModelData& out, std::string* error) {
     std::vector<uint8_t> bytes;
-    if (!ReadBytes(file, bytes)) {
+    if (!ReadBinaryFile(file, bytes)) {
         SetError(error, std::format("Não foi possível abrir '{}'.", ToUtf8(file)));
         return false;
     }

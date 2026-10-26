@@ -1,6 +1,7 @@
 #include "motor/project/GameOptions.h"
 
 #include "motor/common/FileWrite.h"
+#include "motor/common/Text.h"
 #include "motor/core/Paths.h"
 
 #include <nlohmann/json.hpp>
@@ -21,9 +22,6 @@ constexpr int kFormatVersion = 1;
 constexpr ShadowSetting kShadowSettings[] = {ShadowSetting::Off, ShadowSetting::Low, ShadowSetting::Medium,
                                              ShadowSetting::High};
 
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
 } // namespace
 
 const char* ShadowSettingName(ShadowSetting shadows) {

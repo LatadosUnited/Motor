@@ -4,6 +4,7 @@
 
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/AssetLoaders.h"
+#include "motor/core/FrameStats.h"
 #include "motor/core/Log.h"
 #include "motor/renderer/Mesh.h"
 #include "motor/scene/Components.h"
@@ -84,6 +85,7 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
     World& w = *m_world;
 
     auto start = std::chrono::steady_clock::now();
+    w.RestoreSmoothed(scene);  // a simulação parte do último passo, não da pose interpolada
     w.SyncBodies(scene, dt);
     w.SyncCharacters(scene, dt);
     m_stats.syncMs = MillisecondsSince(start);
@@ -102,7 +104,7 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
     m_stats.stepMs = MillisecondsSince(start);
 
     start = std::chrono::steady_clock::now();
-    w.WriteBack(scene);
+    w.WriteBack(scene, m_settings.interpolate);
     w.DispatchEvents(runtime);
     m_stats.writeMs = MillisecondsSince(start);
 
@@ -110,6 +112,17 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
     m_stats.activeBodies = static_cast<int>(w.physics.GetNumActiveBodies(JPH::EBodyType::RigidBody));
     m_stats.characters = static_cast<int>(w.characters.size());
     m_stats.threads = w.threads;
+
+    // Partes do sistema "Fisica" nos contadores do quadro (--perf, MCP): somam nos vários passos fixos do quadro.
+    FrameStats& frameStats = FrameStats::Instance();
+    frameStats.AddCpu("Fisica sincronizar", m_stats.syncMs);
+    frameStats.AddCpu("Fisica passo", m_stats.stepMs);
+    frameStats.AddCpu("Fisica escrever", m_stats.writeMs);
+    frameStats.SetValue("corpos ativos", m_stats.activeBodies);
+}
+
+void PhysicsSystem::OnUpdate(SceneRuntime& runtime, float) {
+    if (m_world) m_world->ApplySmoothing(runtime.GetScene(), runtime.FixedAlpha());
 }
 
 void PhysicsSystem::OnStop(SceneRuntime&) {
@@ -123,6 +136,7 @@ void PhysicsSystem::EnsureWorldAndBodies() {
         if (!SceneHasPhysics(*m_scene)) return;
         m_world = std::make_unique<World>(m_settings);
     }
+    m_world->RestoreSmoothed(*m_scene);  // senão a pose interpolada viraria teleporte
     m_world->SyncBodies(*m_scene, 0.0f);
     m_world->SyncCharacters(*m_scene, 0.0f);
 }

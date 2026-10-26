@@ -6,6 +6,7 @@
 #include "AssetLibraryUtil.h"
 
 #include "motor/assets/Model.h"
+#include "motor/core/JobSystem.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/project/Project.h"
@@ -15,7 +16,9 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <format>
+#include <functional>
 #include <fstream>
 #include <sstream>
 
@@ -138,6 +141,67 @@ std::shared_ptr<Texture2D> AssetLibrary::GetTextureByGuid(std::string_view guid,
     auto texture = LoadTexture(file, KeyForFile(file), m_textureFactory, error);
     if (texture) m_textures.push_back({{}, std::string(guid), texture});
     return texture;
+}
+
+size_t AssetLibrary::PreloadTextures(std::span<const std::string> guids) {
+    // Texturas que faltam: as pedidas direto e as dos materiais pedidos (os GUIDs que aparecem no .mmat).
+    std::vector<std::pair<std::string, fs::path>> pending;
+    auto addTexture = [&](const std::string& guid) {
+        if (FindByGuid(m_textures, guid)) return;
+        for (const auto& p : pending) {
+            if (p.first == guid) return;
+        }
+        fs::path file = m_database.PathFor(guid);
+        if (!file.empty() && AssetTypeFromPath(file) == AssetType::Texture) pending.push_back({guid, std::move(file)});
+    };
+    std::vector<std::string> inMaterial;
+    for (const std::string& guid : guids) {
+        const fs::path file = m_database.PathFor(guid);
+        const AssetType type = file.empty() ? AssetType::Unknown : AssetTypeFromPath(file);
+        if (type == AssetType::Texture) {
+            addTexture(guid);
+        } else if (type == AssetType::Material) {
+            std::ifstream in(file, std::ios::binary);
+            const json root = json::parse(in, nullptr, false);
+            if (root.is_discarded()) continue;
+            inMaterial.clear();
+            const std::function<void(const json&)> walk = [&](const json& j) {
+                if (j.is_string()) {
+                    if (const auto& s = j.get_ref<const std::string&>(); AssetDatabase::LooksLikeGuid(s)) inMaterial.push_back(s);
+                } else if (j.is_structured()) {
+                    for (const json& item : j) walk(item);
+                }
+            };
+            walk(root);
+            for (const std::string& texture : inMaterial) addTexture(texture);
+        }
+    }
+    if (pending.empty()) return 0;
+
+    // Ler e decodificar (PNG/JPG) é o que custa: em paralelo. A textura OpenGL só nesta thread (a do contexto).
+    const auto start = std::chrono::steady_clock::now();
+    std::vector<ImageData> images(pending.size());
+    std::vector<uint8_t> ok(pending.size(), 0);
+    JobSystem::Get().ParallelFor(pending.size(), 1, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) ok[i] = LoadImageFile(pending[i].second, images[i], nullptr) ? 1 : 0;
+    });
+    const auto decoded = std::chrono::steady_clock::now();
+    size_t loaded = 0;
+    for (size_t i = 0; i < pending.size(); ++i) {
+        if (!ok[i]) continue;  // quem pedir pelo GetTextureByGuid tenta de novo e recebe o erro
+        const ImageData& image = images[i];
+        log::Info("Textura carregada: {} ({}x{})", KeyForFile(pending[i].second), image.width, image.height);
+        auto texture = m_textureFactory ? m_textureFactory(image)
+                                        : std::make_shared<Texture2D>(image.width, image.height, image.pixels.data());
+        if (!texture) continue;
+        m_textures.push_back({{}, pending[i].first, std::move(texture)});
+        ++loaded;
+    }
+    using Ms = std::chrono::duration<double, std::milli>;
+    log::Info("Texturas da cena: {} em {:.0f} ms (ler e decodificar {:.0f} ms em paralelo, criar {:.0f} ms)", loaded,
+              Ms(std::chrono::steady_clock::now() - start).count(), Ms(decoded - start).count(),
+              Ms(std::chrono::steady_clock::now() - decoded).count());
+    return loaded;
 }
 
 // --- Céus HDR ----------------------------------------------------------------------

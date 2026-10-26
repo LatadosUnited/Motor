@@ -132,7 +132,7 @@ protected:
     Scene& GetScene();
 
     // --- Cena ---
-    Entity* FindEntity(std::string_view name);  // primeira com esse nome, ou nullptr
+    Entity* FindEntity(std::string_view name);  // uma com esse nome (ver Scene::FindByName), ou nullptr
     // Entidade pelo id ou por um campo EntityRef (GetEntity(alvo)); nullptr se não existe (foi destruída).
     Entity* GetEntity(EntityId id);
     // Componente do tipo T desta entidade, ou de outra (id ou EntityRef); nullptr se ela não tiver um.

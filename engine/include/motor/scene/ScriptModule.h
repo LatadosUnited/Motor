@@ -48,10 +48,14 @@ namespace motor {
 //     controle (GamepadButton/GamepadAxis).
 // 15: campo shadows (ShadowCasting: com sombra, sem sombra, só sombra) no MeshRenderer.
 // 16: Fase 25: Entity::cache (matriz de mundo guardada pela Scene) muda o tamanho de Entity.
-// 17: entrada v2: Script::GetVector e TextInput; InputAction e InputBinding com campos novos (tipo, part, with);
+// 17: Fase 35: NavMeshAgent ganhou raio, altura e desvio (multidão); o NavSystem guarda a multidão.
+// 18: Fase 37: o NavSystem guarda o SceneRuntime (RandomPoint); componentes e sistema de percepção novos.
+// 19: Fase 25: EntityCache::owner (índices da cena acompanham Add e Remove) muda o tamanho de Entity.
+// 20: Fase 26: a lista de objetos do SubmitTo guardada na Scene muda o tamanho de Scene.
+// 21: entrada v2: Script::GetVector e TextInput; InputAction e InputBinding com campos novos (tipo, part, with);
 //     vários controles (pad e device nas funções de entrada, GamepadCount, LastInputDevice...); contextos
 //     (SetInputContext...), IsPointerOverUi; segurar, toque, toque duplo e buffer (WasActionHeld...).
-inline constexpr int kScriptApiVersion = 17;
+inline constexpr int kScriptApiVersion = 21;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

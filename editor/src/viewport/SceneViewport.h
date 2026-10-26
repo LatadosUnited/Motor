@@ -2,6 +2,7 @@
 
 #include "EditorContext.h"
 #include "viewport/FrameStatsPanel.h"
+#include "viewport/NavMeshOverlay.h"
 #include "viewport/ViewportPrefs.h"
 #include "viewport/UiEditor.h"
 
@@ -79,6 +80,9 @@ private:
     // Ponto do mundo em pixels do viewport (relativo ao canto); nullopt se estiver atrás da câmera.
     std::optional<ImVec2> Project(const glm::vec3& world) const;
     void DrawGizmo(EditorContext& ctx, const ImVec2& origin);
+    void DrawStatsOverlay(ImDrawList* dl, const ImVec2& origin, float playLeft, bool gameView,
+                          const motor::RenderStats& stats, float fps);
+    void DrawPlayIndicator(ImDrawList* dl, const ImVec2& origin, const PlayController& play, bool gameView) const;
     void DrawToolbar(const ImVec2& position);
     void DrawSnapPopup();  // passos do encaixe e grade (botão ao lado do Snap)
     void SubmitGrid(motor::Renderer& renderer) const;
@@ -94,6 +98,7 @@ private:
     std::unique_ptr<motor::UiRenderer> m_ui;
     UiViewportTool m_uiTool;
     FrameStatsPanel m_statsPanel;  // contadores por quadro (Fase 22), com m_prefs.stats
+    NavMeshOverlay m_navOverlay;   // navmesh e caminhos dos agentes (Fase 34), com m_prefs.navMesh
     bool m_showUi = true;
 
     enum class GizmoTool { None, Translate, Rotate, Scale };

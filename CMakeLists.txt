@@ -170,6 +170,30 @@ if(MOTOR_TRACY)
     endif()
 endif()
 
+# Recast/Detour (zlib): navegação da IA (Fase 34). Recast gera o navmesh a partir dos triângulos da cena; Detour
+# busca caminhos nele; DetourCrowd (multidão) entra para a Fase 35. Tarball da tag v1.6.0, montado aqui como
+# biblioteca estática (o CMakeLists de lá traz demo, testes e instalação). Aprovada pelo usuário em 23/10/2026.
+FetchContent_Declare(recast
+    URL           https://github.com/recastnavigation/recastnavigation/archive/refs/tags/v1.6.0.tar.gz
+    URL_HASH      SHA256=d48ca0121962fa0639502c0f56c4e3ae72f98e55d88727225444f500775c0074
+    SOURCE_SUBDIR nenhum)
+FetchContent_MakeAvailable(recast)
+
+file(GLOB MOTOR_RECAST_SOURCES
+    ${recast_SOURCE_DIR}/Recast/Source/*.cpp
+    ${recast_SOURCE_DIR}/Detour/Source/*.cpp
+    ${recast_SOURCE_DIR}/DetourCrowd/Source/*.cpp)
+add_library(Recast STATIC ${MOTOR_RECAST_SOURCES})
+set_target_properties(Recast PROPERTIES POSITION_INDEPENDENT_CODE ON)  # entra na libMotor.dll
+target_include_directories(Recast SYSTEM PUBLIC
+    ${recast_SOURCE_DIR}/Recast/Include
+    ${recast_SOURCE_DIR}/Detour/Include
+    ${recast_SOURCE_DIR}/DetourCrowd/Include)
+# Como o Jolt: otimizado também no Debug (gerar o navmesh sem otimização leva segundos numa cena média).
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(Recast PRIVATE $<$<CONFIG:Debug>:-O2>)
+endif()
+
 # Objetos do ImGui (e o GLFW) entram na libMotor.dll: o editor e a DLL de scripts usam a mesma cópia (um
 # único contexto do ImGui e uma única janela do GLFW no processo).
 add_library(imgui OBJECT
@@ -204,7 +228,7 @@ if(MINGW)
     endforeach()
 endif()
 
-add_subdirectory(common)   # gravação segura de arquivos, comum à engine, ao hub e à distribuição
+add_subdirectory(common)   # gravação segura, UTF-8, texto e leitura de arquivos: engine, hub e distribuição
 add_subdirectory(engine)
 add_subdirectory(sandbox)
 add_subdirectory(player)  # Fase 10: executável do jogo exportado

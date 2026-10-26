@@ -81,6 +81,7 @@ void SceneRuntime::ReportSystemError(std::string_view systemName, std::string_vi
 
 void SceneRuntime::InvokeScript(Script& script, EntityId id, std::string_view scriptName,
                                 std::string_view callback, const std::function<void()>& fn) {
+    MOTOR_PROFILE_SCOPE_NAMED(scriptName);  // no Tracy, cada script com o nome dele (Fase 26)
     try {
         fn();
     } catch (const std::exception& ex) {

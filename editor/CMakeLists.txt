@@ -62,6 +62,13 @@ add_executable(MotorEditor
     src/EntityClipboard.cpp
     src/drawers/ShadowCastingDrawer.cpp
     src/viewport/FrameStatsPanel.cpp
+    src/drawers/NavMeshDataDrawer.cpp
+    src/drawers/NavAreaMaskDrawer.cpp
+    src/viewport/NavMeshOverlay.cpp
+    src/nav/NavMeshBake.cpp
+    src/mcp/McpNavTools.cpp
+    src/viewport/PerceptionOverlay.cpp
+    src/FolderWatcher.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 # Includes do editor a partir de src/ ("scripts/ScriptHost.h"); as peças comuns ficam na raiz de src/.

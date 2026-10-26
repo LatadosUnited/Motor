@@ -2,6 +2,7 @@
 
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/Model.h"
+#include "motor/core/JobSystem.h"
 #include "motor/core/Log.h"
 #include "motor/scene/Scene.h"
 #include "motor/scene/SceneRuntime.h"
@@ -10,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <vector>
 
 namespace motor {
 
@@ -231,11 +233,17 @@ void AnimationSystem::OnStart(SceneRuntime& runtime) {
 
 void AnimationSystem::OnUpdate(SceneRuntime& runtime, float dt) {
     Scene& scene = runtime.GetScene();
+    // A lista sai na thread do jogo (as consultas da cena usam caches); depois cada Animator calcula a sua pose em
+    // paralelo (Fase 26): Update só mexe no próprio Animator e lê clipes e esqueletos, que não mudam.
+    std::vector<Animator*> active;
     for (EntityId id : scene.EntitiesWith<Animator>()) {
         Entity* e = scene.Find(id);
         Animator* a = e ? e->Get<Animator>() : nullptr;
-        if (a && scene.IsActiveInHierarchy(id)) a->Update(dt);
+        if (a && scene.IsActiveInHierarchy(id)) active.push_back(a);
     }
+    JobSystem::Get().ParallelFor(active.size(), 4, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) active[i]->Update(dt);
+    });
 }
 
 MOTOR_RUNTIME_SYSTEM(Animacao, AnimationSystem, kSystemOrderAnimation);

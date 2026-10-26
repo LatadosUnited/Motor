@@ -7,6 +7,7 @@
 
 #include <HubCore.h>
 #include <motor/common/FileWrite.h>
+#include <motor/common/Text.h>
 
 #include <format>
 #include <fstream>
@@ -17,9 +18,7 @@ using hub::PathFromUtf8;
 using hub::ToUtf8;
 
 namespace {
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
+using motor::SetError;
 
 uint64_t FileSize(const fs::path& path) {
     std::error_code ec;

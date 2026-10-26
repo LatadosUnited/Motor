@@ -1,6 +1,7 @@
 #include "motor/scene/ModelImport.h"
 
 #include "motor/common/FileWrite.h"
+#include "motor/common/Text.h"
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/Model.h"
 #include "motor/core/Log.h"
@@ -19,9 +20,6 @@ namespace motor {
 namespace fs = std::filesystem;
 
 namespace {
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
 
 // Nome de arquivo sem caracteres que o Windows recusa.
 std::string SafeFileName(std::string name) {

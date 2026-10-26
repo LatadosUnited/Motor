@@ -45,6 +45,12 @@ public:
     Scene& GetScene() { return m_scene; }
     const GameTime& Time() const { return m_time; }
 
+    // Quanto do próximo passo fixo já passou (0 a 1): o que sobrou no acumulador / passo. Quem roda o loop informa
+    // antes do Update; a física usa para mostrar os corpos entre o último passo e o anterior (interpolação). Sem
+    // ninguém informar fica 1: os corpos aparecem onde o último passo os deixou.
+    void SetFixedAlpha(float alpha) { m_fixedAlpha = alpha; }
+    float FixedAlpha() const { return m_fixedAlpha; }
+
     // Desligado quando o jogo não tem o foco: os scripts leem teclado/mouse como soltos.
     void SetInputEnabled(bool enabled) { m_inputEnabled = enabled; }
     bool InputEnabled() const { return m_inputEnabled; }
@@ -200,6 +206,7 @@ private:
     uint64_t m_holdersVersion = ~uint64_t{0};
     size_t m_holdersEntityCount = 0;
     const void* m_holdersEntityData = nullptr;
+    float m_fixedAlpha = 1.0f;
 };
 
 // Arquivo de cena de um pedido de LoadScene: caminho relativo ao projeto ("Assets/Cenas/Fase1.mscene", a

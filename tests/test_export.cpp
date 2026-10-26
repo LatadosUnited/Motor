@@ -93,6 +93,9 @@ int main(int argc, char** argv) {
     const std::string fontGuid = db.GuidFor(assetsDir / PathFromUtf8("Fontes/Título.ttf"));
     const std::string musicGuid = db.GuidFor(assetsDir / PathFromUtf8("Sons/Música.ogg"));
     CHECK(!bmpGuid.empty() && !gltfGuid.empty() && !fontGuid.empty() && !musicGuid.empty());
+    Write(assetsDir / "Navegacao" / "Navmesh.mnav", "MNAV falso");  // Fase 34: navmesh da Superfície de navegação
+    const std::string navGuid = db.GuidFor(assetsDir / "Navegacao" / "Navmesh.mnav");
+    CHECK(!navGuid.empty());
 
     // Material com textura (gravado pela engine) e prefab que usa uma malha do glTF.
     const fs::path matFile = assetsDir / "Materiais" / "Tijolo.mmat";
@@ -118,6 +121,7 @@ int main(int argc, char** argv) {
         label.Add<UiRect>();
         label.Add<UiText>().font = UiFont{fontGuid, "Assets/Fontes/Título.ttf"};
         scene.CreateEntity("Música").Add<AudioSource>().clip = AudioClip{musicGuid, "Assets/Sons/Música.ogg", {}};
+        scene.CreateEntity("Navegação").Add<NavMeshSurface>().navMesh = NavMeshData{navGuid, "Assets/Navegacao/Navmesh.mnav", {}};
         fs::create_directories(assetsDir / "Cenas");
         CHECK(SceneSerializer::Save(assetsDir / "Cenas" / "Inicio.mscene", scene, assets, &error));
     }
@@ -144,6 +148,7 @@ int main(int argc, char** argv) {
     CHECK(Has(c.files, "Assets/Recursos/falas.txt"));         // pasta Recursos inteira
     CHECK(Has(c.files, "Assets/Sons/pulo.wav"));              // citado num script
     CHECK(Has(c.files, "Assets/Sons/Música.ogg"));            // clipe de uma Fonte de áudio (Fase 8)
+    CHECK(Has(c.files, "Assets/Navegacao/Navmesh.mnav"));     // navmesh da Superfície de navegação (Fase 34)
     CHECK(!Has(c.files, "Assets/Modelos/sobra.obj"));
     CHECK(!Has(c.files, "Assets/Texturas/sobra.bmp"));
     CHECK(!Has(c.files, "Assets/Sons/sobra.wav"));

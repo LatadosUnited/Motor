@@ -6,6 +6,7 @@ motor_add_layer(physics
         PhysicsWorld.cpp
         PhysicsWorldEvents.cpp
         ColliderGizmo.cpp
+        JoltJobs.cpp
     DEPENDS scene
     PRIVATE_LIBS Jolt)
 

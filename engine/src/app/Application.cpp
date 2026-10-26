@@ -1,4 +1,5 @@
 #include "motor/app/Application.h"
+#include "motor/app/FixedStepClock.h"
 
 #include "motor/core/ImGuiLayer.h"
 #include "motor/core/Input.h"
@@ -56,8 +57,7 @@ void Application::Run() {
     OnInit();
 
     m_running = true;
-    const double fixedDt = m_desc.fixedTimestep;
-    double accumulator = 0.0;
+    FixedStepClock fixedClock(m_desc.fixedTimestep, m_desc.maxFixedSteps);
     auto last = Clock::now();
 
     double fpsTimer = 0.0;
@@ -79,16 +79,17 @@ void Application::Run() {
 
         const auto now = Clock::now();
         // Limita o dt para evitar a "espiral da morte" após travamentos/breakpoints.
-        const double dt = std::min(std::chrono::duration<double>(now - last).count(), 0.25);
+        double dt = std::min(std::chrono::duration<double>(now - last).count(), 0.25);
         last = now;
         m_elapsed += dt;
 
-        accumulator += dt;
-        while (accumulator >= fixedDt) {
+        const int fixedSteps = fixedClock.Advance(dt);  // acima de maxFixedSteps, dt diminui (jogo mais lento)
+        for (int i = 0; i < fixedSteps; ++i) {
             MOTOR_PROFILE_STAT("FixedUpdate");
-            OnFixedUpdate(static_cast<float>(fixedDt));
-            accumulator -= fixedDt;
+            OnFixedUpdate(static_cast<float>(fixedClock.Step()));
         }
+        m_fixedAlpha = fixedClock.Alpha();
+        FrameStats::Instance().SetValue("passos fixos", fixedSteps);
 
         {
             MOTOR_PROFILE_STAT("Update");
@@ -103,8 +104,12 @@ void Application::Run() {
             }
             if (m_imgui) {
                 MOTOR_PROFILE_STAT("ImGui");
-                m_imgui->BeginFrame();
+                {
+                    MOTOR_PROFILE_STAT("ImGui: começar");
+                    m_imgui->BeginFrame();
+                }
                 OnImGui();
+                MOTOR_PROFILE_STAT("ImGui: desenhar");
                 m_imgui->EndFrame();
             }
             {
