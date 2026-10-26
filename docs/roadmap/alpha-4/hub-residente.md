@@ -53,8 +53,8 @@ biblioteca pequena sem a engine, usada pelos dois.
 ## Tarefas
 
 - [x] Tarefa 1: Tirar o `McpProtocol` e o `McpServer` do editor para uma biblioteca sem a engine (log por callback) — 18ac51a
-- [ ] Tarefa 2: Iniciar com o Windows (chave `Run` do HKCU) pelo instalador e pelas configurações do Hub
-- [ ] Tarefa 3: Modo bandeja (`--bandeja`): ícone, menu, janela escondida, uma instância só
+- [x] Tarefa 2: Iniciar com o Windows (chave `Run` do HKCU) pelo instalador e pelas configurações do Hub — 8da3a80
+- [x] Tarefa 3: Modo bandeja (`--bandeja`): ícone, menu, janela escondida, uma instância só — 8da3a80
 - [ ] Tarefa 4: MCP do Hub na porta 47600 (`/mcphub`) com sessão e token
 - [ ] Tarefa 5: Ferramentas do `/mcphub`: projetos, versões, abrir e fechar o editor, estado
 - [ ] Tarefa 6: Lista de ferramentas do editor sem janela (`--mcp-ferramentas`), gravada no pacote da versão
@@ -82,6 +82,20 @@ biblioteca pequena sem a engine, usada pelos dois.
   namespace `motor::mcp`), sem a engine: só nlohmann_json, o header da cpp-httplib e o Winsock. O log de ligado e
   desligado vai por `Server::SetLog` (o editor manda para o `motor::log`); o editor continua com os nomes de
   `editor::mcp` pelo `editor/src/mcp/Mcp.h`. Sem mudar comportamento: `test_mcp` e `test_mcp_nav` passam como antes.
+- Tarefa 2: valor `MotorHub` no `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` com
+  `"<MotorHub.exe>" --bandeja [--data "<pasta>"]` (`distrib::StartupCommand`). O instalador grava (caixa marcada por
+  padrão, `--sem-iniciar-com-windows`; `--chave-registro` também troca o nome do valor, para testes) e guarda o nome
+  no `instalacao.json` (versão 2; a 1 continua lendo); a desinstalação apaga. No Hub, a caixa "Iniciar com o
+  Windows" no canto do cabeçalho; marcada só quando o valor aponta para este `.exe` e esta pasta de dados
+  (`SameStartupCommand`). Conferido com o `MotorSetup` de verdade e o nome `MotorHubTeste`: valor gravado com a
+  linha certa, `startupValue` no `instalacao.json`, valor apagado ao desinstalar.
+- Tarefa 3: `--bandeja` abre com a janela escondida e o ícone na bandeja (`hub/src/HubTray`): clique abre, botão
+  direito dá "Abrir o Hub" e "Sair do Hub"; o ícone volta se o Explorer reiniciar. Residente (com `--bandeja` ou
+  iniciando com o Windows), fechar a janela só a esconde, com um balão na primeira vez. Um Hub por pasta de dados:
+  trava e janela escondida com a `InstanceKey`; abrir de novo traz a janela do que está aberto e sai, e um segundo
+  `--bandeja` só sai. Conferido com o `MotorHub.exe` e `--data` numa pasta temporária: os cinco casos acima, e
+  fechar a janela sem estar residente fecha o Hub. Parado na bandeja: 47 ms de CPU em 10 s (0,5% de um núcleo) e
+  52,3 MB de memória. Hub 0.3.0.
 
 ## Limitações
 
