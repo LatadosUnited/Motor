@@ -84,7 +84,7 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 - [ ] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw` — 957b452 (falta o `DrawControlsWindow`)
 - [x] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta — 7efa412
 - [x] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2 — 95674e5
-- [ ] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo — 601c36d, 95674e5 (falta o grafo, depois do merge)
+- [x] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo — 601c36d, 95674e5, grafo depois do merge 3024c1b
 - [x] Tarefa 10: Juntar os dois `ToUtf8` e `PathFromUtf8` (engine e Hub) num `motor/common/Utf8.h` — 4653ffb
 
 ## Pronto quando
@@ -158,7 +158,11 @@ editor Release com a referência, no `main` e no branch: mesma imagem, 19 draws 
 O `NavMeshBake.cpp/.h` foi para `editor/src/nav/` (`#include "nav/NavMeshBake.h"`, como as outras subpastas); o
 código não mudou. No `CLAUDE.md`, a pasta entrou na lista do editor e na área IA, e as tabelas de onde cada fase
 das alphas 1 e 2 mexia viraram uma linha apontando para o histórico do git. Os auxiliares do `common/` já tinham
-entrado no `601c36d`. O grafo se atualiza com `/graphify . --update` depois do merge no `main`.
+entrado no `601c36d`. O grafo foi atualizado depois do merge no `main` (`3024c1b`) com o `graphify update`, que relê só
+o código: 8296 nós e 427 grupos. Há uma definição só de `ToUtf8` e de `PathFromUtf8`, no `common/Utf8.h` (157 e 88
+chamadas), e uma só do `SetError(std::string*)`, no `common/Text.h`; a cópia do Hub saiu do grafo. Os nomes dos
+grupos foram refeitos pelo nó principal de cada um (`graphify label` dá nomes melhores, com LLM), e as notas em
+Markdown só entram de novo num `/graphify --update` completo.
 
 Conferido: build sem avisos e `ctest` 57/57 em Debug (o `test_desempenho` pulado, como sempre no Debug).
 
