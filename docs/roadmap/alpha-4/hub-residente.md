@@ -55,7 +55,7 @@ biblioteca pequena sem a engine, usada pelos dois.
 - [x] Tarefa 1: Tirar o `McpProtocol` e o `McpServer` do editor para uma biblioteca sem a engine (log por callback) — 18ac51a
 - [x] Tarefa 2: Iniciar com o Windows (chave `Run` do HKCU) pelo instalador e pelas configurações do Hub — 8da3a80
 - [x] Tarefa 3: Modo bandeja (`--bandeja`): ícone, menu, janela escondida, uma instância só — 8da3a80
-- [ ] Tarefa 4: MCP do Hub na porta 47600 (`/mcphub`) com sessão e token
+- [x] Tarefa 4: MCP do Hub na porta 47600 (`/mcphub`) com sessão e token — dd6f26b
 - [ ] Tarefa 5: Ferramentas do `/mcphub`: projetos, versões, abrir e fechar o editor, estado
 - [ ] Tarefa 6: Lista de ferramentas do editor sem janela (`--mcp-ferramentas`), gravada no pacote da versão
 - [ ] Tarefa 7: Editor numa porta interna que o Hub escolhe, avisando o Hub quando está pronto e quando fecha
@@ -96,6 +96,16 @@ biblioteca pequena sem a engine, usada pelos dois.
   `--bandeja` só sai. Conferido com o `MotorHub.exe` e `--data` numa pasta temporária: os cinco casos acima, e
   fechar a janela sem estar residente fecha o Hub. Parado na bandeja: 47 ms de CPU em 10 s (0,5% de um núcleo) e
   52,3 MB de memória. Hub 0.3.0.
+- Tarefa 4: a `motor_mcp` ganhou caminho (`SetPath`), token (`SetToken`: `Authorization: Bearer`, 401 sem ele,
+  comparação em tempo constante) e sessão (`SetSessions`: `Mcp-Session-Id` no `initialize`, `DELETE` encerra). O
+  servidor não guarda nada por sessão e aceita um id que não deu: o Hub reiniciado (atualizado) não faz o Claude
+  reconectar. No Hub, `HubMcp` liga `http://127.0.0.1:47600/mcphub` junto com a janela ou a bandeja e é atendido no
+  loop do hub, que o `glfwPostEmptyEvent` acorda. Token em `<dados>\mcp-token`, criado na primeira vez
+  (`LoadOrCreateMcpToken`); sem token o MCP não liga. Por ora só a ferramenta `hub_status`; a aba MCP mostra o
+  endereço e copia o token e o comando `claude mcp add`. `--mcp-porta <n>` (0 desliga) para um Hub de teste.
+  Testes: `test_mcp_servidor` (novo, sem a engine: caminho, token, sessão, origem) e o token no `test_hub`.
+  Conferido com o `MotorHub.exe` na bandeja (porta 47650): sem token 401, `initialize` com sessão, `tools/list` e
+  `hub_status` respondendo em 12 ms com a janela escondida; memória 53,8 MB.
 
 ## Limitações
 
