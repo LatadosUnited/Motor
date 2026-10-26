@@ -73,10 +73,14 @@ public:
 
     // Editores abertos por este hub (os abertos de outro jeito não entram), sem os que já fecharam.
     struct OpenEditor {
-        fs::path root;
+        fs::path root;  // muda se o editor abrir outro projeto (aviso "projeto")
         std::string version;
         platform::ChildProcess process;
         int64_t opened = 0;  // NowSeconds()
+        // Hub residente (motor/mcp/HubLink.h): só com o MCP do hub ligado e uma versão que entende o --hub.
+        int mcpPort = 0;     // porta interna do MCP do editor; 0 = aberto sem a ligação
+        std::string token;   // o do MCP do editor (e dos avisos dele)
+        bool ready = false;  // avisou "pronto" (e ainda não "fechando")
     };
     const std::vector<OpenEditor>& Editors();
     const OpenEditor* FindEditor(const fs::path& root);
@@ -196,6 +200,8 @@ private:
     std::optional<DownloadResult> m_lastDownload;  // o último que terminou (o MCP espera por ele)
 
     std::vector<OpenEditor> m_editors;
+    int m_linkPort = 0;  // porta do MCP do hub enquanto ligado (HubMcp): os editores abertos avisam nela
+    int PickEditorPort();  // livre na faixa interna e sem outro editor deste hub; 0 se não houver
 };
 
 } // namespace hub

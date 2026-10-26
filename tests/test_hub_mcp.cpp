@@ -5,7 +5,11 @@
 #include <HubApp.h>
 #include <HubMcp.h>
 
+#include <motor/mcp/HubLink.h>
+
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <optional>
@@ -13,6 +17,7 @@
 #include <thread>
 
 namespace fs = std::filesystem;
+namespace link = motor::mcp::hublink;
 using motor::mcp::Json;
 
 namespace {
@@ -51,6 +56,7 @@ Call Wait(hub::HubMcp& mcp, const char* tool, Json args, double seconds = 20.0) 
     if (!deferred) return Read(Json::parse(text));
     const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(seconds * 1000));
     while (std::chrono::steady_clock::now() < end) {
+        mcp.Pump();  // os avisos dos editores (rota do servidor) chegam por aqui
         if (auto done = deferred->Poll()) return Read(Json::parse(*done));
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -62,15 +68,51 @@ void WriteText(const fs::path& file, const std::string& text) {
     out << text;
 }
 
+std::string Environment(const char* name) {
+#ifdef _WIN32
+    const std::wstring wide(name, name + std::strlen(name));
+    const wchar_t* value = _wgetenv(wide.c_str());
+    return value ? hub::ToUtf8(fs::path(value)) : std::string();
+#else
+    const char* value = std::getenv(name);
+    return value ? value : "";
+#endif
+}
+
+void SetEnvironment(const char* name, const std::string& value) {
+#ifdef _WIN32
+    const std::wstring wide(name, name + std::strlen(name));
+    _wputenv_s(wide.c_str(), hub::PathFromUtf8(value).wstring().c_str());  // vazio apaga
+#else
+    setenv(name, value.c_str(), 1);
+#endif
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
-    // Papel de editor falso: o hub abriu esta cópia com --project/--create. Espera ser fechado (no máximo 60 s).
+    // Papel de editor falso: o hub abriu esta cópia com --project/--create. Com --hub, avisa o hub como o editor
+    // (HubLink.h); depois espera ser fechado (no máximo 60 s).
+    bool fake = false;
+    int mcpPort = 0, hubPort = 0;
     for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--project") == 0 || std::strcmp(argv[i], "--create") == 0) {
-            std::this_thread::sleep_for(std::chrono::seconds(60));
-            return 0;
+        if (std::strcmp(argv[i], "--project") == 0 || std::strcmp(argv[i], "--create") == 0) fake = true;
+        if (std::strncmp(argv[i], "--mcp=", 6) == 0) mcpPort = std::atoi(argv[i] + 6);
+        if (std::strcmp(argv[i], link::kArgument) == 0 && i + 1 < argc) hubPort = std::atoi(argv[i + 1]);
+    }
+    if (fake) {
+        if (hubPort > 0) {
+            const std::string token = Environment(link::kTokenEnv);
+            // Projeto vazio: o argv do MinGW vem em ANSI e estragaria "Ação" (o hub ignora o vazio).
+            link::PostJson(hubPort, link::kNotifyPath, token, {{"event", link::kEventReady}, {"port", mcpPort}});
+            const std::string other = Environment("MOTOR_TESTE_OUTRO_PROJETO");
+            if (!other.empty()) {
+                link::PostJson(hubPort, link::kNotifyPath, token,
+                               {{"event", link::kEventProject}, {"port", mcpPort}, {"project", other}});
+            }
         }
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+        return 0;
     }
 
     const fs::path dir = TestDir(argc, argv, "test_hub_mcp_tmp");
@@ -197,6 +239,76 @@ int main(int argc, char** argv) {
         const Call download = Wait(mcp, "version_download", {{"version", "1.0.0"}, {"server", "http://127.0.0.1:1"}});
         CHECK(!download.ok);
         CHECK(Now(mcp, "hub_status").data["download"].is_null());
+    }
+
+    SECTION("Hub residente: porta interna, token do editor e avisos");
+    {
+        // MCP do hub ligado de verdade (HTTP) e uma versão que entende o --hub.
+        WriteText(versionDir / hub::kMcpToolsFile,
+                  R"({"format": "motor-mcp-tools", "version": 1, "hubLink": 1, "tools": []})");
+        std::string error;
+        int hubPort = 0;
+        for (int port = 47660; port < 47670 && !hubPort; ++port) {
+            if (mcp.Start(port, [] {}, error)) hubPort = port;
+        }
+        CHECK(hubPort > 0);
+
+        const Call open = Wait(mcp, "project_open", {{"path", projectUtf8}, {"wait", true}, {"timeout", 15}});
+        CHECK(open.ok);
+        CHECK(open.data["ready"] == true);
+        const Call status = Now(mcp, "hub_status");
+        const Json& editor = status.data["editors"][0];
+        CHECK(editor["linked"] == true && editor["ready"] == true);
+        const int port = editor.value("mcpPort", 0);
+        CHECK(port >= link::kEditorPortFirst && port <= link::kEditorPortLast);
+        CHECK(Now(mcp, "projects_list").data[0]["editorReady"] == true);
+
+        // Token errado: o hub recusa (só os editores que ele abriu avisam).
+        // O aviso é atendido no Pump: manda de outra thread enquanto esta faz o papel do loop do hub.
+        std::string refused;
+        bool posted = true;
+        std::atomic<bool> done = false;
+        std::thread client([&] {
+            posted = link::PostJson(hubPort, link::kNotifyPath, "token-inventado", {{"event", link::kEventClosing}},
+                                    &refused);
+            done = true;
+        });
+        while (!done) {
+            mcp.Pump();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        client.join();
+        CHECK(!posted && refused.find("401") != std::string::npos);
+        CHECK(Now(mcp, "hub_status").data["editors"][0]["ready"] == true);  // continua pronto
+        CHECK(Wait(mcp, "editor_close", {{"path", projectUtf8}, {"force", true}}).ok);
+
+        // O editor abre outro projeto (Arquivo > Abrir projeto): o hub segue e o põe na lista.
+        const fs::path other = dir / hub::PathFromUtf8("Outro Jogo Ação");
+        fs::create_directories(other);
+        WriteText(other / "Outro.mproject",
+                  R"({"format": "motor-project", "name": "Outro Jogo Ação", "engineVersion": "0.9.0"})");
+        SetEnvironment("MOTOR_TESTE_OUTRO_PROJETO", hub::ToUtf8(other));
+        CHECK(Wait(mcp, "project_open", {{"path", projectUtf8}, {"wait", true}, {"timeout", 15}}).ok);
+        SetEnvironment("MOTOR_TESTE_OUTRO_PROJETO", "");
+        bool followed = false;
+        for (int i = 0; i < 200 && !followed; ++i) {  // o "projeto" chega logo depois do "pronto"
+            mcp.Pump();
+            followed = app.FindEditor(other) != nullptr;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        CHECK(followed);
+        CHECK(!app.FindEditor(project));
+        const Call list = Now(mcp, "projects_list", {{"query", "outro"}});
+        CHECK(list.data.size() == 1 && list.data[0]["editorOpen"] == true);
+        CHECK(Wait(mcp, "editor_close", {{"path", hub::ToUtf8(other)}, {"force", true}}).ok);
+
+        // Versão sem "hubLink" (anterior ao Hub residente): abre como antes, sem a ligação, e wait explica.
+        WriteText(versionDir / hub::kMcpToolsFile, R"({"format": "motor-mcp-tools", "version": 1, "tools": []})");
+        const Call old = Now(mcp, "project_open", {{"path", projectUtf8}, {"wait", true}});
+        CHECK(!old.ok && old.text.find("não avisa o Hub") != std::string::npos);
+        CHECK(Now(mcp, "hub_status").data["editors"][0]["linked"] == false);
+        CHECK(Wait(mcp, "editor_close", {{"path", projectUtf8}, {"force", true}}).ok);
+        mcp.Stop();
     }
 
     SECTION("version_remove");

@@ -37,6 +37,8 @@ private:
     void AddProjectTools();
     void AddVersionTools();
     motor::mcp::Json EditorsJson();
+    // Aviso de um editor aberto por este hub (POST em hublink::kNotifyPath), na thread do hub.
+    motor::mcp::Server::RouteReply OnEditorNotice(const std::string& authorization, const std::string& body);
 
     HubApp& m_app;
     motor::mcp::Protocol m_protocol;

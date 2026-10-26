@@ -11,6 +11,7 @@
 
 #include "TestUtil.h"
 
+#include <motor/mcp/HubLink.h>
 #include <motor/mcp/McpProtocol.h>
 #include <motor/mcp/McpServer.h>
 
@@ -133,6 +134,56 @@ int main(int, char**) {
         });
         CHECK(initStatus == 200 && !hasSession && deleteStatus == 405);
         server.Stop();
+    }
+
+    SECTION("Rota a mais (avisos dos editores ao Hub) e o cliente do HubLink");
+    {
+        Server server(protocol);
+        server.SetPath("/mcphub");
+        server.SetToken("segredo-do-hub");
+        const std::thread::id mainThread = std::this_thread::get_id();
+        bool onMainThread = false;
+        std::string seenAuth, seenBody;
+        server.AddRoute("/mcphub/editor", [&](const std::string& authorization, const std::string& body) {
+            onMainThread = std::this_thread::get_id() == mainThread;
+            seenAuth = authorization;
+            seenBody = body;
+            if (authorization != "Bearer do-editor") return Server::RouteReply{401, R"({"error": "quem?"})"};
+            return Server::RouteReply{200, R"({"ok": true})"};
+        });
+        const int port = StartFree(server, 47620);
+        CHECK(port > 0);
+
+        bool sent = false, refused = false;
+        std::string refusedError;
+        int foreign = 0, mcpWithEditorToken = 0;
+        Serve(server, [&] {
+            // A rota tem o token dela: o do servidor não vale nem é pedido.
+            sent = hublink::PostJson(port, "/mcphub/editor", "do-editor", {{"event", "pronto"}, {"port", 47801}});
+            refused = !hublink::PostJson(port, "/mcphub/editor", "outro", {{"event", "pronto"}}, &refusedError);
+            httplib::Client http("127.0.0.1", port);
+            if (auto r = http.Post("/mcphub/editor", {{"Origin", "http://site.com"}}, "{}", "application/json")) {
+                foreign = r->status;
+            }
+            // E o token da rota não abre o MCP.
+            if (auto r = http.Post("/mcphub", {{"Authorization", "Bearer do-editor"}}, Request(1, "ping").dump(),
+                                   "application/json")) {
+                mcpWithEditorToken = r->status;
+            }
+        });
+        CHECK(sent);
+        CHECK(refused && refusedError.find("401") != std::string::npos);
+        CHECK(foreign == 403);
+        CHECK(mcpWithEditorToken == 401);
+        CHECK(onMainThread);  // atendida no Pump, como as mensagens
+        CHECK(Json::parse(seenBody, nullptr, false).value("event", "") == "pronto");
+
+        CHECK(!hublink::PortFree(port));  // ocupada pelo servidor
+        server.Stop();
+        CHECK(hublink::PortFree(port));
+        CHECK(!hublink::PostJson(port, "/mcphub/editor", "do-editor", Json::object(), nullptr, 300));  // fechado
+        CHECK(hublink::SameSecret("abc", "abc") && !hublink::SameSecret("abc", "abd") &&
+              !hublink::SameSecret("abc", "abcd"));
     }
 
     return TestResult();

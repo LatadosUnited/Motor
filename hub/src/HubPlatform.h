@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace hub::platform {
@@ -38,9 +39,11 @@ public:
     ChildProcess(const ChildProcess&) = delete;
     ChildProcess& operator=(const ChildProcess&) = delete;
 
-    // Como LaunchProcess, guardando o processo.
+    // Como LaunchProcess, guardando o processo. `env`: variáveis a mais (nome, valor em UTF-8) só para ele, como o
+    // token do editor aberto pelo Hub residente (na linha de comando outros programas leriam).
+    using Environment = std::vector<std::pair<std::string, std::string>>;
     static std::optional<ChildProcess> Launch(const fs::path& exe, const std::vector<std::string>& args,
-                                              std::string* error = nullptr);
+                                              std::string* error = nullptr, const Environment& env = {});
 
     uint32_t Pid() const { return m_pid; }
     bool Running() const;

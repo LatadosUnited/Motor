@@ -65,6 +65,7 @@ std::optional<InstalledVersion> ReadInstalledVersion(const fs::path& dir, std::s
 inline constexpr const char* kMcpToolsFile = "mcp-ferramentas.json";
 struct EditorTools {
     std::string engineVersion;
+    int hubLink = 0;  // > 0: o editor entende o --hub (motor/mcp/HubLink.h); 0 nas listas sem o campo
     nlohmann::ordered_json initialize;  // o resultado do initialize do editor (serverInfo, instructions...)
     nlohmann::ordered_json tools;       // a lista do tools/list
 };
@@ -184,7 +185,9 @@ inline constexpr int kHubMcpPort = 47600;
 inline constexpr const char* kHubMcpPath = "/mcphub";
 inline constexpr const char* kHubMcpTokenFile = "mcp-token";  // na pasta de dados
 
-// Token do MCP do Hub: lê o arquivo ou, sem ele (ou vazio), cria um novo (64 dígitos hexadecimais aleatórios).
+std::string NewToken();  // 64 dígitos hexadecimais aleatórios (o do Hub e o de cada editor que ele abre)
+
+// Token do MCP do Hub: lê o arquivo ou, sem ele (ou vazio), cria um novo (NewToken).
 // Vazio se não deu para gravar (`error` diz por quê).
 std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error = nullptr);
 

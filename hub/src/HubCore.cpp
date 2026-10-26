@@ -193,6 +193,7 @@ std::optional<EditorTools> ReadEditorTools(const fs::path& versionDir, std::stri
     }
     EditorTools tools;
     tools.engineVersion = root.value("engineVersion", std::string());
+    tools.hubLink = root.value("hubLink", 0);
     tools.initialize = root.value("initialize", json::object());
     tools.tools = root["tools"];
     return tools;
@@ -560,6 +561,14 @@ bool SameStartupCommand(std::string_view a, std::string_view b) {
 // MCP do Hub
 // ---------------------------------------------------------------------------
 
+std::string NewToken() {
+    // O random_device do MinGW e do MSVC usa o gerador do sistema (rand_s), não uma semente fixa.
+    std::random_device random;
+    std::string token;
+    for (int i = 0; i < 8; ++i) token += std::format("{:08x}", static_cast<uint32_t>(random()));
+    return token;
+}
+
 std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error) {
     if (const auto text = ReadTextFile(file)) {
         std::string token = *text;
@@ -567,10 +576,7 @@ std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error) {
         while (!token.empty() && std::isspace(static_cast<unsigned char>(token.front()))) token.erase(0, 1);
         if (!token.empty()) return token;
     }
-    // O random_device do MinGW e do MSVC usa o gerador do sistema (rand_s), não uma semente fixa.
-    std::random_device random;
-    std::string token;
-    for (int i = 0; i < 8; ++i) token += std::format("{:08x}", static_cast<uint32_t>(random()));
+    const std::string token = NewToken();
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);
     if (!motor::WriteFileAtomic(file, token + "\n", error)) return {};

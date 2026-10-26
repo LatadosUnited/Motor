@@ -2,8 +2,10 @@
 
 #include "HubCore.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cwchar>
 #include <format>
 
 #ifdef _WIN32
@@ -89,15 +91,41 @@ ChildProcess& ChildProcess::operator=(ChildProcess&& other) noexcept {
     return *this;
 }
 
+namespace {
+// Bloco de ambiente do processo novo: o deste (sem as variáveis que `extra` troca) e as de `extra`.
+std::wstring EnvironmentBlock(const ChildProcess::Environment& extra) {
+    std::wstring block;
+    std::vector<std::wstring> names;
+    for (const auto& [name, value] : extra) names.push_back(PathFromUtf8(name).wstring() + L"=");
+    if (wchar_t* current = GetEnvironmentStringsW()) {
+        for (const wchar_t* entry = current; *entry; entry += wcslen(entry) + 1) {
+            const std::wstring_view text(entry);
+            const bool replaced = std::any_of(names.begin(), names.end(), [&](const std::wstring& prefix) {
+                return text.size() >= prefix.size() && _wcsnicmp(text.data(), prefix.data(), prefix.size()) == 0;
+            });
+            if (!replaced) block.append(text).push_back(L'\0');
+        }
+        FreeEnvironmentStringsW(current);
+    }
+    for (size_t i = 0; i < extra.size(); ++i) {
+        block.append(names[i]).append(PathFromUtf8(extra[i].second).wstring()).push_back(L'\0');
+    }
+    block.push_back(L'\0');
+    return block;
+}
+} // namespace
+
 std::optional<ChildProcess> ChildProcess::Launch(const fs::path& exe, const std::vector<std::string>& args,
-                                                 std::string* error) {
+                                                 std::string* error, const Environment& env) {
     std::wstring commandLine = BuildCommandLine(exe, args);
     const std::wstring workDir = exe.parent_path().wstring();
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
+    std::wstring block = env.empty() ? std::wstring() : EnvironmentBlock(env);
     if (!CreateProcessW(exe.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
-                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr, workDir.c_str(), &si, &pi)) {
+                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT,
+                        block.empty() ? nullptr : block.data(), workDir.c_str(), &si, &pi)) {
         if (error) *error = std::format("Não foi possível abrir '{}' (erro {}).", ToUtf8(exe), GetLastError());
         return std::nullopt;
     }
@@ -240,7 +268,8 @@ bool LaunchProcess(const fs::path&, const std::vector<std::string>&, std::string
 ChildProcess::~ChildProcess() = default;
 ChildProcess::ChildProcess(ChildProcess&&) noexcept = default;
 ChildProcess& ChildProcess::operator=(ChildProcess&&) noexcept = default;
-std::optional<ChildProcess> ChildProcess::Launch(const fs::path&, const std::vector<std::string>&, std::string* error) {
+std::optional<ChildProcess> ChildProcess::Launch(const fs::path&, const std::vector<std::string>&, std::string* error,
+                                                 const Environment&) {
     if (error) *error = "Abrir o editor só é suportado no Windows.";
     return std::nullopt;
 }

@@ -200,6 +200,7 @@ MotorEditor [pasta-do-projeto | arquivo.mproject] [opções]
   --no-settings                 não lê nem grava configuração nenhuma (agentes e testes automáticos)
   --mcp[=porta]                 liga o servidor MCP
   --mcp-ferramentas <arquivo>   grava a lista de ferramentas do MCP (JSON) sem abrir a janela e sai
+  --hub <porta>                 aberto pelo Hub residente: o MCP exige o token de MOTOR_MCP_TOKEN e avisa o Hub
   --perf <arquivo.csv>          grava os contadores de cada quadro (CPU por painel, GPU) num CSV ao fechar
   --segundos S                  fecha sozinho depois de S segundos, sem perguntar pelo que não foi salvo
   --version                     mostra a versão (e a da API de scripts) e sai
@@ -900,7 +901,11 @@ qualquer versão do editor, inclusive as futuras.
   `editor_close` (como o X da janela: com algo não salvo o editor pergunta; `force` fecha na hora), `versions_list`,
   `version_set_default`, `version_remove` (para a Lixeira; recusa com um editor da versão aberto),
   `versions_available` e `version_download` (`"mais-recente"`; `wait` espera terminar). O Hub só fecha e conta os
-  editores que ele mesmo abriu.
+  editores que ele mesmo abriu. Com o MCP do Hub ligado, cada editor que ele abre (versões com a ligação, que trazem
+  `"hubLink"` no `mcp-ferramentas.json`) liga o MCP dele numa porta interna livre (47801 a 47899) com um token só
+  dele, e avisa o Hub quando fica pronto, quando abre outro projeto e quando fecha (`MotorEditor --hub <porta>`,
+  com o token em `MOTOR_MCP_TOKEN`); o `hub_status` mostra `ready` e `mcpPort`, e `project_open` com `wait`
+  responde quando o editor está pronto. No editor aberto assim, Ver > Servidor MCP fica sempre ligado.
 - **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 2, ...}`, com a lista
   `servers`; o formato 1 é lido com o servidor local na lista), separada da do editor.
 

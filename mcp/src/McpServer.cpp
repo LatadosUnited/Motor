@@ -9,6 +9,7 @@
 #endif
 #include <httplib.h>
 
+#include <motor/mcp/HubLink.h>
 #include <motor/mcp/McpServer.h>
 
 #include <algorithm>
@@ -52,12 +53,7 @@ bool IsLocalHost(const std::string& host) {
     return host.empty() || name == "127.0.0.1" || name == "localhost" || name == "[::1]";
 }
 
-// Compara sem parar no primeiro caractere diferente: o tempo da resposta não diz quanto do token acertou.
-bool SameSecret(std::string_view a, std::string_view b) {
-    unsigned char diff = a.size() == b.size() ? 0 : 1;
-    for (size_t i = 0; i < a.size(); ++i) diff |= static_cast<unsigned char>(a[i] ^ (i < b.size() ? b[i] : 0));
-    return diff == 0;
-}
+using hublink::SameSecret;
 
 // O corpo tem um initialize (sozinho ou num lote)? Só para dar o Mcp-Session-Id na resposta.
 bool IsInitialize(const std::string& body) {
@@ -81,6 +77,9 @@ std::string NewSessionId(uint64_t count) {
 
 struct Server::Job {
     std::string body;
+    const Route* route = nullptr;  // rota a mais (AddRoute); nullptr = mensagem do MCP
+    std::string authorization;     // da rota
+    int status = 200;              // da rota, lido depois do `done`
     std::promise<std::string> done;
     // Até quando a thread do HTTP espera (steady_clock); cresce quando a resposta fica para depois.
     std::atomic<int64_t> deadline{0};
@@ -124,7 +123,9 @@ bool Server::Start(int port, std::string& error) {
     http->Post(m_path, [this, allowed](const httplib::Request& req, httplib::Response& res) {
         if (!allowed(req, res)) return;
         const bool initialize = m_sessions && IsInitialize(req.body);
-        const std::string reply = Submit(req.body);
+        auto job = std::make_shared<Job>();
+        job->body = req.body;
+        const std::string reply = Submit(job);
         if (initialize) res.set_header("Mcp-Session-Id", NewSessionId(++m_sessionCount));
         if (reply.empty()) {
             res.status = 202;  // notificação: nada a responder
@@ -140,6 +141,22 @@ bool Server::Start(int port, std::string& error) {
     http->Delete(m_path, [this, allowed](const httplib::Request& req, httplib::Response& res) {
         if (allowed(req, res)) res.status = m_sessions ? 200 : 405;
     });
+
+    for (const NamedRoute& named : m_routes) {
+        http->Post(named.path, [this, route = &named.route](const httplib::Request& req, httplib::Response& res) {
+            if (!IsLocalOrigin(req.get_header_value("Origin")) || !IsLocalHost(req.get_header_value("Host"))) {
+                res.status = 403;
+                return;
+            }
+            auto job = std::make_shared<Job>();
+            job->body = req.body;
+            job->route = route;
+            job->authorization = req.get_header_value("Authorization");
+            const std::string reply = Submit(job);
+            res.status = job->status;
+            res.set_content(reply, "application/json");
+        });
+    }
 
     if (!http->bind_to_port("127.0.0.1", port)) {
         error = "não foi possível abrir a porta " + std::to_string(port) + " (outro programa ou outro editor usando?)";
@@ -157,7 +174,10 @@ void Server::Stop() {
     m_http->stop();  // os pedidos esperando a thread principal recebem "ocupado" abaixo
     {
         std::lock_guard lock(m_mutex);
-        for (auto& job : m_jobs) job->done.set_value(BusyError());
+        for (auto& job : m_jobs) {
+            job->status = 503;
+            job->done.set_value(BusyError());
+        }
         m_jobs.clear();
     }
     for (Parked& p : m_parked) p.job->done.set_value(BusyError());
@@ -167,13 +187,14 @@ void Server::Stop() {
     if (m_log) m_log("Servidor MCP desligado");
 }
 
-std::string Server::Submit(std::string body) {
-    auto job = std::make_shared<Job>();
-    job->body = std::move(body);
+std::string Server::Submit(const std::shared_ptr<Job>& job) {
     std::future<std::string> reply = job->done.get_future();
     {
         std::lock_guard lock(m_mutex);
-        if (!m_http || !m_http->is_running()) return BusyError();
+        if (!m_http || !m_http->is_running()) {
+            job->status = 503;
+            return BusyError();
+        }
         m_jobs.push_back(job);
     }
     if (m_wake) m_wake();
@@ -183,6 +204,7 @@ std::string Server::Submit(std::string body) {
         std::lock_guard lock(m_mutex);
         if (reply.wait_for(std::chrono::seconds(0)) == std::future_status::ready) break;  // respondeu agora
         std::erase(m_jobs, job);  // se ainda não começou, não roda mais
+        job->status = 503;
         return BusyError();
     }
     return reply.get();
@@ -203,6 +225,17 @@ size_t Server::Pump() {
         jobs.swap(m_jobs);
     }
     for (auto& job : jobs) {
+        if (job->route) {
+            RouteReply reply;
+            try {
+                reply = (*job->route)(job->authorization, job->body);
+            } catch (const std::exception& e) {
+                reply = {500, Json{{"error", e.what()}}.dump()};
+            }
+            job->status = reply.status;
+            job->done.set_value(std::move(reply.body));
+            continue;
+        }
         std::optional<Deferred> deferred;
         std::string reply = m_protocol.HandleText(job->body, &deferred);
         if (deferred) {

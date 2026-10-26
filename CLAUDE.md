@@ -70,6 +70,8 @@ ctest --test-dir build --output-on-failure
   por grupo em `McpFileTools.cpp` e `McpPlayTools.cpp`; `McpToolList` monta as peças sem janela para o
   `--mcp-ferramentas`, a lista que o `motor_package` grava no pacote e o Hub lê). Peça nova do editor que entra no
   `McpController::Host` entra também no `McpToolList.cpp` (o teste `editor_mcp_ferramentas` pega se esquecer).
+  O combinado entre o Hub e os editores que ele abre (porta interna, token, avisos) fica em
+  `mcp/include/motor/mcp/HubLink.h`, usado pelos dois lados: mudou o combinado, suba `hublink::kVersion`.
 - Scripts de jogo ficam na pasta `Scripts/` de cada projeto (`motor::Script` + `MOTOR_SCRIPT`, ver
   `motor/scene/ScriptModule.h`). O editor compila uma DLL por projeto (`ScriptProject`, `ScriptBuilder`) e
   recarrega sem fechar (`ScriptHost`). A engine é a `libMotor.dll`, compartilhada pelo editor e pela DLL de

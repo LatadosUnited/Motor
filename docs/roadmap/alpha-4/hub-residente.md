@@ -132,6 +132,23 @@ biblioteca pequena sem a engine, usada pelos dois.
   Conferido: 53 ferramentas em 0,24 s; o `tools/list` e o `initialize` do arquivo são idênticos aos do editor aberto
   com `--mcp`; o `motor_package` gerou o arquivo, o Hub o instalou com `--add-version` e mostrou 53 no
   `versions_list`; a publicação no `MotorServidor` o lista no manifesto.
+- Tarefa 7: o combinado fica em `mcp/include/motor/mcp/HubLink.h` (Hub e editor usam o mesmo). Com o MCP do Hub
+  ligado, abrir um editor de uma versão com `"hubLink": 1` no `mcp-ferramentas.json` acrescenta
+  `--mcp=<porta> --hub <porta do Hub>`: a porta é a primeira livre de 47801 a 47899 sem outro editor do Hub
+  (`PortFree` com um `bind` cru, sem `SO_REUSEADDR`: com ele, no Windows, a porta de quem já escuta parece livre), e
+  o token, um por editor (`NewToken`), vai só no ambiente do processo (`MOTOR_MCP_TOKEN`, bloco próprio no
+  `CreateProcessW`), não na linha de comando. O editor exige esse token no MCP (nem o do Hub serve) e avisa o Hub
+  por `POST /mcphub/editor` com o mesmo token: "pronto" ao ligar, "projeto" ao abrir outro projeto (o Hub segue e
+  o põe na lista) e "fechando" ao desligar. No editor ligado ao Hub, Ver > Servidor MCP fica fixo. A `motor_mcp`
+  ganhou rotas a mais no servidor (`AddRoute`, atendidas no `Pump`, com o token decidido pela rota; a Tarefa 8 usa
+  para o repasse) e o cliente `PostJson`. Versões sem o `hubLink` abrem como antes (o `--hub` as faria sair com
+  "opção desconhecida"). No `/mcphub`: `linked`, `ready` e `mcpPort` no `hub_status`, `editorReady` no
+  `projects_list` e `wait` no `project_open`. Testes: a rota e o cliente no `test_mcp_servidor`; no `test_hub_mcp`
+  o editor falso avisa o Hub por HTTP de verdade (pronto, outro projeto, token errado recusado, versão sem a
+  ligação). Conferido com o `MotorHub.exe` na bandeja e o editor do build: `project_open` com `wait` respondeu
+  pronto em 2,5 s na porta 47801, um segundo editor ficou na 47802, a porta interna recusou sem token e com o
+  token do Hub (401), os dois fecharam pelo `editor_close`, e `--hub` sem o token é recusado. Não conferido com o
+  editor real: o aviso "projeto" (Arquivo > Abrir projeto pela interface) e o item fixo no menu Ver.
 
 ## Limitações
 

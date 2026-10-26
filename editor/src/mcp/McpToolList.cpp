@@ -13,6 +13,7 @@
 #include "viewport/SceneViewport.h"
 
 #include <motor/common/FileWrite.h>
+#include <motor/mcp/HubLink.h>
 #include <motor/core/Version.h>
 #include <motor/scene/ScriptModule.h>
 
@@ -52,6 +53,7 @@ Json EditorToolList() {
             {"version", kToolListVersion},
             {"engineVersion", motor::kVersion},
             {"scriptApiVersion", motor::kScriptApiVersion},
+            {"hubLink", hublink::kVersion},  // este editor entende o --hub do Hub residente
             {"initialize", init["result"]},
             {"tools", list["result"]["tools"]}};
 }

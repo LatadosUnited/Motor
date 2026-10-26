@@ -12,6 +12,7 @@
 #include <imgui_stdlib.h>
 
 #include <Platform.h>
+#include <motor/mcp/HubLink.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -73,11 +74,36 @@ void HubApp::SetStatus(std::string message, bool error) {
 bool HubApp::Launch(const fs::path& root, const InstalledVersion& version, const std::vector<std::string>& args,
                     std::string& message) {
     std::vector<std::string> all = args;
+    // Hub residente: o editor liga o MCP numa porta interna, com um token só dele, e avisa o hub quando fica pronto.
+    // Versões sem "hubLink" na lista de ferramentas não conhecem o --hub (sairiam com "opção desconhecida").
+    int port = 0;
+    std::string token;
+    platform::ChildProcess::Environment env;
+    const std::optional<EditorTools> tools = m_linkPort > 0 ? ReadEditorTools(version.dir) : std::nullopt;
+    if (tools && tools->hubLink >= motor::mcp::hublink::kVersion) port = PickEditorPort();
+    if (port > 0) {
+        token = NewToken();
+        all.push_back(std::format("--mcp={}", port));
+        all.push_back(motor::mcp::hublink::kArgument);
+        all.push_back(std::to_string(m_linkPort));
+        env.emplace_back(motor::mcp::hublink::kTokenEnv, token);
+    }
     all.insert(all.end(), m_editorArgs.begin(), m_editorArgs.end());
-    auto process = platform::ChildProcess::Launch(version.editor, all, &message);
+    auto process = platform::ChildProcess::Launch(version.editor, all, &message, env);
     if (!process) return false;
-    m_editors.push_back({root, version.version, std::move(*process), NowSeconds()});
+    m_editors.push_back({root, version.version, std::move(*process), NowSeconds(), port, std::move(token), false});
     return true;
+}
+
+int HubApp::PickEditorPort() {
+    namespace link = motor::mcp::hublink;
+    for (int port = link::kEditorPortFirst; port <= link::kEditorPortLast; ++port) {
+        const bool used = std::any_of(m_editors.begin(), m_editors.end(), [&](const OpenEditor& e) {
+            return e.mcpPort == port && e.process.Running();
+        });
+        if (!used && link::PortFree(port)) return port;
+    }
+    return 0;  // 99 editores abertos (ou portas tomadas): abre sem a ligação
 }
 
 void HubApp::PruneEditors() {

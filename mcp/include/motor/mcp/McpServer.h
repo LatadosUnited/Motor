@@ -46,6 +46,16 @@ public:
     void SetToken(std::string token) { m_token = std::move(token); }  // vazio = sem token
     void SetSessions(bool on) { m_sessions = on; }
 
+    // Rota a mais (POST), fora do MCP: no Hub, os avisos dos editores (HubLink.h). Atendida na thread principal, no
+    // Pump, como as mensagens. Recusa origem de fora, mas não confere o token do servidor: a rota decide pelo
+    // cabeçalho Authorization que recebe.
+    struct RouteReply {
+        int status = 200;
+        std::string body;  // JSON
+    };
+    using Route = std::function<RouteReply(const std::string& authorization, const std::string& body)>;
+    void AddRoute(std::string path, Route route) { m_routes.push_back({std::move(path), std::move(route)}); }
+
     bool Start(int port, std::string& error);  // false se a porta não abriu
     void Stop();
     bool IsRunning() const { return m_http != nullptr; }
@@ -64,7 +74,13 @@ private:
     struct Job;
     struct Parked;  // pedido com resposta para depois (ToolResult::later)
 
-    std::string Submit(std::string body);  // thread do HTTP: espera a thread principal responder
+    std::string Submit(const std::shared_ptr<Job>& job);  // thread do HTTP: espera a thread principal responder
+
+    struct NamedRoute {
+        std::string path;
+        Route route;
+    };
+    std::vector<NamedRoute> m_routes;
 
     Protocol& m_protocol;
     std::unique_ptr<httplib::Server> m_http;

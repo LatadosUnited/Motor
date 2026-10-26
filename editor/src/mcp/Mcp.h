@@ -2,6 +2,7 @@
 
 // Protocolo e servidor MCP vêm da biblioteca motor_mcp (mcp/, sem a engine, também usada pelo Hub); o editor os
 // usa com os nomes de sempre em editor::mcp.
+#include <motor/mcp/HubLink.h>
 #include <motor/mcp/McpProtocol.h>
 #include <motor/mcp/McpServer.h>
 
@@ -16,5 +17,6 @@ using motor::mcp::Server;
 using motor::mcp::Tool;
 using motor::mcp::ToolError;
 using motor::mcp::ToolResult;
+namespace hublink = motor::mcp::hublink;  // Hub residente: o editor aberto pelo Hub
 
 } // namespace editor::mcp

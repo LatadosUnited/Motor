@@ -3,6 +3,7 @@
 #include "HubApp.h"
 
 #include <Download.h>
+#include <motor/mcp/HubLink.h>
 
 #include <algorithm>
 #include <chrono>
@@ -80,15 +81,50 @@ bool HubMcp::Start(int port, std::function<void()> wake, std::string& error) {
     m_server.SetToken(m_token);
     m_server.SetSessions(true);
     m_server.SetWake(std::move(wake));
+    m_server.AddRoute(motor::mcp::hublink::kNotifyPath, [this](const std::string& authorization, const std::string& body) {
+        return OnEditorNotice(authorization, body);
+    });
     if (!m_server.Start(port, error)) {
         error = "MCP do Hub desligado: " + error;
         return false;
     }
+    m_app.m_linkPort = port;  // daqui em diante os editores abertos ganham a porta interna e avisam aqui
     return true;
 }
 
 void HubMcp::Stop() {
     m_server.Stop();
+    m_app.m_linkPort = 0;
+}
+
+motor::mcp::Server::RouteReply HubMcp::OnEditorNotice(const std::string& authorization, const std::string& body) {
+    namespace link = motor::mcp::hublink;
+    HubApp::OpenEditor* editor = nullptr;
+    for (HubApp::OpenEditor& e : m_app.m_editors) {
+        if (!e.token.empty() && link::SameSecret(authorization, "Bearer " + e.token)) editor = &e;
+    }
+    if (!editor) return {401, Json{{"error", "token de editor desconhecido"}}.dump()};
+    const Json notice = Json::parse(body, nullptr, false);
+    if (!notice.is_object()) return {400, Json{{"error", "aviso inválido"}}.dump()};
+
+    const std::string event = notice.value("event", std::string());
+    const fs::path project = PathFromUtf8(notice.value("project", std::string())).lexically_normal();
+    if (event == link::kEventReady || event == link::kEventProject) {
+        editor->ready = true;
+        editor->mcpPort = notice.value("port", editor->mcpPort);
+        if (!project.empty() && !SamePath(project, editor->root)) {
+            // Arquivo > Abrir projeto no editor: o hub segue o projeto (e o põe na lista, como o Abrir do hub).
+            editor->root = project;
+            m_app.m_config.MarkOpened(project, NowSeconds());
+            m_app.SaveConfig();
+            m_app.RefreshProjects();
+        }
+    } else if (event == link::kEventClosing) {
+        editor->ready = false;
+    } else {
+        return {400, Json{{"error", "evento desconhecido: " + event}}.dump()};
+    }
+    return {200, Json{{"ok", true}}.dump()};
 }
 
 std::string HubMcp::ClaudeCommand() const {
@@ -102,7 +138,10 @@ Json HubMcp::EditorsJson() {
         out.push_back({{"project", ToUtf8(e.root)},
                        {"version", e.version},
                        {"pid", e.process.Pid()},
-                       {"opened", FormatLastOpened(e.opened, NowSeconds())}});
+                       {"opened", FormatLastOpened(e.opened, NowSeconds())},
+                       {"linked", e.mcpPort > 0},  // aberto com a ligação do Hub residente
+                       {"ready", e.ready},          // o MCP dele está no ar (avisou o hub)
+                       {"mcpPort", e.mcpPort}});
     }
     return out;
 }
@@ -176,7 +215,10 @@ void HubMcp::AddProjectTools() {
                     if (!p.found) item["error"] = p.error;
                     const HubApp::OpenEditor* editor = m_app.FindEditor(p.root);
                     item["editorOpen"] = editor != nullptr;
-                    if (editor) item["editorPid"] = editor->process.Pid();
+                    if (editor) {
+                        item["editorPid"] = editor->process.Pid();
+                        item["editorReady"] = editor->ready;
+                    }
                     out.push_back(std::move(item));
                 }
                 return ToolResult::Data(out);
@@ -187,17 +229,45 @@ void HubMcp::AddProjectTools() {
         .name = "project_open",
         .description = "Abre o projeto no editor da versão dele (como o Abrir do Hub). Se a versão do projeto não "
                        "estiver instalada, falha dizendo qual usar em 'engine' (o editor passa o projeto para essa "
-                       "versão: faça uma cópia de segurança antes). Um projeto já aberto pelo Hub não abre de novo.",
-        .inputSchema = Schema({{"path", pathProp}, {"engine", engineProp}}, {"path"}),
+                       "versão: faça uma cópia de segurança antes). Um projeto já aberto pelo Hub não abre de novo. "
+                       "Com wait = true, responde quando o editor está pronto (o MCP dele no ar).",
+        .inputSchema = Schema({{"path", pathProp},
+                               {"engine", engineProp},
+                               {"wait", Prop("boolean", "esperar o editor ficar pronto (padrão: false)")},
+                               {"timeout", Prop("number", "segundos de espera com wait (padrão: 60)")}},
+                              {"path"}),
         .run =
             [this](const Json& args) {
                 const fs::path root = RequiredPath(args, "path");
                 std::string message;
                 const bool ok = m_app.OpenProjectAuto(root, args.value("engine", std::string()), message);
                 if (!ok) throw ToolError(message);
-                const ProjectInfo info = ReadProject(root);
-                const HubApp::OpenEditor* editor = m_app.FindEditor(info.root);
-                return ToolResult::Data({{"message", message}, {"pid", editor ? editor->process.Pid() : 0}});
+                const fs::path opened = ReadProject(root).root;
+                const HubApp::OpenEditor* editor = m_app.FindEditor(opened);
+                const uint32_t pid = editor ? editor->process.Pid() : 0;
+                ToolResult now = ToolResult::Data({{"message", message}, {"pid", pid}, {"ready", false}});
+                if (!args.value("wait", false)) return now;
+                if (!editor || editor->mcpPort == 0) {
+                    throw ToolError(message + " Não dá para esperar: esta versão do editor não avisa o Hub (ou o "
+                                              "MCP do Hub está desligado).");
+                }
+                const auto deadline = Deadline(std::clamp(args.value("timeout", 60.0), 1.0, 600.0));
+                now.later = [this, opened, pid, message, deadline](ToolResult& out) {
+                    const HubApp::OpenEditor* e = m_app.FindEditor(opened);
+                    if (!e || e->process.Pid() != pid) {
+                        throw ToolError("o editor fechou antes de ficar pronto (veja o log dele ou abra sem wait)");
+                    }
+                    if (e->ready) {
+                        out = ToolResult::Data({{"message", std::format("'{}' aberto e pronto.",
+                                                                        ToUtf8(opened.filename()))},
+                                                {"pid", pid},
+                                                {"ready", true}});
+                        return true;
+                    }
+                    if (Clock::now() < deadline) return false;
+                    throw ToolError("o editor não ficou pronto a tempo (continua abrindo; veja hub_status)");
+                };
+                return now;
             },
     });
 
