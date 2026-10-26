@@ -8,7 +8,7 @@ atualizado: 2026-10-19
 O que os testes automáticos e o servidor MCP não alcançam: mouse e teclado de verdade, menus, arrastar, foco,
 janelas do Windows. Uma pessoa segue este roteiro no **editor instalado pelo Hub** (não no `build/`) a cada
 versão nova, marca o que passou e anota o que não passou. Criado na
-[Fase 19](roadmap/alpha-2/fase-19-validacao.md).
+Fase 19.
 
 ## Como usar
 
