@@ -4,7 +4,7 @@
 
 #include "McpSceneTools.h"
 
-#include "NavMeshBake.h"
+#include "nav/NavMeshBake.h"
 
 #include <motor/ai/NavMesh.h>
 #include <motor/ai/NavSystem.h>

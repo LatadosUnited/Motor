@@ -3,7 +3,7 @@
 // da cena aberta e o grava (no arquivo já ligado, ou num novo em Assets/Navegacao).
 #include "drawers/FieldDrawers.h"
 
-#include "NavMeshBake.h"
+#include "nav/NavMeshBake.h"
 
 #include <motor/assets/AssetLoaders.h>
 #include <motor/scene/NavMeshSurface.h>

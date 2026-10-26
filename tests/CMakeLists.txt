@@ -45,7 +45,7 @@ motor_add_test(test_navigation)  # Fase 34: navmesh, caminhos e agentes
 motor_add_test(test_mcp_nav
     ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/NavMeshBake.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/nav/NavMeshBake.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
