@@ -4,6 +4,7 @@
 
 #include <motor/assets/AssetDatabase.h>
 #include <motor/assets/AssetLoaders.h>
+#include <motor/common/Text.h>
 
 #include <imgui.h>
 
@@ -23,7 +24,7 @@ Icon IconFor(bool isDirectory, motor::AssetType type);
 ImU32 Alpha(ImU32 color, float alpha);  // mesma cor com a opacidade multiplicada
 void DrawIcon(ImDrawList* dl, ImVec2 p, float s, Icon icon, float alpha = 1.0f);
 
-std::string Lower(std::string s);
+using motor::Lower;  // motor/common/Text.h
 bool SamePath(const std::filesystem::path& a, const std::filesystem::path& b);
 std::string FormatSize(uintmax_t bytes);
 const char* FilterName(int filter);

@@ -72,6 +72,9 @@ private:
         std::vector<uint32_t> indices;  // reaproveitados entre quadros
         std::vector<DrawBatch> batches;
     };
+    // Passadas do quadro em m_passes (Render): as cascatas primeiro, depois as faces de cubo.
+    size_t AddCascadePasses(const Camera& camera, std::span<const Light> lights, float distance, Result& result);
+    void AddCubePasses(const Camera& camera, std::span<const Light> lights, float distance, Result& result);
     void BuildPasses(std::span<const DrawItem> items, const ShadowOrder& order);
     void DrawPass(const Pass& pass, InstanceBuffers& instances, const ShadowOrder& order,
                   const JointUploader& uploadJoints, RenderStats& stats);

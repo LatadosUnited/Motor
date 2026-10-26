@@ -4,6 +4,7 @@
 // carregados e mensagens de erro. Não é API pública.
 
 #include "motor/assets/AssetLibrary.h"
+#include "motor/common/Text.h"
 
 #include <memory>
 #include <string>
@@ -27,10 +28,6 @@ std::shared_ptr<T> FindByGuid(const std::vector<AssetLibrary::Entry<T>>& list, s
         if (!e.guid.empty() && e.guid == guid) return e.asset;
     }
     return nullptr;
-}
-
-inline void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
 }
 
 // "arquivo#parte" -> ("arquivo", "parte"); sem '#', a parte fica vazia.

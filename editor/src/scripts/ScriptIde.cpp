@@ -1,5 +1,6 @@
 #include "scripts/ScriptIde.h"
 
+#include <motor/common/FileRead.h>
 #include <motor/core/Log.h>
 #include <motor/core/Paths.h>
 
@@ -19,17 +20,11 @@ namespace editor::ScriptIde {
 
 namespace fs = std::filesystem;
 using json = nlohmann::ordered_json;
+using motor::ReadTextFile;
 using motor::ToGenericUtf8;
 using motor::ToUtf8;
 
 namespace {
-std::string ReadFile(const fs::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
-}
-
 // JSON com um comentário no topo (o VS Code lê esses arquivos como JSON com comentários).
 std::string Jsonc(const std::string& comment, const json& value) {
     return std::format("{}. {}\n{}\n", kGeneratedMarker, comment, value.dump(2));
@@ -119,7 +114,7 @@ int WriteVsCodeFiles(const ScriptProject::Paths& paths, const ScriptProject::Too
     for (const GeneratedFile& file : VsCodeFiles(paths, toolchain, editorExe)) {
         const fs::path path = dir / file.name;
         if (fs::exists(path, ec)) {
-            const std::string current = ReadFile(path);
+            const std::string current = ReadTextFile(path).value_or("");
             if (!current.starts_with(kGeneratedMarker) || current == file.text) continue;  // do usuário, ou igual
         }
         std::ofstream out(path, std::ios::binary | std::ios::trunc);

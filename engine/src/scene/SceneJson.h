@@ -5,6 +5,7 @@
 
 #include "motor/scene/SceneSerializer.h"
 
+#include "motor/common/Text.h"
 #include "motor/scene/Component.h"
 #include "motor/scene/Scene.h"
 
@@ -58,8 +59,6 @@ void Read(const json& obj, const char* key, T& value) {
 // O dump indentado do nlohmann põe cada número numa linha. Junta arrays só de números em uma linha:
 // [1.0, 2.0, 3.0]. Ignora o conteúdo de strings (nomes podem ter colchetes).
 std::string CompactNumberArrays(const std::string& in);
-
-void SetError(std::string* error, std::string message);
 
 // Componentes pela descrição dos campos (Component.h). Tipo desconhecido grava de volta o JSON lido.
 json ComponentToJson(const ComponentPtr& component, const AssetLibrary& assets, const JsonOptions& options,

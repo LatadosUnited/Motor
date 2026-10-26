@@ -2,6 +2,7 @@
 
 #include "export/GameExport.h"
 
+#include <motor/core/EngineAssets.h>
 #include <motor/core/Paths.h>
 
 #include <format>
@@ -11,7 +12,7 @@ namespace editor::ReleaseRuntime {
 namespace fs = std::filesystem;
 
 std::vector<fs::path> DefaultCandidates() {
-    std::vector<fs::path> list = {ScriptProject::ExecutableDir(), ScriptProject::ExecutableDir() / "release"};
+    std::vector<fs::path> list = {motor::ExecutableDir(), motor::ExecutableDir() / "release"};
 #ifdef MOTOR_RELEASE_BIN_DIR
     list.push_back(motor::PathFromUtf8(MOTOR_RELEASE_BIN_DIR));
 #endif

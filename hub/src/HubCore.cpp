@@ -1,6 +1,8 @@
 #include "HubCore.h"
 
 #include <motor/common/FileWrite.h>
+#include <motor/common/FileRead.h>
+#include <motor/common/Text.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -17,17 +19,8 @@ namespace hub {
 using json = nlohmann::ordered_json;
 
 namespace {
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
-
-std::optional<std::string> ReadFile(const fs::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return std::nullopt;
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
-}
+using motor::ReadTextFile;
+using motor::SetError;
 
 bool IsInside(const fs::path& path, const fs::path& root) {
     const fs::path rel = path.lexically_normal().lexically_relative(root.lexically_normal());
@@ -80,15 +73,6 @@ std::wstring QuoteArgument(const std::wstring& arg) {
 // ---------------------------------------------------------------------------
 // UTF-8
 // ---------------------------------------------------------------------------
-
-std::string ToUtf8(const fs::path& path) {
-    const std::u8string u8 = path.u8string();
-    return std::string(u8.begin(), u8.end());
-}
-
-fs::path PathFromUtf8(std::string_view utf8) {
-    return fs::path(std::u8string(utf8.begin(), utf8.end()));
-}
 
 bool SamePath(const fs::path& a, const fs::path& b) {
     std::error_code ec;
@@ -157,7 +141,7 @@ int CompareVersions(std::string_view a, std::string_view b) {
 
 std::optional<InstalledVersion> ReadInstalledVersion(const fs::path& dir, std::string* error) {
     const fs::path file = dir / kVersionFile;
-    const auto text = ReadFile(file);
+    const auto text = ReadTextFile(file);
     if (!text) {
         SetError(error, std::format("'{}' não é uma instalação do Motor (falta {}).", ToUtf8(dir), kVersionFile));
         return std::nullopt;
@@ -281,7 +265,7 @@ ProjectInfo ReadProject(const fs::path& fileOrDir) {
         return info;
     }
 
-    const auto text = ReadFile(info.file);
+    const auto text = ReadTextFile(info.file);
     if (!text) {
         info.error = std::format("Não foi possível ler '{}'.", ToUtf8(info.file.filename()));
         return info;
@@ -373,7 +357,7 @@ VersionChoice ChooseVersion(std::string_view projectVersion, const std::vector<I
 
 HubConfig HubConfig::Load(const fs::path& file, std::string* warning) {
     HubConfig config;
-    const auto text = ReadFile(file);
+    const auto text = ReadTextFile(file);
     if (!text) return config;  // primeira execução
     try {
         const json root = json::parse(*text);

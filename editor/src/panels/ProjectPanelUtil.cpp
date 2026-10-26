@@ -32,11 +32,6 @@ Icon IconFor(bool isDirectory, AssetType type) {
     return Icon::File;
 }
 
-std::string Lower(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-
 bool SamePath(const fs::path& a, const fs::path& b) {
     return !a.empty() && a.lexically_normal() == b.lexically_normal();
 }

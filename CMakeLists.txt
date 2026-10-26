@@ -228,7 +228,7 @@ if(MINGW)
     endforeach()
 endif()
 
-add_subdirectory(common)   # gravação segura de arquivos, comum à engine, ao hub e à distribuição
+add_subdirectory(common)   # gravação segura, UTF-8, texto e leitura de arquivos: engine, hub e distribuição
 add_subdirectory(engine)
 add_subdirectory(sandbox)
 add_subdirectory(player)  # Fase 10: executável do jogo exportado

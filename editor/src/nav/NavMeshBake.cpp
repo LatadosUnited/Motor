@@ -1,4 +1,4 @@
-#include "NavMeshBake.h"
+#include "nav/NavMeshBake.h"
 
 #include "EditorContext.h"
 

@@ -103,6 +103,8 @@ struct PhysicsSystem::World {
     // Componentes -> corpos. Novos e alterados entram em lote (bem mais rápido que um a um com milhares). Corpo cujo
     // Transform e componentes não mudaram custa só as comparações (sem buscas nem decompor matriz).
     void SyncBodies(Scene& scene, float dt);
+    void MoveBody(BodyRecord& r, const Entity& entity, const physics_jolt::Pose& pose, const glm::mat4& world, float dt);
+    void RemoveUnseenBodies();
     // Refaz `slots` se a estrutura mudou ou a cena é outra; true se refez.
     bool RefreshSlots(Scene& scene);
 

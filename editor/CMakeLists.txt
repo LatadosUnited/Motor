@@ -65,7 +65,7 @@ add_executable(MotorEditor
     src/drawers/NavMeshDataDrawer.cpp
     src/drawers/NavAreaMaskDrawer.cpp
     src/viewport/NavMeshOverlay.cpp
-    src/NavMeshBake.cpp
+    src/nav/NavMeshBake.cpp
     src/mcp/McpNavTools.cpp
     src/viewport/PerceptionOverlay.cpp
     src/FolderWatcher.cpp

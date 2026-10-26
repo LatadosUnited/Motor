@@ -1,26 +1,11 @@
 #pragma once
 
+// ToUtf8, ToGenericUtf8 e PathFromUtf8 (comuns à engine, ao hub e à distribuição).
+#include "motor/common/Utf8.h"
+
 #include <filesystem>
-#include <string>
-#include <string_view>
 
 namespace motor {
-
-// Conversões explícitas path <-> UTF-8. No Windows, path::string() usa a página de código local e
-// pode falhar (ou trocar caracteres) com acentos; a engine trata todo texto como UTF-8.
-inline std::string ToUtf8(const std::filesystem::path& path) {
-    const std::u8string u8 = path.u8string();
-    return std::string(u8.begin(), u8.end());
-}
-
-inline std::string ToGenericUtf8(const std::filesystem::path& path) {
-    const std::u8string u8 = path.generic_u8string();
-    return std::string(u8.begin(), u8.end());
-}
-
-inline std::filesystem::path PathFromUtf8(std::string_view text) {
-    return std::filesystem::path(std::u8string(text.begin(), text.end()));
-}
 
 // true se `path` está dentro de `root` (ou é o próprio root). Compara de forma léxica, sem acessar o disco.
 inline bool IsInside(const std::filesystem::path& path, const std::filesystem::path& root) {

@@ -3,11 +3,11 @@ tipo: fase
 alpha: 3
 fase: 
 titulo: Organização do código 2
-status: planejada
+status: em andamento
 prioridade: 
 areas: [common, core, assets, project, scene, renderer, ai, editor, hub, distrib, docs]
 branch: refactor/organizacao-2
-inicio: 
+inicio: 2026-10-25
 fim: 
 ---
 
@@ -76,16 +76,16 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 
 ## Tarefas
 
-- [ ] Tarefa 1: Criar `motor/common/Text.h` com o `SetError` e trocar as 14 cópias
-- [ ] Tarefa 2: Criar `motor/common/FileRead.h` (texto e bytes) e trocar as 8 leituras
-- [ ] Tarefa 3: Pôr `Lower` e `LowerExtension` no `Text.h` e trocar as 6 cópias
-- [ ] Tarefa 4: Trocar a cópia do `ExecutableDir` no `ScriptProject` pela do `EngineAssets.h`
-- [ ] Tarefa 5: Dividir o `Renderer::DrawScene` nas etapas que ele já numera
-- [ ] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw`
-- [ ] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta
-- [ ] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2
-- [ ] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo
-- [ ] Tarefa 10: Juntar os dois `ToUtf8` e `PathFromUtf8` (engine e Hub) num `motor/common/Utf8.h`
+- [x] Tarefa 1: Criar `motor/common/Text.h` com o `SetError` e trocar as 14 cópias — 4653ffb
+- [x] Tarefa 2: Criar `motor/common/FileRead.h` (texto e bytes) e trocar as 8 leituras — 4653ffb
+- [ ] Tarefa 3: Pôr `Lower` e `LowerExtension` no `Text.h` e trocar as 6 cópias — 4653ffb (falta o `Input.cpp`)
+- [x] Tarefa 4: Trocar a cópia do `ExecutableDir` no `ScriptProject` pela do `EngineAssets.h` — 4653ffb
+- [x] Tarefa 5: Dividir o `Renderer::DrawScene` nas etapas que ele já numera — 957b452
+- [ ] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw` — 957b452 (falta o `DrawControlsWindow`)
+- [x] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta — 7efa412
+- [x] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2 — 95674e5
+- [ ] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo — 601c36d, 95674e5 (falta o grafo, depois do merge)
+- [x] Tarefa 10: Juntar os dois `ToUtf8` e `PathFromUtf8` (engine e Hub) num `motor/common/Utf8.h` — 4653ffb
 
 ## Pronto quando
 
@@ -98,8 +98,74 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 
 ## Feito
 
-(Preencher ao terminar.)
+### Auxiliares no `common/` (tarefas 1 a 4 e 10, 25/10/2026)
+
+Três headers novos em `common/include/motor/common/`, só com funções `inline`, no namespace `motor`:
+
+- **`Utf8.h`:** `ToUtf8`, `ToGenericUtf8` e `PathFromUtf8`, que saíram do `motor/core/Paths.h` (ele inclui o novo,
+  então nada muda para quem já o usava). O `HubCore.h` troca a cópia do hub por `using motor::ToUtf8` e
+  `using motor::PathFromUtf8`: o `hub::ToUtf8` continua valendo para o hub e a distribuição. Como o `Paths.h` é
+  público, o `common/include` entrou nos includes públicos da `libMotor.dll`, no `MOTOR_SDK_INCLUDE_DIRS` (scripts e
+  o `.gch` deles, que agora também depende do `Utf8.h`) e na cópia do SDK do `motor_package` (só o `Utf8.h`).
+- **`Text.h`:** `SetError`, `Lower` (minúsculas ASCII) e `LowerExtension`. As 15 cópias do `SetError` sumiram (as
+  14 da tabela e uma que apareceu no `AssetLibraryUtil.h`), junto com a declaração do `SceneJson.h`. Fora do
+  namespace `motor` (editor, hub, distribuição) fica um `using motor::SetError` no lugar da cópia. O
+  `project_panel::Lower` virou `using motor::Lower` no `ProjectPanelUtil.h`.
+- **`FileRead.h`:** `ReadTextFile` (o arquivo inteiro como texto, `std::optional`: `.value_or("")` onde arquivo
+  ausente valia como vazio) e `ReadBinaryFile` (bytes, com a mensagem de erro do `AssetLoaders.cpp`). Além das 8 da
+  tabela, saíram mais duas cópias: o `ReadText` dos materiais (`AssetLibraryMaterials.cpp`) e o do `Shader.cpp`,
+  que agora só lança a exceção em cima do `ReadTextFile`.
+
+O `ScriptProject::ExecutableDir` saiu; o `ScriptProject`, o `ReleaseRuntime` e o `ScriptController` usam o
+`motor::ExecutableDir` (`motor/core/EngineAssets.h`), igual no Windows. O `kScriptApiVersion` não mudou: as funções
+são `inline` e o SDK só ganhou um header.
+
+As cinco tarefas foram num commit só: mexem nos mesmos arquivos (o `ScriptProject.cpp` tinha cópia de quatro
+delas) e uma cópia velha visível junto da nova deixa a chamada ambígua, então não dá para trocar uma de cada vez
+sem um estado intermediário que não compila.
+
+### Funções longas (tarefas 5 e 6, 25/10/2026)
+
+Na conferência de 25/10 havia duas funções novas acima de 120 linhas (`ShadowRenderer::Render` e
+`PhysicsSystem::World::SyncBodies`), divididas junto. Cada parte saiu com o código como estava; o que muda é só
+onde ele mora:
+
+| Função | Linhas antes | Depois | Partes novas |
+|---|---|---|---|
+| `Renderer::DrawScene` | 182 | 71 | `SortDrawOrder`, `UploadFrameData`, `CollectSceneBatches`, `DrawSceneBatches` |
+| `NavMesh::Build` | 182 | 43 | `MakeConfig`, `Voxelize`, `BuildRegions`, `BuildPolygons`, `CreateDetourData` (soltas no `.cpp`) |
+| `SceneViewport::Draw` | 131 | 84 | `DrawStatsOverlay`, `DrawPlayIndicator` |
+| `ShadowRenderer::Render` | 128 | 34 | `AddCascadePasses`, `AddCubePasses` |
+| `GameExport::Export` | 124 | 42 | `CheckOptions`, `CopyGameFiles`, `WriteGameProject`, `WriteMarker` (soltas no `.cpp`) |
+| `PhysicsSystem::World::SyncBodies` | 123 | 79 | `MoveBody`, `RemoveUnseenBodies` |
+
+Detalhes que não mudam o resultado:
+
+- O `DrawSceneBatches` desenha uma faixa de lotes e começa sem lembrar shader, material nem texturas. Antes, o
+  mesmo laço zerava essa lembrança antes dos transparentes (o céu troca o estado); agora ela zera a cada chamada,
+  uma para os opacos e outra para os transparentes.
+- No `Renderer.h` (header público) entraram só funções privadas e a declaração `struct DrawBatch`: o tamanho da
+  classe e o ABI dos scripts não mudam.
+- O `RemoveUnseenBodies` só roda quando o `SyncBodies` já ia varrer os corpos (`sweep`).
+
+Conferido: build sem avisos, `ctest` 57/57 em Debug e 56/56 em Release (sem o `test_desempenho`). Capturas do
+editor Release com a referência, no `main` e no branch: mesma imagem, 19 draws e 136.812 triângulos. O
+`test_desempenho`, alternado com o `main` (5 rodadas), dá o mesmo `cena_ler` (~218 ms) e um `cena_json` ~5% maior
+(mediana 38,8 contra 36,8 ms). Nenhuma das divisões toca no JSON da cena; a base não foi regravada.
+
+### Pasta `nav/` e `CLAUDE.md` (tarefas 7 a 9, 25/10/2026)
+
+O `NavMeshBake.cpp/.h` foi para `editor/src/nav/` (`#include "nav/NavMeshBake.h"`, como as outras subpastas); o
+código não mudou. No `CLAUDE.md`, a pasta entrou na lista do editor e na área IA, e as tabelas de onde cada fase
+das alphas 1 e 2 mexia viraram uma linha apontando para o histórico do git. Os auxiliares do `common/` já tinham
+entrado no `601c36d`. O grafo se atualiza com `/graphify . --update` depois do merge no `main`.
+
+Conferido: build sem avisos e `ctest` 57/57 em Debug (o `test_desempenho` pulado, como sempre no Debug).
 
 ## Limitações
 
-(Preencher ao terminar.)
+- **`Lower` do `Input.cpp`** (recebe `std::string_view`) e **`DrawControlsWindow`** (131 linhas, a única acima de 120
+  fora as `Add*Tools`) ficam para depois do branch `entrada-base`, que mexe nos dois arquivos.
+- **Leituras no meio de outras funções:** ~14 lugares ainda abrem o arquivo e leem com `rdbuf()` direto (projeto,
+  opções, save, prefab, cena, recuperação, `.meta`, configurações do editor, plano de instalação). Cada um tem a sua
+  mensagem de erro e não era uma função copiada; dá para trocar pelo `ReadTextFile` aos poucos, quando mexer neles.

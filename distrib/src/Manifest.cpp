@@ -4,6 +4,8 @@
 
 #include <HubCore.h>
 #include <motor/common/FileWrite.h>
+#include <motor/common/FileRead.h>
+#include <motor/common/Text.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -18,17 +20,8 @@ using hub::PathFromUtf8;
 using hub::ToUtf8;
 
 namespace {
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
-
-std::optional<std::string> ReadFile(const fs::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return std::nullopt;
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
-}
+using motor::ReadTextFile;
+using motor::SetError;
 
 json FilesToJson(const std::vector<ReleaseFile>& files) {
     json list = json::array();
@@ -397,7 +390,7 @@ std::optional<Release> ScanRelease(const fs::path& dir, std::string_view channel
     r.scriptApiVersion = installed->scriptApiVersion;
     r.buildType = installed->buildType;
     try {
-        if (const auto text = ReadFile(dir / hub::kVersionFile)) r.date = json::parse(*text).value("built", std::string());
+        if (const auto text = ReadTextFile(dir / hub::kVersionFile)) r.date = json::parse(*text).value("built", std::string());
     } catch (const json::exception&) {
     }
     if (r.date.empty()) r.date = NowIso();
@@ -409,7 +402,7 @@ std::optional<Release> ScanRelease(const fs::path& dir, std::string_view channel
 }
 
 std::optional<Manifest> LoadManifest(const fs::path& root, std::string* error) {
-    const auto text = ReadFile(ManifestPath(root));
+    const auto text = ReadTextFile(ManifestPath(root));
     if (!text) return Manifest{};
     return Manifest::Parse(*text, error);
 }

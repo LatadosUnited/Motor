@@ -10,6 +10,8 @@
 //   - MotorEditor.exe --project <pasta> | --create <pasta-pai> <nome>
 // Todos os caminhos e textos são UTF-8 ("Jogo Ação").
 
+#include <motor/common/Utf8.h>
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -21,10 +23,10 @@ namespace hub {
 
 namespace fs = std::filesystem;
 
-// --- UTF-8 (cópia mínima de motor/core/Paths.h: o hub não usa a engine) -----------------------------------
+// --- UTF-8 (motor/common/Utf8.h, o mesmo da engine: está no common/, que o hub pode usar) ------------------
 
-std::string ToUtf8(const fs::path& path);
-fs::path PathFromUtf8(std::string_view utf8);
+using motor::PathFromUtf8;
+using motor::ToUtf8;
 bool SamePath(const fs::path& a, const fs::path& b);  // normalizados; sem diferenciar maiúsculas no Windows
 
 // Busca sem diferenciar maiúsculas (ASCII e as letras acentuadas do Latin-1: "AÇÃO" acha "ação").

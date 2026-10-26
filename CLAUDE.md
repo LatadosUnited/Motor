@@ -60,7 +60,8 @@ ctest --test-dir build --output-on-failure
   `editor/src/` tem uma subpasta por área e os includes partem de `editor/src` (`#include "scripts/ScriptHost.h"`):
   `document/` (`SceneDocument`), `viewport/` (`SceneViewport`, `UiEditor`), `play/` (`PlayController`,
   `PlayMode`), `panels/` (Hierarquia, Inspector, Cena, Projeto), `drawers/` (`FieldDrawers` e os `*Drawer.cpp`),
-  `scripts/` (`Script*`), `export/` (`GameExport`, `ExportController`), `mcp/`; na raiz, as peças comuns
+  `scripts/` (`Script*`), `export/` (`GameExport`, `ExportController`), `mcp/`, `nav/` (`NavMeshBake`, o "Gerar
+  navmesh" do Inspector e do MCP); na raiz, as peças comuns
   (`EditorApp`, `EditorContext`, `EditorSettings`, `UndoHistory`, `FileDialog`). Peça grande se divide em
   `<Peça><Parte>.cpp` (ex.: `ProjectPanelDraw.cpp`, `SceneDocumentUi.cpp`), com o que as partes dividem num
   header interno (`ProjectPanelUtil.h`).
@@ -86,7 +87,9 @@ ctest --test-dir build --output-on-failure
   `installer/` é o `MotorSetup.exe` (Hub embutido como recurso, atalhos, registro de desinstalação no HKCU).
   Como o hub, não ligam na `libMotor.dll`.
 - `common/` — `motor_common`, código sem dependências usado pela engine e pelos programas que não ligam nela
-  (hub, distribuição, servidor, instalador): hoje só a gravação segura (`motor/common/FileWrite.h`).
+  (hub, distribuição, servidor, instalador): gravação segura (`FileWrite.h`), UTF-8 (`Utf8.h`, incluído pelo
+  `motor/core/Paths.h`), `SetError`/`Lower`/`LowerExtension` (`Text.h`) e ler o arquivo inteiro (`FileRead.h`), em
+  `motor/common/`. Precisou de uma dessas num `.cpp`? Use a daqui, não copie.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -190,7 +193,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: exportação | `editor/src/export/`, `player/` |
 | Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
 | Distribuição | `distrib/`, `server/`, `installer/` (Fase 15: servidor de versões, download, instalador) |
-| IA | `engine/{include/motor,src}/ai/`, `scene/NavMesh*` (Fase 34 em diante) |
+| IA | `engine/{include/motor,src}/ai/`, `scene/NavMesh*`, `editor/src/nav/` (Fase 34 em diante) |
 | Testes | `tests/test_<sua área>.cpp` (arquivo novo por assunto; não reescreva testes de outra área) |
 
 Componente novo da engine = `scene/<Nome>.h` + `scene/<Nome>.cpp` próprios (`MOTOR_COMPONENT_MODULE`), não
@@ -213,33 +216,8 @@ reformatar o que existe. Precisa mudar mais que isso? Pare e pergunte ao usuári
 
 ### Fases do roteiro: onde cada uma mexe
 
-Alpha 1 (feitas; o roteiro foi apagado, histórico no git):
-
-| Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
-|---|---|---|---|
-| 4 Luzes | componentes de luz em `scene/`, `renderer/` (N luzes), shaders | `Scene` e `SceneSerializer` (a luz da cena vira componente; cenas antigas convertidas), `SceneViewport` (ícones), painel Cena | 7 |
-| 5 Física | camada nova `physics/` | **pré-requisito:** sistemas no `SceneRuntime` (abaixo); biblioteca nova | — |
-| 6 Materiais/prefabs | `assets/`, `ProjectPanel` | `SceneSerializer` (prefab), Inspector | 11 |
-| 7 Render avançado | `renderer/`, shaders | `Renderer` (mesmo arquivo da 4) | 4 |
-| 8 Áudio | camada nova `audio/` | sistemas no `SceneRuntime`; biblioteca nova (miniaudio) | — |
-| 9 HUD | camada nova `ui/` | `renderer/` (desenho 2D) | 7 |
-| 11 Modelos 3D/animação | `assets/` (importador glTF), `renderer/` (`Mesh` na CPU, skinning) | prefabs da 6, collider de malha (`physics/`) | 6, 7 |
-| 12 Documentação de scripts | `docs/`, `editor/templates/Scripts/` | `README.md` (seção Scripts), comentários de `Script.h` | — |
-| 13 Servidor MCP | `editor/src/mcp/` | `EditorApp` (montar a peça), métodos sem diálogo em `SceneDocument`, `PlayController` (entrada externa), `ScriptController::GetStatus` | — |
-| 14 Hub | `hub/` | `.mproject` (`engineVersion`), `main.cpp` do editor (opções), `EditorSettings` (`--settings`), `project_create` no MCP, alvo `motor_package` | — |
-| 15 Instalador | `distrib/`, `server/`, `installer/` | `hub/` (aba Versões, `hub.json` formato 2, `--baixar`) | 14 |
-
-Alpha 2 (feitas; o roteiro foi apagado, histórico no git):
-
-| Fase | Área principal | Toca também (coordenação) | Não rodar junto com |
-|---|---|---|---|
-| 16 Robustez e correções | `SceneRuntime` (proteção dos scripts), `PlayMode`/`SceneDocument` (recuperação), cada correção na sua área | `kScriptApiVersion` se a API dos scripts mudar | 17 só no item do caminho longo |
-| 17 Scripts | `editor/src/scripts/`, `editor/templates/`, headers que os scripts incluem (`Script.h`, `ScriptModule.h`) | `motor_package` (SDK com o cabeçalho pré-compilado), `docs/`, painel Projeto (criar script), `kScriptApiVersion` | 16 (caminho longo) |
-| Organização do código | divisão de arquivos e funções grandes, subpastas de `editor/src` (sem mudar comportamento) | quase todas as áreas | todas (mexe em muitos arquivos) |
-| 18 Funcionalidades | `physics/` (camadas, consultas), `audio/` (vozes, grupos), `renderer/` (transparência), formas em `assets/` | API dos scripts (`kScriptApiVersion`), `docs/` | — |
-| 19 Validação | `docs/teste-manual.md` | correções pequenas viram itens da 16 | — |
-| 20 Editor produtivo | `SceneViewport`, painéis, `SceneDocument` (divididos antes) | prefabs (`assets/`), MCP | — |
-| 21 Jogo entregue | `player/`, exportação (`GameExport`) | entrada (`core/`), API dos scripts | — |
+Alphas 1 e 2 (Fases 0 a 21 e a primeira Organização do código): feitas; os roteiros e a tabela de onde cada fase
+mexia saíram daqui, estão no histórico do git.
 
 Alpha 3 (desempenho, replanejada em 21/10/2026; `docs/roadmap/alpha-3.md` e `docs/roadmap/alpha-3/`):
 

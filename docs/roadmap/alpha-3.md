@@ -38,7 +38,7 @@ e termina com os números de antes e depois aqui e no `bench/README.md`.
 | — | [Fase 25 — Cena, dados e física](alpha-3/fase-25-cena.md) | pronta (25/10) | `fisica1000` 84 → 104% da Unity, `jogo_passo` 1,37 → 0,77 ms, filhos e nomes sem percorrer a cena; física da referência 8,1 ms (3 passos por quadro, espera a Fase 24) | — |
 | — | [Fase 26 — Várias threads](alpha-3/fase-26-threads.md) | pronta (25/10) | `cubos10000`: thread principal ~80 → 46–50% de um núcleo; referência 23,3 → 22,6 ms; texturas da cena decodificadas em paralelo (−22% na carga) | — |
 | — | [Fase 27 — Editor que escala](alpha-3/fase-27-editor.md) | pronta (25/10) | referência no editor: quadros acima de 100 ms parado 37 em 20 s → 0; CPU por quadro ~21 → ~10,5 ms; JSON 255 → 31 ms; salvar ainda 90–157 ms | — |
-| — | [Organização do código 2](alpha-3/organizacao-do-codigo-2.md) | planejada | `SetError` em 14 arquivos, leitura de arquivo em 8, `DrawScene` com 186 linhas; sem mudar comportamento | tarefas 1 a 4 já; a 5 depois da 26 e fora da 24 |
+| — | [Organização do código 2](alpha-3/organizacao-do-codigo-2.md) | em andamento | `SetError` em 14 arquivos, leitura de arquivo em 8, `DrawScene` com 186 linhas; sem mudar comportamento | tarefas 1 a 10 feitas, menos o `Input.cpp` e o `DrawControlsWindow` (esperam o `entrada-base`) e o grafo (depois do merge) |
 
 ## Ordem e dependências
 

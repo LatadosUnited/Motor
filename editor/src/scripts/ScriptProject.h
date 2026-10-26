@@ -40,8 +40,7 @@ struct Toolchain {
 };
 std::optional<Toolchain> LoadToolchain(const std::filesystem::path& sdkJson, std::string* error = nullptr);
 
-// Pastas ao lado do executável: sdk/MotorSDK.json e templates/Scripts.
-std::filesystem::path ExecutableDir();
+// Ao lado do executável (motor::ExecutableDir): sdk/MotorSDK.json e templates/Scripts.
 std::filesystem::path DefaultSdkJson();
 std::filesystem::path DefaultTemplatesDir();
 

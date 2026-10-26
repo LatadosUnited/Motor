@@ -1,6 +1,7 @@
 #include "motor/scene/Prefab.h"
 
 #include "motor/assets/AssetLibrary.h"
+#include "motor/common/Text.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/scene/EntityRef.h"
@@ -17,9 +18,6 @@ namespace motor {
 namespace fs = std::filesystem;
 
 namespace {
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
 
 const PrefabLink* LinkOf(const Entity& e) {
     const PrefabInstance* p = e.Get<PrefabInstance>();
