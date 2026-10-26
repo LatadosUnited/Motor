@@ -9,10 +9,10 @@
 #include <string_view>
 #include <vector>
 
-// Protocolo MCP (Model Context Protocol) do servidor do editor: mensagens JSON-RPC 2.0 e a lista de
+// Protocolo MCP (Model Context Protocol) dos servidores do editor e do Hub: mensagens JSON-RPC 2.0 e a lista de
 // ferramentas. Não sabe nada de rede nem de thread (McpServer cuida disso), então dá para testar sozinho.
 // Métodos atendidos: initialize, ping, tools/list e tools/call; notificações não têm resposta.
-namespace editor::mcp {
+namespace motor::mcp {
 
 using Json = nlohmann::ordered_json;
 
@@ -87,4 +87,4 @@ private:
     std::function<bool(ToolResult&)> m_later;  // `later` da última tools/call (Handle decide se espera)
 };
 
-} // namespace editor::mcp
+} // namespace motor::mcp

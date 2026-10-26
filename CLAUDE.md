@@ -65,8 +65,8 @@ ctest --test-dir build --output-on-failure
   (`EditorApp`, `EditorContext`, `EditorSettings`, `UndoHistory`, `FileDialog`). Peça grande se divide em
   `<Peça><Parte>.cpp` (ex.: `ProjectPanelDraw.cpp`, `SceneDocumentUi.cpp`), com o que as partes dividem num
   header interno (`ProjectPanelUtil.h`).
-  `mcp/`: servidor MCP do editor (`McpProtocol` JSON-RPC, `McpServer` HTTP com cpp-httplib, `McpSceneTools`
-  ferramentas de cena testáveis sem janela, `McpController` peça do editor com as demais ferramentas, divididas
+  `mcp/`: servidor MCP do editor (`Mcp.h` traz o protocolo e o HTTP da `motor_mcp` para `editor::mcp`,
+  `McpSceneTools` ferramentas de cena testáveis sem janela, `McpController` peça do editor com as demais ferramentas, divididas
   por grupo em `McpFileTools.cpp` e `McpPlayTools.cpp`).
 - Scripts de jogo ficam na pasta `Scripts/` de cada projeto (`motor::Script` + `MOTOR_SCRIPT`, ver
   `motor/scene/ScriptModule.h`). O editor compila uma DLL por projeto (`ScriptProject`, `ScriptBuilder`) e
@@ -90,6 +90,9 @@ ctest --test-dir build --output-on-failure
   (hub, distribuição, servidor, instalador): gravação segura (`FileWrite.h`), UTF-8 (`Utf8.h`, incluído pelo
   `motor/core/Paths.h`), `SetError`/`Lower`/`LowerExtension` (`Text.h`) e ler o arquivo inteiro (`FileRead.h`), em
   `motor/common/`. Precisou de uma dessas num `.cpp`? Use a daqui, não copie.
+- `mcp/` — `motor_mcp`, o MCP sem a engine, usado pelo editor e pelo Hub: protocolo JSON-RPC
+  (`motor/mcp/McpProtocol.h`) e transporte HTTP com cpp-httplib (`motor/mcp/McpServer.h`, log por `SetLog`), no
+  namespace `motor::mcp`. Testado em `tests/test_mcp.cpp`.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -190,7 +193,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: arquivos | `editor/src/document/`, `editor/src/FileDialog.*`, `editor/src/EditorSettings.*` |
 | Editor: scripts | `editor/src/scripts/`, `editor/templates/` |
 | Editor: painéis | `editor/src/panels/`, `editor/src/drawers/` |
-| Editor: MCP | `editor/src/mcp/` |
+| Editor: MCP | `editor/src/mcp/`, `mcp/` (`motor_mcp`, também do Hub) |
 | Editor: exportação | `editor/src/export/`, `player/` |
 | Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
 | Distribuição | `distrib/`, `server/`, `installer/` (Fase 15: servidor de versões, download, instalador) |

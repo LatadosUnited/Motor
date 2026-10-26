@@ -1,6 +1,6 @@
 #pragma once
 
-#include "McpProtocol.h"
+#include <motor/mcp/McpProtocol.h>
 
 #include <cstddef>
 #include <deque>
@@ -15,11 +15,12 @@ namespace httplib {
 class Server;
 }
 
-namespace editor::mcp {
+namespace motor::mcp {
 
 // Transporte "Streamable HTTP" do MCP: POST http://127.0.0.1:<porta>/mcp com uma mensagem JSON-RPC, resposta
 // em application/json. O servidor HTTP roda numa thread própria, mas as mensagens são atendidas na thread
-// principal do editor (Pump, uma vez por quadro), porque as ferramentas mexem na cena e no OpenGL.
+// principal de quem o usa (Pump, uma vez por quadro): no editor, porque as ferramentas mexem na cena e no OpenGL.
+// Não depende da engine (o Hub também usa): o log vai para quem chamar SetLog.
 //
 // Segurança: só escuta em 127.0.0.1 e recusa pedidos com Origin/Host de fora (um site aberto no navegador
 // não consegue chamar o editor). Não há senha: qualquer programa desta máquina pode usar enquanto estiver ligado.
@@ -44,6 +45,8 @@ public:
     bool HasParked() const { return !m_parked.empty(); }  // pedidos esperando algo (Play, compilação)
     // Chamado na thread do HTTP quando chega um pedido: o editor parado dorme no WaitEvents e precisa acordar.
     void SetWake(std::function<void()> wake) { m_wake = std::move(wake); }
+    // Mensagens de ligado e desligado (o editor manda para o motor::log).
+    void SetLog(std::function<void(const std::string&)> log) { m_log = std::move(log); }
 
 private:
     struct Job;
@@ -56,10 +59,11 @@ private:
     std::thread m_thread;
     int m_port = 0;
     std::function<void()> m_wake;
+    std::function<void(const std::string&)> m_log;
 
     std::mutex m_mutex;
     std::deque<std::shared_ptr<Job>> m_jobs;
     std::vector<Parked> m_parked;  // só na thread principal
 };
 
-} // namespace editor::mcp
+} // namespace motor::mcp

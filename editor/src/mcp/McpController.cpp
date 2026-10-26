@@ -160,6 +160,7 @@ McpController::~McpController() {
 void McpController::Start(int port) {
     std::string error;
     m_server.SetWake(&motor::Window::Wake);
+    m_server.SetLog([](const std::string& message) { log::Info("{}", message); });
     if (!m_server.Start(port, error)) {
         log::Error("Servidor MCP: {}", error);
         m_host.ctx.pendingError = "Servidor MCP: " + error;

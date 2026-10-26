@@ -856,8 +856,8 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
 - **Segurança:** o servidor só escuta em `127.0.0.1` e recusa pedidos vindos de páginas da web (cabeçalhos
   `Origin`/`Host` de fora). Ele não tem senha: enquanto estiver ligado, qualquer programa deste computador pode
   usá-lo. Desligue quando não estiver usando.
-- **Como funciona:** o protocolo JSON-RPC fica em `editor/src/mcp/McpProtocol`, o HTTP em `McpServer` e as
-  ferramentas em `McpSceneTools`, `McpNavTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
+- **Como funciona:** o protocolo JSON-RPC (`McpProtocol`) e o HTTP (`McpServer`) ficam na biblioteca `mcp/`
+  (`motor_mcp`, sem a engine, para o Hub usar também), e as ferramentas do editor em `McpSceneTools`, `McpNavTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
   thread principal, uma vez por quadro. A captura sai em PNG com um compressor próprio (`ImageEncode`).
   Testes: `tests/test_mcp.cpp` e `tests/test_mcp_nav.cpp`.
 

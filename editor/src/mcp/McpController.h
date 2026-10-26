@@ -2,8 +2,7 @@
 
 #include "../EditorContext.h"
 #include "../EditorSettings.h"
-#include "McpProtocol.h"
-#include "McpServer.h"
+#include "Mcp.h"
 
 #include <motor/core/Input.h>
 

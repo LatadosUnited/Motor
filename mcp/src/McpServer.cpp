@@ -9,16 +9,14 @@
 #endif
 #include <httplib.h>
 
-#include "McpServer.h"
-
-#include <motor/core/Log.h>
+#include <motor/mcp/McpServer.h>
 
 #include <atomic>
 #include <chrono>
 #include <future>
 #include <utility>
 
-namespace editor::mcp {
+namespace motor::mcp {
 
 namespace {
 // Tempo máximo esperando a thread principal (um quadro dura ~16 ms; compilar ou carregar algo pode demorar).
@@ -102,7 +100,7 @@ bool Server::Start(int port, std::string& error) {
     m_port = port;
     m_http = std::move(http);
     m_thread = std::thread([server = m_http.get()] { server->listen_after_bind(); });
-    motor::log::Info("Servidor MCP ligado em {}", Url());
+    if (m_log) m_log("Servidor MCP ligado em " + Url());
     return true;
 }
 
@@ -118,7 +116,7 @@ void Server::Stop() {
     m_parked.clear();
     if (m_thread.joinable()) m_thread.join();
     m_http.reset();
-    motor::log::Info("Servidor MCP desligado");
+    if (m_log) m_log("Servidor MCP desligado");
 }
 
 std::string Server::Submit(std::string body) {
@@ -170,4 +168,4 @@ size_t Server::Pump() {
     return handled + jobs.size();
 }
 
-} // namespace editor::mcp
+} // namespace motor::mcp

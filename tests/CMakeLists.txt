@@ -47,12 +47,11 @@ motor_add_test(test_mcp_nav
     ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/nav/NavMeshBake.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpNavTools.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
 target_include_directories(test_mcp_nav PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
-target_link_libraries(test_mcp_nav PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_mcp_nav PRIVATE motor_mcp)
 motor_add_test(test_world_cache)  # Fase 25: cache da matriz de mundo
 motor_add_test(test_perception)  # Fase 37: percepção dos agentes (visão, audição, memória)
 
@@ -140,14 +139,12 @@ motor_add_test(test_mcp
     ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/ImageEncode.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpServer.cpp)
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
+# O teste chama o servidor com o cliente da cpp-httplib: precisa do header e do Winsock (este vem da motor_mcp).
 target_include_directories(test_mcp PRIVATE ${PROJECT_SOURCE_DIR}/editor/src ${httplib_SOURCE_DIR})
-target_link_libraries(test_mcp PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_mcp PRIVATE motor_mcp)
 if(WIN32)
-    target_link_libraries(test_mcp PRIVATE ws2_32)
     target_compile_definitions(test_mcp PRIVATE _WIN32_WINNT=0x0A00)
 endif()
 

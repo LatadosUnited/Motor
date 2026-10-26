@@ -1,11 +1,11 @@
-#include "McpProtocol.h"
+#include <motor/mcp/McpProtocol.h>
 
 #include <algorithm>
 #include <array>
 #include <exception>
 #include <utility>
 
-namespace editor::mcp {
+namespace motor::mcp {
 
 namespace {
 // Códigos de erro do JSON-RPC 2.0.
@@ -218,4 +218,4 @@ Json Protocol::CallTool(const Json& params) {
     return CallResult(result);
 }
 
-} // namespace editor::mcp
+} // namespace motor::mcp
