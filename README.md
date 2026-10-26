@@ -894,7 +894,12 @@ qualquer versão do editor, inclusive as futuras.
   (criado na primeira vez); o `initialize` dá um `Mcp-Session-Id`, e um id antigo continua valendo depois de o Hub
   reiniciar. A aba **MCP** mostra o endereço e copia o token e o comando para o Claude Code
   (`claude mcp add --transport http motor-hub http://127.0.0.1:47600/mcphub --header "Authorization: Bearer <token>"`).
-  Por enquanto só com a ferramenta `hub_status`.
+  Ferramentas: `hub_status` (versões, projetos, editores abertos, download em andamento), `projects_list`,
+  `project_open` (com `engine` para outra versão), `project_create`, `project_add`, `project_remove` (só da lista),
+  `editor_close` (como o X da janela: com algo não salvo o editor pergunta; `force` fecha na hora), `versions_list`,
+  `version_set_default`, `version_remove` (para a Lixeira; recusa com um editor da versão aberto),
+  `versions_available` e `version_download` (`"mais-recente"`; `wait` espera terminar). O Hub só fecha e conta os
+  editores que ele mesmo abriu.
 - **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 2, ...}`, com a lista
   `servers`; o formato 1 é lido com o servidor local na lista), separada da do editor.
 

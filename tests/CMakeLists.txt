@@ -191,6 +191,20 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 add_test(NAME test_mcp_servidor COMMAND test_mcp_servidor ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_mcp_servidor)
 
+# Ferramentas do /mcphub (Hub residente) no HubApp de verdade, sem janela. O editor é o próprio teste copiado para
+# a pasta da versão: com --project ou --create ele só espera, e o teste o abre e fecha.
+add_executable(test_hub_mcp test_hub_mcp.cpp)
+target_link_libraries(test_hub_mcp PRIVATE motor_hub_app)
+target_include_directories(test_hub_mcp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_hub_mcp PRIVATE -Wall -Wextra)
+endif()
+if(MINGW)
+    # A cópia do teste roda fora de build/: sem as DLLs do MinGW ao lado, só funciona estática.
+    target_link_options(test_hub_mcp PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME test_hub_mcp COMMAND test_hub_mcp ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_hub_mcp)
+
 # Distribuição (Fase 15): SHA-256, manifesto, pasta de publicações, plano de instalação/desinstalação, hub.json
 # formato 2 e o servidor de versões com o cliente em loopback (porta livre em 127.0.0.1). Sem a libMotor.dll.
 add_executable(test_distribuicao test_distribuicao.cpp)

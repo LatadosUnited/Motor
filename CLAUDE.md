@@ -152,7 +152,8 @@ ctest --test-dir build --output-on-failure
   `project_create`. O Hub (`MotorHub.exe`) tem `--data <pasta>` para não mexer no `%LOCALAPPDATA%\Motor` (e abre
   um Hub por pasta de dados: o de teste não esbarra no do usuário; dê também `--mcp-porta <outra>`, já que o do
   usuário segura a 47600). O MCP do Hub é `POST http://127.0.0.1:47600/mcphub` com
-  `Authorization: Bearer <conteúdo de <dados>\mcp-token>`. No `MotorSetup.exe` de teste, passe
+  `Authorization: Bearer <conteúdo de <dados>\mcp-token>` (ferramentas de projetos, versões e abrir/fechar o
+  editor; testadas sem janela no `test_hub_mcp`, com o próprio teste fazendo de editor). No `MotorSetup.exe` de teste, passe
   `--sem-iniciar-com-windows` (ou `--chave-registro <nome>`): senão ele troca o Hub que inicia com o Windows.
 - O que o MCP não cobre (menus, arrastar, atalhos, gizmo) fica como "não testado" no relatório, com passos
   para o usuário conferir.

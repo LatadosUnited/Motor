@@ -22,6 +22,8 @@ public:
     bool Start(int port, std::function<void()> wake, std::string& error);
     void Stop();
     void Pump() { m_server.Pump(); }
+    bool HasParked() const { return m_server.HasParked(); }  // pedidos esperando (download, editor fechando)
+    motor::mcp::Protocol& GetProtocol() { return m_protocol; }  // testes: chamar as ferramentas sem HTTP
 
     bool IsRunning() const { return m_server.IsRunning(); }
     std::string Url() const { return m_server.Url(); }
@@ -31,6 +33,10 @@ public:
 
 private:
     void AddTools();
+    void AddStateTools();
+    void AddProjectTools();
+    void AddVersionTools();
+    motor::mcp::Json EditorsJson();
 
     HubApp& m_app;
     motor::mcp::Protocol m_protocol;

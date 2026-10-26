@@ -36,7 +36,7 @@ Paths DefaultPaths(const fs::path& dataOverride) {
     Paths p;
     if (!dataOverride.empty()) {
         std::error_code ec;
-        p.dataDir = fs::absolute(dataOverride, ec);
+        p.dataDir = fs::absolute(dataOverride, ec).lexically_normal();  // "C:/x" vira "C:\x" (mensagens e MCP)
     } else {
         fs::path local = KnownFolder(FOLDERID_LocalAppData);
         if (local.empty()) {
@@ -67,6 +67,74 @@ bool LaunchProcess(const fs::path& exe, const std::vector<std::string>& args, st
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     return true;
+}
+
+ChildProcess::~ChildProcess() {
+    if (m_handle) CloseHandle(static_cast<HANDLE>(m_handle));  // o processo continua: só deixamos de acompanhar
+}
+
+ChildProcess::ChildProcess(ChildProcess&& other) noexcept : m_handle(other.m_handle), m_pid(other.m_pid) {
+    other.m_handle = nullptr;
+    other.m_pid = 0;
+}
+
+ChildProcess& ChildProcess::operator=(ChildProcess&& other) noexcept {
+    if (this != &other) {
+        if (m_handle) CloseHandle(static_cast<HANDLE>(m_handle));
+        m_handle = other.m_handle;
+        m_pid = other.m_pid;
+        other.m_handle = nullptr;
+        other.m_pid = 0;
+    }
+    return *this;
+}
+
+std::optional<ChildProcess> ChildProcess::Launch(const fs::path& exe, const std::vector<std::string>& args,
+                                                 std::string* error) {
+    std::wstring commandLine = BuildCommandLine(exe, args);
+    const std::wstring workDir = exe.parent_path().wstring();
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(exe.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr, workDir.c_str(), &si, &pi)) {
+        if (error) *error = std::format("Não foi possível abrir '{}' (erro {}).", ToUtf8(exe), GetLastError());
+        return std::nullopt;
+    }
+    CloseHandle(pi.hThread);
+    ChildProcess process;
+    process.m_handle = pi.hProcess;
+    process.m_pid = pi.dwProcessId;
+    return process;
+}
+
+bool ChildProcess::Running() const {
+    return m_handle && WaitForSingleObject(static_cast<HANDLE>(m_handle), 0) == WAIT_TIMEOUT;
+}
+
+bool ChildProcess::RequestClose() const {
+    struct Search {
+        DWORD pid;
+        bool posted = false;
+    } search{m_pid};
+    EnumWindows(
+        [](HWND hwnd, LPARAM param) -> BOOL {
+            auto* s = reinterpret_cast<Search*>(param);
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hwnd, &pid);
+            // Só as janelas visíveis sem dono: a principal (não as auxiliares do GLFW e do IME).
+            if (pid == s->pid && IsWindowVisible(hwnd) && !GetWindow(hwnd, GW_OWNER)) {
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                s->posted = true;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&search));
+    return search.posted;
+}
+
+bool ChildProcess::Terminate() const {
+    return m_handle && TerminateProcess(static_cast<HANDLE>(m_handle), 1);
 }
 
 void RevealInExplorer(const fs::path& path) {
@@ -169,6 +237,16 @@ bool LaunchProcess(const fs::path&, const std::vector<std::string>&, std::string
     if (error) *error = "Abrir o editor só é suportado no Windows.";
     return false;
 }
+ChildProcess::~ChildProcess() = default;
+ChildProcess::ChildProcess(ChildProcess&&) noexcept = default;
+ChildProcess& ChildProcess::operator=(ChildProcess&&) noexcept = default;
+std::optional<ChildProcess> ChildProcess::Launch(const fs::path&, const std::vector<std::string>&, std::string* error) {
+    if (error) *error = "Abrir o editor só é suportado no Windows.";
+    return std::nullopt;
+}
+bool ChildProcess::Running() const { return false; }
+bool ChildProcess::RequestClose() const { return false; }
+bool ChildProcess::Terminate() const { return false; }
 void RevealInExplorer(const fs::path&) {}
 bool MoveToTrash(const fs::path&, std::string* error) {
     if (error) *error = "Lixeira só no Windows.";

@@ -42,7 +42,13 @@ public:
 
     // Ações: true se deu certo; `message` diz o que aconteceu (ou o erro), em português.
     // `version` por valor: a ação relê a lista de versões (uma referência para ela ficaria inválida).
+    // Um projeto com o editor aberto por este hub não abre de novo.
     bool OpenProject(const fs::path& root, InstalledVersion version, std::string& message);
+    // Abre com a versão do projeto ou, com `engine`, com essa. Sem a versão do projeto instalada, falha dizendo qual
+    // usar com `engine` (o editor passa o projeto para ela: cópia de segurança antes).
+    bool OpenProjectAuto(const fs::path& root, const std::string& engine, std::string& message);
+    // `wanted` vazio = a versão padrão. nullptr e `error` se não estiver instalada.
+    const InstalledVersion* PickVersion(const std::string& wanted, std::string& error) const;
     bool CreateProject(const fs::path& parent, const std::string& name, InstalledVersion version,
                        std::string& message);
     bool AddProjectFolder(const fs::path& folder, std::string& message);
@@ -65,6 +71,18 @@ public:
     bool DownloadVersion(const std::string& version, const std::string& server,
                          const std::function<void(const distrib::ReleaseProgress&)>& progress, std::string& message);
 
+    // Editores abertos por este hub (os abertos de outro jeito não entram), sem os que já fecharam.
+    struct OpenEditor {
+        fs::path root;
+        std::string version;
+        platform::ChildProcess process;
+        int64_t opened = 0;  // NowSeconds()
+    };
+    const std::vector<OpenEditor>& Editors();
+    const OpenEditor* FindEditor(const fs::path& root);
+    // Pede para o editor do projeto fechar (pergunta se há algo não salvo) ou, com `force`, fecha na hora.
+    bool CloseEditor(const fs::path& root, bool force, std::string& message);
+
     // Iniciar com o Windows: o valor do Run no HKCU aponta para este hub e esta pasta de dados.
     bool StartsWithWindows() const;
     bool SetStartWithWindows(bool on, std::string& message);
@@ -80,7 +98,12 @@ public:
     int RunWindow(const WindowOptions& options);
 
 private:
+    friend class HubMcp;  // as ferramentas do MCP usam as mesmas ações e downloads da janela
+
     void SaveConfig();
+    void PruneEditors();
+    bool Launch(const fs::path& root, const InstalledVersion& version, const std::vector<std::string>& args,
+                std::string& message);
     void RefreshProjects();
     void SetStatus(std::string message, bool error);
 
@@ -165,6 +188,14 @@ private:
         std::future<distrib::ReleaseOutcome> result;
     };
     std::unique_ptr<DownloadJob> m_download;
+    struct DownloadResult {
+        std::string version;
+        bool ok = false;
+        std::string message;
+    };
+    std::optional<DownloadResult> m_lastDownload;  // o último que terminou (o MCP espera por ele)
+
+    std::vector<OpenEditor> m_editors;
 };
 
 } // namespace hub

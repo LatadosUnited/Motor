@@ -62,17 +62,6 @@ int Fail(const std::string& message) {
     return 1;
 }
 
-const hub::InstalledVersion* PickVersion(hub::HubApp& app, const std::string& wanted, std::string& error) {
-    if (!wanted.empty()) {
-        const hub::InstalledVersion* v = hub::FindVersion(app.Versions(), wanted);
-        if (!v) error = "O Motor " + wanted + " não está instalado.";
-        return v;
-    }
-    const hub::InstalledVersion* v = hub::DefaultVersion(app.Versions(), app.Config().defaultVersion);
-    if (!v) error = "Nenhuma versão do Motor instalada (use --add-version).";
-    return v;
-}
-
 int RunAction(hub::HubApp& app, const Action& a) {
     std::string message;
     bool ok = false;
@@ -143,29 +132,11 @@ int RunAction(hub::HubApp& app, const Action& a) {
     } else if (a.name == "--remove-project") {
         ok = app.RemoveProject(hub::PathFromUtf8(a.args[0]), message);
     } else if (a.name == "--create") {
-        if (const hub::InstalledVersion* v = PickVersion(app, a.engine, message)) {
+        if (const hub::InstalledVersion* v = app.PickVersion(a.engine, message)) {
             ok = app.CreateProject(hub::PathFromUtf8(a.args[0]), a.args[1], *v, message);
         }
     } else if (a.name == "--open") {
-        const hub::ProjectInfo info = hub::ReadProject(hub::PathFromUtf8(a.args[0]));
-        const hub::VersionChoice choice =
-            hub::ChooseVersion(info.engineVersion, app.Versions(), app.Config().defaultVersion);
-        if (!info.found) {
-            message = "Projeto não encontrado em '" + a.args[0] + "': " + info.error;
-        } else if (!a.engine.empty()) {
-            if (const hub::InstalledVersion* v = PickVersion(app, a.engine, message)) {
-                ok = app.OpenProject(info.root, *v, message);
-            }
-        } else if (choice.match == hub::VersionMatch::Exact) {
-            ok = app.OpenProject(info.root, *choice.version, message);
-        } else if (choice.match == hub::VersionMatch::NoVersions) {
-            message = "Nenhuma versão do Motor instalada (use --add-version).";
-        } else {
-            message = (info.engineVersion.empty() ? std::string("O projeto não diz a versão do Motor")
-                                                  : "O Motor " + info.engineVersion + " não está instalado") +
-                      ": use --engine <versão> (sugerida: " + choice.version->version +
-                      "). O editor vai atualizar o engineVersion do projeto; faça uma cópia de segurança antes.";
-        }
+        ok = app.OpenProjectAuto(hub::PathFromUtf8(a.args[0]), a.engine, message);
     }
     if (!ok) return Fail(message);
     Print(message);

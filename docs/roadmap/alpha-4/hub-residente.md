@@ -106,6 +106,21 @@ biblioteca pequena sem a engine, usada pelos dois.
   Testes: `test_mcp_servidor` (novo, sem a engine: caminho, token, sessão, origem) e o token no `test_hub`.
   Conferido com o `MotorHub.exe` na bandeja (porta 47650): sem token 401, `initialize` com sessão, `tools/list` e
   `hub_status` respondendo em 12 ms com a janela escondida; memória 53,8 MB.
+- Tarefa 5: o `/mcphub` ganhou `projects_list`, `project_open`, `project_create`, `project_add`, `project_remove`,
+  `editor_close`, `versions_list`, `version_set_default`, `version_remove`, `versions_available` e `version_download`,
+  e o `hub_status` mostra os editores abertos e o download. O Hub agora acompanha os editores que abre
+  (`platform::ChildProcess`): não abre o mesmo projeto duas vezes, não manda para a Lixeira uma versão em uso, e
+  `editor_close` pede para fechar como o X da janela (`WM_CLOSE`: com algo não salvo o editor pergunta) ou, com
+  `force`, encerra o processo; com `wait`, a resposta espera o editor sair (`ToolResult::later`). Os servidores de
+  versões são lidos numa thread e o `version_download` usa o mesmo download da aba Versões. A escolha da versão
+  (`PickVersion`, `OpenProjectAuto`) saiu do `main.cpp` para o `HubApp`, a mesma para a linha de comando e o MCP.
+  O hub virou a biblioteca `motor_hub_app` (tudo menos o `main.cpp`) para o `test_hub_mcp` (novo): chama as
+  ferramentas pelo `Protocol` no `HubApp` de verdade, sem janela, com uma cópia do próprio teste fazendo de editor.
+  Conferido com o `MotorHub.exe` na bandeja (porta 47650) e o `MotorEditor.exe` do build: `project_create` criou
+  "Jogo Ação", `editor_close` sem `force` fechou o editor em 0,4 s, `version_remove` recusou com ele aberto, `force`
+  fechou; `version_download` com `wait` baixou e instalou 57,7 MB de um `MotorServidor` local em 1,2 s. Não
+  conferido: `editor_close` sem `force` com algo não salvo (o editor deve perguntar e a ferramenta dar o erro de
+  tempo esgotado).
 
 ## Limitações
 

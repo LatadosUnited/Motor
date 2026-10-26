@@ -70,15 +70,102 @@ void HubApp::SetStatus(std::string message, bool error) {
     m_statusError = error;
 }
 
+bool HubApp::Launch(const fs::path& root, const InstalledVersion& version, const std::vector<std::string>& args,
+                    std::string& message) {
+    std::vector<std::string> all = args;
+    all.insert(all.end(), m_editorArgs.begin(), m_editorArgs.end());
+    auto process = platform::ChildProcess::Launch(version.editor, all, &message);
+    if (!process) return false;
+    m_editors.push_back({root, version.version, std::move(*process), NowSeconds()});
+    return true;
+}
+
+void HubApp::PruneEditors() {
+    std::erase_if(m_editors, [](const OpenEditor& e) { return !e.process.Running(); });
+}
+
+const std::vector<HubApp::OpenEditor>& HubApp::Editors() {
+    PruneEditors();
+    return m_editors;
+}
+
+const HubApp::OpenEditor* HubApp::FindEditor(const fs::path& root) {
+    for (const OpenEditor& e : Editors()) {
+        if (SamePath(e.root, root)) return &e;
+    }
+    return nullptr;
+}
+
+bool HubApp::CloseEditor(const fs::path& root, bool force, std::string& message) {
+    const OpenEditor* editor = FindEditor(root);
+    if (!editor) {
+        message = std::format("Nenhum editor aberto pelo Hub em '{}'.", ToUtf8(root));
+        return false;
+    }
+    if (force) {
+        if (!editor->process.Terminate()) {
+            message = "Não foi possível fechar o editor.";
+            return false;
+        }
+        message = std::format("Editor de '{}' fechado à força (o que não estava salvo se perdeu).", ToUtf8(root.filename()));
+        return true;
+    }
+    if (!editor->process.RequestClose()) {
+        message = "O editor ainda não tem janela para receber o pedido de fechar (abrindo?).";
+        return false;
+    }
+    message = std::format("Pedido para fechar o editor de '{}' enviado (ele pergunta se há algo não salvo).",
+                          ToUtf8(root.filename()));
+    return true;
+}
+
+const InstalledVersion* HubApp::PickVersion(const std::string& wanted, std::string& error) const {
+    if (!wanted.empty()) {
+        const InstalledVersion* v = FindVersion(m_versions, wanted);
+        if (!v) error = std::format("O Motor {} não está instalado.", wanted);
+        return v;
+    }
+    const InstalledVersion* v = DefaultVersion(m_versions, m_config.defaultVersion);
+    if (!v) error = "Nenhuma versão do Motor instalada.";
+    return v;
+}
+
+bool HubApp::OpenProjectAuto(const fs::path& root, const std::string& engine, std::string& message) {
+    const ProjectInfo info = ReadProject(root);
+    if (!info.found) {
+        message = std::format("Projeto não encontrado em '{}': {}", ToUtf8(root), info.error);
+        return false;
+    }
+    if (!engine.empty()) {
+        const InstalledVersion* v = PickVersion(engine, message);
+        return v && OpenProject(info.root, *v, message);
+    }
+    const VersionChoice choice = ChooseVersion(info.engineVersion, m_versions, m_config.defaultVersion);
+    if (choice.match == VersionMatch::Exact) return OpenProject(info.root, *choice.version, message);
+    if (choice.match == VersionMatch::NoVersions) {
+        message = "Nenhuma versão do Motor instalada.";
+        return false;
+    }
+    message = (info.engineVersion.empty() ? std::string("O projeto não diz a versão do Motor")
+                                          : std::format("O Motor {} não está instalado", info.engineVersion)) +
+              std::format(": escolha a versão (engine no MCP, --engine na linha de comando; sugerida: {}). O editor "
+                          "vai atualizar o engineVersion do projeto; faça uma cópia de segurança antes.",
+                          choice.version->version);
+    return false;
+}
+
 bool HubApp::OpenProject(const fs::path& root, InstalledVersion version, std::string& message) {
     const ProjectInfo info = ReadProject(root);
     if (!info.found) {
         message = std::format("Projeto não encontrado em '{}': {}", ToUtf8(root), info.error);
         return false;
     }
-    std::vector<std::string> args = OpenProjectArgs(info.root);
-    args.insert(args.end(), m_editorArgs.begin(), m_editorArgs.end());
-    if (!platform::LaunchProcess(version.editor, args, &message)) return false;
+    if (const OpenEditor* open = FindEditor(info.root)) {
+        message = std::format("'{}' já está aberto no Motor {} (processo {}).", info.name, open->version,
+                              open->process.Pid());
+        return false;
+    }
+    if (!Launch(info.root, version, OpenProjectArgs(info.root), message)) return false;
 
     m_config.MarkOpened(info.root, NowSeconds());
     SaveConfig();
@@ -93,9 +180,7 @@ bool HubApp::CreateProject(const fs::path& parent, const std::string& name, Inst
         message = std::move(problem);
         return false;
     }
-    std::vector<std::string> args = CreateProjectArgs(parent, name);
-    args.insert(args.end(), m_editorArgs.begin(), m_editorArgs.end());
-    if (!platform::LaunchProcess(version.editor, args, &message)) return false;
+    if (!Launch(parent / PathFromUtf8(name), version, CreateProjectArgs(parent, name), message)) return false;
 
     // O editor cria a pasta logo ao abrir; a lista já mostra o projeto (como "não encontrado" até lá).
     m_config.MarkOpened(parent / PathFromUtf8(name), NowSeconds());
@@ -289,7 +374,9 @@ void HubApp::PollBackground() {
         } else {
             SetStatus(std::format("Motor {}: {}", version, outcome.error), outcome.status == distrib::Status::Failed);
         }
+        m_lastDownload = DownloadResult{version, outcome.status == distrib::Status::Ok, m_status};
     }
+    PruneEditors();
 }
 
 bool HubApp::SetDefaultVersion(const std::string& version, std::string& message) {
@@ -396,7 +483,7 @@ int HubApp::RunWindow(const WindowOptions& options) {
     while (true) {
         // O hub fica parado quase sempre: espera eventos em vez de girar o loop. Escondido, só o ícone e os pedidos
         // de outro hub o acordam (são mensagens da janela da bandeja, atendidas aqui).
-        const bool busy = m_adding.valid() || m_download || m_fetching.valid();
+        const bool busy = m_adding.valid() || m_download || m_fetching.valid() || (m_mcp && m_mcp->HasParked());
         const bool visible = glfwGetWindowAttrib(m_window, GLFW_VISIBLE) != 0;
         glfwWaitEventsTimeout(busy ? 0.05 : visible ? 0.5 : 2.0);
         if (m_tray->TakeQuitRequest()) break;
