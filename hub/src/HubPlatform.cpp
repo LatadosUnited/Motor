@@ -46,6 +46,7 @@ Paths DefaultPaths(const fs::path& dataOverride) {
     }
     p.configFile = p.dataDir / "hub.json";
     p.versionsDir = p.dataDir / PathFromUtf8("Versões");
+    p.mcpTokenFile = p.dataDir / kHubMcpTokenFile;
     fs::path documents = KnownFolder(FOLDERID_Documents);
     if (documents.empty()) documents = p.dataDir.parent_path();
     p.defaultProjectsDir = documents / "Motor";
@@ -160,6 +161,7 @@ Paths DefaultPaths(const fs::path& dataOverride) {
     p.dataDir = !dataOverride.empty() ? dataOverride : fs::path(home ? home : ".") / ".local" / "share" / "motor";
     p.configFile = p.dataDir / "hub.json";
     p.versionsDir = p.dataDir / PathFromUtf8("Versões");
+    p.mcpTokenFile = p.dataDir / kHubMcpTokenFile;
     p.defaultProjectsDir = fs::path(home ? home : ".") / "Motor";
     return p;
 }

@@ -2,7 +2,9 @@
 
 #include <motor/mcp/McpProtocol.h>
 
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -23,7 +25,12 @@ namespace motor::mcp {
 // Não depende da engine (o Hub também usa): o log vai para quem chamar SetLog.
 //
 // Segurança: só escuta em 127.0.0.1 e recusa pedidos com Origin/Host de fora (um site aberto no navegador
-// não consegue chamar o editor). Não há senha: qualquer programa desta máquina pode usar enquanto estiver ligado.
+// não consegue chamar o editor). Sem token (o editor), qualquer programa desta máquina pode usar enquanto estiver
+// ligado; com SetToken (o Hub, sempre ligado), o pedido precisa de "Authorization: Bearer <token>".
+//
+// Sessão (SetSessions): o initialize ganha um Mcp-Session-Id e o DELETE encerra. Um id desconhecido é aceito
+// mesmo assim: o servidor não guarda nada por sessão, e assim o cliente não precisa reconectar quando quem serve
+// reinicia (o Hub atualizado, por exemplo).
 class Server {
 public:
     static constexpr int kDefaultPort = 47800;
@@ -33,6 +40,11 @@ public:
 
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
+
+    // Antes do Start.
+    void SetPath(std::string path) { m_path = std::move(path); }  // padrão "/mcp"
+    void SetToken(std::string token) { m_token = std::move(token); }  // vazio = sem token
+    void SetSessions(bool on) { m_sessions = on; }
 
     bool Start(int port, std::string& error);  // false se a porta não abriu
     void Stop();
@@ -60,6 +72,10 @@ private:
     int m_port = 0;
     std::function<void()> m_wake;
     std::function<void(const std::string&)> m_log;
+    std::string m_path = "/mcp";
+    std::string m_token;
+    bool m_sessions = false;
+    std::atomic<uint64_t> m_sessionCount{0};  // para o id ser único mesmo com o relógio igual
 
     std::mutex m_mutex;
     std::deque<std::shared_ptr<Job>> m_jobs;

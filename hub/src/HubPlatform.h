@@ -16,6 +16,7 @@ struct Paths {
     fs::path dataDir;             // %LOCALAPPDATA%\Motor (ou --data)
     fs::path configFile;          // <dataDir>\hub.json
     fs::path versionsDir;         // <dataDir>\Versões
+    fs::path mcpTokenFile;        // <dataDir>\mcp-token (token do MCP do hub)
     fs::path defaultProjectsDir;  // Documentos\Motor
 };
 

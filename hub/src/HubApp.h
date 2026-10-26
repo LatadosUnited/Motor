@@ -23,12 +23,15 @@ struct GLFWwindow;
 
 namespace hub {
 
+class HubMcp;
+
 class HubApp {
 public:
     // `editorArgs`: argumentos a mais para o editor em toda abertura (os que vêm depois de "--" na linha de
     // comando do hub, ex.: --no-settings --mcp para testes automáticos). `dataOverride`: a pasta do --data (ou a
     // do instalacao.json), vazia com a padrão; entra na linha do iniciar com o Windows.
     HubApp(platform::Paths paths, std::vector<std::string> editorArgs, fs::path dataOverride = {});
+    ~HubApp();
 
     void Reload();  // relê a configuração, as versões instaladas e os projetos
 
@@ -69,6 +72,7 @@ public:
     struct WindowOptions {
         int initialTab = 0;  // 0 Projetos, 1 Versões
         bool tray = false;   // --bandeja: abre escondido, só o ícone na bandeja
+        int mcpPort = kHubMcpPort;  // --mcp-porta; 0 = MCP do hub desligado
     };
     // Abre a janela e roda até fechar. Residente (com --bandeja ou iniciando com o Windows), fechar a janela só a
     // esconde e o hub sai pelo menu do ícone. Com outro hub da mesma pasta de dados aberto, mostra a janela dele
@@ -85,6 +89,7 @@ private:
     void DrawProjectsTab();
     void DrawProjectCard(size_t index);
     void DrawVersionsTab();
+    void DrawMcpTab();
     void DrawNewProjectPopup();
     void DrawOpenWithPopup();
     void DrawRemoveVersionPopup();
@@ -113,6 +118,8 @@ private:
     bool m_startedInTray = false;
     bool m_startsWithWindows = false;  // lido ao abrir a janela e quando muda pela caixa
     bool m_toldAboutTray = false;      // balão "o Hub continua na bandeja", uma vez por execução
+    std::unique_ptr<HubMcp> m_mcp;     // só com a janela aberta
+    std::string m_mcpError;            // por que o MCP do hub não ligou
     double m_lastRefresh = 0.0;
     int m_selectTab = -1;  // aba a selecionar no próximo quadro (--aba)
     std::string m_search;

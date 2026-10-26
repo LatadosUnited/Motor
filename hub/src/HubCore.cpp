@@ -6,12 +6,14 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cwctype>
 #include <ctime>
 #include <format>
 #include <fstream>
+#include <random>
 #include <sstream>
 
 namespace hub {
@@ -530,6 +532,27 @@ std::string InstanceKey(const fs::path& dataDir) {
 
 bool SameStartupCommand(std::string_view a, std::string_view b) {
     return FoldPathText(PathFromUtf8(std::string(a)).wstring()) == FoldPathText(PathFromUtf8(std::string(b)).wstring());
+}
+
+// ---------------------------------------------------------------------------
+// MCP do Hub
+// ---------------------------------------------------------------------------
+
+std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error) {
+    if (const auto text = ReadTextFile(file)) {
+        std::string token = *text;
+        while (!token.empty() && std::isspace(static_cast<unsigned char>(token.back()))) token.pop_back();
+        while (!token.empty() && std::isspace(static_cast<unsigned char>(token.front()))) token.erase(0, 1);
+        if (!token.empty()) return token;
+    }
+    // O random_device do MinGW e do MSVC usa o gerador do sistema (rand_s), não uma semente fixa.
+    std::random_device random;
+    std::string token;
+    for (int i = 0; i < 8; ++i) token += std::format("{:08x}", static_cast<uint32_t>(random()));
+    std::error_code ec;
+    fs::create_directories(file.parent_path(), ec);
+    if (!motor::WriteFileAtomic(file, token + "\n", error)) return {};
+    return token;
 }
 
 } // namespace hub

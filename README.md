@@ -889,6 +889,12 @@ qualquer versão do editor, inclusive as futuras.
   escondido, só com o ícone na **bandeja** (`MotorHub --bandeja`). Residente (iniciado assim ou com a caixa marcada),
   fechar a janela só a esconde: o ícone abre o Hub de novo com um clique, e o menu dele (botão direito) tem **Sair do
   Hub**. Há um Hub aberto por pasta de dados: abrir o atalho com ele na bandeja traz a janela dele.
+- **MCP do Hub:** enquanto o Hub está aberto (também na bandeja), `http://127.0.0.1:47600/mcphub` atende agentes
+  como o Claude Code. Todo pedido precisa de `Authorization: Bearer <token>`, com o token de `<dados>\mcp-token`
+  (criado na primeira vez); o `initialize` dá um `Mcp-Session-Id`, e um id antigo continua valendo depois de o Hub
+  reiniciar. A aba **MCP** mostra o endereço e copia o token e o comando para o Claude Code
+  (`claude mcp add --transport http motor-hub http://127.0.0.1:47600/mcphub --header "Authorization: Bearer <token>"`).
+  Por enquanto só com a ferramenta `hub_status`.
 - **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 2, ...}`, com a lista
   `servers`; o formato 1 é lido com o servidor local na lista), separada da do editor.
 
@@ -918,10 +924,11 @@ MotorHub --data "C:/temp/Hub Teste" ... -- --no-settings --mcp   # outra pasta d
 ```
 
 Também: `--remove-version`, `--set-default`, `--add-project`, `--remove-project`, `--aba versões` (abre a janela
-nessa aba), `--bandeja` (abre escondido, na bandeja), `--version`, `--disponiveis [--servidor URL]` (versões publicadas nos servidores) e
+nessa aba), `--bandeja` (abre escondido, na bandeja), `--mcp-porta <porta>` (outra porta para o
+MCP do Hub, ou 0 para desligar: um Hub de teste ao lado do do usuário), `--aba mcp`, `--version`, `--disponiveis [--servidor URL]` (versões publicadas nos servidores) e
 `--baixar <versão|mais-recente> [--servidor URL]` (baixa, confere e instala; retoma um download interrompido).
 O hub instalado pelo `MotorSetup` com outra pasta de dados a lê do `instalacao.json` ao lado do `MotorHub.exe`. Código em `hub/`: `HubCore` (lógica sem janela, `tests/test_hub.cpp`),
-`HubPlatform` (Windows: processos, Explorer, Lixeira), `HubTray` (bandeja e um Hub por pasta de dados), `HubApp` (janela e ações), `main.cpp` (linha de comando).
+`HubPlatform` (Windows: processos, Explorer, Lixeira), `HubTray` (bandeja e um Hub por pasta de dados), `HubMcp` (MCP do Hub, sobre a `motor_mcp`), `HubApp` (janela e ações), `main.cpp` (linha de comando).
 
 ## Instalar
 

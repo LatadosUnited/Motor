@@ -285,5 +285,26 @@ int main(int argc, char** argv) {
                                   R"("C:\Hub\MotorHub.exe" --bandeja --data "C:\Dados")"));
     }
 
+    SECTION("Token do MCP do Hub: cria uma vez e depois só lê");
+    {
+        const fs::path file = base / PathFromUtf8("Dados Ação") / "mcp-token";
+        std::error_code ec;
+        fs::remove(file, ec);
+        const std::string token = LoadOrCreateMcpToken(file);
+        CHECK(token.size() == 64 && token.find_first_not_of("0123456789abcdef") == std::string::npos);
+        CHECK(fs::exists(file));
+        CHECK(LoadOrCreateMcpToken(file) == token);  // o mesmo depois de reabrir
+        {
+            std::ofstream out(file, std::ios::binary);
+            out << "  meu-token  \r\n";  // editado à mão: espaços e quebra de linha não contam
+        }
+        CHECK(LoadOrCreateMcpToken(file) == "meu-token");
+        {
+            std::ofstream out(file, std::ios::binary);  // vazio: cria outro
+        }
+        const std::string other = LoadOrCreateMcpToken(file);
+        CHECK(other.size() == 64 && other != token);
+    }
+
     return TestResult();
 }

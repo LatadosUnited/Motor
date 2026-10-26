@@ -20,11 +20,14 @@ add_executable(MotorHub
     src/HubVersionsTab.cpp
     src/HubWidgets.cpp
     src/HubPlatform.cpp
-    src/HubTray.cpp)
+    src/HubTray.cpp
+    src/HubMcp.cpp
+    src/HubMcpTab.cpp)
 # Objetos do ImGui (os mesmos que vão na libMotor.dll, aqui ligados direto no .exe) e o GLFW estático.
 # motor_distrib (Fase 15, distrib/): baixar versões dos servidores; vem depois no CMakeLists da raiz, mas o alvo é
 # resolvido pelo nome.
-target_link_libraries(MotorHub PRIVATE motor_hub_core motor_distrib motor_distrib_platform imgui glfw)
+# motor_mcp (mcp/): o MCP do hub (Hub residente), sem a engine.
+target_link_libraries(MotorHub PRIVATE motor_hub_core motor_distrib motor_distrib_platform motor_mcp imgui glfw)
 include(${PROJECT_SOURCE_DIR}/cmake/MotorVersionInfo.cmake)
 motor_version_resource(MotorHub ${MOTOR_HUB_VERSION} "Hub do Motor" MotorHub.exe)
 target_compile_definitions(MotorHub PRIVATE MOTOR_HUB_VERSION="${MOTOR_HUB_VERSION}" NOMINMAX WIN32_LEAN_AND_MEAN)

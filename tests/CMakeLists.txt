@@ -178,6 +178,19 @@ if(WIN32)
 endif()
 add_test(NAME test_hub COMMAND test_hub ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_hub)
 
+# Transporte HTTP do MCP sem a engine (motor_mcp, Hub residente): caminho, token e sessão, com o cliente da
+# cpp-httplib em loopback. Sem a libMotor.dll, como o hub.
+add_executable(test_mcp_servidor test_mcp_servidor.cpp)
+target_link_libraries(test_mcp_servidor PRIVATE motor_mcp)
+target_include_directories(test_mcp_servidor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${httplib_SOURCE_DIR})
+if(WIN32)
+    target_compile_definitions(test_mcp_servidor PRIVATE _WIN32_WINNT=0x0A00)
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_mcp_servidor PRIVATE -Wall -Wextra)
+endif()
+add_test(NAME test_mcp_servidor COMMAND test_mcp_servidor ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_mcp_servidor)
+
 # Distribuição (Fase 15): SHA-256, manifesto, pasta de publicações, plano de instalação/desinstalação, hub.json
 # formato 2 e o servidor de versões com o cliente em loopback (porta livre em 127.0.0.1). Sem a libMotor.dll.
 add_executable(test_distribuicao test_distribuicao.cpp)

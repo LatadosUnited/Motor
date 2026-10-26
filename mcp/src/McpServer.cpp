@@ -11,9 +11,13 @@
 
 #include <motor/mcp/McpServer.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <future>
+#include <random>
+#include <string_view>
 #include <utility>
 
 namespace motor::mcp {
@@ -47,6 +51,32 @@ bool IsLocalHost(const std::string& host) {
     const std::string name = host.substr(0, host.rfind(':'));
     return host.empty() || name == "127.0.0.1" || name == "localhost" || name == "[::1]";
 }
+
+// Compara sem parar no primeiro caractere diferente: o tempo da resposta não diz quanto do token acertou.
+bool SameSecret(std::string_view a, std::string_view b) {
+    unsigned char diff = a.size() == b.size() ? 0 : 1;
+    for (size_t i = 0; i < a.size(); ++i) diff |= static_cast<unsigned char>(a[i] ^ (i < b.size() ? b[i] : 0));
+    return diff == 0;
+}
+
+// O corpo tem um initialize (sozinho ou num lote)? Só para dar o Mcp-Session-Id na resposta.
+bool IsInitialize(const std::string& body) {
+    const Json message = Json::parse(body, nullptr, false);
+    const auto is = [](const Json& m) { return m.is_object() && m.value("method", "") == "initialize"; };
+    if (is(message)) return true;
+    if (message.is_array()) return std::any_of(message.begin(), message.end(), is);
+    return false;
+}
+
+std::string NewSessionId(uint64_t count) {
+    std::random_device random;
+    const uint64_t high = (uint64_t(random()) << 32) ^ random();
+    const uint64_t low = (uint64_t(random()) << 32) ^ random() ^ count;
+    char text[33];
+    std::snprintf(text, sizeof(text), "%016llx%016llx", static_cast<unsigned long long>(high),
+                  static_cast<unsigned long long>(low));
+    return text;
+}
 } // namespace
 
 struct Server::Job {
@@ -68,7 +98,7 @@ Server::~Server() {
 }
 
 std::string Server::Url() const {
-    return "http://127.0.0.1:" + std::to_string(m_port) + "/mcp";
+    return "http://127.0.0.1:" + std::to_string(m_port) + m_path;
 }
 
 bool Server::Start(int port, std::string& error) {
@@ -76,13 +106,26 @@ bool Server::Start(int port, std::string& error) {
     auto http = std::make_unique<httplib::Server>();
     http->set_payload_max_length(16 * 1024 * 1024);
 
-    http->Post("/mcp", [this](const httplib::Request& req, httplib::Response& res) {
+    // Origem e token valem para todos os métodos; false = a resposta de recusa já está em `res`.
+    const auto allowed = [this](const httplib::Request& req, httplib::Response& res) {
         if (!IsLocalOrigin(req.get_header_value("Origin")) || !IsLocalHost(req.get_header_value("Host"))) {
             res.status = 403;
             res.set_content("origem não permitida", "text/plain; charset=utf-8");
-            return;
+            return false;
         }
+        if (!m_token.empty() && !SameSecret(req.get_header_value("Authorization"), "Bearer " + m_token)) {
+            res.status = 401;
+            res.set_content("token ausente ou errado (Authorization: Bearer <token>)", "text/plain; charset=utf-8");
+            return false;
+        }
+        return true;
+    };
+
+    http->Post(m_path, [this, allowed](const httplib::Request& req, httplib::Response& res) {
+        if (!allowed(req, res)) return;
+        const bool initialize = m_sessions && IsInitialize(req.body);
         const std::string reply = Submit(req.body);
+        if (initialize) res.set_header("Mcp-Session-Id", NewSessionId(++m_sessionCount));
         if (reply.empty()) {
             res.status = 202;  // notificação: nada a responder
             return;
@@ -90,8 +133,13 @@ bool Server::Start(int port, std::string& error) {
         res.set_content(reply, "application/json");
     });
     // Sem fluxo SSE do servidor para o cliente (não mandamos notificações nem pedidos): 405, como manda o protocolo.
-    http->Get("/mcp", [](const httplib::Request&, httplib::Response& res) { res.status = 405; });
-    http->Delete("/mcp", [](const httplib::Request&, httplib::Response& res) { res.status = 405; });
+    http->Get(m_path, [allowed](const httplib::Request& req, httplib::Response& res) {
+        if (allowed(req, res)) res.status = 405;
+    });
+    // Encerrar a sessão: nada guardado por sessão, então só confirma.
+    http->Delete(m_path, [this, allowed](const httplib::Request& req, httplib::Response& res) {
+        if (allowed(req, res)) res.status = m_sessions ? 200 : 405;
+    });
 
     if (!http->bind_to_port("127.0.0.1", port)) {
         error = "não foi possível abrir a porta " + std::to_string(port) + " (outro programa ou outro editor usando?)";

@@ -164,4 +164,14 @@ std::string InstanceKey(const fs::path& dataDir);
 // As duas linhas do Run são a mesma (sem diferenciar maiúsculas nem / e \ no Windows)?
 bool SameStartupCommand(std::string_view a, std::string_view b);
 
+// --- MCP do Hub -----------------------------------------------------------------------------------------------
+
+inline constexpr int kHubMcpPort = 47600;
+inline constexpr const char* kHubMcpPath = "/mcphub";
+inline constexpr const char* kHubMcpTokenFile = "mcp-token";  // na pasta de dados
+
+// Token do MCP do Hub: lê o arquivo ou, sem ele (ou vazio), cria um novo (64 dígitos hexadecimais aleatórios).
+// Vazio se não deu para gravar (`error` diz por quê).
+std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error = nullptr);
+
 } // namespace hub

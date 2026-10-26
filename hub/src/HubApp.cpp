@@ -2,6 +2,7 @@
 // HubVersionsTab.cpp; cores e botões em HubWidgets.cpp.
 
 #include "HubApp.h"
+#include "HubMcp.h"
 #include "HubWidgets.h"
 
 #include <GLFW/glfw3.h>
@@ -38,6 +39,8 @@ HubApp::HubApp(platform::Paths paths, std::vector<std::string> editorArgs, fs::p
     }
     Reload();
 }
+
+HubApp::~HubApp() = default;  // aqui o HubMcp é um tipo completo
 
 // ---------------------------------------------------------------------------
 // Estado e ações
@@ -385,6 +388,11 @@ int HubApp::RunWindow(const WindowOptions& options) {
 
     m_lastRefresh = glfwGetTime();
     StartFetch();
+    if (options.mcpPort > 0) {
+        m_mcp = std::make_unique<HubMcp>(*this);
+        // glfwPostEmptyEvent pode ser chamado de outra thread: acorda o glfwWaitEvents do loop.
+        if (!m_mcp->Start(options.mcpPort, [] { glfwPostEmptyEvent(); }, m_mcpError)) SetStatus(m_mcpError, true);
+    }
     while (true) {
         // O hub fica parado quase sempre: espera eventos em vez de girar o loop. Escondido, só o ícone e os pedidos
         // de outro hub o acordam (são mensagens da janela da bandeja, atendidas aqui).
@@ -405,6 +413,7 @@ int HubApp::RunWindow(const WindowOptions& options) {
             }
         }
         PollBackground();
+        if (m_mcp) m_mcp->Pump();  // também escondido: o MCP é o que o hub residente faz
         if (!glfwGetWindowAttrib(m_window, GLFW_VISIBLE) || glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) continue;
         if (glfwGetTime() - m_lastRefresh > kRefreshSeconds) {
             m_lastRefresh = glfwGetTime();
@@ -432,6 +441,7 @@ int HubApp::RunWindow(const WindowOptions& options) {
         m_download->result.wait();
     }
     if (m_fetching.valid()) m_fetching.wait();
+    m_mcp.reset();  // os pedidos esperando recebem "ocupado"
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -466,6 +476,10 @@ void HubApp::DrawFrame() {
         }
         if (ImGui::BeginTabItem("Versões", nullptr, flags(1))) {
             DrawVersionsTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("MCP", nullptr, flags(2))) {
+            DrawMcpTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

@@ -91,8 +91,9 @@ ctest --test-dir build --output-on-failure
   `motor/core/Paths.h`), `SetError`/`Lower`/`LowerExtension` (`Text.h`) e ler o arquivo inteiro (`FileRead.h`), em
   `motor/common/`. Precisou de uma dessas num `.cpp`? Use a daqui, não copie.
 - `mcp/` — `motor_mcp`, o MCP sem a engine, usado pelo editor e pelo Hub: protocolo JSON-RPC
-  (`motor/mcp/McpProtocol.h`) e transporte HTTP com cpp-httplib (`motor/mcp/McpServer.h`, log por `SetLog`), no
-  namespace `motor::mcp`. Testado em `tests/test_mcp.cpp`.
+  (`motor/mcp/McpProtocol.h`) e transporte HTTP com cpp-httplib (`motor/mcp/McpServer.h`, log por `SetLog`;
+  caminho, token e sessão opcionais, que o Hub usa), no namespace `motor::mcp`. Testado em `tests/test_mcp.cpp` e
+  `tests/test_mcp_servidor.cpp`.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -149,7 +150,9 @@ ctest --test-dir build --output-on-failure
   `--settings <arquivo>`) em testes automáticos e, mesmo assim, faça cópia antes e restaure depois — é a
   configuração real do usuário. Projeto de teste novo: `--create <pasta-pai> <nome>` ou a ferramenta MCP
   `project_create`. O Hub (`MotorHub.exe`) tem `--data <pasta>` para não mexer no `%LOCALAPPDATA%\Motor` (e abre
-  um Hub por pasta de dados: o de teste não esbarra no do usuário). No `MotorSetup.exe` de teste, passe
+  um Hub por pasta de dados: o de teste não esbarra no do usuário; dê também `--mcp-porta <outra>`, já que o do
+  usuário segura a 47600). O MCP do Hub é `POST http://127.0.0.1:47600/mcphub` com
+  `Authorization: Bearer <conteúdo de <dados>\mcp-token>`. No `MotorSetup.exe` de teste, passe
   `--sem-iniciar-com-windows` (ou `--chave-registro <nome>`): senão ele troca o Hub que inicia com o Windows.
 - O que o MCP não cobre (menus, arrastar, atalhos, gizmo) fica como "não testado" no relatório, com passos
   para o usuário conferir.
