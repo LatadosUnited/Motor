@@ -3,11 +3,11 @@ tipo: fase
 alpha: 3
 fase: 
 titulo: Organização do código 2
-status: planejada
+status: em andamento
 prioridade: 
 areas: [common, core, assets, project, scene, renderer, ai, editor, hub, distrib, docs]
 branch: refactor/organizacao-2
-inicio: 
+inicio: 2026-10-25
 fim: 
 ---
 
@@ -76,16 +76,16 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 
 ## Tarefas
 
-- [ ] Tarefa 1: Criar `motor/common/Text.h` com o `SetError` e trocar as 14 cópias
-- [ ] Tarefa 2: Criar `motor/common/FileRead.h` (texto e bytes) e trocar as 8 leituras
-- [ ] Tarefa 3: Pôr `Lower` e `LowerExtension` no `Text.h` e trocar as 6 cópias
-- [ ] Tarefa 4: Trocar a cópia do `ExecutableDir` no `ScriptProject` pela do `EngineAssets.h`
+- [x] Tarefa 1: Criar `motor/common/Text.h` com o `SetError` e trocar as 14 cópias — 4653ffb
+- [x] Tarefa 2: Criar `motor/common/FileRead.h` (texto e bytes) e trocar as 8 leituras — 4653ffb
+- [ ] Tarefa 3: Pôr `Lower` e `LowerExtension` no `Text.h` e trocar as 6 cópias — 4653ffb (falta o `Input.cpp`)
+- [x] Tarefa 4: Trocar a cópia do `ExecutableDir` no `ScriptProject` pela do `EngineAssets.h` — 4653ffb
 - [ ] Tarefa 5: Dividir o `Renderer::DrawScene` nas etapas que ele já numera
 - [ ] Tarefa 6: Dividir `NavMesh::Build`, `DrawControlsWindow`, `GameExport::Export` e `SceneViewport::Draw`
 - [ ] Tarefa 7: Mover o `NavMeshBake` da raiz de `editor/src` para uma subpasta
 - [ ] Tarefa 8: Tirar do `CLAUDE.md` as tabelas de fases das alphas 1 e 2
 - [ ] Tarefa 9: Atualizar o `CLAUDE.md` (auxiliares do `common/`, pasta nova) e o grafo
-- [ ] Tarefa 10: Juntar os dois `ToUtf8` e `PathFromUtf8` (engine e Hub) num `motor/common/Utf8.h`
+- [x] Tarefa 10: Juntar os dois `ToUtf8` e `PathFromUtf8` (engine e Hub) num `motor/common/Utf8.h` — 4653ffb
 
 ## Pronto quando
 
@@ -98,8 +98,36 @@ sem janela, são funções soltas (`McpSceneTools`, `AddNavTools`), e as que pre
 
 ## Feito
 
-(Preencher ao terminar.)
+### Auxiliares no `common/` (tarefas 1 a 4 e 10, 25/10/2026)
+
+Três headers novos em `common/include/motor/common/`, só com funções `inline`, no namespace `motor`:
+
+- **`Utf8.h`:** `ToUtf8`, `ToGenericUtf8` e `PathFromUtf8`, que saíram do `motor/core/Paths.h` (ele inclui o novo,
+  então nada muda para quem já o usava). O `HubCore.h` troca a cópia do hub por `using motor::ToUtf8` e
+  `using motor::PathFromUtf8`: o `hub::ToUtf8` continua valendo para o hub e a distribuição. Como o `Paths.h` é
+  público, o `common/include` entrou nos includes públicos da `libMotor.dll`, no `MOTOR_SDK_INCLUDE_DIRS` (scripts e
+  o `.gch` deles, que agora também depende do `Utf8.h`) e na cópia do SDK do `motor_package` (só o `Utf8.h`).
+- **`Text.h`:** `SetError`, `Lower` (minúsculas ASCII) e `LowerExtension`. As 15 cópias do `SetError` sumiram (as
+  14 da tabela e uma que apareceu no `AssetLibraryUtil.h`), junto com a declaração do `SceneJson.h`. Fora do
+  namespace `motor` (editor, hub, distribuição) fica um `using motor::SetError` no lugar da cópia. O
+  `project_panel::Lower` virou `using motor::Lower` no `ProjectPanelUtil.h`.
+- **`FileRead.h`:** `ReadTextFile` (o arquivo inteiro como texto, `std::optional`: `.value_or("")` onde arquivo
+  ausente valia como vazio) e `ReadBinaryFile` (bytes, com a mensagem de erro do `AssetLoaders.cpp`). Além das 8 da
+  tabela, saíram mais duas cópias: o `ReadText` dos materiais (`AssetLibraryMaterials.cpp`) e o do `Shader.cpp`,
+  que agora só lança a exceção em cima do `ReadTextFile`.
+
+O `ScriptProject::ExecutableDir` saiu; o `ScriptProject`, o `ReleaseRuntime` e o `ScriptController` usam o
+`motor::ExecutableDir` (`motor/core/EngineAssets.h`), igual no Windows. O `kScriptApiVersion` não mudou: as funções
+são `inline` e o SDK só ganhou um header.
+
+As cinco tarefas foram num commit só: mexem nos mesmos arquivos (o `ScriptProject.cpp` tinha cópia de quatro
+delas) e uma cópia velha visível junto da nova deixa a chamada ambígua, então não dá para trocar uma de cada vez
+sem um estado intermediário que não compila.
 
 ## Limitações
 
-(Preencher ao terminar.)
+- **`Lower` do `Input.cpp`** (recebe `std::string_view`) e **`DrawControlsWindow`** ficam para depois do branch
+  `entrada-base`, que mexe nos dois arquivos.
+- **Leituras no meio de outras funções:** ~14 lugares ainda abrem o arquivo e leem com `rdbuf()` direto (projeto,
+  opções, save, prefab, cena, recuperação, `.meta`, configurações do editor, plano de instalação). Cada um tem a sua
+  mensagem de erro e não era uma função copiada; dá para trocar pelo `ReadTextFile` aos poucos, quando mexer neles.

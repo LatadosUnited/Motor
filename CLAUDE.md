@@ -86,7 +86,9 @@ ctest --test-dir build --output-on-failure
   `installer/` é o `MotorSetup.exe` (Hub embutido como recurso, atalhos, registro de desinstalação no HKCU).
   Como o hub, não ligam na `libMotor.dll`.
 - `common/` — `motor_common`, código sem dependências usado pela engine e pelos programas que não ligam nela
-  (hub, distribuição, servidor, instalador): hoje só a gravação segura (`motor/common/FileWrite.h`).
+  (hub, distribuição, servidor, instalador): gravação segura (`FileWrite.h`), UTF-8 (`Utf8.h`, incluído pelo
+  `motor/core/Paths.h`), `SetError`/`Lower`/`LowerExtension` (`Text.h`) e ler o arquivo inteiro (`FileRead.h`), em
+  `motor/common/`. Precisou de uma dessas num `.cpp`? Use a daqui, não copie.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
