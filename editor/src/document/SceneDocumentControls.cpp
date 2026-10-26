@@ -386,6 +386,162 @@ bool BindingsTable(InputAction& action, const InputActions& all) {
     return changed;
 }
 
+// Topo da janela: ajuda, controles ligados e o contexto inicial.
+bool ControlsHeader(InputActions& actions, const std::vector<std::string>& contexts, float labelWidth) {
+    bool changed = false;
+    ImGui::TextDisabled("(?)");
+    ImGui::SetItemTooltip("Os scripts perguntam pela ação, não pela tecla:\n"
+                          "  WasActionPressed(\"Pular\"), GetVector(\"Mover\"), GetAxis(\"Horizontal\").\n"
+                          "Só valem as ações do contexto ativo (SetInputContext(\"Menu\")) e as sem contexto.\n"
+                          "As mudanças valem a partir do próximo Play.");
+    ImGui::SameLine();
+    if (Input::IsGamepadConnected()) {
+        for (int pad = 0; pad < kMaxGamepads; ++pad) {
+            if (!Input::IsGamepadConnected(pad)) continue;
+            const bool inUse = Input::LastDevice() == InputDevice::Gamepad && Input::LastGamepad() == pad;
+            ImGui::TextColored(kOkColor, "Controle %d: %s%s", pad + 1, Input::GamepadName(pad).c_str(),
+                               inUse ? " (em uso)" : "");
+        }
+    } else {
+        ImGui::TextDisabled("Nenhum controle conectado (os botões dele estão em \"Escolher\").");
+    }
+    FieldLabel("Contexto inicial", labelWidth);
+    if (ContextCombo("##inicial", actions.startContext, contexts, 160.0f)) changed = true;
+    ImGui::SetItemTooltip("O contexto ativo quando o jogo começa.");
+    ImGui::Separator();
+    return changed;
+}
+
+// Cabeçalho da ação numa tabela (nome e tipo | valor ao vivo | Excluir): a tabela cabe na largura da janela
+// sozinha, sem posição calculada à mão que passava da borda. Devolve se a ação está aberta; confirmar a exclusão
+// grava o índice em removeAction.
+bool ActionHeader(const InputAction& action, int index, int& removeAction) {
+    const std::vector<std::string> problems = ActionProblems(action);
+    bool open = false;
+    const float previewWidth = 60.0f;
+    const float deleteWidth = ImGui::CalcTextSize("Excluir").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    if (ImGui::BeginTable("cabecalho", 3, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("acao", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("valor", ImGuiTableColumnFlags_WidthFixed, previewWidth);
+        ImGui::TableSetupColumn("excluir", ImGuiTableColumnFlags_WidthFixed, deleteWidth);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        // Sem TreePush: o conteúdo aberto vem depois da tabela, com o recuo posto à mão.
+        open = ImGui::TreeNodeEx("##acao", ImGuiTreeNodeFlags_NoTreePushOnOpen, "%s", action.name.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", kTypeLabels[static_cast<int>(action.type)]);
+        if (!problems.empty()) {
+            ImGui::SameLine();
+            WarningMark(Joined(problems, "\n"));
+        }
+        ImGui::TableNextColumn();
+        ValuePreview(action, previewWidth);
+        ImGui::TableNextColumn();
+        if (ImGui::SmallButton("Excluir")) ImGui::OpenPopup("excluir");
+        if (ImGui::BeginPopupModal("Excluir a ação?###excluir", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Excluir \"%s\" e as %zu entradas dela?", action.name.c_str(), action.bindings.size());
+            ImGui::TextDisabled("Os scripts que perguntam por ela passam a receber 0 (e um aviso no log).");
+            if (ImGui::Button("Excluir")) {
+                removeAction = index;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+        ImGui::EndTable();
+    }
+    return open;
+}
+
+// Nome, tipo e contexto da ação aberta.
+bool ActionFields(InputAction& action, const InputActions& actions, const std::vector<std::string>& contexts,
+                  float labelWidth) {
+    bool changed = false;
+    const float fieldWidth = std::min(260.0f, ImGui::GetContentRegionAvail().x - labelWidth);
+    std::string name = action.name;
+    FieldLabel("Nome", labelWidth);
+    ImGui::SetNextItemWidth(fieldWidth);
+    ImGui::InputText("##nome", &name);
+    if (ImGui::IsItemDeactivatedAfterEdit() && !name.empty() && name != action.name) {
+        const InputAction* other = actions.Find(name);
+        if (!other || other == &action) {
+            action.name = name;
+            changed = true;
+        }
+    }
+    int type = static_cast<int>(action.type);
+    FieldLabel("Tipo", labelWidth);
+    ImGui::SetNextItemWidth(fieldWidth);
+    if (ImGui::Combo("##tipo", &type, kTypeLabels, IM_ARRAYSIZE(kTypeLabels))) {
+        action.type = static_cast<InputActionType>(type);
+        changed = true;
+    }
+    ImGui::SetItemTooltip("Botão: 0 a 1 (Pular). Eixo: -1 a 1, GetAxis (Horizontal). Vetor 2D: X e Y, "
+                          "GetVector, com a diagonal limitada (Mover, Olhar).");
+    FieldLabel("Contexto", labelWidth);
+    if (ContextCombo("##contexto", action.context, contexts, fieldWidth)) changed = true;
+    ImGui::SetItemTooltip("Só vale com este contexto ativo. \"Sempre\": vale em qualquer um.");
+    return changed;
+}
+
+// "+ Apertar" (escuta a próxima tecla ou botão por alguns segundos) e "+ Escolher..." (lista). listening é a ação
+// escutando (-1: nenhuma) e listeningSince quando começou.
+bool AddBindingButtons(InputAction& action, int index, int& listening, double& listeningSince) {
+    bool changed = false;
+    if (listening == index) {
+        const double left = kListenSeconds - (ImGui::GetTime() - listeningSince);
+        ImGui::TextColored(kWarnColor, "Aperte uma tecla ou um botão do controle... (%.0f s)", std::ceil(left));
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Cancelar") || left <= 0.0) listening = -1;
+        // Sem o mouse: o clique em "Cancelar" não pode virar a entrada (o mouse está em "Escolher").
+        if (const auto pressed = InputActions::FirstPressed(false); pressed && listening == index) {
+            if (std::find(action.bindings.begin(), action.bindings.end(), *pressed) == action.bindings.end()) {
+                action.bindings.push_back(*pressed);
+                changed = true;
+            }
+            listening = -1;
+        }
+    } else {
+        if (ImGui::SmallButton("+ Apertar")) {
+            listening = index;
+            listeningSince = ImGui::GetTime();
+        }
+        ImGui::SetItemTooltip("Liga a próxima tecla ou botão do controle apertado.");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+ Escolher...")) ImGui::OpenPopup("escolher");
+        ImGui::SetItemTooltip("Escolhe da lista: teclado, mouse (botões e movimento) e controle.");
+        if (ImGui::BeginPopup("escolher")) {
+            if (const auto chosen = ChooseBindingMenu()) {
+                action.bindings.push_back(*chosen);
+                changed = true;
+            }
+            ImGui::EndPopup();
+        }
+    }
+    return changed;
+}
+
+// "Restaurar o padrão", com confirmação. Devolve se trocou o mapa.
+bool RestoreDefaultsButton(InputActions& actions) {
+    bool changed = false;
+    if (ImGui::Button("Restaurar o padrão")) ImGui::OpenPopup("restaurar");
+    ImGui::SetItemTooltip("Jogo: Mover, Olhar, Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa. "
+                          "Menu: Navegar, Confirmar e Voltar. Com teclado, mouse e controle.");
+    if (ImGui::BeginPopupModal("Restaurar o padrão?###restaurar", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Trocar o mapa inteiro pelo padrão? As ações e teclas deste projeto se perdem.");
+        if (ImGui::Button("Restaurar")) {
+            actions = InputActions::Defaults();
+            changed = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancelar")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    return changed;
+}
+
 } // namespace
 
 bool SceneDocument::SetInputActions(const InputActions& actions, std::string& error) {
@@ -423,27 +579,7 @@ void SceneDocument::DrawControlsWindow() {
     const std::vector<std::string> contexts = ContextsOf(actions);
     const float labelWidth = ImGui::CalcTextSize("Contexto inicial").x + ImGui::GetStyle().ItemSpacing.x * 2.0f;
 
-    // Cabeçalho: ajuda, controles ligados e o contexto inicial.
-    ImGui::TextDisabled("(?)");
-    ImGui::SetItemTooltip("Os scripts perguntam pela ação, não pela tecla:\n"
-                          "  WasActionPressed(\"Pular\"), GetVector(\"Mover\"), GetAxis(\"Horizontal\").\n"
-                          "Só valem as ações do contexto ativo (SetInputContext(\"Menu\")) e as sem contexto.\n"
-                          "As mudanças valem a partir do próximo Play.");
-    ImGui::SameLine();
-    if (Input::IsGamepadConnected()) {
-        for (int pad = 0; pad < kMaxGamepads; ++pad) {
-            if (!Input::IsGamepadConnected(pad)) continue;
-            const bool inUse = Input::LastDevice() == InputDevice::Gamepad && Input::LastGamepad() == pad;
-            ImGui::TextColored(kOkColor, "Controle %d: %s%s", pad + 1, Input::GamepadName(pad).c_str(),
-                               inUse ? " (em uso)" : "");
-        }
-    } else {
-        ImGui::TextDisabled("Nenhum controle conectado (os botões dele estão em \"Escolher\").");
-    }
-    FieldLabel("Contexto inicial", labelWidth);
-    if (ContextCombo("##inicial", actions.startContext, contexts, 160.0f)) changed = true;
-    ImGui::SetItemTooltip("O contexto ativo quando o jogo começa.");
-    ImGui::Separator();
+    if (ControlsHeader(actions, contexts, labelWidth)) changed = true;
 
     // Uma seção por contexto; as sem contexto por último.
     std::vector<std::string> sections = contexts;
@@ -464,104 +600,11 @@ void SceneDocument::DrawControlsWindow() {
         for (int i : members) {
             InputAction& action = actions.actions[static_cast<size_t>(i)];
             ImGui::PushID(i);
-            const std::vector<std::string> problems = ActionProblems(action);
-
-            // Cabeçalho da ação numa tabela (nome e tipo | valor ao vivo | Excluir): a tabela cabe na largura
-            // da janela sozinha, sem posição calculada à mão que passava da borda.
-            bool open = false;
-            const float previewWidth = 60.0f;
-            const float deleteWidth = ImGui::CalcTextSize("Excluir").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            if (ImGui::BeginTable("cabecalho", 3, ImGuiTableFlags_SizingFixedFit)) {
-                ImGui::TableSetupColumn("acao", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("valor", ImGuiTableColumnFlags_WidthFixed, previewWidth);
-                ImGui::TableSetupColumn("excluir", ImGuiTableColumnFlags_WidthFixed, deleteWidth);
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                // Sem TreePush: o conteúdo aberto vem depois da tabela, com o recuo posto à mão.
-                open = ImGui::TreeNodeEx("##acao", ImGuiTreeNodeFlags_NoTreePushOnOpen, "%s", action.name.c_str());
-                ImGui::SameLine();
-                ImGui::TextDisabled("%s", kTypeLabels[static_cast<int>(action.type)]);
-                if (!problems.empty()) {
-                    ImGui::SameLine();
-                    WarningMark(Joined(problems, "\n"));
-                }
-                ImGui::TableNextColumn();
-                ValuePreview(action, previewWidth);
-                ImGui::TableNextColumn();
-                if (ImGui::SmallButton("Excluir")) ImGui::OpenPopup("excluir");
-                if (ImGui::BeginPopupModal("Excluir a ação?###excluir", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-                    ImGui::Text("Excluir \"%s\" e as %zu entradas dela?", action.name.c_str(), action.bindings.size());
-                    ImGui::TextDisabled("Os scripts que perguntam por ela passam a receber 0 (e um aviso no log).");
-                    if (ImGui::Button("Excluir")) {
-                        removeAction = i;
-                        ImGui::CloseCurrentPopup();
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Cancelar")) ImGui::CloseCurrentPopup();
-                    ImGui::EndPopup();
-                }
-                ImGui::EndTable();
-            }
-
-            if (open) {
+            if (ActionHeader(action, i, removeAction)) {
                 ImGui::Indent();
-                const float fieldWidth = std::min(260.0f, ImGui::GetContentRegionAvail().x - labelWidth);
-                std::string name = action.name;
-                FieldLabel("Nome", labelWidth);
-                ImGui::SetNextItemWidth(fieldWidth);
-                ImGui::InputText("##nome", &name);
-                if (ImGui::IsItemDeactivatedAfterEdit() && !name.empty() && name != action.name) {
-                    const InputAction* other = actions.Find(name);
-                    if (!other || other == &action) {
-                        action.name = name;
-                        changed = true;
-                    }
-                }
-                int type = static_cast<int>(action.type);
-                FieldLabel("Tipo", labelWidth);
-                ImGui::SetNextItemWidth(fieldWidth);
-                if (ImGui::Combo("##tipo", &type, kTypeLabels, IM_ARRAYSIZE(kTypeLabels))) {
-                    action.type = static_cast<InputActionType>(type);
-                    changed = true;
-                }
-                ImGui::SetItemTooltip("Botão: 0 a 1 (Pular). Eixo: -1 a 1, GetAxis (Horizontal). Vetor 2D: X e Y, "
-                                      "GetVector, com a diagonal limitada (Mover, Olhar).");
-                FieldLabel("Contexto", labelWidth);
-                if (ContextCombo("##contexto", action.context, contexts, fieldWidth)) changed = true;
-                ImGui::SetItemTooltip("Só vale com este contexto ativo. \"Sempre\": vale em qualquer um.");
-
+                if (ActionFields(action, actions, contexts, labelWidth)) changed = true;
                 if (BindingsTable(action, actions)) changed = true;
-
-                if (m_listeningAction == i) {
-                    const double left = kListenSeconds - (ImGui::GetTime() - m_listeningSince);
-                    ImGui::TextColored(kWarnColor, "Aperte uma tecla ou um botão do controle... (%.0f s)", std::ceil(left));
-                    ImGui::SameLine();
-                    if (ImGui::SmallButton("Cancelar") || left <= 0.0) m_listeningAction = -1;
-                    // Sem o mouse: o clique em "Cancelar" não pode virar a entrada (o mouse está em "Escolher").
-                    if (const auto pressed = InputActions::FirstPressed(false); pressed && m_listeningAction == i) {
-                        if (std::find(action.bindings.begin(), action.bindings.end(), *pressed) == action.bindings.end()) {
-                            action.bindings.push_back(*pressed);
-                            changed = true;
-                        }
-                        m_listeningAction = -1;
-                    }
-                } else {
-                    if (ImGui::SmallButton("+ Apertar")) {
-                        m_listeningAction = i;
-                        m_listeningSince = ImGui::GetTime();
-                    }
-                    ImGui::SetItemTooltip("Liga a próxima tecla ou botão do controle apertado.");
-                    ImGui::SameLine();
-                    if (ImGui::SmallButton("+ Escolher...")) ImGui::OpenPopup("escolher");
-                    ImGui::SetItemTooltip("Escolhe da lista: teclado, mouse (botões e movimento) e controle.");
-                    if (ImGui::BeginPopup("escolher")) {
-                        if (const auto chosen = ChooseBindingMenu()) {
-                            action.bindings.push_back(*chosen);
-                            changed = true;
-                        }
-                        ImGui::EndPopup();
-                    }
-                }
+                if (AddBindingButtons(action, i, m_listeningAction, m_listeningSince)) changed = true;
                 ImGui::Spacing();
                 ImGui::Unindent();
             }
@@ -585,20 +628,9 @@ void SceneDocument::DrawControlsWindow() {
     }
 
     ImGui::Separator();
-    if (ImGui::Button("Restaurar o padrão")) ImGui::OpenPopup("restaurar");
-    ImGui::SetItemTooltip("Jogo: Mover, Olhar, Horizontal, Vertical, Olhar X/Y, Pular, Correr, Interagir e Pausa. "
-                          "Menu: Navegar, Confirmar e Voltar. Com teclado, mouse e controle.");
-    if (ImGui::BeginPopupModal("Restaurar o padrão?###restaurar", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted("Trocar o mapa inteiro pelo padrão? As ações e teclas deste projeto se perdem.");
-        if (ImGui::Button("Restaurar")) {
-            actions = InputActions::Defaults();
-            m_listeningAction = -1;
-            changed = true;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancelar")) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
+    if (RestoreDefaultsButton(actions)) {
+        m_listeningAction = -1;
+        changed = true;
     }
 
     if (changed && !(actions == m_project->Actions())) {
