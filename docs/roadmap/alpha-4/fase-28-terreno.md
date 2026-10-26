@@ -26,7 +26,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 
 ## Tarefas
 
-- [ ] Tarefa 1: Criar a grade de células (`SpatialGrid`) com consultas por frustum, caixa e raio
+- [x] Tarefa 1: Criar a grade de células (`SpatialGrid`) com consultas por frustum, caixa e raio — cc0dcda
 - [ ] Tarefa 2: Levar as posições para a GPU relativas à câmera
 - [ ] Tarefa 3: Guardar no renderer os objetos estáticos entre quadros (registrar, mover, remover)
 - [ ] Tarefa 4: Recortar a cena e as sombras pela grade
@@ -53,7 +53,13 @@ e a renderização relativa à câmera são também a base do streaming de célu
 
 ## Feito
 
-(Preencher ao terminar: o que mudou, arquivos principais, testes, números de antes e depois.)
+- Tarefa 1: `motor::SpatialGrid` (`engine/include/motor/renderer/SpatialGrid.h`), grade uniforme no plano XZ
+  (células de 32 m por padrão), com a altura de cada célula tirada dos objetos dela. Objeto entra em todas as
+  células que toca; o que tocaria mais de 64 fica numa lista à parte (chão, terreno). `QueryFrustum` pula as
+  células fora da câmera e não testa um a um os objetos de célula inteira dentro dela; `QueryBox` e `QueryRay`
+  (ordenado pela distância) servem às Tarefas 4 e 5. `CellOf` dá a célula de um ponto, para o streaming.
+  `test_spatial_grid`: 4041 objetos em 2 x 2 km, consultas iguais a testar todos, sem repetidos, depois de mover
+  e remover. Ainda não usada pelo renderer (Tarefa 4); as consultas não podem rodar em duas threads na mesma grade.
 
 ## Limitações
 
