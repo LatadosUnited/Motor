@@ -6,11 +6,13 @@
 // O hub não liga na libMotor.dll nem inclui headers da engine: ele precisa abrir projetos de qualquer versão,
 // inclusive de versões futuras. Fala com o editor só pelo que é estável entre versões:
 //   - <versão>/motor-version.json   {"version": "0.2.0", "scriptApiVersion": 10, ...} (alvo motor_package)
+//   - <versão>/mcp-ferramentas.json as ferramentas do MCP do editor (a partir do Hub residente)
 //   - <projeto>/<Nome>.mproject     {"name", "engineVersion"} (formato 2; o 1 não tem engineVersion)
 //   - MotorEditor.exe --project <pasta> | --create <pasta-pai> <nome>
 // Todos os caminhos e textos são UTF-8 ("Jogo Ação").
 
 #include <motor/common/Utf8.h>
+#include <nlohmann/json.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -56,6 +58,18 @@ struct InstalledVersion {
 
 // Lê <dir>/motor-version.json. Falha se não existir, for inválido ou não houver o editor na pasta.
 std::optional<InstalledVersion> ReadInstalledVersion(const fs::path& dir, std::string* error = nullptr);
+
+// Ferramentas do MCP do editor de uma versão (Hub residente), gravadas pelo motor_package com
+// MotorEditor --mcp-ferramentas: {"format": "motor-mcp-tools", "version": 1, "initialize": {...}, "tools": [...]}.
+// O Hub responde com elas o initialize e o tools/list de /mcpengine/<Projeto>, mesmo com o editor fechado.
+inline constexpr const char* kMcpToolsFile = "mcp-ferramentas.json";
+struct EditorTools {
+    std::string engineVersion;
+    nlohmann::ordered_json initialize;  // o resultado do initialize do editor (serverInfo, instructions...)
+    nlohmann::ordered_json tools;       // a lista do tools/list
+};
+// Lê <dir>/mcp-ferramentas.json. Versões anteriores ao Hub residente não têm o arquivo: nullopt e `error`.
+std::optional<EditorTools> ReadEditorTools(const fs::path& versionDir, std::string* error = nullptr);
 
 // Subpastas de `versionsRoot` que são versões instaladas, da mais nova para a mais antiga.
 std::vector<InstalledVersion> ScanVersions(const fs::path& versionsRoot);

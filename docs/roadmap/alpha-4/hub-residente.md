@@ -121,6 +121,17 @@ biblioteca pequena sem a engine, usada pelos dois.
   fechou; `version_download` com `wait` baixou e instalou 57,7 MB de um `MotorServidor` local em 1,2 s. Não
   conferido: `editor_close` sem `force` com algo não salvo (o editor deve perguntar e a ferramenta dar o erro de
   tempo esgotado).
+- Tarefa 6: `MotorEditor --mcp-ferramentas <arquivo>` grava, sem janela nem OpenGL e sem tocar no `editor.json`, o
+  resultado do `initialize` e do `tools/list` (`{"format": "motor-mcp-tools", "version": 1, ...}`). A lista sai do
+  mesmo `McpController` do editor aberto: `editor/src/mcp/McpToolList` monta as peças como o `EditorApp`, sem o
+  `Init`. O `motor_package` roda o editor copiado e grava `mcp-ferramentas.json` na pasta da versão (falha se não
+  der); a instalação e a publicação no `MotorServidor` levam o arquivo junto. No Hub, `ReadEditorTools` (`HubCore`)
+  lê a lista (versão antiga sem o arquivo dá um erro claro; formato mais novo lê o que conhece) e o `versions_list`
+  diz quantas ferramentas cada versão tem. Testes: `editor_mcp_ferramentas` (novo, roda o editor de verdade e
+  confere o JSON com um script CMake), `ReadEditorTools` no `test_hub` e o `editorTools` no `test_hub_mcp`.
+  Conferido: 53 ferramentas em 0,24 s; o `tools/list` e o `initialize` do arquivo são idênticos aos do editor aberto
+  com `--mcp`; o `motor_package` gerou o arquivo, o Hub o instalou com `--add-version` e mostrou 53 no
+  `versions_list`; a publicação no `MotorServidor` o lista no manifesto.
 
 ## Limitações
 

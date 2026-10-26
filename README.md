@@ -199,6 +199,7 @@ MotorEditor [pasta-do-projeto | arquivo.mproject] [opções]
   --settings <arquivo>          usa outro arquivo de configuração no lugar de %APPDATA%/Motor/editor.json
   --no-settings                 não lê nem grava configuração nenhuma (agentes e testes automáticos)
   --mcp[=porta]                 liga o servidor MCP
+  --mcp-ferramentas <arquivo>   grava a lista de ferramentas do MCP (JSON) sem abrir a janela e sai
   --perf <arquivo.csv>          grava os contadores de cada quadro (CPU por painel, GPU) num CSV ao fechar
   --segundos S                  fecha sozinho depois de S segundos, sem perguntar pelo que não foi salvo
   --version                     mostra a versão (e a da API de scripts) e sai
@@ -912,7 +913,8 @@ cmake --build build --target motor_package     # build/package/Motor-0.2.0/
 A pasta é autossuficiente: `MotorEditor.exe`, `Player.exe`, `libMotor.dll` e o runtime do GCC, `engine/`
 (shaders e fontes), `templates/`, `sdk/` (headers e biblioteca de importação para compilar os scripts dos
 projetos, com caminhos relativos) e `motor-version.json` (`{"version": "0.2.0", "scriptApiVersion": 10, ...}`),
-que o hub lê. Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure. Montada de um build que não é de
+que o hub lê, e `mcp-ferramentas.json` (as ferramentas do MCP do editor, gravadas por
+`MotorEditor --mcp-ferramentas`: o Hub residente as mostra com o editor fechado). Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure. Montada de um build que não é de
 Release, ela leva também `release/` (Player, DLLs e SDK de um build de Release, de `MOTOR_RELEASE_BIN_DIR`) para
 os jogos exportados saírem em Release; sem esse build, o `motor_package` avisa.
 **O editor instalado continua precisando do MSYS2 (UCRT64) e do CMake** nos mesmos caminhos do build que montou

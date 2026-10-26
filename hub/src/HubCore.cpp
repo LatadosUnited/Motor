@@ -176,6 +176,28 @@ std::optional<InstalledVersion> ReadInstalledVersion(const fs::path& dir, std::s
     }
 }
 
+std::optional<EditorTools> ReadEditorTools(const fs::path& versionDir, std::string* error) {
+    const fs::path file = versionDir / kMcpToolsFile;
+    const auto text = ReadTextFile(file);
+    if (!text) {
+        SetError(error, std::format("'{}' não tem a lista de ferramentas do MCP ({}): versão anterior ao Hub "
+                                    "residente.", ToUtf8(versionDir), kMcpToolsFile));
+        return std::nullopt;
+    }
+    // Versão mais nova do formato: lê o que conhece (os campos de agora continuam lá).
+    const json root = json::parse(*text, nullptr, false);
+    if (!root.is_object() || root.value("format", std::string()) != "motor-mcp-tools" || !root.contains("tools") ||
+        !root["tools"].is_array()) {
+        SetError(error, std::format("'{}' não é uma lista de ferramentas do MCP do Motor.", ToUtf8(file)));
+        return std::nullopt;
+    }
+    EditorTools tools;
+    tools.engineVersion = root.value("engineVersion", std::string());
+    tools.initialize = root.value("initialize", json::object());
+    tools.tools = root["tools"];
+    return tools;
+}
+
 std::vector<InstalledVersion> ScanVersions(const fs::path& versionsRoot) {
     std::vector<InstalledVersion> out;
     std::error_code ec;

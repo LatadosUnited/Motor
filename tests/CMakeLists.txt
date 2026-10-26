@@ -205,6 +205,13 @@ if(MINGW)
 endif()
 add_test(NAME test_hub_mcp COMMAND test_hub_mcp ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_hub_mcp)
 
+# Lista de ferramentas do MCP do editor sem janela (MotorEditor --mcp-ferramentas, Hub residente): a que o
+# motor_package grava no pacote da versão.
+add_test(NAME editor_mcp_ferramentas
+    COMMAND ${CMAKE_COMMAND} -DEDITOR=$<TARGET_FILE:MotorEditor>
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/tmp/editor_mcp_ferramentas
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/EditorToolList.cmake)
+
 # Distribuição (Fase 15): SHA-256, manifesto, pasta de publicações, plano de instalação/desinstalação, hub.json
 # formato 2 e o servidor de versões com o cliente em loopback (porta livre em 127.0.0.1). Sem a libMotor.dll.
 add_executable(test_distribuicao test_distribuicao.cpp)

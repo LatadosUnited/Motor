@@ -63,6 +63,8 @@ public:
     void DrawMenuItems(EditorSettings& settings);  // no menu Ver
     void DrawStatus();                             // "MCP" na barra de menus enquanto ligado
 
+    mcp::Protocol& GetProtocol() { return m_protocol; }  // --mcp-ferramentas (McpToolList) e testes
+
 private:
     struct LogLine {
         uint64_t n;

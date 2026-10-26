@@ -289,8 +289,9 @@ void HubMcp::AddVersionTools() {
 
     m_protocol.AddTool({
         .name = "versions_list",
-        .description = "Versões do Motor instaladas: versão, API de scripts, tipo do build, pasta e qual é a padrão "
-                       "(a dos projetos novos).",
+        .description = "Versões do Motor instaladas: versão, API de scripts, tipo do build, pasta, qual é a padrão "
+                       "(a dos projetos novos) e quantas ferramentas o MCP do editor dela tem (null: versão sem a "
+                       "lista, anterior ao Hub residente).",
         .inputSchema = Schema(),
         .readOnly = true,
         .run =
@@ -298,11 +299,13 @@ void HubMcp::AddVersionTools() {
                 const InstalledVersion* def = DefaultVersion(m_app.Versions(), m_app.Config().defaultVersion);
                 Json out = Json::array();
                 for (const InstalledVersion& v : m_app.Versions()) {
+                    const std::optional<EditorTools> tools = ReadEditorTools(v.dir);
                     out.push_back({{"version", v.version},
                                    {"scriptApiVersion", v.scriptApiVersion},
                                    {"buildType", v.buildType},
                                    {"dir", ToUtf8(v.dir)},
-                                   {"default", &v == def}});
+                                   {"default", &v == def},
+                                   {"editorTools", tools ? Json(tools->tools.size()) : Json(nullptr)}});
                 }
                 return ToolResult::Data(out);
             },

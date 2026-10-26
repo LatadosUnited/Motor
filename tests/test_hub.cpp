@@ -306,5 +306,36 @@ int main(int argc, char** argv) {
         CHECK(other.size() == 64 && other != token);
     }
 
+    SECTION("Ferramentas do MCP do editor no pacote da versão (mcp-ferramentas.json)");
+    {
+        const fs::path dir = MakeInstall(base / PathFromUtf8("Ferramentas Ação"), "0.4.0");
+        std::string error;
+        CHECK(!ReadEditorTools(dir, &error));  // versão antiga: sem o arquivo
+        CHECK(error.find(kMcpToolsFile) != std::string::npos);
+
+        WriteText(dir / kMcpToolsFile, R"({"format": "outro", "tools": []})");
+        CHECK(!ReadEditorTools(dir));
+        WriteText(dir / kMcpToolsFile, "{quebrado");
+        CHECK(!ReadEditorTools(dir));
+
+        WriteText(dir / kMcpToolsFile,
+                  R"({"format": "motor-mcp-tools", "version": 1, "engineVersion": "0.4.0",
+                      "initialize": {"serverInfo": {"name": "motor-editor"}, "instructions": "Cena e Play."},
+                      "tools": [{"name": "scene_tree", "description": "Árvore da cena", "inputSchema": {}},
+                                {"name": "play", "description": "Joga", "inputSchema": {}}]})");
+        const auto tools = ReadEditorTools(dir);
+        CHECK(tools.has_value());
+        CHECK(tools && tools->engineVersion == "0.4.0");
+        CHECK(tools && tools->tools.size() == 2 && tools->tools[0]["name"] == "scene_tree");
+        CHECK(tools && tools->tools[0]["description"] == "Árvore da cena");
+        CHECK(tools && tools->initialize["instructions"] == "Cena e Play.");
+
+        // Formato mais novo: o que este Hub conhece continua sendo lido.
+        WriteText(dir / kMcpToolsFile,
+                  R"({"format": "motor-mcp-tools", "version": 2, "novidade": true, "tools": [{"name": "x"}]})");
+        const auto newer = ReadEditorTools(dir);
+        CHECK(newer && newer->tools.size() == 1 && newer->initialize.is_object());
+    }
+
     return TestResult();
 }

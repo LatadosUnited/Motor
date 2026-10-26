@@ -1,4 +1,5 @@
 #include "EditorApp.h"
+#include "mcp/McpToolList.h"
 
 #include <motor/core/Paths.h>
 #include <motor/core/Version.h>
@@ -43,12 +44,14 @@ constexpr const char* kUsage =
     "  --settings <arquivo>       usa outro arquivo de configuração do editor\n"
     "  --no-settings              não lê nem grava a configuração do editor (%APPDATA%\\Motor\\editor.json)\n"
     "  --mcp[=porta]              liga o servidor MCP (porta padrão 47800)\n"
+    "  --mcp-ferramentas <arquivo> grava a lista de ferramentas do MCP (JSON) sem abrir a janela e sai\n"
     "  --version                  mostra a versão e sai\n";
 
 struct ParsedOptions {
     editor::EditorApp::Options app;
     bool exit = false;  // --version/--help: já respondeu, não abre o editor
     int exitCode = 0;
+    std::filesystem::path toolList;  // --mcp-ferramentas
 };
 
 // Uso: ver kUsage. Os caminhos chegam em UTF-8 (Arguments).
@@ -93,6 +96,9 @@ ParsedOptions ParseOptions(const std::vector<std::string>& args) {
                 motor::log::Warn("Porta inválida em {}: usando {}", arg, editor::mcp::Server::kDefaultPort);
                 options.mcpPort = editor::mcp::Server::kDefaultPort;
             }
+        } else if (arg == "--mcp-ferramentas") {
+            if (remaining < 1) return fail("--mcp-ferramentas precisa do arquivo.");
+            parsed.toolList = motor::PathFromUtf8(args[++i]);
         } else if (arg == "--perf") {
             if (remaining < 1) return fail("--perf precisa do arquivo.");
             options.perfFile = motor::PathFromUtf8(args[++i]);
@@ -116,6 +122,17 @@ ParsedOptions ParseOptions(const std::vector<std::string>& args) {
 int main(int argc, char** argv) {
     const ParsedOptions parsed = ParseOptions(Arguments(argc, argv));
     if (parsed.exit) return parsed.exitCode;
+    if (!parsed.toolList.empty()) {
+        // Hub residente: o motor_package grava a lista no pacote da versão; nada de janela nem configuração.
+        std::string error;
+        try {
+            if (editor::mcp::WriteEditorToolList(parsed.toolList, error)) return 0;
+        } catch (const std::exception& e) {
+            error = e.what();
+        }
+        std::fprintf(stderr, "Não foi possível gravar a lista de ferramentas do MCP: %s\n", error.c_str());
+        return 1;
+    }
     try {
         editor::EditorApp app(parsed.app);
         app.Run();

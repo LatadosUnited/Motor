@@ -117,6 +117,9 @@ int main(int argc, char** argv) {
         CHECK(versions.data[0]["version"] == "0.9.0");
         CHECK(versions.data[0]["scriptApiVersion"] == 7);
         CHECK(versions.data[0]["default"] == true);
+        CHECK(versions.data[0]["editorTools"].is_null());  // sem mcp-ferramentas.json (como as versões antigas)
+        WriteText(versionDir / hub::kMcpToolsFile, R"({"format": "motor-mcp-tools", "version": 1, "tools": [{}, {}]})");
+        CHECK(Now(mcp, "versions_list").data[0]["editorTools"] == 2);
 
         CHECK(Now(mcp, "version_set_default", {{"version", "0.9.0"}}).ok);
         CHECK(!Now(mcp, "version_set_default", {{"version", "5.0.0"}}).ok);
