@@ -3,6 +3,7 @@
 #include "motor/assets/AssetLibrary.h"
 
 #include "AssetLibraryUtil.h"
+#include "motor/common/FileRead.h"
 #include "motor/common/FileWrite.h"
 
 #include "motor/assets/Model.h"
@@ -35,15 +36,6 @@ double Num(float value) {
     return std::stod(std::format("{}", value));
 }
 
-bool ReadText(const fs::path& file, std::string& out) {
-    std::ifstream in(file, std::ios::binary);
-    if (!in) return false;
-    std::stringstream ss;
-    ss << in.rdbuf();
-    out = ss.str();
-    return true;
-}
-
 // Escreve num .tmp e troca no fim, para não deixar o arquivo pela metade se algo falhar.
 bool WriteTextAtomic(const fs::path& file, const std::string& text, std::string* error) {
     return WriteFileAtomic(file, text, error);
@@ -71,14 +63,14 @@ std::shared_ptr<Material> AssetLibrary::GetMaterialByGuid(std::string_view guid,
         SetError(error, std::format("Nenhum arquivo do projeto tem o GUID {}.", guid));
         return nullptr;
     }
-    std::string text;
-    if (!ReadText(file, text)) {
+    const std::optional<std::string> text = ReadTextFile(file);
+    if (!text) {
         SetError(error, std::format("Não foi possível abrir '{}'.", ToUtf8(file)));
         return nullptr;
     }
     auto material = std::make_shared<Material>();
     std::string problem;
-    if (!MaterialFromJson(text, *material, &problem)) {
+    if (!MaterialFromJson(*text, *material, &problem)) {
         SetError(error, std::format("{}: {}", KeyForFile(file), problem));
         return nullptr;
     }
@@ -137,9 +129,10 @@ size_t AssetLibrary::ReloadChangedMaterials() {
         const auto modified = fs::last_write_time(file, ec);
         if (ec || m_materialTimes[e.guid] == modified) continue;
         m_materialTimes[e.guid] = modified;
-        std::string text, problem;
+        std::string problem;
         Material reloaded;
-        if (!ReadText(file, text) || !MaterialFromJson(text, reloaded, &problem)) {
+        const std::optional<std::string> text = ReadTextFile(file);
+        if (!text || !MaterialFromJson(*text, reloaded, &problem)) {
             log::Warn("Material {} não foi relido: {}", KeyForFile(file), problem);
             continue;
         }

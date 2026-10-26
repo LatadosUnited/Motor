@@ -1,6 +1,7 @@
 #include "motor/project/SaveData.h"
 
 #include "motor/common/FileWrite.h"
+#include "motor/common/Text.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 
@@ -22,9 +23,6 @@ constexpr const char* kFormatName = "motor-save";
 constexpr int kFormatVersion = 1;
 constexpr const char* kExtension = ".json";
 
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
 } // namespace
 
 // --- SaveData ----------------------------------------------------------------------------------------

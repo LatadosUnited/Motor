@@ -4,6 +4,7 @@
 #include "SceneJson.h"
 
 #include "motor/assets/AssetLibrary.h"
+#include "motor/common/Text.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/scene/Scene.h"
@@ -306,10 +307,6 @@ std::string CompactNumberArrays(const std::string& in) {
         out += c;
     }
     return out;
-}
-
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
 }
 
 json ComponentToJson(const ComponentPtr& component, const AssetLibrary& assets, const JsonOptions& options,

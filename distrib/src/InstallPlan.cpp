@@ -2,6 +2,7 @@
 
 #include <HubCore.h>
 #include <motor/common/FileWrite.h>
+#include <motor/common/Text.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -16,9 +17,7 @@ using hub::PathFromUtf8;
 using hub::ToUtf8;
 
 namespace {
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
+using motor::SetError;
 
 bool IsBadRoot(const fs::path& dir) {
     // Raiz de unidade, vazio ou relativo: nunca vai para a Lixeira inteiro.

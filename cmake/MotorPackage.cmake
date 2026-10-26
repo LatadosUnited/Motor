@@ -70,6 +70,8 @@ file(COPY "${SRC}/docs/" DESTINATION "${OUT}/docs")
 set(sdk "${OUT}/sdk")
 file(COPY "${SRC}/engine/include/motor" DESTINATION "${sdk}/include" FILES_MATCHING PATTERN "*.h" PATTERN "*.inl")
 file(COPY "${GEN_DIR}/motor" DESTINATION "${sdk}/include")
+# Do common/, só o que os headers públicos incluem (o Paths.h inclui o Utf8.h).
+file(COPY "${SRC}/common/include/motor/common/Utf8.h" DESTINATION "${sdk}/include/motor/common")
 file(COPY "${GLM_DIR}/glm" DESTINATION "${sdk}/include" FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp" PATTERN "*.inl")
 foreach(dir "${IMGUI_DIR}" "${IMGUI_DIR}/backends" "${IMGUI_DIR}/misc/cpp")
     file(GLOB headers "${dir}/*.h")

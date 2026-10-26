@@ -2,6 +2,8 @@
 # biblioteca padrão e o Windows: nada da engine, para o hub continuar independente de qualquer versão do Motor.
 #
 # motor_common: gravação segura de arquivos (motor/common/FileWrite.h), testada em tests/test_file_write.cpp.
+# Só headers (inline): UTF-8 (Utf8.h, também no SDK dos scripts), SetError e minúsculas (Text.h), ler o arquivo
+# inteiro (FileRead.h).
 add_library(motor_common STATIC src/FileWrite.cpp)
 target_include_directories(motor_common PUBLIC include)
 set_target_properties(motor_common PROPERTIES POSITION_INDEPENDENT_CODE ON)  # também vai dentro da libMotor.dll

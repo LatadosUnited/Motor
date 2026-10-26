@@ -1,5 +1,7 @@
 #include "motor/assets/AssetLoaders.h"
 
+#include "motor/common/FileRead.h"
+#include "motor/common/Text.h"
 #include "motor/core/Paths.h"
 
 #include <glm/geometric.hpp>
@@ -40,31 +42,6 @@ namespace motor {
 namespace fs = std::filesystem;
 
 namespace {
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
-
-std::string LowerExtension(const fs::path& path) {
-    std::string ext = ToUtf8(path.extension());
-    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return ext;
-}
-
-bool ReadFile(const fs::path& path, std::vector<uint8_t>& out, std::string* error) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        SetError(error, std::format("Não foi possível abrir '{}'.", ToUtf8(path)));
-        return false;
-    }
-    const std::streamsize size = file.tellg();
-    file.seekg(0);
-    out.resize(static_cast<size_t>(std::max<std::streamsize>(size, 0)));
-    if (size > 0 && !file.read(reinterpret_cast<char*>(out.data()), size)) {
-        SetError(error, std::format("Erro ao ler '{}'.", ToUtf8(path)));
-        return false;
-    }
-    return true;
-}
 
 // --- OBJ -------------------------------------------------------------------
 
@@ -276,7 +253,7 @@ bool ParseObj(std::string_view text, MeshData& out, std::string* error) {
 
 bool LoadObj(const fs::path& path, MeshData& out, std::string* error) {
     std::vector<uint8_t> bytes;
-    if (!ReadFile(path, bytes, error)) return false;
+    if (!ReadBinaryFile(path, bytes, error)) return false;
     const std::string_view text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     if (!ParseObj(text, out, error)) {
         if (error) *error = std::format("{}: {}", ToUtf8(path.filename()), *error);
@@ -331,7 +308,7 @@ bool DecodeHdrImage(std::span<const uint8_t> bytes, HdrImage& out, std::string* 
 
 bool LoadHdrFile(const fs::path& path, HdrImage& out, std::string* error) {
     std::vector<uint8_t> bytes;
-    if (!ReadFile(path, bytes, error)) return false;
+    if (!ReadBinaryFile(path, bytes, error)) return false;
     if (!DecodeHdrImage(bytes, out, error)) {
         if (error) *error = std::format("{}: {}", ToUtf8(path.filename()), *error);
         return false;
@@ -341,7 +318,7 @@ bool LoadHdrFile(const fs::path& path, HdrImage& out, std::string* error) {
 
 bool LoadImageFile(const fs::path& path, ImageData& out, std::string* error) {
     std::vector<uint8_t> bytes;
-    if (!ReadFile(path, bytes, error)) return false;
+    if (!ReadBinaryFile(path, bytes, error)) return false;
     if (!DecodeImage(bytes, out, error)) {
         if (error) *error = std::format("{}: {}", ToUtf8(path.filename()), *error);
         return false;

@@ -9,6 +9,8 @@
 
 #include "FileDialog.h"
 
+#include <motor/core/EngineAssets.h>
+
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
@@ -73,7 +75,7 @@ void ScriptController::OpenProject() {
     // VS Code configurado para os scripts (IntelliSense, compilar, depurar): arquivos gerados em .vscode/.
     if (m_toolchain) {
         std::string error;
-        const fs::path editorExe = ScriptProject::ExecutableDir() / "MotorEditor.exe";
+        const fs::path editorExe = motor::ExecutableDir() / "MotorEditor.exe";
         if (ScriptIde::WriteVsCodeFiles(paths, *m_toolchain, editorExe, &error) < 0) log::Warn("Scripts: {}", error);
     }
 

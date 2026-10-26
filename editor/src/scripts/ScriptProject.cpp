@@ -1,5 +1,8 @@
 #include "scripts/ScriptProject.h"
 
+#include <motor/common/FileRead.h>
+#include <motor/common/Text.h>
+#include <motor/core/EngineAssets.h>
 #include <motor/core/Paths.h>
 #include <motor/core/Version.h>
 #include <motor/scene/ScriptModule.h>
@@ -20,20 +23,13 @@
 namespace editor::ScriptProject {
 
 namespace fs = std::filesystem;
+using motor::Lower;
+using motor::ReadTextFile;
 using motor::ToGenericUtf8;
 using motor::ToUtf8;
 
 namespace {
-void SetError(std::string* error, std::string message) {
-    if (error) *error = std::move(message);
-}
-
-std::string ReadFile(const fs::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
-}
+using motor::SetError;
 
 // Gerador gravado no cache do CMake ("Ninja", "MSYS Makefiles"...), ou vazio sem cache.
 std::string CachedGenerator(const fs::path& binaryDir) {
@@ -49,7 +45,7 @@ std::string CachedGenerator(const fs::path& binaryDir) {
 // Grava só se o conteúdo mudou (preserva a data do arquivo, que o make e o CMake usam).
 bool WriteIfChanged(const fs::path& path, const std::string& text, std::string* error) {
     std::error_code ec;
-    if (fs::is_regular_file(path, ec) && ReadFile(path) == text) return true;
+    if (fs::is_regular_file(path, ec) && ReadTextFile(path).value_or("") == text) return true;
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out || !(out << text) || !out.flush()) {
         SetError(error, std::format("Não foi possível escrever '{}'.", ToUtf8(path)));
@@ -73,11 +69,6 @@ std::string CMakePath(const fs::path& path) {
     }
     return out;
 }
-
-std::string Lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
-}
 } // namespace
 
 Paths PathsFor(const fs::path& projectRoot) {
@@ -99,7 +90,7 @@ std::optional<Toolchain> LoadToolchain(const fs::path& sdkJson, std::string* err
         return std::nullopt;
     }
     try {
-        const auto j = nlohmann::json::parse(ReadFile(sdkJson));
+        const auto j = nlohmann::json::parse(ReadTextFile(sdkJson).value_or(""));
         if (j.value("format", std::string()) != "motor-sdk") {
             SetError(error, std::format("'{}' não é um SDK do Motor.", ToUtf8(sdkJson)));
             return std::nullopt;
@@ -133,31 +124,12 @@ std::optional<Toolchain> LoadToolchain(const fs::path& sdkJson, std::string* err
     }
 }
 
-fs::path ExecutableDir() {
-#ifdef _WIN32
-    std::wstring buffer(MAX_PATH, L'\0');
-    for (;;) {
-        const DWORD n = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (n == 0) return {};
-        if (n < buffer.size()) {
-            buffer.resize(n);
-            break;
-        }
-        buffer.resize(buffer.size() * 2);
-    }
-    return fs::path(buffer).parent_path();
-#else
-    std::error_code ec;
-    return fs::canonical("/proc/self/exe", ec).parent_path();
-#endif
-}
-
 fs::path DefaultSdkJson() {
-    return ExecutableDir() / "sdk" / "MotorSDK.json";
+    return motor::ExecutableDir() / "sdk" / "MotorSDK.json";
 }
 
 fs::path DefaultTemplatesDir() {
-    return ExecutableDir() / "templates" / kScriptsFolder;
+    return motor::ExecutableDir() / "templates" / kScriptsFolder;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +224,7 @@ bool WriteBuildFiles(const Paths& paths, const Toolchain& toolchain, std::string
     // Carimbo diferente: outro toolchain ou versão. Cache de outro gerador: build de antes do carimbo (Fase 17), com
     // "MSYS Makefiles"; o cache velho faria o "cmake --build" falhar para sempre (mesmo depois de o carimbo ser
     // gravado por um editor que ainda não conferia o gerador).
-    const bool stampChanged = fs::is_regular_file(stampFile, ec) && ReadFile(stampFile) != stamp;
+    const bool stampChanged = fs::is_regular_file(stampFile, ec) && ReadTextFile(stampFile).value_or("") != stamp;
     const std::string cachedGenerator = CachedGenerator(paths.binaryDir);
     if (stampChanged || (!cachedGenerator.empty() && cachedGenerator != toolchain.generator)) {
         ResetConfigure(paths);

@@ -5,6 +5,8 @@
 #include <motor/assets/AssetLibrary.h>
 #include <motor/assets/AssetLoaders.h>
 #include <motor/assets/Model.h>
+#include <motor/common/FileRead.h>
+#include <motor/common/Text.h>
 #include <motor/core/EngineAssets.h>
 #include <motor/core/Log.h>
 #include <motor/core/Paths.h>
@@ -26,24 +28,13 @@ namespace editor::GameExport {
 namespace fs = std::filesystem;
 using json = nlohmann::ordered_json;
 using motor::IsInside;
+using motor::LowerExtension;
 using motor::PathFromUtf8;
+using motor::ReadTextFile;
 using motor::ToGenericUtf8;
 using motor::ToUtf8;
 
 namespace {
-
-std::string LowerExtension(const fs::path& path) {
-    std::string ext = ToUtf8(path.extension());
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return ext;
-}
-
-std::string ReadFile(const fs::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
-}
 
 // JSON de um .glb: o primeiro bloco depois do cabeçalho de 12 bytes. Vazio se o arquivo não for um glb.
 std::string GlbJsonChunk(const std::string& bytes) {
@@ -91,11 +82,12 @@ private:
         try {
             if (ext == motor::kSceneFileExtension || ext == motor::kPrefabFileExtension ||
                 ext == motor::kMaterialFileExtension) {
-                WalkRefs(json::parse(ReadFile(file)), rel);
+                WalkRefs(json::parse(ReadTextFile(file).value_or("")), rel);
             } else if (ext == ".gltf") {
-                GltfUris(json::parse(ReadFile(file)), file);
+                GltfUris(json::parse(ReadTextFile(file).value_or("")), file);
             } else if (ext == ".glb") {
-                if (const std::string chunk = GlbJsonChunk(ReadFile(file)); !chunk.empty()) GltfUris(json::parse(chunk), file);
+                const std::string chunk = GlbJsonChunk(ReadTextFile(file).value_or(""));
+                if (!chunk.empty()) GltfUris(json::parse(chunk), file);
             } else if (ext == ".fbx") {
                 FbxTextures(file);
             }
@@ -211,7 +203,7 @@ bool CopyTree(const fs::path& from, const fs::path& to, Result& result) {
 // Entradas de primeiro nível criadas pela exportação anterior (lidas da marca).
 std::vector<std::string> PreviousEntries(const fs::path& marker) {
     try {
-        const json root = json::parse(ReadFile(marker));
+        const json root = json::parse(ReadTextFile(marker).value_or(""));
         if (root.value("format", std::string()) != "motor-export") return {};
         return root.value("entries", std::vector<std::string>{});
     } catch (const json::exception&) {
@@ -275,7 +267,7 @@ Collection CollectAssets(const motor::Project& project, const motor::AssetDataba
     for (auto it = fs::recursive_directory_iterator(scripts, ec); !ec && it != fs::recursive_directory_iterator();
          it.increment(ec)) {
         if (!it->is_regular_file(ec)) continue;
-        const std::string source = ReadFile(it->path());
+        const std::string source = ReadTextFile(it->path()).value_or("");
         for (auto m = std::sregex_iterator(source.begin(), source.end(), literal); m != std::sregex_iterator(); ++m) {
             collector.Add(project.ToAbsolute((*m)[1].str()));
         }
