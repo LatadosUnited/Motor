@@ -199,4 +199,36 @@ std::string NewToken();  // 64 dígitos hexadecimais aleatórios (o do Hub e o d
 // Vazio se não deu para gravar (`error` diz por quê).
 std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error = nullptr);
 
+// --- Autoatualização do Hub ------------------------------------------------------------------------------------
+
+inline constexpr const char* kUpdateDir = "Atualizacao";        // na pasta de dados: o instalador baixado e o log
+inline constexpr const char* kUpdateLogFile = "atualizacao.log";  // o que o MotorSetup --atualizar escreveu
+inline constexpr const char* kEditorsFile = "editores.json";    // editores abertos quando o hub saiu
+
+// Editores abertos por este hub, gravados ao sair: o hub seguinte (a versão nova, depois da atualização, ou o mesmo
+// aberto de novo) volta a acompanhá-los e a repassar o MCP deles, sem fechar nada.
+struct SavedEditor {
+    uint32_t pid = 0;
+    fs::path root;
+    std::string version;
+    fs::path editor;     // o .exe (o pid só vale se o processo ainda for este programa)
+    int mcpPort = 0;
+    std::string token;
+    bool ready = false;
+};
+struct SavedEditors {
+    static constexpr const char* kFormat = "motor-hub-editors";
+    static constexpr int kVersion = 1;
+    std::vector<SavedEditor> editors;
+
+    static std::optional<SavedEditors> Load(const fs::path& file, std::string* error = nullptr);
+    bool Save(const fs::path& file, std::string* error = nullptr) const;
+};
+
+// Argumentos do MotorSetup baixado: atualiza a instalação da pasta sem janela, espera este hub (`pid`) fechar e
+// abre o hub novo na bandeja com os mesmos argumentos deste (`hubArgs`, ex.: --data, --mcp-porta, -- e os do
+// editor), escrevendo o que fez em `logFile`.
+std::vector<std::string> UpdateInstallerArgs(const fs::path& installDir, uint32_t pid,
+                                             const std::vector<std::string>& hubArgs, const fs::path& logFile);
+
 } // namespace hub

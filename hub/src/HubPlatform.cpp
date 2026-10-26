@@ -136,6 +136,26 @@ std::optional<ChildProcess> ChildProcess::Launch(const fs::path& exe, const std:
     return process;
 }
 
+std::optional<ChildProcess> ChildProcess::Adopt(uint32_t pid, const fs::path& expectedExe) {
+    HANDLE handle = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, FALSE, pid);
+    if (!handle) return std::nullopt;
+    wchar_t name[MAX_PATH * 4];
+    DWORD size = static_cast<DWORD>(std::size(name));
+    const bool same = QueryFullProcessImageNameW(handle, 0, name, &size) && SamePath(fs::path(name), expectedExe);
+    if (!same || WaitForSingleObject(handle, 0) != WAIT_TIMEOUT) {
+        CloseHandle(handle);
+        return std::nullopt;
+    }
+    ChildProcess process;
+    process.m_handle = handle;
+    process.m_pid = pid;
+    return process;
+}
+
+uint32_t CurrentProcessId() {
+    return GetCurrentProcessId();
+}
+
 bool ChildProcess::Running() const {
     return m_handle && WaitForSingleObject(static_cast<HANDLE>(m_handle), 0) == WAIT_TIMEOUT;
 }
@@ -273,6 +293,8 @@ std::optional<ChildProcess> ChildProcess::Launch(const fs::path&, const std::vec
     if (error) *error = "Abrir o editor só é suportado no Windows.";
     return std::nullopt;
 }
+std::optional<ChildProcess> ChildProcess::Adopt(uint32_t, const fs::path&) { return std::nullopt; }
+uint32_t CurrentProcessId() { return 0; }
 bool ChildProcess::Running() const { return false; }
 bool ChildProcess::RequestClose() const { return false; }
 bool ChildProcess::Terminate() const { return false; }

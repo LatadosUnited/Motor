@@ -43,6 +43,10 @@ std::optional<std::string> EmbeddedHub(std::string* error = nullptr);
 bool Install(const Options& options, const LogFn& log, const ProgressFn& progress, const std::atomic<bool>* cancel,
              std::string& error);
 
+// Atualiza o hub instalado em `installDir` (MotorSetup --atualizar, aberto pelo hub): o MotorHub.exe deste instalador
+// e as mesmas escolhas da instalação (distrib::PlanUpdate). O hub precisa estar fechado.
+bool Update(const fs::path& installDir, const LogFn& log, std::string& error);
+
 // Desinstala o que o instalacao.json da pasta diz: atalhos, chave do registro e a pasta para a Lixeira; com
 // `removeData`, também Versões\ e hub.json da pasta de dados.
 bool Uninstall(const fs::path& installDir, bool removeData, const LogFn& log, std::string& error);

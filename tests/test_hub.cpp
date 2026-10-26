@@ -337,5 +337,33 @@ int main(int argc, char** argv) {
         CHECK(newer && newer->tools.size() == 1 && newer->initialize.is_object());
     }
 
+    SECTION("Autoatualização: editores abertos ao sair e linha do instalador");
+    {
+        const fs::path file = base / PathFromUtf8("Atualização") / kEditorsFile;
+        SavedEditors saved;
+        saved.editors.push_back({1234, base / PathFromUtf8("Jogo Ação"), "0.4.0",
+                                 base / "Versoes" / "0.4.0" / "MotorEditor.exe", 47801, "abc", true});
+        saved.editors.push_back({0, base / "sem-pid", "0.4.0", base / "MotorEditor.exe", 0, {}, false});
+        CHECK(saved.Save(file));
+        const auto loaded = SavedEditors::Load(file);
+        CHECK(loaded && loaded->editors.size() == 1);  // sem pid não dá para acompanhar
+        CHECK(loaded && loaded->editors[0].root == base / PathFromUtf8("Jogo Ação"));
+        CHECK(loaded && loaded->editors[0].mcpPort == 47801 && loaded->editors[0].token == "abc" &&
+              loaded->editors[0].ready && loaded->editors[0].pid == 1234);
+        CHECK(!SavedEditors::Load(base / "nao-existe.json"));
+        WriteText(base / "outro.json", R"({"format": "outra-coisa", "editors": []})");
+        CHECK(!SavedEditors::Load(base / "outro.json"));
+
+        const fs::path dir = base / "Motor Hub";
+        const auto args = UpdateInstallerArgs(dir, 99, {"--data", "D:\\Dados", "--", "--no-settings"}, base / "a.log");
+        const std::vector<std::string> expected = {
+            "--silencioso", "--atualizar", "--pasta", ToUtf8(dir), "--esperar", "99", "--log", ToUtf8(base / "a.log"),
+            "--abrir-hub",  "--",          "--data",  "D:\\Dados", "--bandeja", "--", "--no-settings"};
+        CHECK(args == expected);
+        // Já na bandeja: não repete.
+        const auto tray = UpdateInstallerArgs(dir, 1, {"--bandeja"}, base / "a.log");
+        CHECK(tray.size() == 11 && tray.back() == "--bandeja");
+    }
+
     return TestResult();
 }

@@ -466,6 +466,7 @@ void HubApp::ShowWindow() {
 int HubApp::RunWindow(const WindowOptions& options) {
     m_selectTab = options.initialTab;
     m_startedInTray = options.tray;
+    m_relaunchArgs = options.relaunchArgs;
     m_tray = std::make_unique<platform::Tray>(InstanceKey(m_paths.dataDir));
     // Já há um hub desta pasta de dados: o atalho traz a janela dele; o --bandeja do Windows não faz nada.
     if (!m_tray->Claim(!options.tray)) {
@@ -473,6 +474,9 @@ int HubApp::RunWindow(const WindowOptions& options) {
         return 0;
     }
     m_startsWithWindows = StartsWithWindows();
+    // Só o hub que ficou com a pasta de dados: os editores do anterior (depois de atualizar) e como foi.
+    AdoptSavedEditors();
+    ReadUpdateLog();
     if (options.tray || m_startsWithWindows) m_tray->ShowIcon(std::format("Hub do Motor {}", MOTOR_HUB_VERSION));
 
     if (!glfwInit()) throw std::runtime_error("Não foi possível iniciar o GLFW.");
@@ -509,10 +513,12 @@ int HubApp::RunWindow(const WindowOptions& options) {
     while (true) {
         // O hub fica parado quase sempre: espera eventos em vez de girar o loop. Escondido, só o ícone e os pedidos
         // de outro hub o acordam (são mensagens da janela da bandeja, atendidas aqui).
-        const bool busy = m_adding.valid() || m_download || m_fetching.valid() || (m_mcp && m_mcp->HasParked());
+        const bool busy = m_adding.valid() || m_download || m_fetching.valid() || m_hubUpdate || m_quitForUpdate ||
+                          (m_mcp && m_mcp->HasParked());
         const bool visible = glfwGetWindowAttrib(m_window, GLFW_VISIBLE) != 0;
         glfwWaitEventsTimeout(busy ? 0.05 : visible ? 0.5 : 2.0);
         if (m_tray->TakeQuitRequest()) break;
+        if (m_quitForUpdate && glfwGetTime() >= m_quitAt) break;  // o instalador espera este processo fechar
         if (m_tray->TakeShowRequest()) ShowWindow();
         if (glfwWindowShouldClose(m_window)) {
             if (!m_tray->IconVisible()) break;
@@ -526,6 +532,7 @@ int HubApp::RunWindow(const WindowOptions& options) {
             }
         }
         PollBackground();
+        PollHubUpdate();
         if (m_mcp) m_mcp->Pump();  // também escondido: o MCP é o que o hub residente faz
         if (!glfwGetWindowAttrib(m_window, GLFW_VISIBLE) || glfwGetWindowAttrib(m_window, GLFW_ICONIFIED)) continue;
         if (glfwGetTime() - m_lastRefresh > kRefreshSeconds) {
@@ -554,7 +561,12 @@ int HubApp::RunWindow(const WindowOptions& options) {
         m_download->result.wait();
     }
     if (m_fetching.valid()) m_fetching.wait();
+    if (m_hubUpdate) {
+        m_hubUpdate->cancel = true;  // o instalador pela metade fica para retomar
+        m_hubUpdate->result.wait();
+    }
     m_mcp.reset();  // os pedidos esperando recebem "ocupado"
+    SaveOpenEditors();  // os editores continuam abertos: o próximo hub volta a acompanhá-los
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

@@ -275,6 +275,34 @@ int main(int argc, char** argv) {
         const auto v1 = InstallRecord::Load(base / "v1.json");
         CHECK(v1 && v1->registryKey == "MotorHub" && v1->startupValue.empty());
 
+        // Atualização: as mesmas escolhas, com a versão nova; iniciar com o Windows pelo Run de agora.
+        InstallRecord installed = *record;
+        installed.installed = "2026-10-01T10:00:00";
+        const InstallPlan up = PlanUpdate(installed, "0.3.0", 2048, base / "Desktop", true);
+        CHECK(up.hubExe == plan.hubExe && up.record.hubVersion == "0.3.0" && up.record.dataDir == dataDir);
+        CHECK(up.shortcuts.size() == 2 && up.shortcuts[0].link == plan.shortcuts[0].link &&
+              up.shortcuts[1].link == plan.shortcuts[1].link);
+        CHECK(up.registryKey == kUninstallKey && up.startupCommand == plan.startupCommand);
+        CHECK(up.record.installed == "2026-10-01T10:00:00" && up.record.servers == installed.servers);
+        bool newVersion = false;
+        for (const RegistryValue& v : up.registryValues) newVersion |= v.name == "DisplayVersion" && v.text == "0.3.0";
+        CHECK(newVersion);
+        // Desligado pelo hub depois de instalar: a atualização não liga de novo.
+        CHECK(PlanUpdate(installed, "0.3.0", 0, base / "Desktop", false).startupValue.empty());
+        // Instalação de teste (atalho numa pasta própria, outra chave, sem iniciar com o Windows): continua assim.
+        InstallRecord test = installed;
+        test.shortcuts = {base / "Atalhos" / "Motor Hub.lnk"};
+        test.registryKey = "MotorHubTeste";
+        test.startupValue.clear();
+        CHECK(UpdateStartupValue(test) == kStartupValue && UpdateStartupValue(installed) == kStartupValue);
+        const InstallPlan t = PlanUpdate(test, "0.3.0", 0, base / "Desktop", false);
+        CHECK(t.shortcuts.size() == 1 && t.shortcuts[0].link == (base / "Atalhos" / "Motor Hub.lnk").lexically_normal());
+        CHECK(t.registryKey == "MotorHubTeste" && t.startupValue.empty() && t.record.startupValue.empty());
+        test.shortcuts.clear();
+        test.registryKey.clear();
+        const InstallPlan bare = PlanUpdate(test, "0.3.0", 0, base / "Desktop", false);
+        CHECK(bare.shortcuts.empty() && bare.registryKey.empty() && bare.registryValues.empty());
+
         // Desinstalar sem os dados: a pasta do hub (tem o instalacao.json) e os atalhos.
         fs::create_directories(dataDir / PathFromUtf8("Versões") / "0.2.0");
         WriteText(dataDir / "hub.json", "{}");

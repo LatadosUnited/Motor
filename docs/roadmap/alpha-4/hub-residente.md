@@ -170,6 +170,39 @@ biblioteca pequena sem a engine, usada pelos dois.
   leva de 20 a 120 ms (era 150 a 200 ms antes de conferir a resposta no mesmo `Pump` e acordar o Hub). Não
   conferido: o Claude Code de verdade como cliente (o `claude mcp add` muda a configuração do usuário; fica para a
   Tarefa 10) e um editor aberto fora do Hub com o mesmo projeto (o Hub não o vê e abriria outro).
+- Tarefa 9: autoatualização do Hub (`hub/src/HubUpdate.cpp`). O Hub mais novo que este entre os servidores lidos, e
+  só os publicados com o `MotorSetup.exe` (`HubApp::NewestHub`), aparece na aba Versões com **Atualizar o Hub** e nas
+  ferramentas `hub_update_check` e `hub_update` (`wait`, padrão true, responde quando o instalador abriu; o
+  `hub_status` ganhou `hubUpdate`). O instalador é baixado para `<dados>\Atualizacao\MotorSetup-<versão>.exe` pelo
+  `Client::DownloadFile` (retomada e SHA-256 do manifesto; um já baixado e conferido não vem de novo), aberto com
+  `--silencioso --atualizar --pasta <pasta do hub> --esperar <pid> --log <dados>\Atualizacao\atualizacao.log
+  --abrir-hub -- <a linha deste hub com --bandeja>` (`UpdateInstallerArgs`) e o Hub sai meio segundo depois (a
+  resposta do MCP sai antes). Só se atualiza o Hub com o `instalacao.json` ao lado (`CanSelfUpdate`; o de uma pasta
+  de build mostra o link, como antes), e nunca com um download do Motor ou uma cópia em andamento. No instalador,
+  `--atualizar` (`setup::Update`) relê o `instalacao.json` e refaz a instalação com as mesmas escolhas
+  (`distrib::PlanUpdate`: pasta de dados, atalhos onde estão, chave de desinstalação com a versão nova, servidores, e
+  iniciar com o Windows como está agora no Run, que o Hub pode ter mudado); instalar e atualizar dividem as etapas
+  (`ApplyPlan`). Depois abre o Hub com os argumentos depois de `--`, também se falhar (o `MotorHub.exe` só é trocado
+  pronto); `--log` escreve o que fez e o Hub novo mostra a última linha (ou o erro) ao abrir, e apaga o log e os
+  instaladores de versões que não são mais novas. Os editores abertos continuam: ao sair (sempre, não só ao
+  atualizar), o Hub grava `<dados>\editores.json` (formato `motor-hub-editors` 1: pid, projeto, versão, .exe, porta
+  interna, token, pronto) e o Hub seguinte os volta a acompanhar (`ChildProcess::Adopt`: só se o processo ainda roda
+  e é o mesmo .exe). Testes: `PlanUpdate` no `test_distribuicao` (mesmas escolhas, versão nova, iniciar com o Windows
+  desligado depois de instalar, instalação de teste com atalho em pasta própria e outra chave, sem atalhos);
+  `editores.json` e a linha do instalador no `test_hub`; `NewestHub`, `CanSelfUpdate` e as duas ferramentas no
+  `test_hub_mcp`. O SHA-256 errado recusado já era coberto pelo `DownloadFile` no `test_distribuicao`. Conferido de
+  verdade: o Hub do build (0.3.0) e o `MotorSetup.exe` publicados num `MotorServidor` local com a versão do Hub
+  trocada para 0.3.1 no manifesto; um Hub de teste instalado pelo `MotorSetup` (`--chave-registro MotorHubTeste`,
+  `--sem-iniciar-com-windows`, `--atalhos-em`) na bandeja, MCP na porta 47650, com o editor de "Jogo Ação" aberto
+  por ele. O `hub_update` baixou o instalador (115,7 MB), o Hub fechou, o instalador trocou o `MotorHub.exe` e abriu o
+  Hub novo na bandeja com a mesma linha (mesma porta, `-- --no-settings`); o Hub novo voltou a acompanhar o editor
+  (pid e porta interna iguais), o `scene_tree` por `/mcpengine/Jogo%20A%C3%A7%C3%A3o` foi repassado e o
+  `editor_close` o fechou. Com o instalador já baixado, do pedido ao Hub novo respondendo: 4,1 s (1,4 s para conferir
+  o SHA-256 e abrir o instalador, 2,7 s para trocar e subir). O `instalacao.json` manteve atalho, chave e pasta de
+  dados; depois o Hub de teste foi desinstalado (Lixeira) e a chave saiu do registro. Não conferido: um Hub
+  realmente de outra versão (o publicado era o mesmo .exe com outro número, então o Hub novo ainda oferece o
+  0.3.1), o botão da janela (só pelo MCP), o caminho de erro de verdade (instalador falhando com o Hub antigo de
+  volta) e o Claude Code como cliente durante a troca (Tarefa 10).
 
 ## Limitações
 

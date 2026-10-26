@@ -884,8 +884,15 @@ qualquer versão do editor, inclusive as futuras.
   **Servidores** (padrão `http://127.0.0.1:47900`, o `MotorServidor` desta máquina). **Baixar** mostra o
   progresso e pode ser cancelado; o que já veio fica guardado e o botão vira **Retomar**. Cada arquivo é
   conferido pelo SHA-256 do manifesto, e a versão só aparece instalada quando tudo confere (é baixada em
-  `Versões\.baixando\<versão>\` e renomeada no fim). Um Hub mais novo publicado num servidor aparece no topo,
-  com o link do instalador.
+  `Versões\.baixando\<versão>\` e renomeada no fim). Um Hub mais novo publicado num servidor (com o
+  `MotorSetup.exe`) aparece no topo com **Atualizar o Hub**: o Hub baixa o instalador para `<dados>\Atualizacao\`
+  (conferido pelo SHA-256; um download interrompido continua de onde parou), abre-o sem janela e fecha; o instalador
+  (`MotorSetup --atualizar`) troca o `MotorHub.exe` com as mesmas escolhas da instalação (pasta de dados, atalhos,
+  registro, iniciar com o Windows como está agora) e abre o Hub novo na bandeja com os mesmos argumentos. Os editores
+  abertos continuam: ao sair, o Hub grava `<dados>\editores.json` e o Hub seguinte volta a acompanhá-los (MCP, fechar,
+  avisos). O MCP fica fora do ar por uns 3 s. Se a atualização falhar, o Hub antigo volta e mostra o erro (o
+  instalador escreve `<dados>\Atualizacao\atualizacao.log`). Só o Hub instalado pelo `MotorSetup` (com o
+  `instalacao.json` ao lado) se atualiza sozinho; os outros mostram o link do instalador.
 - **Iniciar com o Windows:** a caixa no canto do cabeçalho (ou o instalador) põe o Hub no
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (valor `MotorHub`, sem pedir administrador), que o abre
   escondido, só com o ícone na **bandeja** (`MotorHub --bandeja`). Residente (iniciado assim ou com a caixa marcada),
@@ -900,7 +907,9 @@ qualquer versão do editor, inclusive as futuras.
   `project_open` (com `engine` para outra versão), `project_create`, `project_add`, `project_remove` (só da lista),
   `editor_close` (como o X da janela: com algo não salvo o editor pergunta; `force` fecha na hora), `versions_list`,
   `version_set_default`, `version_remove` (para a Lixeira; recusa com um editor da versão aberto),
-  `versions_available` e `version_download` (`"mais-recente"`; `wait` espera terminar). O Hub só fecha e conta os
+  `versions_available` e `version_download` (`"mais-recente"`; `wait` espera terminar), `hub_update_check` (Hub mais
+  novo nos servidores e se este pode se atualizar) e `hub_update` (a atualização acima; o `hub_status` mostra o
+  progresso e o resultado, `hubUpdate`). O Hub só fecha e conta os
   editores que ele mesmo abriu. Com o MCP do Hub ligado, cada editor que ele abre (versões com a ligação, que trazem
   `"hubLink"` no `mcp-ferramentas.json`) liga o MCP dele numa porta interna livre (47801 a 47899) com um token só
   dele, e avisa o Hub quando fica pronto, quando abre outro projeto e quando fecha (`MotorEditor --hub <porta>`,
@@ -983,6 +992,13 @@ MotorSetup --silencioso --versao-local build/package/Motor-0.2.0 ...   # versão
 MotorSetup --desinstalar --silencioso --pasta "C:/temp/Hub" [--apagar-dados]
 ```
 
+Atualizar o Hub instalado (é o que o Hub faz sozinho; `--esperar` espera o Hub aberto fechar, até 60 s):
+
+```bash
+MotorSetup --silencioso --atualizar --pasta "C:/temp/Hub" --esperar <pid> --log "C:/temp/atualizacao.log" --abrir-hub -- --bandeja
+```
+
+Os argumentos depois de `--` são os do Hub aberto no fim (sem eles, só `--data` com a pasta de dados escolhida).
 Também: `--area-de-trabalho`, `--abrir-hub`, e para testes `--atalhos-em <pasta>` (atalhos numa pasta qualquer)
 e `--chave-registro <nome>` (outra chave em `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall` e outro
 valor no `...\Run`). **Em testes, passe `--sem-iniciar-com-windows` ou `--chave-registro`**: senão o Hub de teste

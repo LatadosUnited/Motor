@@ -41,6 +41,7 @@ private:
     void AddStateTools();
     void AddProjectTools();
     void AddVersionTools();
+    void AddUpdateTools();  // autoatualização do Hub (hub_update_check, hub_update)
     motor::mcp::Json EditorsJson();
     // Aviso de um editor aberto por este hub (POST em hublink::kNotifyPath), na thread do hub.
     motor::mcp::Server::RouteReply OnEditorNotice(const motor::mcp::Server::RouteRequest& request);

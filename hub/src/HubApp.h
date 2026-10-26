@@ -91,10 +91,29 @@ public:
     bool StartsWithWindows() const;
     bool SetStartWithWindows(bool on, std::string& message);
 
+    // Autoatualização (Tarefa 9 do Hub residente): o Hub mais novo publicado com o instalador (MotorSetup.exe).
+    struct HubUpdate {
+        std::string version;
+        std::string server;
+        distrib::ReleaseFile setup;  // tamanho e SHA-256 do MotorSetup.exe no manifesto
+    };
+    // O mais novo que este hub entre os servidores lidos (nullopt se não houver).
+    static std::optional<HubUpdate> NewestHub(const std::vector<RemoteServer>& servers);
+    std::optional<HubUpdate> AvailableHubUpdate() const { return NewestHub(m_remote); }
+    // Só um hub instalado pelo MotorSetup (instalacao.json ao lado do .exe) se atualiza sozinho. false e `why`
+    // dizendo por quê (pasta de build, outro download ou cópia em andamento).
+    bool CanSelfUpdate(std::string* why = nullptr) const;
+    // Baixa o instalador em segundo plano para <dados>\Atualizacao (SHA-256 conferido, retoma um download
+    // interrompido) e, pronto, o abre em silêncio e sai: o instalador troca o MotorHub.exe e abre o hub novo na
+    // bandeja com os mesmos argumentos. Os editores abertos continuam e o hub novo volta a acompanhá-los.
+    bool StartHubUpdate(const HubUpdate& update, std::string& message);
+    bool HubUpdateRunning() const { return m_hubUpdate != nullptr || m_quitForUpdate; }
+
     struct WindowOptions {
         int initialTab = 0;  // 0 Projetos, 1 Versões
         bool tray = false;   // --bandeja: abre escondido, só o ícone na bandeja
         int mcpPort = kHubMcpPort;  // --mcp-porta; 0 = MCP do hub desligado
+        std::vector<std::string> relaunchArgs;  // a linha deste hub: o hub novo abre com ela depois de atualizar
     };
     // Abre a janela e roda até fechar. Residente (com --bandeja ou iniciando com o Windows), fechar a janela só a
     // esconde e o hub sai pelo menu do ícone. Com outro hub da mesma pasta de dados aberto, mostra a janela dele
@@ -132,6 +151,11 @@ private:
     void StartFetch();
     void PollBackground();
     void StartDownload(const std::string& server, const distrib::Release& release);
+    // Autoatualização (HubUpdate.cpp)
+    void PollHubUpdate();
+    void SaveOpenEditors();    // ao sair: editores.json para o próximo hub
+    void AdoptSavedEditors();  // ao abrir: volta a acompanhar os editores do hub anterior
+    void ReadUpdateLog();      // ao abrir: diz como foi a atualização e limpa os instaladores velhos
 
     platform::Paths m_paths;
     std::vector<std::string> m_editorArgs;
@@ -198,6 +222,21 @@ private:
         std::string message;
     };
     std::optional<DownloadResult> m_lastDownload;  // o último que terminou (o MCP espera por ele)
+
+    // Autoatualização do Hub: download do instalador (um por vez) e a saída logo depois de abri-lo.
+    struct HubUpdateJob {
+        HubUpdate update;
+        fs::path dest;
+        std::atomic<bool> cancel{false};
+        std::atomic<uint64_t> bytes{0};
+        std::future<distrib::Client::FileResult> result;
+    };
+    std::unique_ptr<HubUpdateJob> m_hubUpdate;
+    std::string m_hubUpdateMessage;  // o último resultado (o MCP e a janela mostram)
+    bool m_hubUpdateOk = false;
+    bool m_quitForUpdate = false;    // instalador aberto: sai daqui a pouco (a resposta do MCP sai antes)
+    double m_quitAt = 0.0;
+    std::vector<std::string> m_relaunchArgs;
 
     std::vector<OpenEditor> m_editors;
     int m_linkPort = 0;  // porta do MCP do hub enquanto ligado (HubMcp): os editores abertos avisam nela

@@ -151,6 +151,44 @@ InstallPlan PlanInstall(const InstallOptions& o, const fs::path& startMenuDir, c
     return plan;
 }
 
+std::string UpdateStartupValue(const InstallRecord& record) {
+    return record.startupValue.empty() ? kStartupValue : record.startupValue;
+}
+
+InstallPlan PlanUpdate(const InstallRecord& record, const std::string& hubVersion, uint64_t installedBytes,
+                       const fs::path& desktopDir, bool startsWithWindows) {
+    InstallOptions o;
+    o.installDir = record.installDir;
+    o.dataDir = record.dataDir;
+    o.hubVersion = hubVersion;
+    o.installedBytes = installedBytes;
+    o.registerUninstall = !record.registryKey.empty();
+    if (o.registerUninstall) o.registryKey = record.registryKey;
+    o.startWithWindows = startsWithWindows;
+    o.startupValue = UpdateStartupValue(record);
+
+    // Os atalhos ficam onde estão: o da Área de Trabalho e o outro (menu Iniciar, ou a pasta dos testes).
+    fs::path startMenuDir, desktop;
+    const fs::path desktopNormal = desktopDir.lexically_normal();
+    for (const fs::path& link : record.shortcuts) {
+        const fs::path parent = link.parent_path().lexically_normal();
+        if (!desktopNormal.empty() && parent == desktopNormal) {
+            desktop = parent;
+        } else if (startMenuDir.empty()) {
+            startMenuDir = parent;
+        } else {
+            desktop = parent;  // --atalhos-em com --area-de-trabalho: <pasta>\Desktop
+        }
+    }
+    o.startMenuShortcut = !startMenuDir.empty();
+    o.desktopShortcut = !desktop.empty();
+
+    InstallPlan plan = PlanInstall(o, startMenuDir, desktop);
+    plan.record.installed = record.installed;
+    plan.record.servers = record.servers;
+    return plan;
+}
+
 UninstallPlan PlanUninstall(const InstallRecord& record, bool removeData, const fs::path& defaultDataDir) {
     UninstallPlan plan;
     for (const fs::path& link : record.shortcuts) {

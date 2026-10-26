@@ -83,6 +83,16 @@ struct InstallPlan {
 // `startMenuDir` e `desktopDir`: pastas dos atalhos (Programs do menu Iniciar e Área de Trabalho).
 InstallPlan PlanInstall(const InstallOptions& options, const fs::path& startMenuDir, const fs::path& desktopDir);
 
+// Atualização do Hub (MotorSetup --atualizar, aberto pelo próprio hub): as mesmas escolhas da instalação que está na
+// pasta (dados, atalhos onde estão, chave de desinstalação, servidores), só com a versão nova. `desktopDir`: a Área de
+// Trabalho, para saber qual atalho é de lá. `startsWithWindows`: o valor do Run aponta para este hub agora (o usuário
+// pode ter mudado isso pelo hub depois de instalar).
+InstallPlan PlanUpdate(const InstallRecord& record, const std::string& hubVersion, uint64_t installedBytes,
+                       const fs::path& desktopDir, bool startsWithWindows);
+// Valor do Run que a atualização confere: o da instalação ou, se ela não iniciava com o Windows, o padrão (o hub liga
+// por ele).
+std::string UpdateStartupValue(const InstallRecord& record);
+
 struct UninstallPlan {
     std::vector<fs::path> shortcuts;  // apagados (são só atalhos criados pelo instalador)
     std::string registryKey;

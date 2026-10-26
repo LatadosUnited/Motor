@@ -219,6 +219,7 @@ int HubMain() {
         }
     }
     const bool console = !actions.empty();
+    window.relaunchArgs = args;  // depois de se atualizar, o hub novo abre com a mesma linha
 
     // Hub instalado pelo MotorSetup com outra pasta de dados: ela fica no instalacao.json ao lado do .exe.
     if (dataDir.empty()) {

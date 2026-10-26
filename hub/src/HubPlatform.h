@@ -45,6 +45,10 @@ public:
     static std::optional<ChildProcess> Launch(const fs::path& exe, const std::vector<std::string>& args,
                                               std::string* error = nullptr, const Environment& env = {});
 
+    // Volta a acompanhar um processo que outro hub abriu (editores.json, depois de atualizar): só se ele ainda roda e
+    // é `expectedExe` (o pid de um editor que fechou pode ter ido para outro programa).
+    static std::optional<ChildProcess> Adopt(uint32_t pid, const fs::path& expectedExe);
+
     uint32_t Pid() const { return m_pid; }
     bool Running() const;
     // Pede para fechar como o X da janela (WM_CLOSE nas janelas dele): o editor pergunta se há algo não salvo.
@@ -56,6 +60,8 @@ private:
     void* m_handle = nullptr;  // HANDLE
     uint32_t m_pid = 0;
 };
+
+uint32_t CurrentProcessId();
 
 void RevealInExplorer(const fs::path& path);
 bool MoveToTrash(const fs::path& path, std::string* error = nullptr);  // nunca apaga de vez

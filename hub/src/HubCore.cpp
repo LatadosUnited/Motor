@@ -602,4 +602,74 @@ std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error) {
     return token;
 }
 
+// ---------------------------------------------------------------------------
+// Autoatualização do Hub
+// ---------------------------------------------------------------------------
+
+std::optional<SavedEditors> SavedEditors::Load(const fs::path& file, std::string* error) {
+    const auto text = ReadTextFile(file);
+    if (!text) {
+        SetError(error, std::format("Não foi possível ler '{}'.", ToUtf8(file)));
+        return std::nullopt;
+    }
+    const json root = json::parse(*text, nullptr, false);
+    if (!root.is_object() || root.value("format", "") != kFormat) {
+        SetError(error, std::format("'{}' não é uma lista de editores do hub.", ToUtf8(file)));
+        return std::nullopt;
+    }
+    SavedEditors out;
+    const json list = root.value("editors", json::array());
+    if (!list.is_array()) return out;
+    for (const json& e : list) {
+        if (!e.is_object()) continue;
+        SavedEditor s;
+        s.pid = e.value("pid", 0u);
+        s.root = PathFromUtf8(e.value("root", ""));
+        s.version = e.value("version", "");
+        s.editor = PathFromUtf8(e.value("editor", ""));
+        s.mcpPort = e.value("mcpPort", 0);
+        s.token = e.value("token", "");
+        s.ready = e.value("ready", false);
+        if (s.pid != 0 && !s.root.empty() && !s.editor.empty()) out.editors.push_back(std::move(s));
+    }
+    return out;
+}
+
+bool SavedEditors::Save(const fs::path& file, std::string* error) const {
+    json list = json::array();
+    for (const SavedEditor& s : editors) {
+        list.push_back({{"pid", s.pid},
+                        {"root", ToUtf8(s.root)},
+                        {"version", s.version},
+                        {"editor", ToUtf8(s.editor)},
+                        {"mcpPort", s.mcpPort},
+                        {"token", s.token},
+                        {"ready", s.ready}});
+    }
+    const json root = {{"format", kFormat}, {"version", kVersion}, {"editors", std::move(list)}};
+    std::error_code ec;
+    fs::create_directories(file.parent_path(), ec);
+    return motor::WriteFileAtomic(file, root.dump(2, ' ', false, json::error_handler_t::replace) + '\n', error);
+}
+
+std::vector<std::string> UpdateInstallerArgs(const fs::path& installDir, uint32_t pid,
+                                             const std::vector<std::string>& hubArgs, const fs::path& logFile) {
+    std::vector<std::string> args = {"--silencioso", "--atualizar", "--pasta", ToUtf8(installDir), "--esperar",
+                                     std::to_string(pid), "--log", ToUtf8(logFile), "--abrir-hub", "--"};
+    // O hub volta para a bandeja: --bandeja antes dos argumentos do editor (depois do "--" do hub).
+    bool tray = false;
+    size_t editorStart = hubArgs.size();
+    for (size_t i = 0; i < hubArgs.size(); ++i) {
+        if (hubArgs[i] == "--") {
+            editorStart = i;
+            break;
+        }
+        tray |= hubArgs[i] == "--bandeja";
+    }
+    args.insert(args.end(), hubArgs.begin(), hubArgs.begin() + static_cast<std::ptrdiff_t>(editorStart));
+    if (!tray) args.push_back("--bandeja");
+    args.insert(args.end(), hubArgs.begin() + static_cast<std::ptrdiff_t>(editorStart), hubArgs.end());
+    return args;
+}
+
 } // namespace hub

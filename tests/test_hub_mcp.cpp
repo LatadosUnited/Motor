@@ -165,7 +165,7 @@ int main(int argc, char** argv) {
         for (const Json& t : list["result"]["tools"]) names.push_back(t["name"]);
         for (const char* wanted : {"hub_status", "projects_list", "project_open", "project_create", "project_add",
                                    "project_remove", "editor_close", "versions_list", "version_set_default",
-                                   "version_remove", "versions_available", "version_download"}) {
+                                   "version_remove", "versions_available", "version_download", "hub_update_check", "hub_update"}) {
             CHECK(std::find(names.begin(), names.end(), wanted) != names.end());
         }
     }
@@ -265,6 +265,39 @@ int main(int argc, char** argv) {
         const Call download = Wait(mcp, "version_download", {{"version", "1.0.0"}, {"server", "http://127.0.0.1:1"}});
         CHECK(!download.ok);
         CHECK(Now(mcp, "hub_status").data["download"].is_null());
+    }
+
+    SECTION("Autoatualização do Hub: o mais novo com instalador, e só o Hub instalado se atualiza");
+    {
+        const auto server = [](std::string url, std::string hubVersion, bool setup) {
+            hub::HubApp::RemoteServer s;
+            s.url = std::move(url);
+            s.manifest = distrib::Manifest{};
+            distrib::HubRelease h;
+            h.version = std::move(hubVersion);
+            h.files.push_back({distrib::kHubExe, 10, std::string(64, 'a')});
+            if (setup) h.files.push_back({distrib::kSetupExe, 20, std::string(64, 'b')});
+            s.manifest->hub = h;
+            return s;
+        };
+        hub::HubApp::RemoteServer down;
+        down.url = "http://fora";
+        down.error = "fora do ar";
+        const auto newest = hub::HubApp::NewestHub({server("http://a", "99.0.0", false), server("http://b", "98.1.0", true),
+                                                    server("http://c", "98.0.0", true), down,
+                                                    server("http://d", "0.0.1", true)});
+        // Sem o MotorSetup.exe publicado não dá para atualizar sozinho: vale o segundo mais novo.
+        CHECK(newest && newest->version == "98.1.0" && newest->server == "http://b" && newest->setup.size == 20);
+        CHECK(!hub::HubApp::NewestHub({server("http://d", "0.0.1", true), down}));
+
+        // O exe do teste não tem instalacao.json ao lado: recusa dizendo por quê.
+        std::string why;
+        CHECK(!app.CanSelfUpdate(&why) && why.find("instalacao.json") != std::string::npos);
+        const Call check = Wait(mcp, "hub_update_check", {{"server", "http://127.0.0.1:1"}});
+        CHECK(check.ok && check.data["newer"].is_null() && !check.data["canSelfUpdate"].get<bool>());
+        CHECK(check.ok && check.data["errors"].size() == 1);
+        const Call update = Wait(mcp, "hub_update", {{"server", "http://127.0.0.1:1"}});
+        CHECK(!update.ok && !app.HubUpdateRunning());
     }
 
     SECTION("Hub residente: porta interna, token do editor e avisos");
