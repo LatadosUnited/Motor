@@ -4,6 +4,7 @@ motor_add_layer(scene
         Transform.cpp
         FlyCameraController.cpp
         Component.cpp
+        BlockPool.cpp
         CameraComponent.cpp
         LightComponent.cpp
         MeshRenderer.cpp

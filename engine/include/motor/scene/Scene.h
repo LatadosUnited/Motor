@@ -81,6 +81,10 @@ struct Entity {
 
     mutable EntityCache cache;  // interno da Scene (WorldMatrix, IsActiveInHierarchy)
 
+    // As entidades ficam em blocos contínuos (BlockPool, Fase 28), na ordem de criação, como os componentes.
+    static void* operator new(size_t size);
+    static void operator delete(void* p, size_t size);
+
 private:
     template <class T>
     static const ComponentType* TypeOf() {

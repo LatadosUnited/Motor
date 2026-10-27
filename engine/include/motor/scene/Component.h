@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <new>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -266,11 +267,12 @@ public:
         if constexpr (std::is_base_of_v<Script, T>) {
             asScriptFn = [](void* p) -> Script* { return static_cast<T*>(p); };
         }
+        // Construídos na memória do tipo (blocos contínuos, BlockPool, Fase 28), não com new.
         ComponentType& ref = AddType(
-            name, label, &typeid(T),
-            []() -> void* { return static_cast<void*>(new T()); },
-            [](const void* p) -> void* { return static_cast<void*>(new T(*static_cast<const T*>(p))); },
-            [](void* p) { delete static_cast<T*>(p); },
+            name, label, &typeid(T), sizeof(T), alignof(T),
+            [](void* at) { new (at) T(); },
+            [](void* at, const void* p) { new (at) T(*static_cast<const T*>(p)); },
+            [](void* p) { static_cast<T*>(p)->~T(); },
             asScriptFn);
         return ComponentBuilder<T>(ref);
     }
@@ -303,9 +305,9 @@ public:
 private:
     ComponentRegistry() = default;
 
-    ComponentType& AddType(std::string_view name, std::string_view label, const std::type_info* cppType,
-                           void* (*create)(), void* (*clone)(const void*), void (*destroy)(void*),
-                           Script* (*asScript)(void*));
+    ComponentType& AddType(std::string_view name, std::string_view label, const std::type_info* cppType, size_t size,
+                           size_t alignment, void (*construct)(void*), void (*copy)(void*, const void*),
+                           void (*destruct)(void*), Script* (*asScript)(void*));
 
     const ComponentType* FindCppType(const std::type_info& info) const;
 

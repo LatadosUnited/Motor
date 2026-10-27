@@ -1,6 +1,7 @@
 #include "motor/scene/Scene.h"
 
 #include "motor/core/FrameStats.h"
+#include "motor/scene/BlockPool.h"
 #include "motor/scene/EntityRef.h"
 
 #include "motor/renderer/Camera.h"
@@ -75,6 +76,23 @@ void MarkSceneStructureChanged() {
 }
 
 // --- Entity -----------------------------------------------------------------------
+
+namespace {
+BlockPool& EntityPool() {
+    static BlockPool& pool = BlockPool::For("Entity", sizeof(Entity), alignof(Entity));
+    return pool;
+}
+} // namespace
+
+void* Entity::operator new(size_t size) {
+    // Uma classe derivada maior não cabe no pedaço: vai para o heap.
+    return size == sizeof(Entity) ? EntityPool().Allocate() : ::operator new(size);
+}
+
+void Entity::operator delete(void* p, size_t size) {
+    if (size == sizeof(Entity)) EntityPool().Free(p);
+    else ::operator delete(p);
+}
 
 void* Entity::Get(const ComponentType& type) {
     for (ComponentPtr& c : components) {
