@@ -30,7 +30,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 2: Levar as posições para a GPU relativas à câmera — ea03e02
 - [x] Tarefa 3: Guardar no renderer os objetos estáticos entre quadros (registrar, mover, remover) — a65c4a8
 - [x] Tarefa 4: Recortar a cena e as sombras pela grade — 9a37a78, 3993896
-- [ ] Tarefa 5: Usar a grade no raycast do editor e nas consultas de área
+- [x] Tarefa 5: Usar a grade no raycast do editor e nas consultas de área — 7cb35e8
 - [ ] Tarefa 6: Desenhar pela GPU (multi-draw indirect, buffers mapeados de forma persistente)
 - [ ] Tarefa 7: Guardar os componentes em blocos contínuos por tipo
 - [ ] Tarefa 8: Criar o componente Terrain com mapa de altura em blocos, um arquivo por bloco
@@ -93,7 +93,16 @@ e a renderização relativa à câmera são também a base do streaming de célu
   - Referência: CPU do Render 4,4 (normais) -> 3,5-4,2 ms (estáticos); o quadro continua preso na GPU (~22 ms).
   - Visto pelo MCP: torre estática fora da imagem com o sol baixo atrás dela: a sombra dela na imagem sai igual, pixel
     a pixel, com e sem Estático.
+- Tarefa 5: o `Scene::Raycast` (clique no viewport) testa os não estáticos um a um e depois
+  os estáticos pela grade do `RenderWorld`, do mais perto ao mais longe pela entrada na caixa, e para quando a caixa
+  seguinte começa depois do melhor acerto: só os triângulos de poucos objetos são testados. `RenderWorld` ganhou
+  `QueryBox` e `QueryRay`; o `QueryRay` da `SpatialGrid` devolve também a distância de entrada. `test_scene_raycast`:
+  400 raios numa cena de 1500 objetos (filhos, desativados, chão grande) dão o mesmo acerto e distância com e sem
+  estáticos; mover ou desativar um estático vale depois do `MarkRenderDirty`. Tempo do raycast não medido.
 
 ## Limitações
 
 (Preencher ao terminar: o que ficou para trás e para onde foi.)
+
+- `RenderWorld::QueryBox` ainda não tem quem a use: a seleção por retângulo do viewport e as consultas de área do
+  terreno (Tarefas 8 e 9) são as candidatas. O raycast continua testando os não estáticos um a um.
