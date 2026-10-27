@@ -33,7 +33,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 5: Usar a grade no raycast do editor e nas consultas de área — 7cb35e8
 - [x] Tarefa 6: Desenhar pela GPU (multi-draw indirect, buffers mapeados de forma persistente) — beaa8b8
 - [x] Tarefa 7: Guardar os componentes em blocos contínuos por tipo — 261c9cd
-- [ ] Tarefa 8: Criar o componente Terrain com mapa de altura em blocos, um arquivo por bloco
+- [x] Tarefa 8: Criar o componente Terrain com mapa de altura em blocos, um arquivo por bloco — 6c9be78
 - [ ] Tarefa 9: Pincéis do terreno no editor: subir, baixar, suavizar
 - [ ] Tarefa 10: Pintar até 4 camadas de textura no terreno
 - [ ] Tarefa 11: Dar ao terreno um collider da física (height field da Jolt)
@@ -124,6 +124,27 @@ e a renderização relativa à câmera são também a base do streaming de célu
   - `test_desempenho`: `cena_copiar` 3,4 -> 2,0-2,2 ms e `cena_montar` 4,5 -> 2,1-2,4 ms (o desfazer e o Play copiam
     a cena), `cena_comparar` 6-11% menor; base regravada só nessas três linhas.
   - Pelo MCP: criar 50, duplicar, apagar, desfazer, Play e Stop no editor saem certos. `test_block_pool`.
+- Tarefa 8: `motor::TerrainData` (`assets/TerrainData.h`, sem OpenGL) guarda o terreno em blocos de 32 m com 33 x 33
+  alturas (1 m entre elas); blocos vizinhos repetem a linha da borda, para cada um ficar completo sozinho (o streaming
+  da Fase 29 carrega um sem os outros), e `SetSample` muda todas as cópias. Arquivos: `Nome.mterrain` (cabeçalho
+  JSON versionado: tamanho, resolução e lista de blocos) e a pasta `Nome.blocos` com um `x_z.mtbloco` binário por bloco;
+  `Save` regrava só os blocos mudados (e os que sumiram do disco), cada um com `WriteFileAtomic`; bloco faltando ou
+  estragado vira plano com aviso, sem impedir o resto. `Open` divide o mesmo objeto entre a cena, as cópias do
+  desfazer e o Play. Malha por bloco com vértices a partir do canto e normais pelas amostras vizinhas, também do
+  bloco ao lado (`NormalAt`: sem emenda de luz), refeita só quando o bloco ou um vizinho muda. `HeightAt` interpola
+  nos mesmos triângulos da malha.
+  - Componente `Terrain` (`scene/Terrain.h`): arquivo pelo GUID (`TerrainRef`, como o `NavMeshData`), material
+    (asset ou cor, textura e rugosidade próprias; padrão grama) e sombra. A cena põe cada bloco no `RenderWorld` dos
+    estáticos, na matriz da entidade com o canto do bloco; a lista dos estáticos guarda a origem de cada objeto
+    (entidade, malha e matriz), e o `Raycast` usa isso para acertar os blocos. Alturas mudadas refazem os estáticos
+    sozinhas (versão dos terrenos conferida a cada quadro). `kScriptApiVersion` 23 (o tamanho de `Scene` mudou).
+  - `AssetType::Terrain` ("Terreno") e `AssetCompanions`: o painel Projeto leva a pasta `.blocos` junto ao renomear,
+    mover, copiar, duplicar e mandar para a Lixeira; a exportação a copia. Entidade > Terreno e `entity_create` com
+    `kind: "terrain"` criam um plano de 4 x 4 blocos (128 m) num `.mterrain` novo em `Assets/Terrenos`. Inspector com
+    a escolha do arquivo e o tamanho do terreno ligado.
+  - Pelo MCP ("Terreno Ação"): criar o terreno grava o cabeçalho, os 16 blocos e o `.meta`; trocar para um arquivo de
+    morros gerado fora aparece no viewport com luz e sombra certas; salvar, duplicar, desfazer, Play e Stop saem
+    certos. `test_terrain` (bordas divididas, altura, normais, arquivos, regravação parcial, cena e raio).
 
 ## Limitações
 
@@ -140,3 +161,8 @@ e a renderização relativa à câmera são também a base do streaming de célu
   de verdade muda a API de `Entity::components`; fica para quando um mundo grande dinâmico precisar.
 - `test_desempenho` falhou em 27/10/2026 com o binário antigo e o novo do mesmo jeito (testes de cena que não passam
   pelo renderer 30-140% acima da base): a máquina estava mais lenta. Repetir antes de fechar a fase.
+- Terreno (Tarefa 8): mexer na pasta `.blocos` pelo Explorer, ou só nela pelo painel Projeto, separa os dois
+  (o painel ainda a mostra como pasta comum). Alturas mudadas não entram no desfazer nem marcam a cena como não
+  salva (vêm com os pincéis, Tarefa 9); um terreno sem projeto aberto fica só na memória. A textura repete a cada
+  metro, sem escala própria (vem com a pintura, Tarefa 10). Todos os blocos são desenhados com a malha cheia, sem LOD
+  (Tarefa 12), e o `Raycast` testa os 2048 triângulos de cada bloco que o raio cruza. Sem colisão ainda (Tarefa 11).
