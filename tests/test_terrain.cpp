@@ -9,6 +9,7 @@
 #include "motor/common/FileRead.h"
 #include "motor/project/Project.h"
 #include "motor/renderer/Mesh.h"
+#include "motor/renderer/Texture.h"
 #include "motor/scene/Components.h"
 #include "motor/scene/Scene.h"
 #include "motor/scene/SceneSerializer.h"
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <fstream>
 
@@ -130,7 +132,7 @@ int main(int argc, char** argv) {
         const fs::path folder = base / "Ilha Ação.blocos";
         CHECK(TerrainData::BlocksFolder(file) == folder);
         CHECK(fs::is_regular_file(folder / "-1_-1.mtbloco") && fs::is_regular_file(folder / "1_0.mtbloco"));
-        CHECK(fs::file_size(folder / "0_0.mtbloco") == 20 + 81 * sizeof(float));
+        CHECK(fs::file_size(folder / "0_0.mtbloco") == 20 + 81 * (sizeof(float) + 4));  // alturas e os 4 pesos
         CHECK(AssetTypeFromPath(file) == AssetType::Terrain);
         CHECK(std::string(AssetTypeName(AssetType::Terrain)) == "Terreno");
         const auto companions = AssetCompanions(file);
@@ -276,19 +278,21 @@ int main(int argc, char** argv) {
         // Fora dos blocos não há o que mudar, e nada quebra.
         TerrainStroke outside(data, brush);
         CHECK(outside.Apply(-50.0f, -50.0f, 0.5f) == 0);
-        CHECK(outside.Finish().empty());
+        CHECK(outside.Finish().Empty());
         // Força 0, ou dt 0: nada.
         CHECK(TerrainStroke(data, TerrainBrush{.strength = 0.0f}).Apply(10.0f, 10.0f, 1.0f) == 0);
 
         // Finish guarda o antes e o depois de cada amostra mudada; desfazer e refazer põem as alturas.
-        const auto changes = raise.Finish();
+        const TerrainEdit edit = raise.Finish();
+        const auto& changes = edit.heights;
+        CHECK(edit.weights.empty());
         CHECK(!changes.empty());
         bool allBefore0 = true;
         for (const auto& c : changes) allBefore0 = allBefore0 && c.before == 0.0f && c.after > 0.0f;
         CHECK(allBefore0);
-        ApplyTerrainChanges(*data, changes, false);
+        ApplyTerrainEdit(*data, edit, false);
         CHECK(Near(data->Sample(32, 16).value_or(-1.0f), 0.0f));
-        ApplyTerrainChanges(*data, changes, true);
+        ApplyTerrainEdit(*data, edit, true);
         CHECK(Near(data->Sample(32, 16).value_or(-1.0f), center));
 
         // Baixar a mesma coisa volta a zero; a pincelada que volta ao início não tem mudança.
@@ -303,7 +307,7 @@ int main(int argc, char** argv) {
         const float start = data->Sample(32, 16).value_or(0.0f);
         twice.Apply(32.0f, 16.0f, 0.1f);
         twice.Apply(32.0f, 16.0f, 0.1f);
-        const auto twiceChanges = twice.Finish();
+        const auto twiceChanges = twice.Finish().heights;
         const auto it = std::find_if(twiceChanges.begin(), twiceChanges.end(),
                                      [](const TerrainSampleChange& c) { return c.gx == 32 && c.gz == 16; });
         CHECK(it != twiceChanges.end() && Near(it->before, start) && Near(it->after, start + TerrainBrush::kRaiseSpeed * 0.2f));
@@ -328,6 +332,90 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 30; ++i) flatten.Apply(26.0f, 26.0f, 0.2f);  // ...e arrasta para o alto
         CHECK(Near(data->Sample(26, 26).value_or(-1.0f), 0.0f, 1e-2f));
         CHECK(Near(data->Sample(31, 31).value_or(-1.0f), 4.0f));  // fora do raio: igual
+    }
+
+    SECTION("Pintura: pesos na borda dividida, soma 1, desfazer, sem refazer a malha");
+    {
+        auto data = std::make_shared<TerrainData>(32.0f, 33);
+        data->AddBlock({0, 0});
+        data->AddBlock({1, 0});
+        CHECK(data->Weights(5, 5) == glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));  // começa todo na camada 1
+        CHECK(!data->Weights(-5, 5).has_value());
+        const auto mesh = data->BlockMesh({0, 0});
+        const uint64_t version = data->Version();
+
+        TerrainStroke paint(data, TerrainBrush{.mode = TerrainBrushMode::Paint, .radius = 6.0f, .strength = 1.0f, .layer = 1});
+        for (int i = 0; i < 20; ++i) paint.Apply(32.0f, 16.0f, 0.1f);
+        const glm::vec4 center = data->Weights(32, 16).value_or(glm::vec4(0.0f));
+        CHECK(center.y > 0.99f && center.x < 0.01f);
+        const glm::vec4 side = data->Weights(35, 16).value_or(glm::vec4(0.0f));
+        CHECK(side.y > 0.0f && side.x > 0.0f && Near(side.x + side.y + side.z + side.w, 1.0f));
+        CHECK(data->Weights(38, 16) == glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));  // na borda do raio: nada
+        CHECK(data->Version() != version);  // a cena refaz os blocos (material com os pesos novos)
+        CHECK(data->BlockMesh({0, 0}) == mesh);  // a malha não muda
+        CHECK(data->IsDirty());
+
+        // A textura dos pesos de cada bloco: 33 x 33, refeita só depois de mudar.
+        const auto texture = data->BlockWeights({0, 0});
+        CHECK(texture && texture->Width() == 33 && texture->Height() == 33);
+        CHECK(data->BlockWeights({0, 0}) == texture);
+
+        // SetWeights normaliza; tudo zero vira a camada 1.
+        data->SetWeights(2, 2, {2.0f, 0.0f, 2.0f, 0.0f});
+        CHECK(data->Weights(2, 2) == glm::vec4(0.5f, 0.0f, 0.5f, 0.0f));
+        data->SetWeights(2, 2, glm::vec4(0.0f));
+        CHECK(data->Weights(2, 2) == glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+        CHECK(data->BlockWeights({0, 0}) != texture);
+
+        // Desfazer e refazer a pincelada; ela não mexeu nas alturas.
+        const TerrainEdit edit = paint.Finish();
+        CHECK(edit.heights.empty() && !edit.weights.empty());
+        ApplyTerrainEdit(*data, edit, false);
+        CHECK(data->Weights(32, 16) == glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+        ApplyTerrainEdit(*data, edit, true);
+        CHECK(data->Weights(32, 16) == center);
+
+        // Gravar e ler: os pesos voltam (um byte por camada); arquivo de bloco da versão 1 fica na camada 1.
+        const fs::path file = base / "Pintado.mterrain";
+        std::string error;
+        CHECK(data->Save(file, &error));
+        const auto loaded = TerrainData::Load(file, &error);
+        const glm::vec4 back = loaded ? loaded->Weights(32, 16).value_or(glm::vec4(0.0f)) : glm::vec4(0.0f);
+        CHECK(Near(back.y, center.y, 1.0f / 255.0f) && Near(back.x + back.y + back.z + back.w, 1.0f));
+        CHECK(loaded && loaded->Weights(35, 16).has_value() && Near(loaded->Weights(35, 16)->y, side.y, 1.0f / 255.0f));
+        CHECK(loaded && !loaded->IsDirty());
+
+        const fs::path blockFile = TerrainData::BlocksFolder(file) / "1_0.mtbloco";
+        std::string bytes = ReadTextFile(blockFile).value_or("");
+        CHECK(bytes.size() == 20 + 33 * 33 * (4 + 4));
+        const uint32_t v1 = 1;
+        std::memcpy(bytes.data() + 4, &v1, sizeof(v1));
+        bytes.resize(20 + 33 * 33 * 4);  // só as alturas, como gravava a Tarefa 8
+        {
+            std::ofstream out(blockFile, std::ios::binary | std::ios::trunc);
+            out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        }
+        error.clear();
+        const auto old = TerrainData::Load(file, &error);
+        CHECK(old && error.empty());
+        CHECK(old && old->Weights(40, 16) == glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));  // bloco 1_0 antigo: camada 1
+        CHECK(old && old->Weights(16, 16).has_value() && Near(old->Weights(30, 16)->y, data->Weights(30, 16)->y, 1.0f / 255.0f));
+    }
+
+    SECTION("Camadas do componente: a 1 é o material, 2 a 4 do componente");
+    {
+        Terrain terrain;
+        terrain.material.color = {0.1f, 0.2f, 0.3f, 1.0f};
+        terrain.tiling = 2.0f;
+        terrain.layer3.tiling = 8.0f;
+        const TerrainLayers layers = terrain.Layers();
+        CHECK(layers.color[0] == terrain.material.color && layers.tiling[0] == 2.0f && layers.tiling[2] == 8.0f);
+        CHECK(layers.color[1] == terrain.layer2.color && layers.color[3] == terrain.layer4.color);
+        CHECK(!layers.albedo[1] && !layers.weights);
+        auto shared = std::make_shared<Material>();
+        shared->color = {0.9f, 0.1f, 0.1f, 1.0f};
+        terrain.sharedMaterial = shared;
+        CHECK(terrain.Layers().color[0] == shared->color);
     }
 
     SECTION("Raio no terreno: de cima, inclinado, por baixo e fora");

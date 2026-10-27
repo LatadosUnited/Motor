@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 
+#include <string>
 #include <utility>
 
 MOTOR_FIELD_DRAWER(TerrainRef) {
@@ -40,7 +41,8 @@ MOTOR_FIELD_DRAWER(TerrainRef) {
     ImGui::BeginDisabled(ctx.playing);
     static constexpr std::pair<const char*, motor::TerrainBrushMode> kModes[] = {
         {"Subir", motor::TerrainBrushMode::Raise}, {"Baixar", motor::TerrainBrushMode::Lower},
-        {"Suavizar", motor::TerrainBrushMode::Smooth}, {"Nivelar", motor::TerrainBrushMode::Flatten}};
+        {"Suavizar", motor::TerrainBrushMode::Smooth}, {"Nivelar", motor::TerrainBrushMode::Flatten},
+        {"Pintar", motor::TerrainBrushMode::Paint}};
     if (ImGui::RadioButton("Selecionar", !state.active)) state.active = false;
     ImGui::SetItemTooltip("O clique no Viewport seleciona (Esc no Viewport volta para cá)");
     for (const auto& [label, mode] : kModes) {
@@ -51,6 +53,16 @@ MOTOR_FIELD_DRAWER(TerrainRef) {
             state.brush.mode = mode;
         }
     }
+    if (state.active && state.brush.mode == motor::TerrainBrushMode::Paint) {
+        // Camada pintada: as cores dos campos abaixo (Camada 1 a 4) ajudam a achar qual é qual.
+        ImGui::TextUnformatted("Camada");
+        for (int i = 0; i < motor::TerrainBrush::kLayers; ++i) {
+            ImGui::SameLine();
+            ImGui::PushID(i);
+            if (ImGui::RadioButton(std::to_string(i + 1).c_str(), state.brush.layer == i)) state.brush.layer = i;
+            ImGui::PopID();
+        }
+    }
     if (state.active) {
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::SliderFloat("##raio", &state.brush.radius, motor::TerrainBrush::kMinRadius, 64.0f, "Raio %.1f m",
@@ -59,6 +71,8 @@ MOTOR_FIELD_DRAWER(TerrainRef) {
         ImGui::SliderFloat("##forca", &state.brush.strength, 0.01f, 1.0f, "Força %.2f");
         ImGui::TextDisabled(state.brush.mode == motor::TerrainBrushMode::Flatten
                                 ? "Arraste no Viewport: nivela na altura de onde começou"
+                            : state.brush.mode == motor::TerrainBrushMode::Paint
+                                ? "Arraste no Viewport: pinta a camada (texturas e cores abaixo)"
                                 : "Clique e arraste no terreno, no Viewport");
     }
     ImGui::EndDisabled();

@@ -30,14 +30,40 @@ Texture2D::Texture2D(int width, int height, const uint8_t* pixels, TextureFilter
     glGenerateTextureMipmap(m_id);
 }
 
+std::shared_ptr<Texture2D> Texture2D::CreateDeferred(int width, int height, std::vector<uint8_t> pixels) {
+    std::shared_ptr<Texture2D> texture(new Texture2D());
+    texture->m_width = width;
+    texture->m_height = height;
+    texture->m_colorSpace = TextureColorSpace::Linear;
+    pixels.resize(static_cast<size_t>(width) * height * 4);  // vazia não seria "pendente"
+    texture->m_pending = std::move(pixels);
+    return texture;
+}
+
+void Texture2D::Upload() const {
+    const auto largest = static_cast<unsigned>(std::max(m_width, m_height));
+    m_levels = static_cast<int>(std::bit_width(largest));
+    glCreateTextures(GL_TEXTURE_2D, 1, &m_id);
+    glTextureStorage2D(m_id, m_levels, GL_RGBA8, m_width, m_height);
+    TrackGpuMemory(GpuObject::Texture, m_id, GpuMemoryKind::Textures, GpuTextureBytes(GL_RGBA8, m_width, m_height, 1, m_levels));
+    glTextureSubImage2D(m_id, 0, 0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, m_pending.data());
+    glTextureParameteri(m_id, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTextureParameteri(m_id, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTextureParameteri(m_id, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(m_id, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenerateTextureMipmap(m_id);
+    std::vector<uint8_t>().swap(m_pending);
+}
+
 Texture2D::~Texture2D() {
+    if (!m_id) return;  // adiada e nunca usada: nada no OpenGL
     if (m_linearView) glDeleteTextures(1, &m_linearView);  // vista da mesma memória: não conta à parte
     UntrackGpuMemory(GpuObject::Texture, m_id);
     glDeleteTextures(1, &m_id);
 }
 
 unsigned int Texture2D::LinearHandle() const {
-    if (m_colorSpace == TextureColorSpace::Linear) return m_id;
+    if (m_colorSpace == TextureColorSpace::Linear) return NativeHandle();
     if (!m_linearView) {
         // glTextureView exige um nome ainda sem tipo (glGenTextures, não glCreateTextures).
         glGenTextures(1, &m_linearView);
@@ -52,7 +78,7 @@ unsigned int Texture2D::LinearHandle() const {
 }
 
 void Texture2D::Bind(unsigned int unit) const {
-    glBindTextureUnit(unit, m_id);
+    glBindTextureUnit(unit, NativeHandle());
 }
 
 std::shared_ptr<Texture2D> Texture2D::CreateSolid(glm::u8vec4 color) {

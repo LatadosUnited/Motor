@@ -66,6 +66,7 @@ constexpr GLuint kShadowsBinding = 3;  // lit.frag
 // Unidades de textura do lit.frag.
 constexpr GLuint kUnitAlbedo = 0, kUnitNormal = 1, kUnitMetalRough = 2, kUnitOcclusion = 3, kUnitEmissive = 4;
 constexpr GLuint kUnitCascades = 5, kUnitCubes = 6, kUnitPrefiltered = 7, kUnitBrdf = 8;
+constexpr GLuint kUnitTerrainWeights = 9, kUnitTerrainLayers = 10;  // 10 a 13: as 4 camadas (lit.frag com TERRAIN)
 
 LightData Pack(const Light& light, int cubeLayer, bool cascades, const glm::vec3& origin) {
     const float len = glm::length(light.direction);
@@ -158,13 +159,17 @@ void Renderer::LoadLitShaders(ShadowQuality cascadeFilter) {
     // Materiais sem nenhum mapa (o comum): sem as leituras de textura no shader. Um if pela uniform não basta (o
     // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
     m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define NO_MAPS\n");
+    m_terrainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define TERRAIN\n");
     auto findLitUniforms = [](Shader& shader) {
         return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uColor"),
-                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
+                           shader.Uniform("uPbr"), shader.Uniform("uEmissive"),
+                           shader.Uniform("uLayerColors"), shader.Uniform("uLayerTiling"),
+                           shader.Uniform("uTerrainBlock")};
     };
     m_litUniforms = findLitUniforms(*m_litShader);
     m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
     m_litPlainUniforms = findLitUniforms(*m_litPlainShader);
+    m_terrainUniforms = findLitUniforms(*m_terrainShader);
     m_litShadowFilter = cascadeFilter;
 }
 
@@ -429,10 +434,10 @@ void Renderer::PrepareItems(const Frustum& view) {
                 }
             }
             // Ordem de desenho: (shader, material, malha) para a cena e (shader, recorte/alfa, malha) para as sombras.
-            // Shader: 0 = lit, 1 = com pele, 2 = lit sem mapas.
+            // Shader: 0 = lit, 1 = com pele, 2 = lit sem mapas, 3 = terreno com camadas.
             const MaterialParams& params = m_materialIds[item.materialId].params;
             const bool plain = params.alphaMode.z == 0.0f && params.pbr.w == 0.0f;
-            const uint32_t shader = item.skinned ? 1u : plain ? 2u : 0u;
+            const uint32_t shader = item.skinned ? 1u : params.terrain ? 3u : plain ? 2u : 0u;
             m_sceneKeys[i] = {shader, item.materialId, item.mesh};
             m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
             const bool inView = item.retained ? item.cameraVisible : view.Intersects(item.bounds);
@@ -656,7 +661,7 @@ void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches, size_t first
     // uniforms são de cada programa, por isso a lembrança vale para um shader só.
     const Shader* paramsShader = nullptr;
     const MaterialParams* lastParams = nullptr;
-    GLuint lastTexture[5] = {0, 0, 0, 0, 0};
+    GLuint lastTexture[kUnitTerrainLayers + 4] = {};
     auto bindTexture = [&](GLuint unit, GLuint texture) {
         if (lastTexture[unit] == texture) return;
         lastTexture[unit] = texture;
@@ -680,8 +685,14 @@ void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches, size_t first
             }
         }
         const uint32_t variant = key.shader;
-        Shader& shader = variant == 1 ? *m_skinnedShader : variant == 2 ? *m_litPlainShader : *m_litShader;
-        const LitUniforms& u = variant == 1 ? m_skinnedUniforms : variant == 2 ? m_litPlainUniforms : m_litUniforms;
+        Shader& shader = variant == 1   ? *m_skinnedShader
+                         : variant == 2 ? *m_litPlainShader
+                         : variant == 3 ? *m_terrainShader
+                                        : *m_litShader;
+        const LitUniforms& u = variant == 1   ? m_skinnedUniforms
+                               : variant == 2 ? m_litPlainUniforms
+                               : variant == 3 ? m_terrainUniforms
+                                              : m_litUniforms;
         if (bound != &shader) {
             shader.Bind();
             bound = &shader;
@@ -701,6 +712,16 @@ void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches, size_t first
             bindTexture(kUnitMetalRough, (params.metallicRoughnessMap ? *params.metallicRoughnessMap : white).LinearHandle());
             bindTexture(kUnitOcclusion, (params.occlusionMap ? *params.occlusionMap : white).LinearHandle());
             bindTexture(kUnitEmissive, (params.emissiveMap ? *params.emissiveMap : white).NativeHandle());
+            if (const TerrainLayers* layers = params.terrain) {
+                const glm::mat4 colors(layers->color[0], layers->color[1], layers->color[2], layers->color[3]);
+                shader.SetMat4(u.layerColors, colors);
+                shader.SetVec4(u.layerTiling, layers->tiling);
+                shader.SetVec4(u.terrainBlock, layers->block);
+                bindTexture(kUnitTerrainWeights, (layers->weights ? *layers->weights : white).NativeHandle());
+                for (GLuint i = 0; i < 4; ++i) {
+                    bindTexture(kUnitTerrainLayers + i, (layers->albedo[i] ? *layers->albedo[i] : white).NativeHandle());
+                }
+            }
             lastParams = &params;
             paramsShader = &shader;
         }

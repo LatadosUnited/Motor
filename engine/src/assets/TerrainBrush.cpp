@@ -10,6 +10,7 @@ TerrainStroke::TerrainStroke(std::shared_ptr<TerrainData> data, const TerrainBru
     : m_data(std::move(data)), m_brush(brush) {
     m_brush.radius = std::clamp(m_brush.radius, TerrainBrush::kMinRadius, TerrainBrush::kMaxRadius);
     m_brush.strength = std::clamp(m_brush.strength, 0.0f, 1.0f);
+    m_brush.layer = std::clamp(m_brush.layer, 0, TerrainBrush::kLayers - 1);
 }
 
 int TerrainStroke::Apply(float x, float z, float dt) {
@@ -29,6 +30,29 @@ int TerrainStroke::Apply(float x, float z, float dt) {
     // ou longos: 1 - e^(-taxa * dt)).
     const float step = TerrainBrush::kRaiseSpeed * m_brush.strength * dt;
     const float blend = 1.0f - std::exp(-TerrainBrush::kBlendRate * m_brush.strength * dt);
+    if (m_brush.mode == TerrainBrushMode::Paint) {
+        // Os pesos vão para a camada escolhida (os outros diminuem juntos: a soma continua 1).
+        const float paint = 1.0f - std::exp(-TerrainBrush::kPaintRate * m_brush.strength * dt);
+        glm::vec4 target(0.0f);
+        target[m_brush.layer] = 1.0f;
+        int changed = 0;
+        for (int gz = gz0; gz <= gz1; ++gz) {
+            for (int gx = gx0; gx <= gx1; ++gx) {
+                const float dx = static_cast<float>(gx) * spacing - x, dz = static_cast<float>(gz) * spacing - z;
+                const float distance = std::sqrt(dx * dx + dz * dz);
+                if (distance >= radius) continue;
+                const auto current = data.Weights(gx, gz);
+                if (!current) continue;
+                const float k = paint * 0.5f * (1.0f + std::cos(std::numbers::pi_v<float> * distance / radius));
+                const glm::vec4 next = *current + (target - *current) * k;
+                if (next == *current) continue;
+                m_weightsBefore.try_emplace({gz, gx}, *current);
+                data.SetWeights(gx, gz, next);
+                ++changed;
+            }
+        }
+        return changed;
+    }
 
     // Primeiro calcula tudo e depois grava: suavizar lê as vizinhas como estavam antes deste passo.
     struct Pending {
@@ -63,6 +87,7 @@ int TerrainStroke::Apply(float x, float z, float dt) {
                     break;
                 }
                 case TerrainBrushMode::Flatten: height += (*m_flattenHeight - height) * blend * weight; break;
+                case TerrainBrushMode::Paint: break;  // tratado acima
             }
             if (height != *current) pending.push_back({gx, gz, height});
         }
@@ -74,19 +99,23 @@ int TerrainStroke::Apply(float x, float z, float dt) {
     return static_cast<int>(pending.size());
 }
 
-std::vector<TerrainSampleChange> TerrainStroke::Finish() const {
-    std::vector<TerrainSampleChange> changes;
-    if (!m_data) return changes;
-    changes.reserve(m_before.size());
+TerrainEdit TerrainStroke::Finish() const {
+    TerrainEdit edit;
+    if (!m_data) return edit;
     for (const auto& [key, before] : m_before) {
         const auto after = m_data->Sample(key.second, key.first);
-        if (after && *after != before) changes.push_back({key.second, key.first, before, *after});
+        if (after && *after != before) edit.heights.push_back({key.second, key.first, before, *after});
     }
-    return changes;
+    for (const auto& [key, before] : m_weightsBefore) {
+        const auto after = m_data->Weights(key.second, key.first);
+        if (after && *after != before) edit.weights.push_back({key.second, key.first, before, *after});
+    }
+    return edit;
 }
 
-void ApplyTerrainChanges(TerrainData& data, const std::vector<TerrainSampleChange>& changes, bool after) {
-    for (const TerrainSampleChange& c : changes) data.SetSample(c.gx, c.gz, after ? c.after : c.before);
+void ApplyTerrainEdit(TerrainData& data, const TerrainEdit& edit, bool after) {
+    for (const TerrainSampleChange& c : edit.heights) data.SetSample(c.gx, c.gz, after ? c.after : c.before);
+    for (const TerrainWeightChange& c : edit.weights) data.SetWeights(c.gx, c.gz, after ? c.after : c.before);
 }
 
 } // namespace motor

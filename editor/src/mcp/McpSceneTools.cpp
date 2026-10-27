@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <format>
 #include <optional>
 #include <string>
@@ -369,11 +370,13 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter&
         .name = "terrain_brush",
         .description = "Passa um pincel no terreno de uma entidade, como arrastar no Viewport com o pincel ligado: "
                        "uma pincelada só (um passo de desfazer, marca a cena como não salva). mode: raise (subir), "
-                       "lower (baixar), smooth (suavizar) ou flatten (nivelar na altura do primeiro ponto). points: "
+                       "lower (baixar), smooth (suavizar), flatten (nivelar na altura do primeiro ponto) ou paint "
+                       "(pintar a camada `layer`, de 1 a 4, com as texturas e cores do componente). points: "
                        "pontos [x, z] do mundo, na ordem do arraste; cada um recebe o pincel por `seconds`. "
                        "Devolve quantas amostras mudaram e a altura (no mundo) sob cada ponto depois.",
         .inputSchema = Schema({{"entity", kEntityProp},
-                               {"mode", {{"type", "string"}, {"enum", {"raise", "lower", "smooth", "flatten"}}}},
+                               {"mode", {{"type", "string"}, {"enum", {"raise", "lower", "smooth", "flatten", "paint"}}}},
+                               {"layer", Prop("integer", "paint: camada de 1 a 4 (padrão: a do Inspector)")},
                                {"points", {{"type", "array"},
                                            {"items", {{"type", "array"}, {"items", {{"type", "number"}}},
                                                       {"minItems", 2}, {"maxItems", 2}}},
@@ -391,7 +394,8 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter&
             if (!data) throw ToolError(std::format("o Terreno de {} não tem arquivo de alturas", e.name));
             static const std::pair<const char*, TerrainBrushMode> modes[] = {
                 {"raise", TerrainBrushMode::Raise}, {"lower", TerrainBrushMode::Lower},
-                {"smooth", TerrainBrushMode::Smooth}, {"flatten", TerrainBrushMode::Flatten}};
+                {"smooth", TerrainBrushMode::Smooth}, {"flatten", TerrainBrushMode::Flatten},
+                {"paint", TerrainBrushMode::Paint}};
             const std::string mode = args.value("mode", "");
             auto it = std::find_if(std::begin(modes), std::end(modes), [&](const auto& m) { return mode == m.first; });
             if (it == std::end(modes)) throw ToolError("mode inválido: " + mode);
@@ -399,6 +403,8 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter&
             brush.mode = it->second;
             brush.radius = args.value("radius", brush.radius);
             brush.strength = args.value("strength", brush.strength);
+            brush.layer = args.value("layer", brush.layer + 1) - 1;
+            if (brush.layer < 0 || brush.layer >= TerrainBrush::kLayers) throw ToolError("layer vai de 1 a 4");
             const float seconds = args.value("seconds", 0.1f);
             if (seconds <= 0.0f) throw ToolError("seconds tem de ser maior que zero");
 
@@ -412,7 +418,7 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter&
                 local.emplace_back(p.x, p.z);
                 stroke.Apply(p.x, p.z, seconds);
             }
-            const auto changes = stroke.Finish();
+            const TerrainEdit changes = stroke.Finish();
             ctx.PushTerrainStroke(stroke);
             Json heights = Json::array();
             for (const glm::vec2& p : local) {
@@ -422,7 +428,13 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter&
                     heights.push_back(nullptr);  // fora do terreno
                 }
             }
-            return ToolResult::Data({{"changed", changes.size()}, {"heights", std::move(heights)}});
+            Json weights = Json::array();  // pesos das camadas 1 a 4 sob cada ponto
+            for (const glm::vec2& p : local) {
+                const float spacing = data->Spacing();
+                const auto w = data->Weights(static_cast<int>(std::lround(p.x / spacing)), static_cast<int>(std::lround(p.y / spacing)));
+                weights.push_back(w ? Json::array({w->x, w->y, w->z, w->w}) : Json(nullptr));
+            }
+            return ToolResult::Data({{"changed", changes.Size()}, {"heights", std::move(heights)}, {"weights", std::move(weights)}});
         },
     });}
 

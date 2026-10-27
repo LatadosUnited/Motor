@@ -38,6 +38,7 @@ size_t MaterialKeyHash::operator()(const MaterialKey& key) const {
     for (const Texture2D* t : {p.albedo, p.normalMap, p.metallicRoughnessMap, p.occlusionMap, p.emissiveMap}) {
         Combine(seed, std::hash<const void*>{}(t));
     }
+    Combine(seed, std::hash<const void*>{}(p.terrain));
     return seed;
 }
 

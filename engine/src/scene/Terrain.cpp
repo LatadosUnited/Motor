@@ -47,6 +47,21 @@ bool SaveTerrains(const Scene& scene, std::string* error) {
     return ok;
 }
 
+TerrainLayers Terrain::Layers() const {
+    const Material& base = Resolved();
+    TerrainLayers layers;
+    layers.albedo[0] = base.albedo;
+    layers.color[0] = base.color;
+    layers.tiling[0] = tiling;
+    const TerrainLayer* others[3] = {&layer2, &layer3, &layer4};
+    for (int i = 0; i < 3; ++i) {
+        layers.albedo[i + 1] = others[i]->texture;
+        layers.color[i + 1] = others[i]->color;
+        layers.tiling[i + 1] = others[i]->tiling;
+    }
+    return layers;
+}
+
 void TerrainRef::SetData(std::shared_ptr<TerrainData> data) const {
     m_data = std::move(data);
     m_loaded = file;
@@ -96,14 +111,28 @@ CustomFieldType FieldTraits<TerrainRef>::Describe() {
             }};
 }
 
+namespace {
+const FieldOptions kTilingOptions{.min = 0.1f, .max = 1000.0f, .tooltip = "Metros por repetição da textura"};
+} // namespace
+
 MOTOR_COMPONENT_MODULE(Terrain) {
     registry.Register<Terrain>("Terrain", "Terreno")
         .Field("terrain", "Terreno", &Terrain::terrain, {.tooltip = "Arquivo .mterrain com as alturas, um arquivo por bloco"})
         .Field("material", "Material", &Terrain::sharedMaterial,
                {.tooltip = "Asset de material (.mmat). Vazio = cor e textura abaixo"})
-        .FieldRef("texture", "Textura", [](Terrain& t) -> auto& { return t.material.albedo; },
-                  {.tooltip = "Repete a cada metro"})
-        .FieldRef("color", "Cor", [](Terrain& t) -> auto& { return t.material.color; }, {.color = true})
+        .FieldRef("texture", "Camada 1: textura", [](Terrain& t) -> auto& { return t.material.albedo; },
+                  {.tooltip = "Camada 1 (onde nada foi pintado): a textura do material"})
+        .FieldRef("color", "Camada 1: cor", [](Terrain& t) -> auto& { return t.material.color; }, {.color = true})
+        .Field("tiling", "Camada 1: escala", &Terrain::tiling, kTilingOptions)
+        .FieldRef("layer2Texture", "Camada 2: textura", [](Terrain& t) -> auto& { return t.layer2.texture; })
+        .FieldRef("layer2Color", "Camada 2: cor", [](Terrain& t) -> auto& { return t.layer2.color; }, {.color = true})
+        .FieldRef("layer2Tiling", "Camada 2: escala", [](Terrain& t) -> auto& { return t.layer2.tiling; }, kTilingOptions)
+        .FieldRef("layer3Texture", "Camada 3: textura", [](Terrain& t) -> auto& { return t.layer3.texture; })
+        .FieldRef("layer3Color", "Camada 3: cor", [](Terrain& t) -> auto& { return t.layer3.color; }, {.color = true})
+        .FieldRef("layer3Tiling", "Camada 3: escala", [](Terrain& t) -> auto& { return t.layer3.tiling; }, kTilingOptions)
+        .FieldRef("layer4Texture", "Camada 4: textura", [](Terrain& t) -> auto& { return t.layer4.texture; })
+        .FieldRef("layer4Color", "Camada 4: cor", [](Terrain& t) -> auto& { return t.layer4.color; }, {.color = true})
+        .FieldRef("layer4Tiling", "Camada 4: escala", [](Terrain& t) -> auto& { return t.layer4.tiling; }, kTilingOptions)
         .FieldRef("roughness", "Rugosidade", [](Terrain& t) -> auto& { return t.material.roughness; },
                   {.slider = true, .min = 0.0f, .max = 1.0f, .tooltip = "0 = espelho, 1 = fosco"})
         .Field("shadows", "Sombra", &Terrain::shadows);

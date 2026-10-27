@@ -60,7 +60,8 @@ namespace motor {
 //     (ComponentRegistry::Register constrói na memória do BlockPool).
 // 23: Fase 28: componente Terrain; os estáticos guardados na Scene ganham a origem de cada objeto (malha e matriz, para
 //     o Raycast) e a versão dos terrenos, mudando o tamanho de Scene (MarkRenderDirty é inline).
-inline constexpr int kScriptApiVersion = 23;
+// 24: Fase 28: pintura do terreno; Material ganhou `terrain` (camadas) e Texture2D os pixels da textura adiada.
+inline constexpr int kScriptApiVersion = 24;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

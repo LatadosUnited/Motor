@@ -118,11 +118,11 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
 }
 
 void EditorContext::PushTerrainStroke(const motor::TerrainStroke& stroke) {
-    auto changes = std::make_shared<const std::vector<motor::TerrainSampleChange>>(stroke.Finish());
-    if (changes->empty() || !pushSceneUndo) return;
+    auto edit = std::make_shared<const motor::TerrainEdit>(stroke.Finish());
+    if (edit->Empty() || !pushSceneUndo) return;
     std::shared_ptr<motor::TerrainData> data = stroke.Data();
-    pushSceneUndo([data, changes] { motor::ApplyTerrainChanges(*data, *changes, false); },
-                  [data, changes] { motor::ApplyTerrainChanges(*data, *changes, true); });
+    pushSceneUndo([data, edit] { motor::ApplyTerrainEdit(*data, *edit, false); },
+                  [data, edit] { motor::ApplyTerrainEdit(*data, *edit, true); });
 }
 
 void EditorContext::CreateTerrainFile(motor::Entity& e) {

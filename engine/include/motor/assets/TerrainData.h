@@ -10,8 +10,12 @@
 // Arquivos: "Ilha.mterrain" (cabeçalho JSON: tamanho do bloco, resolução e a lista de blocos) e a pasta
 // "Ilha.blocos" ao lado, com um arquivo por bloco ("3_-2.mtbloco": as alturas, binário). A pasta acompanha o
 // .mterrain no painel Projeto e na exportação (AssetCompanions, AssetLoaders.h).
+//
+// Pintura (Tarefa 10): cada amostra tem também os pesos das 4 camadas de textura (somam 1; a camada 1 inteira no
+// começo), gravados no arquivo do bloco depois das alturas, um byte por camada.
 
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <compare>
 #include <cstdint>
@@ -25,6 +29,7 @@
 namespace motor {
 
 class Mesh;
+class Texture2D;
 
 inline constexpr const char* kTerrainFileExtension = ".mterrain";
 inline constexpr const char* kTerrainBlocksFolderSuffix = ".blocos";
@@ -60,6 +65,14 @@ public:
     void SetSample(int gx, int gz, float height);
     // Alturas de um bloco, linha a linha (z, depois x): resolution * resolution valores.
     const std::vector<float>* BlockHeights(TerrainBlockKey key) const;
+
+    // Pesos das 4 camadas na amostra (gx, gz), como Sample e SetSample (a borda é dos dois blocos). SetWeights
+    // normaliza (soma 1; tudo zero vira a camada 1) e não refaz a malha, só a textura dos pesos.
+    std::optional<glm::vec4> Weights(int gx, int gz) const;
+    void SetWeights(int gx, int gz, const glm::vec4& weights);
+    // Pesos de um bloco como textura RGBA (resolution x resolution, uma amostra por texel), para o renderer
+    // (TerrainLayers::weights). Criada sem OpenGL (Texture2D::CreateDeferred) e refeita só quando os pesos mudam.
+    std::shared_ptr<Texture2D> BlockWeights(TerrainBlockKey key) const;
 
     // Altura no ponto (x, z) do espaço do terreno, interpolada entre as 4 amostras; nullopt fora dos blocos.
     std::optional<float> HeightAt(float x, float z) const;
@@ -102,6 +115,10 @@ private:
         uint64_t version = 1;
         mutable std::shared_ptr<Mesh> mesh;
         mutable uint64_t meshVersion = 0;
+        std::vector<glm::vec4> weights;  // mesma ordem das alturas
+        uint64_t weightsVersion = 1;
+        mutable std::shared_ptr<Texture2D> weightsTexture;
+        mutable uint64_t weightsTextureVersion = 0;
     };
 
     Block* Find(TerrainBlockKey key);

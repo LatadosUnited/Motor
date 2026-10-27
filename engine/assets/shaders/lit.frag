@@ -55,6 +55,34 @@ layout(binding = 6) uniform samplerCubeArrayShadow uPointShadows;
 layout(binding = 7) uniform samplerCube uPrefiltered;
 layout(binding = 8) uniform sampler2D uBrdfLut;
 
+#ifdef TERRAIN
+// Terreno com camadas (Fase 28, motor::TerrainLayers): pesos RGBA do bloco (uma amostra por vértice) e as 4 texturas.
+// fs.uv são os metros do terreno.
+layout(binding = 9) uniform sampler2D uTerrainWeights;  // linear
+layout(binding = 10) uniform sampler2D uLayer0;         // sRGB
+layout(binding = 11) uniform sampler2D uLayer1;
+layout(binding = 12) uniform sampler2D uLayer2;
+layout(binding = 13) uniform sampler2D uLayer3;
+uniform mat4 uLayerColors;   // coluna i = cor (sRGB) da camada i
+uniform vec4 uLayerTiling;   // metros por repetição da textura de cada camada
+uniform vec4 uTerrainBlock;  // xy = canto do bloco (metros), z = tamanho do bloco, w = amostras por lado
+
+vec3 LayerColor(int i, vec4 texel) {
+    return pow(uLayerColors[i].rgb, vec3(2.2)) * texel.rgb;
+}
+
+vec3 TerrainAlbedo() {
+    // A amostra j do bloco fica no centro do texel j: (j + 0,5) / amostras.
+    vec2 local = (fs.uv - uTerrainBlock.xy) / uTerrainBlock.z * (uTerrainBlock.w - 1.0);
+    vec4 w = texture(uTerrainWeights, (local + 0.5) / uTerrainBlock.w);
+    w /= max(dot(w, vec4(1.0)), 1e-4);
+    // As 4 leituras sempre: um if pelo peso deixaria a escolha do mipmap indefinida (derivadas em fluxo divergente).
+    vec4 tiling = max(uLayerTiling, vec4(1e-3));
+    return w.x * LayerColor(0, texture(uLayer0, fs.uv / tiling.x)) + w.y * LayerColor(1, texture(uLayer1, fs.uv / tiling.y)) +
+           w.z * LayerColor(2, texture(uLayer2, fs.uv / tiling.z)) + w.w * LayerColor(3, texture(uLayer3, fs.uv / tiling.w));
+}
+#endif
+
 uniform vec4 uColor;     // sRGB
 uniform vec4 uPbr;       // x = metal, y = rugosidade, z = specular, w = força do mapa de normal (0 = sem mapa)
 uniform vec4 uEmissive;  // rgb = emissão (linear, já com a intensidade), a = força da oclusão
@@ -159,7 +187,9 @@ void main() {
     int maps = int(uAlphaMode.z + 0.5);
     vec4 tint = vec4(pow(uColor.rgb, vec3(2.2)), uColor.a);
     vec4 albedo = tint;
-#ifndef NO_MAPS
+#ifdef TERRAIN
+    albedo = vec4(TerrainAlbedo(), 1.0);  // a cor e a textura do material já são a camada 1
+#elif !defined(NO_MAPS)
     if ((maps & kMapAlbedo) != 0) albedo *= texture(uAlbedo, fs.uv);
 #endif
     if (uAlphaMode.x == 1.0 && albedo.a < uAlphaMode.y) discard;  // recorte (folhas, grades)

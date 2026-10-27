@@ -442,15 +442,17 @@ entity.Remove<Girar>();
 - **Terreno** (Fase 28): mapa de altura em blocos de 32 m (33 x 33 alturas, 1 m entre elas), num asset
   `.mterrain` (cabeçalho) com a pasta `.blocos` ao lado (um arquivo `x_z.mtbloco` por bloco: o mundo grande carrega
   um bloco sem os outros). O painel Projeto move, copia e manda para a Lixeira a pasta junto com o `.mterrain`, e a
-  exportação a leva. Campos: Terreno (o arquivo), Material, Textura (repete a cada metro), Cor, Rugosidade e Sombra.
+  exportação a leva. Campos: Terreno (o arquivo), Material, as 4 camadas (textura, cor e escala: metros por
+  repetição; a camada 1 é a textura e a cor do material), Rugosidade e Sombra.
   Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta. Entidade >
   Terreno (ou `entity_create` com `kind: "terrain"` no MCP) cria um plano de 128 x 128 m em `Assets/Terrenos`.
-  **Pincéis:** no Inspector do Terreno, escolha Subir, Baixar, Suavizar ou Nivelar (na altura de onde a pincelada
-  começou), o raio e a força; no Viewport, o círculo segue o mouse sobre o terreno selecionado e arrastar com o botão
+  **Pincéis:** no Inspector do Terreno, escolha Subir, Baixar, Suavizar, Nivelar (na altura de onde a pincelada
+  começou) ou Pintar (a camada 1 a 4; sem textura, as camadas 2 a 4 já vêm com cores de terra, rocha e areia), o raio
+  e a força; no Viewport, o círculo segue o mouse sobre o terreno selecionado e arrastar com o botão
   esquerdo pinta (Selecionar ou Esc no Viewport volta ao clique que seleciona; o gizmo some enquanto o pincel está
   ligado). Cada pincelada é um passo de desfazer e marca a cena como não salva; salvar a cena grava só os blocos
   mudados. Pelo MCP, `terrain_brush`. Dados e arquivos em `motor/assets/TerrainData.h`, pincéis em
-  `motor/assets/TerrainBrush.h`; pintura, física e LOD vêm nas próximas tarefas.
+  `motor/assets/TerrainBrush.h`; física e LOD vêm nas próximas tarefas.
 
 ### Renderização (Fase 7)
 
@@ -853,7 +855,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Grupo | Ferramentas |
   |---|---|
   | Situação | `editor_status`, `scene_tree`, `entity_get` (no Play, também o estado do jogo: clipe do Animator, no chão, velocidade), `component_types`, `log_read`, `events_read` (o que mudou no editor: seleção, cena, Play, scripts), `docs_read` (documentação de scripts desta versão; o `editor_status` mostra em `script_reference` as pastas da documentação e dos headers do SDK) |
-  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `terrain_brush` (uma pincelada no terreno por uma lista de pontos), `undo`, `redo` |
+  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `terrain_brush` (uma pincelada no terreno por uma lista de pontos: relevo ou pintura de uma camada), `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `game_mouse` (movimento, botões e roda), `game_text` (texto digitado), `game_gamepad` (até 4 controles), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
 | Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia), `ai_perception` (olhos, cone e alcances de cada Percepção e os alvos; no Play, quem vê, o que ouviu e o que lembra) |

@@ -125,6 +125,7 @@ private:
     // Posições dos uniforms por desenho do lit.frag, resolvidas uma vez por shader (lit e com pele).
     struct LitUniforms {
         int alphaMode = -1, color = -1, pbr = -1, emissive = -1;
+        int layerColors = -1, layerTiling = -1, terrainBlock = -1;  // só na variante TERRAIN
     };
 
     void LoadLitShaders(ShadowQuality cascadeFilter);
@@ -146,8 +147,9 @@ private:
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
     std::unique_ptr<Shader> m_litPlainShader; // lit.frag com NO_MAPS: materiais sem nenhum mapa
+    std::unique_ptr<Shader> m_terrainShader;  // lit.frag com TERRAIN: blocos do terreno com camadas (Fase 28)
     std::unique_ptr<Shader> m_unlitShader;
-    LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms;
+    LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms, m_terrainUniforms;
     ShadowQuality m_litShadowFilter = ShadowQuality::High;  // SHADOW_FILTER dos shaders acima
     int m_unlitModel = -1, m_unlitColor = -1;
     std::shared_ptr<Texture2D> m_whiteTexture;

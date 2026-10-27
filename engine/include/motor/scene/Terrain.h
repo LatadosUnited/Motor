@@ -2,7 +2,8 @@
 
 // Terreno (Fase 28): liga um arquivo .mterrain (mapa de altura em blocos, motor/assets/TerrainData.h) à entidade. A
 // cena desenha cada bloco como um objeto estático (Scene::SubmitTo), na posição da entidade, e o Raycast do editor
-// acerta os blocos. Pincéis, pintura, física e LOD vêm nas próximas tarefas da fase.
+// acerta os blocos. Pintura (Tarefa 10): até 4 camadas de textura, misturadas pelos pesos de cada amostra do
+// terreno; a camada 1 é a textura e a cor do material, as outras ficam no componente. Física e LOD vêm depois.
 
 #include "motor/assets/TerrainData.h"
 #include "motor/renderer/Material.h"
@@ -39,13 +40,27 @@ private:
     mutable std::filesystem::path m_loaded;  // de onde veio m_data: outro `file` abre de novo
 };
 
+// Camada de textura pintável (2 a 4; a 1 é o material).
+struct TerrainLayer {
+    std::shared_ptr<Texture2D> texture;  // nula = só a cor
+    glm::vec4 color{1.0f};
+    float tiling = 4.0f;  // metros por repetição da textura
+};
+
 struct Terrain {
     TerrainRef terrain;
     std::shared_ptr<Material> sharedMaterial;  // nulo = usa `material`
     Material material = DefaultMaterial();
+    float tiling = 4.0f;  // camada 1: metros por repetição da textura do material
+    // Cores padrão que se distinguem sem textura: terra, rocha e areia.
+    TerrainLayer layer2{nullptr, {0.42f, 0.32f, 0.22f, 1.0f}};
+    TerrainLayer layer3{nullptr, {0.48f, 0.47f, 0.45f, 1.0f}};
+    TerrainLayer layer4{nullptr, {0.80f, 0.74f, 0.55f, 1.0f}};
     ShadowCasting shadows = ShadowCasting::On;
 
     const Material& Resolved() const { return sharedMaterial ? *sharedMaterial : material; }
+    // As 4 camadas como o renderer recebe, sem os pesos e o canto do bloco (a cena põe os de cada bloco).
+    TerrainLayers Layers() const;
 
     static Material DefaultMaterial() {
         Material m;
