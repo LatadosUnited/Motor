@@ -289,6 +289,23 @@ e a renderização relativa à câmera são também a base do streaming de célu
     antes 27,1 (GPU 16,6-16,9: Cena HDR 11,4, água com a cópia 4,4, pós 4,2, sombras 0,75); **sem MSAA 14,5 e 14,5
     ms (~69 FPS)**, antes 21,4 (GPU 11,4-11,5: Cena HDR 7,7, água 3,2, pós 2,8). Cena de referência:
     22,1 e 22,1 ms (GPU 18,1; a mesma de antes).
+- Segunda rodada, para os 60 FPS com MSAA 4x (27/10/2026, `e1850a3`):
+  - Sem FXAA com MSAA (`PostProcess::Apply`): as bordas já saem suavizadas, e o FXAA custava ~1,1 ms. Vale também no
+    editor; a caixa do FXAA no painel Cena só age sem MSAA.
+  - Janela do Player sem amostras (`player/src/main.cpp`): a cena tem o próprio alvo com MSAA, e a janela só recebe
+    o pós e o HUD (texto pelo SDF). Com as 4 amostras de antes, o tone mapping que escreve na janela custava 1,3 ms
+    em vez de 0,8 (medido nas subzonas, nas duas cenas).
+  - Cópia para a água só do retângulo da tela que as águas visíveis cobrem (os cantos das caixas projetados, com a
+    folga da refração; tela toda se um canto está atrás da câmera). No "Terreno Ação" o mar de 1 km cobre quase a
+    tela toda e quase não muda (1,15 → 1,1 ms); conferido pelo `viewport_capture` com a água encolhida para 60 m
+    (sem restos de outros quadros na borda) e na praia de antes.
+  - Tentados e desfeitos, sem ganho: grade da água de 64 x 64 (o custo dela não está nos vértices) e o terreno sem o
+    reflexo especular do céu (Cena HDR igual).
+  - Resultado: **MSAA 4x 18,3-19,0 ms (~53-54 FPS)**, antes 19,1-19,5 (GPU 14,9-15,4: Cena HDR 11,1-11,3, água com a
+    cópia 4,2-4,3, pós 2,9-3,0); sem MSAA 14,1-14,7 ms. Cena de referência 21,9-22,3 ms (pós de 3,7 para 2,8 ms).
+    Medidas com a máquina ora calma ora carregada (outros programas): rodadas descartadas quando até a CPU do Render,
+    que não mudou, subia junto. `test_desempenho` falhou duas vezes em testes de cena que não passam pelo renderer
+    (`cena_montar`, `cena_copiar`, `cena_ler`, um diferente a cada vez) e passou na terceira.
 
 ## Limitações
 
@@ -328,7 +345,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
   Água (Tarefa 13): sem reflexo dos objetos e do terreno (só o céu; reflexo em tela ou planar fica para depois); sem
   sombra na água; as ondas andam pelo relógio do GLFW, também com o jogo pausado, e não mexem em nada da física (sem
   empuxo: `WaveOffset` está pronto para quem quiser boias por script). A cópia da cena custa um blit de cor por
-  quadro com água na tela, da tela inteira (copiar só o retângulo da água na tela ainda não foi feito). Água
+  quadro com água na tela (só o retângulo que ela cobre, desde a otimização; um mar grande cobre quase tudo). Água
   maior que 256 m tem células maiores que 1 m (ondas curtas ficam serrilhadas de perto). A espuma vem da profundidade
   até o fundo, sem espuma nas cristas. Visto de baixo d'água só há um tom escuro, sem efeito de mergulho. O clique no
   viewport não seleciona a água (sem raio). Não medido no Player (a meta de 60 FPS com 1 km de terreno e água é do
@@ -337,13 +354,15 @@ e a renderização relativa à câmera são também a base do streaming de célu
   do `water_info` é qualquer coisa acima da superfície no ponto (terreno, cubo ou outra entidade com colisão de
   raio), não só o terreno. O tempo das ondas é o pedido (0 por padrão), não o relógio do renderer, então a
   superfície devolvida não é a da tela naquele instante.
-- Meta de 60 FPS com 1 km de terreno e água no Player (HD 530): alcançada **sem MSAA** (14,5 ms, ~69 FPS), **não
-  com MSAA 4x** (19,1-19,5 ms, ~52 FPS), depois da otimização da GPU. Com MSAA o gargalo segue na GPU: o terreno na
-  Cena HDR (~11 ms, o preenchimento com 4 amostras), a água com a cópia (4,4 ms) e o pós (4,2 ms: FXAA, resolve,
-  bloom e tone mapping; o FXAA roda mesmo com MSAA). Caminhos: pular o FXAA com MSAA, copiar para a água só o
-  retângulo dela na tela, MSAA 2x como padrão em GPU integrada. O quadro tem ~2,5-3 ms além da GPU medida
-  (composição da janela, provavelmente). Medidas com ±1 ms de ruído entre rodadas iguais (programas abertos na
-  máquina). Gravar 1024 blocos novos leva 12,5 s (um `WriteFileAtomic` por bloco).
+- Meta de 60 FPS com 1 km de terreno e água no Player (HD 530): alcançada **sem MSAA** (14,1-14,7 ms, ~69 FPS), **não
+  com MSAA 4x** (18,3-19,0 ms, ~53 FPS), depois das duas rodadas de otimização da GPU. Com MSAA o gargalo segue na
+  GPU: o terreno na Cena HDR (~11 ms contra 7,8 sem MSAA: o preenchimento com 4 amostras), a água (~3 ms além da
+  cópia, o mesmo com um shader trivial ou menos vértices: é ler a profundidade com amostras na tela toda) e o pós (2,9
+  ms: resolve 1,25, bloom 0,85, tone mapping 0,8). Caminhos que sobram: MSAA 2x como padrão em GPU integrada, bloom em
+  menos níveis, sombra recebida mais barata no terreno (~1,4 ms). O quadro tem ~3,5 ms além da GPU medida (composição
+  da janela, provavelmente; não testado em tela cheia, que trocaria o modo do monitor). Medidas com ±1 ms de ruído
+  entre rodadas iguais (programas abertos na máquina). Gravar 1024 blocos novos leva 12,5 s (um `WriteFileAtomic` por
+  bloco).
 - Otimização da GPU (27/10/2026): o pixel do terreno não tem brilho especular direto (só o difuso e o reflexo do
   céu): terreno molhado ou metálico não brilha com o sol. A sombra pelas faces de costas supõe um mapa de altura
   (uma superfície só, sem cavernas nem saliências), e faces de costas que mal passam do horizonte podem dar acne
