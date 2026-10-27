@@ -449,6 +449,10 @@ entity.Remove<Girar>();
   triângulos que o desenho, sem precisar de Collider: o personagem anda no terreno, corpos caem e rolam nele, e o
   `Raycast` da física e os eventos de contato devolvem a entidade do terreno. Posição, rotação e escala da entidade
   valem; mudar as alturas em Play refaz os corpos.
+  **LOD:** cada bloco tem 4 níveis mais simples (uma amostra a cada 2, 4, 8 e 16 no miolo, a partir de ~80, 160, 320
+  e 640 m com blocos de 32 m; `Renderer::SetLodBias` estica ou encurta essas distâncias), todos com a borda inteira
+  do bloco: vizinhos em níveis diferentes não abrem frestas. O nível mais simples tem 136 triângulos (o bloco
+  cheio, 2048). A física, o raio e os pincéis usam sempre o bloco cheio.
   Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta. Entidade >
   Terreno (ou `entity_create` com `kind: "terrain"` no MCP) cria um plano de 128 x 128 m em `Assets/Terrenos`.
   **Pincéis:** no Inspector do Terreno, escolha Subir, Baixar, Suavizar, Nivelar (na altura de onde a pincelada
@@ -457,7 +461,7 @@ entity.Remove<Girar>();
   esquerdo pinta (Selecionar ou Esc no Viewport volta ao clique que seleciona; o gizmo some enquanto o pincel está
   ligado). Cada pincelada é um passo de desfazer e marca a cena como não salva; salvar a cena grava só os blocos
   mudados. Pelo MCP, `terrain_brush`. Dados e arquivos em `motor/assets/TerrainData.h`, pincéis em
-  `motor/assets/TerrainBrush.h`, corpos em `engine/src/physics/PhysicsTerrain.cpp`; o LOD vem na próxima tarefa.
+  `motor/assets/TerrainBrush.h`, corpos em `engine/src/physics/PhysicsTerrain.cpp`.
 
 ### Renderização (Fase 7)
 

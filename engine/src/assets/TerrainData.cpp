@@ -28,6 +28,44 @@ constexpr char kBlockMagic[4] = {'M', 'T', 'B', 'L'};
 // 1: só as alturas; 2: depois delas, os pesos das 4 camadas (um byte cada).
 constexpr uint32_t kBlockVersion = 2;
 
+// LOD (Tarefa 12): níveis com passo de 2, 4, 8 e 16 amostras, valendo abaixo destes tamanhos na tela (Mesh::Lods; com
+// blocos de 32 m e 60° de visão, a partir de ~80, 160, 320 e 640 m).
+constexpr int kLodSteps[] = {2, 4, 8, 16};
+constexpr float kLodScreenSizes[] = {0.5f, 0.25f, 0.125f, 0.0625f};
+
+// Triângulos de um nível com passo `step` (par, divide resolution - 1), em índices da grade cheia (j * res + i). O
+// miolo é uma grade de células step x step; as células encostadas na borda do bloco usam todas as amostras do lado da
+// borda e só os cantos nos lados de dentro, num leque a partir da amostra do meio da célula. Assim a borda de todo
+// nível é a mesma do bloco cheio: vizinhos em níveis diferentes dividem os vértices, sem fresta nem vértice em T.
+std::vector<uint32_t> LodIndices(int res, int step) {
+    const int n = res - 1, cells = n / step;
+    auto at = [res](int i, int j) { return static_cast<uint32_t>(j * res + i); };
+    std::vector<uint32_t> indices;
+    std::vector<uint32_t> ring;
+    for (int cj = 0; cj < cells; ++cj) {
+        for (int ci = 0; ci < cells; ++ci) {
+            const int i0 = ci * step, j0 = cj * step, i1 = i0 + step, j1 = j0 + step;
+            const bool west = ci == 0, east = ci == cells - 1, south = cj == 0, north = cj == cells - 1;
+            if (!west && !east && !south && !north) {
+                // Mesma diagonal da malha cheia (v00 a v11), anti-horário visto de cima.
+                indices.insert(indices.end(), {at(i0, j0), at(i0, j1), at(i1, j1), at(i0, j0), at(i1, j1), at(i1, j0)});
+                continue;
+            }
+            // Contorno da célula no sentido de v00 -> v01 -> v11 -> v10, com as amostras do meio só nos lados de borda.
+            ring.clear();
+            for (int j = j0; j < j1; j += west ? 1 : step) ring.push_back(at(i0, j));
+            for (int i = i0; i < i1; i += north ? 1 : step) ring.push_back(at(i, j1));
+            for (int j = j1; j > j0; j -= east ? 1 : step) ring.push_back(at(i1, j));
+            for (int i = i1; i > i0; i -= south ? 1 : step) ring.push_back(at(i, j0));
+            const uint32_t center = at(i0 + step / 2, j0 + step / 2);
+            for (size_t k = 0; k < ring.size(); ++k) {
+                indices.insert(indices.end(), {center, ring[k], ring[(k + 1) % ring.size()]});
+            }
+        }
+    }
+    return indices;
+}
+
 // Divisão arredondada para baixo (negativos: -1 / 32 = -1, não 0).
 int FloorDiv(int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
 
@@ -300,6 +338,26 @@ std::shared_ptr<Mesh> TerrainData::BlockMesh(TerrainBlockKey key) const {
         }
     }
     block->mesh = std::make_shared<Mesh>(vertices, indices);
+    // Níveis de detalhe: só com os vértices que cada um usa (o mais simples tem ~10% dos do bloco).
+    std::vector<Mesh::Lod> lods;
+    std::vector<uint32_t> remap(vertices.size());
+    std::vector<Vertex> lodVertices;
+    for (size_t l = 0; l < std::size(kLodSteps); ++l) {
+        const int step = kLodSteps[l];
+        if (n % step != 0 || n / step < 2) continue;
+        std::vector<uint32_t> lodIndices = LodIndices(res, step);
+        std::fill(remap.begin(), remap.end(), ~0u);
+        lodVertices.clear();
+        for (uint32_t& index : lodIndices) {
+            if (remap[index] == ~0u) {
+                remap[index] = static_cast<uint32_t>(lodVertices.size());
+                lodVertices.push_back(vertices[index]);
+            }
+            index = remap[index];
+        }
+        lods.push_back({std::make_shared<Mesh>(lodVertices, lodIndices), kLodScreenSizes[l]});
+    }
+    block->mesh->SetLods(std::move(lods));
     block->meshVersion = block->version;
     return block->mesh;
 }

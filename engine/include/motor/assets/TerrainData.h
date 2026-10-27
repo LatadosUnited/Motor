@@ -88,7 +88,8 @@ public:
 
     // Malha de um bloco, com os vértices relativos ao canto dele ((x, z) * blockSize) e as normais tiradas das
     // amostras vizinhas (também dos blocos ao lado: sem emenda de luz). Refeita só quando o bloco ou um vizinho
-    // mudou. Nula se o bloco não existe.
+    // mudou. Nula se o bloco não existe. Vem com níveis de detalhe (Mesh::Lods, Tarefa 12) de passo 2, 4, 8 e 16
+    // amostras no miolo, todos com a borda inteira do bloco: blocos vizinhos em níveis diferentes não abrem frestas.
     std::shared_ptr<Mesh> BlockMesh(TerrainBlockKey key) const;
 
     // Sobe a cada mudança (quem guarda algo tirado das alturas compara).

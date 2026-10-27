@@ -21,6 +21,7 @@
 #include <cstring>
 #include <memory>
 #include <fstream>
+#include <map>
 
 using namespace motor;
 namespace fs = std::filesystem;
@@ -432,6 +433,66 @@ int main(int argc, char** argv) {
         // Fora dos blocos ou curto demais: nada.
         CHECK(!data.Raycast({500.0f, 50.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 1000.0f));
         CHECK(!data.Raycast({3.3f, 50.0f, -2.7f}, {0.0f, -1.0f, 0.0f}, 10.0f));
+    }
+
+    SECTION("LOD: níveis com a borda inteira do bloco, sem buracos nem vértices em T");
+    {
+        TerrainData data = MakeHills(33);  // blocos de 8 m, 32 células
+        const std::shared_ptr<Mesh> full = data.BlockMesh({0, -1});
+        CHECK(full && full->Lods().size() == 4);
+        const std::vector<float>& heights = *data.BlockHeights({0, -1});
+        const float spacing = data.Spacing(), size = data.BlockSize();
+        size_t previous = full ? full->Indices().size() : 0;
+        for (const Mesh::Lod& lod : full ? full->Lods() : std::vector<Mesh::Lod>{}) {
+            const std::vector<glm::vec3>& p = lod.mesh->Positions();
+            const std::vector<uint32_t>& idx = lod.mesh->Indices();
+            CHECK(idx.size() < previous);  // cada nível com menos triângulos
+            previous = idx.size();
+            // Triângulos virados para cima, cobrindo a área do bloco uma vez só.
+            float area = 0.0f;
+            bool up = true;
+            std::map<std::pair<uint32_t, uint32_t>, int> edges;
+            for (size_t t = 0; t + 2 < idx.size(); t += 3) {
+                const glm::vec3 a = p[idx[t]], b = p[idx[t + 1]], c = p[idx[t + 2]];
+                const float y = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z);  // cross((b - a), (c - a)).y
+                up = up && y > 0.0f;
+                area += 0.5f * y;
+                for (int k = 0; k < 3; ++k) {
+                    const uint32_t u = idx[t + k], v = idx[t + (k + 1) % 3];
+                    ++edges[{std::min(u, v), std::max(u, v)}];
+                }
+            }
+            CHECK(up && Near(area, size * size, 1e-2f));
+            // Arestas usadas por um triângulo só = a borda do bloco, nos 4 x 32 pedaços da malha cheia; as de dentro
+            // são de dois triângulos (sem fresta nem T dentro do bloco). As da borda, com as alturas das amostras.
+            int border = 0;
+            bool edgesOk = true, heightsOk = true;
+            for (const auto& [edge, count] : edges) {
+                const glm::vec3 a = p[edge.first], b = p[edge.second];
+                const bool onBorder = (Near(a.x, b.x) && (Near(a.x, 0.0f) || Near(a.x, size))) ||
+                                      (Near(a.z, b.z) && (Near(a.z, 0.0f) || Near(a.z, size)));
+                if (count == 1) {
+                    ++border;
+                    edgesOk = edgesOk && onBorder && Near(glm::length(glm::vec2(b.x - a.x, b.z - a.z)), spacing);
+                    for (const glm::vec3& q : {a, b}) {
+                        const int i = static_cast<int>(std::lround(q.x / spacing));
+                        const int j = static_cast<int>(std::lround(q.z / spacing));
+                        heightsOk = heightsOk && q.y == heights[static_cast<size_t>(j * 33 + i)];
+                    }
+                } else {
+                    edgesOk = edgesOk && count == 2;
+                }
+            }
+            std::printf("  nível abaixo de %.4f da tela: %zu triângulos, %zu vértices\n", lod.screenSize, idx.size() / 3,
+                        p.size());
+            CHECK(edgesOk && heightsOk && border == 4 * 32);
+        }
+        // O nível sai do tamanho na tela; perto, a malha cheia.
+        CHECK(full && &full->ForScreenSize(1.0f) == full.get());
+        CHECK(full && &full->ForScreenSize(0.01f) == full->Lods().back().mesh.get());
+        // Resolução 9 (8 células): só os passos 2 e 4.
+        TerrainData small = MakeHills(9);
+        CHECK(small.BlockMesh({0, 0})->Lods().size() == 2);
     }
     return TestResult();
 }
