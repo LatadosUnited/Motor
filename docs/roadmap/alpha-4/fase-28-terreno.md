@@ -38,7 +38,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 10: Pintar até 4 camadas de textura no terreno — 71d1d3c
 - [x] Tarefa 11: Dar ao terreno um collider da física (height field da Jolt) (`e0e676e`, `37566be`)
 - [x] Tarefa 12: LOD do terreno por blocos, sem frestas entre níveis (`bc51f61`)
-- [ ] Tarefa 13: Criar a água: ondas, reflexo do céu, refração e cor pela profundidade
+- [x] Tarefa 13: Criar a água: ondas, reflexo do céu, refração e cor pela profundidade (`d07da6f`)
 - [ ] Tarefa 14: Ferramentas MCP do terreno e da água
 
 ## Pronto quando
@@ -209,6 +209,26 @@ e a renderização relativa à câmera são também a base do streaming de célu
     triângulos. Resolução 9 dá só os passos 2 e 4.
   - Pelo editor ("LOD Ação", contagem do canto do viewport pelo `PrintWindow`): terreno de 128 m com morros, perto
     17 896 triângulos (níveis misturados; 32 768 sem LOD), a ~250 m 4 480 (16 blocos x 280), sem frestas visíveis.
+- Tarefa 13: componente `Water` (`scene/Water.h`): tamanho, cores rasa e funda, transparência (metros até o fundo
+  sumir), altura, comprimento, velocidade e direção das ondas, reflexo, refração e espuma; a grade (`CreateWaterGrid`,
+  células de até 1 m, no máximo 256 por lado) é refeita só quando o tamanho muda. Entidade > Água e `entity_create`
+  com `kind: "water"`. `kScriptApiVersion` 26.
+  - Renderer (`RendererWater.cpp`, `water.vert`, `water.frag`): `SubmitWater` guarda a água; depois dos opacos e do
+    céu, se alguma está na tela, a cena é copiada (cor e profundidade, já sem MSAA: `PostProcess::CopyForRefraction`,
+    texturas criadas no primeiro uso) e cada água é desenhada por cima, gravando profundidade, antes dos
+    transparentes. Vértices: 4 ondas de Gerstner em volta da direção, no espaço da entidade (não andam com a câmera).
+    Pixel: ondulações pequenas na normal; refração pela cópia deslocada pela normal (sem deslocar onde o ponto
+    deslocado está na frente da água); cor pela espessura no raio de visão (o fundo some na cor rasa e depois na
+    funda), iluminada pelo céu, a ambiente e as direcionais; reflexo do céu pré-filtrado com Fresnel; brilho do sol;
+    espuma pela profundidade vertical até o fundo; neblina como no `lit.frag`. O bloco das luzes saiu do `lit.frag`
+    para `lights.glsl`, usado pelos dois.
+  - `WaterSurface::WaveOffset` faz na CPU a conta do `water.vert`. `test_water`: altura até a configurada, média zero
+    no tempo, passo lateral de Gerstner, velocidade 0 parada, direção; grade (tamanho, limite de 256, virada para
+    cima); componente (grade refeita só com tamanho novo, cena gravada e lida, cópia e `operator==`).
+  - Pelo editor ("Água Ação"): lago cavado com o pincel num terreno com morros em volta, água em y = -0,3, esfera e
+    cubo meio submersos: ondas, reflexo do céu, espuma na beira e em volta dos objetos, turquesa no raso e azul
+    escuro no fundo, a parte submersa da esfera vista pela refração; também na visão do jogo (Play). Sem avisos de
+    shader no log.
 
 ## Limitações
 
@@ -246,3 +266,13 @@ e a renderização relativa à câmera são também a base do streaming de célu
   triângulos por bloco (um terreno de 1 x 1 km longe ainda tem ~140 mil). Cada bloco continua um draw próprio (um
   material por bloco, por causa da textura dos pesos): juntar os blocos num draw pediria os pesos numa textura só do
   terreno. Mudar uma altura refaz o bloco e os seus 4 níveis.
+  Água (Tarefa 13): sem reflexo dos objetos e do terreno (só o céu; reflexo em tela ou planar fica para depois); sem
+  sombra na água; as ondas andam pelo relógio do GLFW, também com o jogo pausado, e não mexem em nada da física (sem
+  empuxo: `WaveOffset` está pronto para quem quiser boias por script). A cópia da cena custa um blit de cor e
+  profundidade por quadro com água na tela (com MSAA, a profundidade com amostras: caro na GPU integrada). Água
+  maior que 256 m tem células maiores que 1 m (ondas curtas ficam serrilhadas de perto). A espuma vem da profundidade
+  até o fundo, sem espuma nas cristas. Visto de baixo d'água só há um tom escuro, sem efeito de mergulho. O clique no
+  viewport não seleciona a água (sem raio). Não medido no Player (a meta de 60 FPS com 1 km de terreno e água é do
+  fim da fase).
+- `test_runtime_systems` travou uma vez no `ctest -j4` de 27/10/2026 (encerrado pelo PID); sozinho passou 150 vezes
+  seguidas e o `ctest` inteiro passou de novo. Ficar de olho.
