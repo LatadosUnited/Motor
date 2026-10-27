@@ -37,7 +37,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 9: Pincéis do terreno no editor: subir, baixar, suavizar — 84bd2db
 - [x] Tarefa 10: Pintar até 4 camadas de textura no terreno — 71d1d3c
 - [x] Tarefa 11: Dar ao terreno um collider da física (height field da Jolt) (`e0e676e`, `37566be`)
-- [ ] Tarefa 12: LOD do terreno por blocos, sem frestas entre níveis
+- [x] Tarefa 12: LOD do terreno por blocos, sem frestas entre níveis (`bc51f61`)
 - [ ] Tarefa 13: Criar a água: ondas, reflexo do céu, refração e cor pela profundidade
 - [ ] Tarefa 14: Ferramentas MCP do terreno e da água
 
@@ -197,6 +197,18 @@ e a renderização relativa à câmera são também a base do streaming de célu
     entidade desativada tiram os 16 corpos.
   - Pelo MCP ("Física Ação"): com o plano "Chão" desativado, cinco esferas soltas a 70 m pousam no topo de um morro
     de ~50 m feito com `terrain_brush`, rolam e param no terreno (y = 0,5, o raio); imagem por `viewport_capture`.
+- Tarefa 12: `TerrainData::BlockMesh` monta, junto com o bloco cheio, 4 níveis de detalhe (`Mesh::Lods`, os da Fase
+  24: o renderer escolhe pelo tamanho na tela, também nas sombras) com uma amostra a cada 2, 4, 8 e 16 no miolo,
+  abaixo de 0,5, 0,25, 0,125 e 0,0625 da tela (~80, 160, 320 e 640 m com blocos de 32 m e 60° de visão). As células
+  encostadas na borda usam todas as amostras do lado da borda, num leque a partir da amostra do meio: a borda de todo
+  nível é a do bloco cheio, então vizinhos em níveis diferentes dividem os mesmos vértices, sem fresta, sem vértice
+  em T e sem precisar saber o nível do vizinho (nem saias). Cada nível guarda só os vértices que usa. Triângulos por
+  bloco: 2048, 696, 280, 168 e 136. A física, os raios e os pincéis continuam no bloco cheio.
+  - `test_terrain`: em cada nível os triângulos ficam virados para cima e cobrem a área do bloco uma vez; as arestas
+    de um triângulo só são exatamente os 4 x 32 pedaços da borda, com as alturas das amostras; as outras são de dois
+    triângulos. Resolução 9 dá só os passos 2 e 4.
+  - Pelo editor ("LOD Ação", contagem do canto do viewport pelo `PrintWindow`): terreno de 128 m com morros, perto
+    17 896 triângulos (níveis misturados; 32 768 sem LOD), a ~250 m 4 480 (16 blocos x 280), sem frestas visíveis.
 
 ## Limitações
 
@@ -216,8 +228,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - Terreno (Tarefa 8): mexer na pasta `.blocos` pelo Explorer, ou só nela pelo painel Projeto, separa os dois
   (o painel ainda a mostra como pasta comum). Alturas mudadas não entram no desfazer nem marcam a cena como não
   salva (vêm com os pincéis, Tarefa 9); um terreno sem projeto aberto fica só na memória. A textura repete a cada
-  metro, sem escala própria (vem com a pintura, Tarefa 10). Todos os blocos são desenhados com a malha cheia, sem LOD
-  (Tarefa 12), e o `Raycast` testa os 2048 triângulos de cada bloco que o raio cruza.
+  metro, sem escala própria (vem com a pintura, Tarefa 10). O `Raycast` testa os 2048 triângulos de cada bloco que o raio cruza.
   Pincéis (Tarefa 9): o arraste com o mouse no Viewport (círculo e pintura) não foi testado, só a mesma pincelada
   pelo MCP; o autossalvamento de recuperação não guarda as alturas, só a cena. Fechar sem salvar descarta as alturas
   só quando ninguém mais usa o terreno (as alturas ficam na `TerrainData` aberta enquanto houver referência). A cada
@@ -231,3 +242,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
   blocos do terreno, não só os tocados: pintar ou esculpir em Play custa a reconstrução inteira a cada quadro. Sem
   material físico por camada pintada (o atrito é um só por terreno). As alturas guardadas pela Jolt têm até 5 mm de
   erro. Não testado na mão: andar com o personagem pelo teclado sobre o terreno no Play do editor.
+  LOD (Tarefa 12): o nível troca de uma vez (sem transição suave), e a borda cheia limita o nível mais simples a 136
+  triângulos por bloco (um terreno de 1 x 1 km longe ainda tem ~140 mil). Cada bloco continua um draw próprio (um
+  material por bloco, por causa da textura dos pesos): juntar os blocos num draw pediria os pesos numa textura só do
+  terreno. Mudar uma altura refaz o bloco e os seus 4 níveis.
