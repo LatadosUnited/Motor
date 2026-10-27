@@ -27,7 +27,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 ## Tarefas
 
 - [x] Tarefa 1: Criar a grade de células (`SpatialGrid`) com consultas por frustum, caixa e raio — cc0dcda
-- [ ] Tarefa 2: Levar as posições para a GPU relativas à câmera
+- [x] Tarefa 2: Levar as posições para a GPU relativas à câmera — ea03e02
 - [ ] Tarefa 3: Guardar no renderer os objetos estáticos entre quadros (registrar, mover, remover)
 - [ ] Tarefa 4: Recortar a cena e as sombras pela grade
 - [ ] Tarefa 5: Usar a grade no raycast do editor e nas consultas de área
@@ -60,6 +60,14 @@ e a renderização relativa à câmera são também a base do streaming de célu
   (ordenado pela distância) servem às Tarefas 4 e 5. `CellOf` dá a célula de um ponto, para o streaming.
   `test_spatial_grid`: 4041 objetos em 2 x 2 km, consultas iguais a testar todos, sem repetidos, depois de mover
   e remover. Ainda não usada pelo renderer (Tarefa 4); as consultas não podem rodar em duas threads na mesma grade.
+- Tarefa 2: a GPU recebe tudo menos a posição da câmera: matrizes dos objetos (no fim do `PrepareItems`, depois da
+  caixa e do LOD), luzes, contornos do editor, passadas e cascatas de sombra (`RelativeToOrigin`, em double). A vista
+  vai sem translação (`Camera::ViewRotation`) e `uCameraPosition` é 0; os shaders não mudaram. Recorte, LOD e
+  cascatas continuam no mundo, e o cache das cascatas vale igual. Achado: o `Camera::View()` montava a vista com
+  `lookAt(position, position + Forward())`, e a soma em float perdia a direção longe da origem (~1 mrad a 10 km);
+  agora sai da direção. Na tela, a 10 km: erro de 5,5e-6 antes, 8e-9 depois (`test_render`). Visto pelo
+  `viewport_capture` a 100 km, câmera a 40 cm de uma esfera: antes, silhueta facetada, manchas e sombra serrilhada;
+  depois, igual à origem.
 
 ## Limitações
 
