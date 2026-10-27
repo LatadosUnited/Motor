@@ -139,6 +139,7 @@ Scene::Scene(Scene&& other) noexcept
       m_pending(std::move(other.m_pending)), m_indexVersion(other.m_indexVersion) {
     for (const auto& e : m_entities) e->cache.owner = this;
     other.m_indexVersion = UINT64_MAX;
+    other.m_static = StaticRender();  // apontava para os componentes que vieram para cá
 }
 
 Scene& Scene::operator=(Scene&& other) noexcept {
@@ -153,6 +154,8 @@ Scene& Scene::operator=(Scene&& other) noexcept {
     m_pending = std::move(other.m_pending);
     m_indexVersion = other.m_indexVersion;
     m_meshList = MeshList();
+    m_static = StaticRender();
+    other.m_static = StaticRender();
     for (const auto& e : m_entities) e->cache.owner = this;
     other.m_indexVersion = UINT64_MAX;
     return *this;
@@ -543,10 +546,29 @@ void Scene::SubmitTo(Renderer& renderer) const {
         }
         list.version = SceneStructureVersion();
     }
+    // Estáticos (Fase 28): guardados no RenderWorld, refeitos só quando a estrutura muda ou alguém avisa
+    // (MarkRenderDirty); fora disso não são lidos. Com pele, nunca: as juntas mudam a cada quadro.
+    auto isStatic = [](const MeshRenderer* mr) { return mr->isStatic && !mr->mesh->IsSkinned(); };
+    if (m_static.dirty || m_static.version != SceneStructureVersion()) {
+        MOTOR_PROFILE_STAT("Render: refazer os estáticos");
+        m_static.world.Clear();
+        for (const auto& [e, mr] : list.items) {
+            if (!mr || !mr->mesh || !isStatic(mr) || !IsActiveInHierarchy(*e)) continue;
+            // O material próprio do componente vai sem dono: vive enquanto a estrutura não mudar (refeito antes).
+            std::shared_ptr<const Material> material =
+                mr->sharedMaterial ? std::shared_ptr<const Material>(mr->sharedMaterial)
+                                   : std::shared_ptr<const Material>(std::shared_ptr<const void>(), &mr->material);
+            m_static.world.Add({mr->mesh, std::move(material), CachedWorld(*e), mr->shadows});
+        }
+        m_static.version = SceneStructureVersion();
+        m_static.dirty = false;
+    }
+    renderer.SubmitWorld(m_static.world);
+
     std::vector<uint8_t> later(ids.size(), 0);
     renderer.SubmitMany(ids.size(), [&](size_t i, Renderer::SubmitRequest& request) {
         const auto [e, mr] = list.items[i];
-        if (!mr || !mr->mesh) return false;
+        if (!mr || !mr->mesh || isStatic(mr)) return false;
         if (e->parent != kNullEntity || mr->mesh->IsSkinned()) {
             later[i] = 1;
             return false;

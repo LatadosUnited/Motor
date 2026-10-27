@@ -55,7 +55,8 @@ namespace motor {
 // 21: entrada v2: Script::GetVector e TextInput; InputAction e InputBinding com campos novos (tipo, part, with);
 //     vários controles (pad e device nas funções de entrada, GamepadCount, LastInputDevice...); contextos
 //     (SetInputContext...), IsPointerOverUi; segurar, toque, toque duplo e buffer (WasActionHeld...).
-inline constexpr int kScriptApiVersion = 21;
+// 22: Fase 28: MeshRenderer::isStatic e os estáticos guardados na Scene (MarkRenderDirty) mudam os tamanhos.
+inline constexpr int kScriptApiVersion = 22;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

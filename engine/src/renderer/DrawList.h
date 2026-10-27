@@ -28,6 +28,7 @@ struct DrawItem {
     uint32_t shadowId = 0;    // em Renderer::m_shadowIds
     bool transparent = false;  // material->blend == Transparent, guardado no Submit (o material está longe na memória)
     ShadowCasting shadows = ShadowCasting::On;  // Off: fora dos mapas de sombra; ShadowsOnly: só neles
+    bool retained = false;    // de um RenderWorld (Fase 28): caixa e matriz da normal já vieram prontas
 };
 
 // Envia as juntas de um item com pele para o bloco Joints (binding 2) antes de desenhar.

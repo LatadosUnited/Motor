@@ -56,6 +56,7 @@ target_link_libraries(test_mcp_nav PRIVATE nlohmann_json::nlohmann_json)
 motor_add_test(test_world_cache)  # Fase 25: cache da matriz de mundo
 motor_add_test(test_perception)  # Fase 37: percepção dos agentes (visão, audição, memória)
 motor_add_test(test_spatial_grid)  # Fase 28: grade de células (recorte, raio, área)
+motor_add_test(test_render_world)  # Fase 28: objetos guardados entre quadros
 
 # Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o
 # ctest mostra "pulado". Rodar só ele: ctest --test-dir build-release -L desempenho

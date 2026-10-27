@@ -1,4 +1,5 @@
 #include "motor/renderer/Renderer.h"
+#include "motor/renderer/RenderWorld.h"
 
 #include "motor/core/EngineAssets.h"
 #include "motor/core/JobSystem.h"
@@ -309,6 +310,39 @@ void Renderer::SubmitMany(size_t count, const SubmitFill& fill) {
     m_items.resize(slot);
 }
 
+void Renderer::SubmitWorld(const RenderWorld& world) {
+    MOTOR_ASSERT(m_inScene, "SubmitWorld fora de BeginScene/EndScene");
+    MOTOR_PROFILE_SCOPE("Renderer: SubmitWorld");
+    const size_t count = world.m_entries.size();
+    if (count == 0) return;
+    // Os números de material do mundo viram os do quadro uma vez por material diferente, não por objeto.
+    m_worldMaterials.resize(world.m_materials.Size());
+    for (uint32_t i = 0; i < m_worldMaterials.size(); ++i) m_worldMaterials[i] = m_materialIds.Id(world.m_materials[i]);
+    m_worldShadows.resize(world.m_shadows.Size());
+    for (uint32_t i = 0; i < m_worldShadows.size(); ++i) m_worldShadows[i] = m_shadowIds.Id(world.m_shadows[i]);
+    m_lastMaterial = nullptr;  // o próximo Submit não pode reaproveitar o número do anterior a este
+
+    const size_t base = m_items.size();
+    m_items.resize(base + count);
+    if (m_objects.size() < 2 * (base + count)) m_objects.resize(2 * (base + count));
+    std::copy(world.m_objects.begin(), world.m_objects.end(), m_objects.begin() + static_cast<std::ptrdiff_t>(2 * base));
+    JobSystem::Get().ParallelFor(count, 1024, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            const RenderWorld::Entry& entry = world.m_entries[i];
+            DrawItem& item = m_items[base + i];
+            item = DrawItem{};
+            item.mesh = entry.mesh.get();
+            item.material = entry.material.get();
+            item.bounds = entry.bounds;
+            item.materialId = m_worldMaterials[entry.materialId];
+            item.shadowId = m_worldShadows[entry.shadowId];
+            item.transparent = entry.transparent;
+            item.shadows = entry.shadows;
+            item.retained = true;
+        }
+    });
+}
+
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
     MOTOR_ASSERT(m_inScene, "SubmitWireframe fora de BeginScene/EndScene");
     m_wires.push_back({&mesh, model, color});
@@ -340,15 +374,19 @@ void Renderer::PrepareItems(const Frustum& view) {
         for (size_t i = begin; i < end; ++i) {
             DrawItem& item = m_items[i];
             const glm::mat4& model = m_objects[2 * i];
-            m_objects[2 * i + 1] = glm::mat4(NormalMatrix(model));
             const glm::vec3 min = item.mesh->BoundsMin(), max = item.mesh->BoundsMax();
             if (item.skinned) {
                 // A pose animada sai da caixa de repouso: folga de 50% (e meio metro) para o recorte não sumir com ela.
+                m_objects[2 * i + 1] = glm::mat4(NormalMatrix(model));
                 const glm::vec3 center = (min + max) * 0.5f;
                 const glm::vec3 half = (max - min) * 0.75f + glm::vec3(0.5f);
                 item.bounds = TransformAabb({center - half, center + half}, model);
             } else {
-                item.bounds = TransformAabb({min, max}, model);
+                // Os do RenderWorld (Fase 28) já trazem a caixa e a matriz da normal.
+                if (!item.retained) {
+                    m_objects[2 * i + 1] = glm::mat4(NormalMatrix(model));
+                    item.bounds = TransformAabb({min, max}, model);
+                }
                 if (!item.mesh->Lods().empty()) {
                     // Nível de detalhe pelo tamanho na tela (Fase 24): diâmetro da caixa no mundo sobre a altura vista
                     // na distância dela. A caixa continua a da malha base (os níveis têm os mesmos limites).

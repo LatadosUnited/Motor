@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motor/renderer/Environment.h"
+#include "motor/renderer/RenderWorld.h"
 #include "motor/scene/Component.h"
 #include "motor/scene/Components.h"
 #include "motor/scene/Transform.h"
@@ -174,6 +175,12 @@ public:
     // Render = BeginScene + SubmitTo + EndScene. SubmitTo serve para quem quer desenhar algo a mais na mesma passada.
     void Render(Renderer& renderer, const Camera& camera, const Framebuffer* target = nullptr) const;
     void SubmitTo(Renderer& renderer) const;
+    // Os Mesh Renderer estáticos (Fase 28) vão para o renderer guardados (RenderWorld), refeitos só quando a estrutura
+    // da cena muda ou depois desta chamada: quem muda um estático (posição, malha, material) avisa aqui. O editor
+    // avisa a cada edição; no jogo, os scripts.
+    void MarkRenderDirty() { m_static.dirty = true; }
+    // Quantos objetos estáticos estão guardados para o renderer (depois do último SubmitTo).
+    size_t StaticRenderCount() const { return m_static.world.Count(); }
 
     // Raio contra os triângulos das malhas visíveis (cópia na CPU da Mesh; malhas com pele, na pose de repouso).
     // direction não precisa ser normalizada; `distance` é medida em unidades de direction.
@@ -233,6 +240,23 @@ private:
         }
     };
     mutable MeshList m_meshList;
+
+    // SubmitTo (Fase 28): os estáticos guardados para o renderer. Aponta para os componentes desta cena: cópia e
+    // movimento começam vazios (e sujos).
+    struct StaticRender {
+        RenderWorld world;
+        uint64_t version = UINT64_MAX;
+        bool dirty = true;
+        StaticRender() = default;
+        StaticRender(const StaticRender&) {}
+        StaticRender& operator=(const StaticRender&) {
+            world.Clear();
+            version = UINT64_MAX;
+            dirty = true;
+            return *this;
+        }
+    };
+    mutable StaticRender m_static;
 };
 
 } // namespace motor

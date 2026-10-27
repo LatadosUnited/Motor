@@ -23,6 +23,7 @@ namespace motor {
 
 class Framebuffer;
 class GpuTimers;
+class RenderWorld;
 class InstanceBuffers;
 class PostProcess;
 class ShadowRenderer;
@@ -98,6 +99,9 @@ public:
     };
     using SubmitFill = std::function<bool(size_t index, SubmitRequest& request)>;
     void SubmitMany(size_t count, const SubmitFill& fill);
+    // Os objetos guardados de `world` (Fase 28), sem refazer caixa, matriz da normal e material de cada um. O mundo
+    // precisa continuar vivo e sem mudar até o EndScene.
+    void SubmitWorld(const RenderWorld& world);
     void EndScene();
 
     const RenderStats& GetStats() const { return m_stats; }
@@ -187,6 +191,7 @@ private:
         bool ok = false;
     };
     std::vector<PendingSubmit> m_pending;
+    std::vector<uint32_t> m_worldMaterials, m_worldShadows;  // SubmitWorld: número do mundo -> número do quadro
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;

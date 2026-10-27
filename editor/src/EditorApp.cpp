@@ -217,7 +217,7 @@ void EditorApp::OnUpdate(float dt) {
             MOTOR_PROFILE_STAT("Update: assets (prefabs)");
             m_ctx.prefabs.ReloadChanged(m_ctx.assets);
         }
-        m_history.NoteActivity();  // instâncias de um prefab alterado mudam no UpdatePrefabs
+        NoteSceneActivity();  // instâncias de um prefab alterado mudam no UpdatePrefabs
     }
 
     m_viewport.UpdateCamera(dt, GetWindow());
@@ -261,12 +261,17 @@ void EditorApp::ApplyPendingChanges(bool interactionFinished) {
     if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, interactionFinished, &m_ctx.selection);
 }
 
+void EditorApp::NoteSceneActivity() {
+    m_history.NoteActivity();
+    m_ctx.scene.MarkRenderDirty();
+}
+
 void EditorApp::UpdateMinimized() {
     // Minimizado o OnImGui não roda: o que não é interface roda aqui, para o servidor MCP continuar atendendo
     // (antes os pedidos esperavam até a janela voltar, e o agente via o editor como travado).
     ApplyRequests();
     if (m_mcp.Pump()) {
-        m_history.NoteActivity();
+        NoteSceneActivity();
         NoteActivity();  // a resposta pode precisar dos próximos quadros (captura de tela, Play)
     }
     ApplyPendingChanges(true);  // ninguém está arrastando nada com a janela minimizada
@@ -279,10 +284,13 @@ void EditorApp::OnImGui() {
     // nada, e com milhares de entidades a comparação custa milissegundos (Fase 27).
     for (const ImGuiInputEvent& event : ImGui::GetCurrentContext()->InputEventsTrail) {
         if (event.Type != ImGuiInputEventType_MousePos && event.Type != ImGuiInputEventType_MouseViewport) {
-            m_history.NoteActivity();
+            NoteSceneActivity();
             break;
         }
     }
+    // Arrastar (gizmo, valores do Inspector) muda a cena só com o mouse andando: os estáticos acompanham. O botão
+    // direito (voar com a câmera) não conta.
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_ctx.scene.MarkRenderDirty();
     m_ctx.playing = m_play.IsActive();
     m_ctx.SyncSelection();  // seleção trocada por fora (criar, MCP, desfazer) antes dos painéis
 
@@ -343,7 +351,7 @@ void EditorApp::OnImGui() {
     {
         MOTOR_PROFILE_STAT("ImGui: MCP");
         if (m_mcp.Pump()) {  // as ferramentas mexem na cena
-            m_history.NoteActivity();
+            NoteSceneActivity();
             NoteActivity();  // a resposta pode precisar dos próximos quadros (captura de tela, Play)
         }
     }
