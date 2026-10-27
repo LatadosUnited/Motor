@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -73,6 +74,9 @@ public:
     // Multiplica o tamanho na tela usado para escolher o nível de LOD (Mesh::Lods): acima de 1 o detalhe dura mais
     // longe, abaixo de 1 os níveis simples entram mais perto (qualidade baixa). Vale a partir do próximo BeginScene.
     void SetLodBias(float bias) { m_lodBias = std::max(bias, 0.01f); }
+    // Relógio das ondas da água, em segundos: o tempo do jogo (para com a pausa). nullopt: o relógio do GLFW, que
+    // anda sempre (no editor fora do Play, como o céu).
+    void SetWaterTime(std::optional<double> seconds) { m_waterTime = seconds; }
 
     // target == nullptr desenha na janela. Até kMaxLights luzes (as demais são ignoradas, com aviso no log);
     // nenhuma = só a luz do céu e a ambiente.
@@ -192,6 +196,7 @@ private:
     std::vector<glm::mat4> m_joints;
     std::vector<WireItem> m_wires;
     std::vector<WaterItem> m_waters;
+    std::optional<double> m_waterTime;  // SetWaterTime
 
     // Ordem de desenho do quadro (Fase 23): número de material de cada item e as ordens da cena e das sombras.
     MaterialIds m_materialIds;

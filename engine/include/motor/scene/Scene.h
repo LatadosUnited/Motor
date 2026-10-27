@@ -189,6 +189,9 @@ public:
     // Raio contra os triângulos das malhas visíveis (cópia na CPU da Mesh; malhas com pele, na pose de repouso).
     // direction não precisa ser normalizada; `distance` é medida em unidades de direction.
     std::optional<RaycastHit> Raycast(const glm::vec3& origin, const glm::vec3& direction) const;
+    // Raio contra as águas ativas (o retângulo de cada uma na altura de repouso, sem as ondas, dos dois lados). À parte
+    // do Raycast: quem procura o chão ou o fundo (water_info, soltar textura) não deve parar na superfície.
+    std::optional<RaycastHit> RaycastWater(const glm::vec3& origin, const glm::vec3& direction) const;
 
     // Céu, neblina e luz ambiente. As luzes com direção são entidades com o componente Luz.
     Environment environment;
@@ -257,6 +260,8 @@ private:
             EntityId entity = kNullEntity;
             const Mesh* mesh = nullptr;
             glm::mat4 model{1.0f};
+            const TerrainData* terrain = nullptr;  // bloco de terreno: o raio anda pela grade de alturas dele
+            TerrainBlockKey key;
         };
         std::vector<Source> sources;
         uint64_t terrains = 0;  // soma das versões dos terrenos (TerrainData::Version): mudou, refaz

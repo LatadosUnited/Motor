@@ -7,6 +7,7 @@
 #include "motor/assets/TerrainBrush.h"
 #include "motor/assets/TerrainData.h"
 #include "motor/common/FileRead.h"
+#include "motor/common/Text.h"
 #include "motor/project/Project.h"
 #include "motor/renderer/Mesh.h"
 #include "motor/renderer/Texture.h"
@@ -459,6 +460,158 @@ int main(int argc, char** argv) {
         // Fora dos blocos ou curto demais: nada.
         CHECK(!data.Raycast({500.0f, 50.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 1000.0f));
         CHECK(!data.Raycast({3.3f, 50.0f, -2.7f}, {0.0f, -1.0f, 0.0f}, 10.0f));
+    }
+
+    SECTION("Blocos tirados: o arquivo sobra na pasta até o SaveTerrains entregar para o descarte");
+    {
+        const fs::path file = base / "sobras" / "Campo.mterrain";
+        fs::create_directories(file.parent_path());
+        auto data = std::make_shared<TerrainData>(8.0f, 9);
+        for (int x = -1; x <= 1; ++x) data->AddBlock({x, 0});
+        std::string error;
+        CHECK(data->Save(file, &error));
+        CHECK(data->UnusedBlockFiles(file).empty());
+        // Outros arquivos na pasta não são de bloco: ficam.
+        const fs::path folder = TerrainData::BlocksFolder(file);
+        std::ofstream(folder / "notas.txt") << "x";
+        std::ofstream(folder / "abc.mtbloco") << "x";
+        CHECK(data->RemoveBlock({-1, 0}));
+        CHECK(data->Save(file, &error));
+        const auto unused = data->UnusedBlockFiles(file);
+        CHECK(unused.size() == 1 && !unused.empty() && unused.front().filename() == "-1_0.mtbloco");
+
+        Scene scene;
+        Entity& e = scene.CreateEntity("Terreno");
+        Terrain& terrain = e.Add<Terrain>();
+        terrain.terrain.file = file;
+        terrain.terrain.SetData(data);
+        CHECK(data->RemoveBlock({1, 0}));  // mudou: o SaveTerrains grava e entrega os dois que sobraram
+        std::vector<fs::path> discarded;
+        CHECK(SaveTerrains(scene, &error, [&](const fs::path& p) { discarded.push_back(p); }));
+        CHECK(discarded.size() == 2 && fs::exists(folder / "0_0.mtbloco"));
+        CHECK(fs::exists(folder / "notas.txt") && fs::exists(folder / "abc.mtbloco"));
+    }
+
+    SECTION("Recuperação: só os blocos mudados vão junto, e voltam por cima do terreno do disco depois de uma queda");
+    {
+        std::string error;
+        auto project = Project::Create(base, "Recuperação Ação", &error);
+        CHECK(project.has_value());
+        if (project) {
+            AssetLibrary assets;
+            assets.SetRoot(project->RootDir());
+            const fs::path file = project->AssetsDir() / "Terrenos" / "Morro.mterrain";
+            fs::create_directories(file.parent_path());
+            {
+                TerrainData data(8.0f, 9);
+                for (int z = 0; z < 2; ++z) {
+                    for (int x = 0; x < 3; ++x) data.AddBlock({x, z}, 1.0f);
+                }
+                CHECK(data.Save(file, &error));
+            }
+            const auto entityWith = [&](Scene& scene) -> Terrain& {
+                Terrain& t = scene.CreateEntity("Terreno").Add<Terrain>();
+                t.terrain.file = file;
+                t.terrain.guid = assets.Database().GuidFor(file);
+                t.terrain.path = assets.KeyForFile(file);
+                return t;
+            };
+            std::vector<float> expected;
+            {
+                Scene scene;
+                TerrainData* data = entityWith(scene).terrain.Data();
+                CHECK(data && !data->IsDirty());
+                if (data) {
+                    data->SetSample(3, 3, 7.0f);
+                    data->SetWeights(3, 3, {0.0f, 0.0f, 1.0f, 0.0f});
+                    data->RemoveBlock({2, 1});
+                    data->AddBlock({-1, 0}, 4.0f);
+                    expected = *data->BlockHeights({0, 0});
+                }
+                CHECK(SceneSerializer::SaveRecovery(project->RootDir(), scene, assets, {}, "autosave", &error));
+                CHECK(data && data->IsDirty());  // a recuperação não grava o terreno de verdade
+                // Só os blocos mudados (o (0, 0), o (1, 0) e o (0, 1) pela borda e o novo), não os 6.
+                const fs::path changes = project->RootDir() / ".motor" / "recuperacao" / "terrenos" / "0";
+                int files = 0;
+                for (const auto& entry : fs::directory_iterator(changes)) {
+                    files += LowerExtension(entry.path()) == ".mtbloco";
+                }
+                CHECK(files > 0 && files < 6);
+            }
+            // Queda: o terreno some da memória e volta do disco, sem as mudanças.
+            Scene recovered;
+            TerrainData* data = entityWith(recovered).terrain.Data();
+            CHECK(data && data->HasBlock({2, 1}) && !data->HasBlock({-1, 0}) && data->Sample(3, 3) == 1.0f);
+            CHECK(SceneSerializer::ApplyRecoveryTerrains(project->RootDir(), recovered, &error) == 1);
+            CHECK(data && !data->HasBlock({2, 1}) && data->HasBlock({-1, 0}) && data->IsDirty());
+            CHECK(data && data->BlockHeights({0, 0}) && *data->BlockHeights({0, 0}) == expected);
+            CHECK(data && data->Weights(3, 3) && data->Weights(3, 3)->z > 0.99f);
+            CHECK(data && data->Sample(-4, 0) == 4.0f);
+            // Salvo de verdade, o disco fica com as alturas recuperadas.
+            CHECK(SaveTerrains(recovered, &error));
+            const auto reread = TerrainData::Load(file, &error);
+            CHECK(reread && reread->Sample(3, 3) == 7.0f && !reread->HasBlock({2, 1}) && reread->HasBlock({-1, 0}));
+        }
+    }
+
+    SECTION("Raio da cena no terreno pela grade: o ponto achado está na superfície e bate com o TerrainData");
+    {
+        Scene scene;
+        Entity& e = scene.CreateEntity("Terreno");
+        e.transform.position = {5.0f, -1.0f, 3.0f};
+        e.Add<Terrain>().terrain.SetData(std::make_shared<TerrainData>(MakeHills(33)));
+        const TerrainData& data = *e.Get<Terrain>()->terrain.Data();
+        int hits = 0;
+        for (int k = 0; k < 40; ++k) {
+            // Raios inclinados de vários lados (também quase deitados e em X ou Z puros), de fora do terreno.
+            const float angle = static_cast<float>(k) * 0.61f;
+            const glm::vec3 dir = glm::normalize(glm::vec3(std::cos(angle), -0.08f - 0.02f * static_cast<float>(k % 9),
+                                                           k % 10 == 0 ? 0.0f : std::sin(angle)));
+            // Mirando um ponto da superfície (o acerto é ele ou algo antes, num morro do caminho).
+            const float tx = -6.0f + static_cast<float>(k % 8) * 2.5f, tz = -6.0f + static_cast<float>(k % 5) * 3.0f;
+            const glm::vec3 target(tx, data.HeightAt(tx, tz).value_or(0.0f), tz);
+            const glm::vec3 origin = target + glm::vec3(5.0f, -1.0f, 3.0f) - dir * 20.0f;
+            const auto hit = scene.Raycast(origin, dir);
+            const glm::vec3 local = origin - glm::vec3(5.0f, -1.0f, 3.0f);
+            CHECK(hit && hit->entity == e.id && hit->distance <= 20.0f + 1e-3f);
+            if (!hit) continue;
+            ++hits;
+            const glm::vec3 p = local + dir * hit->distance;
+            CHECK(Near(p.y, data.HeightAt(p.x, p.z).value_or(1e9f), 1e-3f));
+            // Nenhum cruzamento de cima para baixo antes (o TerrainData::Raycast anda de meia célula e perde os de
+            // raspão: a conferência é fina, de 1 cm). Entrar por baixo da borda do terreno, de lado, não é cruzamento.
+            bool crossed = false;
+            std::optional<bool> wasAbove;
+            for (float s = 0.0f; s < hit->distance - 0.02f; s += 0.01f) {
+                const glm::vec3 q = local + dir * s;
+                const auto h = data.HeightAt(q.x, q.z);
+                if (!h) {
+                    wasAbove.reset();
+                    continue;
+                }
+                const bool isAbove = q.y >= *h - 1e-4f;
+                if (wasAbove && *wasAbove && !isAbove) crossed = true;
+                wasAbove = isAbove;
+            }
+            CHECK(!crossed);
+        }
+        CHECK(hits == 40);
+        // De baixo para cima também acerta (o raio da cena vê os dois lados, como o das malhas).
+        const auto below = scene.Raycast({8.0f, -50.0f, 4.0f}, {0.0f, 1.0f, 0.0f});
+        CHECK(below && Near(-50.0f + below->distance + 1.0f, data.HeightAt(3.0f, 1.0f).value_or(1e9f), 1e-3f));
+
+        // Água: o RaycastWater acha o retângulo dela (o Raycast segue passando por ela até o chão).
+        Entity& w = scene.CreateEntity("Água");
+        w.transform.position = {5.0f, 10.0f, 3.0f};
+        w.Add<Water>().size = {20.0f, 10.0f};
+        const auto surface = scene.RaycastWater({8.0f, 30.0f, 4.0f}, {0.0f, -2.0f, 0.0f});
+        CHECK(surface && surface->entity == w.id && Near(surface->distance, 10.0f, 1e-4f));
+        CHECK(scene.RaycastWater({8.0f, 0.0f, 4.0f}, {0.0f, 1.0f, 0.0f}).has_value());  // de baixo também
+        CHECK(!scene.RaycastWater({8.0f, 30.0f, 9.0f}, {0.0f, -1.0f, 0.0f}));  // fora (z de -2 a 8)
+        const auto ground = scene.Raycast({8.0f, 30.0f, 4.0f}, {0.0f, -1.0f, 0.0f});
+        CHECK(ground && ground->entity == e.id);
+        w.active = false;
+        CHECK(!scene.RaycastWater({8.0f, 30.0f, 4.0f}, {0.0f, -1.0f, 0.0f}));
     }
 
     SECTION("LOD: níveis com a borda inteira do bloco, sem buracos nem vértices em T");

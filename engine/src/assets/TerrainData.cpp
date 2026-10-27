@@ -14,6 +14,7 @@
 #include <glm/geometric.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstring>
 #include <format>
@@ -151,6 +152,11 @@ const TerrainData::Block* TerrainData::Find(TerrainBlockKey key) const {
 const std::vector<float>* TerrainData::BlockHeights(TerrainBlockKey key) const {
     const Block* block = Find(key);
     return block ? &block->heights : nullptr;
+}
+
+uint64_t TerrainData::BlockVersion(TerrainBlockKey key) const {
+    const Block* block = Find(key);
+    return block ? block->version : 0;
 }
 
 std::optional<float> TerrainData::Sample(int gx, int gz) const {
@@ -410,6 +416,25 @@ std::string TerrainData::BlockFileName(TerrainBlockKey key) {
     return std::format("{}_{}{}", key.x, key.z, kTerrainBlockExtension);
 }
 
+std::vector<fs::path> TerrainData::UnusedBlockFiles(const fs::path& file) const {
+    std::vector<fs::path> unused;
+    std::error_code ec;
+    for (const fs::directory_entry& entry : fs::directory_iterator(BlocksFolder(file), ec)) {
+        if (!entry.is_regular_file(ec) || LowerExtension(entry.path()) != kTerrainBlockExtension) continue;
+        // Só os de nome de bloco ("x_z"): outro arquivo que alguém pôs na pasta fica.
+        const std::string stem = ToUtf8(entry.path().stem());
+        TerrainBlockKey key;
+        const char* end = stem.data() + stem.size();
+        const auto [afterX, errX] = std::from_chars(stem.data(), end, key.x);
+        if (errX != std::errc() || afterX == end || *afterX != '_') continue;
+        const auto [afterZ, errZ] = std::from_chars(afterX + 1, end, key.z);
+        if (errZ != std::errc() || afterZ != end) continue;
+        if (!m_blocks.contains(key)) unused.push_back(entry.path());
+    }
+    std::sort(unused.begin(), unused.end());
+    return unused;
+}
+
 bool TerrainData::Save(const fs::path& file, std::string* error) {
     const bool sameFile = !m_savedFile.empty() && m_savedFile == file;
     const fs::path folder = BlocksFolder(file);
@@ -422,18 +447,7 @@ bool TerrainData::Save(const fs::path& file, std::string* error) {
     for (auto& [key, block] : m_blocks) {
         const fs::path blockFile = folder / PathFromUtf8(BlockFileName(key));
         if (sameFile && !block.dirty && fs::is_regular_file(blockFile, ec)) continue;
-        std::string bytes;
-        bytes.reserve(20 + block.heights.size() * (sizeof(float) + 4));
-        bytes.append(kBlockMagic, sizeof(kBlockMagic));
-        Put(bytes, kBlockVersion);
-        Put(bytes, static_cast<int32_t>(key.x));
-        Put(bytes, static_cast<int32_t>(key.z));
-        Put(bytes, static_cast<uint32_t>(m_resolution));
-        for (float h : block.heights) Put(bytes, h);
-        for (const glm::vec4& w : block.weights) {
-            for (int c = 0; c < 4; ++c) Put(bytes, static_cast<uint8_t>(std::lround(std::clamp(w[c], 0.0f, 1.0f) * 255.0f)));
-        }
-        if (!WriteFileAtomic(blockFile, bytes, error)) return false;
+        if (!WriteFileAtomic(blockFile, EncodeBlock(key, block), error)) return false;
     }
     nlohmann::ordered_json blocks = nlohmann::ordered_json::array();
     for (TerrainBlockKey key : Blocks()) blocks.push_back({key.x, key.z});
@@ -448,6 +462,133 @@ bool TerrainData::Save(const fs::path& file, std::string* error) {
     for (auto& [key, block] : m_blocks) block.dirty = false;
     m_blocksChanged = false;
     m_savedFile = file;
+    return true;
+}
+
+std::string TerrainData::EncodeBlock(TerrainBlockKey key, const Block& block) const {
+    std::string bytes;
+    bytes.reserve(20 + block.heights.size() * (sizeof(float) + 4));
+    bytes.append(kBlockMagic, sizeof(kBlockMagic));
+    Put(bytes, kBlockVersion);
+    Put(bytes, static_cast<int32_t>(key.x));
+    Put(bytes, static_cast<int32_t>(key.z));
+    Put(bytes, static_cast<uint32_t>(m_resolution));
+    for (float h : block.heights) Put(bytes, h);
+    for (const glm::vec4& w : block.weights) {
+        for (int c = 0; c < 4; ++c) {
+            Put(bytes, static_cast<uint8_t>(std::lround(std::clamp(w[c], 0.0f, 1.0f) * 255.0f)));
+        }
+    }
+    return bytes;
+}
+
+TerrainData::BlockRead TerrainData::DecodeBlock(std::string_view in, TerrainBlockKey key, Block& block) const {
+    char magic[4] = {};
+    uint32_t version = 0, resolution = 0;
+    int32_t x = 0, z = 0;
+    const bool headerOk = in.size() >= 4 && (std::memcpy(magic, in.data(), 4), in.remove_prefix(4), true) &&
+                          std::memcmp(magic, kBlockMagic, 4) == 0 && Take(in, version) && Take(in, x) && Take(in, z) &&
+                          Take(in, resolution);
+    if (!headerOk || version > kBlockVersion || x != key.x || z != key.z ||
+        resolution != static_cast<uint32_t>(m_resolution) || in.size() < block.heights.size() * sizeof(float)) {
+        return BlockRead::Unreadable;
+    }
+    std::memcpy(block.heights.data(), in.data(), block.heights.size() * sizeof(float));
+    in.remove_prefix(block.heights.size() * sizeof(float));
+    // Versão 1 (antes da pintura): fica tudo na camada 1. Pesos cortados: o que faltar também.
+    if (version < 2) return BlockRead::Ok;
+    if (in.size() < block.weights.size() * 4) return BlockRead::WeightsCut;
+    for (size_t k = 0; k < block.weights.size(); ++k) {
+        glm::vec4 w;
+        for (int c = 0; c < 4; ++c) {
+            w[c] = static_cast<float>(static_cast<uint8_t>(in[k * 4 + static_cast<size_t>(c)])) / 255.0f;
+        }
+        const float sum = w.x + w.y + w.z + w.w;
+        block.weights[k] = sum > 0.0f ? w / sum : glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+    }
+    return BlockRead::Ok;
+}
+
+bool TerrainData::SaveChanges(const fs::path& folder, std::string* error) const {
+    std::error_code ec;
+    fs::create_directories(folder, ec);
+    if (ec) {
+        SetError(error, std::format("Não foi possível criar a pasta {}: {}", ToUtf8(folder), ec.message()));
+        return false;
+    }
+    nlohmann::ordered_json blocks = nlohmann::ordered_json::array(), changed = nlohmann::ordered_json::array();
+    for (const auto& [key, block] : m_blocks) {
+        blocks.push_back({key.x, key.z});
+        if (!block.dirty) continue;
+        changed.push_back({key.x, key.z});
+        if (!WriteFileAtomic(folder / PathFromUtf8(BlockFileName(key)), EncodeBlock(key, block), error)) return false;
+    }
+    // A lista por último: um autossalvamento interrompido no meio fica com a lista anterior, que só cita arquivos já
+    // gravados (um bloco mudado só volta a ficar limpo no Save, que também apaga a recuperação).
+    const nlohmann::ordered_json header = {
+        {"format", "motor-terrain-changes"},
+        {"version", 1},
+        {"blockSize", m_blockSize},
+        {"resolution", m_resolution},
+        {"blocks", std::move(blocks)},
+        {"changed", std::move(changed)},
+    };
+    return WriteFileAtomic(folder / "alteracoes.json", header.dump(1) + "\n", error);
+}
+
+bool TerrainData::ApplyChanges(const fs::path& folder, std::string* error) {
+    const auto text = ReadTextFile(folder / "alteracoes.json");
+    const auto header = text ? nlohmann::json::parse(*text, nullptr, false) : nlohmann::json();
+    if (!header.is_object() || header.value("format", std::string()) != "motor-terrain-changes") {
+        SetError(error, std::format("Alterações do terreno ilegíveis em {}", ToUtf8(folder)));
+        return false;
+    }
+    if (header.value("resolution", 0) != m_resolution || header.value("blockSize", 0.0f) != m_blockSize) {
+        SetError(error, "As alterações guardadas são de um terreno com outro tamanho de bloco ou resolução");
+        return false;
+    }
+    const auto keysOf = [&](const char* name) {
+        std::vector<TerrainBlockKey> keys;
+        if (const auto it = header.find(name); it != header.end() && it->is_array()) {
+            for (const auto& entry : *it) {
+                if (entry.is_array() && entry.size() == 2 && entry[0].is_number_integer() &&
+                    entry[1].is_number_integer()) {
+                    keys.push_back({entry[0].get<int>(), entry[1].get<int>()});
+                }
+            }
+        }
+        return keys;
+    };
+    const std::vector<TerrainBlockKey> blocks = keysOf("blocks");
+    for (const TerrainBlockKey key : Blocks()) {
+        if (std::find(blocks.begin(), blocks.end(), key) == blocks.end()) RemoveBlock(key);
+    }
+    for (const TerrainBlockKey key : blocks) AddBlock(key);
+    std::vector<std::string> problems;
+    for (const TerrainBlockKey key : keysOf("changed")) {
+        Block* block = Find(key);
+        if (!block) continue;
+        const std::string name = BlockFileName(key);
+        const auto bytes = ReadTextFile(folder / PathFromUtf8(name));
+        if (!bytes || DecodeBlock(*bytes, key, *block) == BlockRead::Unreadable) {
+            problems.push_back(name);
+            continue;
+        }
+        block->dirty = true;
+        ++block->weightsVersion;
+        // As normais da borda dos vizinhos também mudam (como no Touch).
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (Block* n = Find({key.x + dx, key.z + dz})) ++n->version;
+            }
+        }
+    }
+    ++m_version;
+    if (!problems.empty()) {
+        SetError(error, std::format("{} bloco(s) ilegível(is) nas alterações guardadas (o primeiro: {})",
+                                    problems.size(), problems.front()));
+        return false;
+    }
     return true;
 }
 
@@ -468,7 +609,6 @@ std::shared_ptr<TerrainData> TerrainData::Load(const fs::path& file, std::string
     }
     auto data = std::make_shared<TerrainData>(header.value("blockSize", kDefaultBlockSize),
                                               header.value("resolution", kDefaultResolution));
-    const int res = data->m_resolution;
     const fs::path folder = BlocksFolder(file);
     std::vector<std::string> problems;
     if (const auto it = header.find("blocks"); it != header.end() && it->is_array()) {
@@ -482,30 +622,13 @@ std::shared_ptr<TerrainData> TerrainData::Load(const fs::path& file, std::string
             block.dirty = false;
             const std::string name = BlockFileName(key);
             const auto bytes = ReadTextFile(folder / PathFromUtf8(name));
-            std::string_view in = bytes ? std::string_view(*bytes) : std::string_view();
-            char magic[4] = {};
-            uint32_t version = 0, resolution = 0;
-            int32_t x = 0, z = 0;
-            const bool header_ok = in.size() >= 4 && (std::memcpy(magic, in.data(), 4), in.remove_prefix(4), true) &&
-                                   std::memcmp(magic, kBlockMagic, 4) == 0 && Take(in, version) && Take(in, x) &&
-                                   Take(in, z) && Take(in, resolution);
+            const BlockRead read = bytes ? data->DecodeBlock(*bytes, key, block) : BlockRead::Unreadable;
             if (!bytes) {
                 problems.push_back(std::format("bloco {} não encontrado", name));
-            } else if (!header_ok || version > kBlockVersion || x != key.x || z != key.z ||
-                       resolution != static_cast<uint32_t>(res) || in.size() < block.heights.size() * sizeof(float)) {
+            } else if (read == BlockRead::Unreadable) {
                 problems.push_back(std::format("bloco {} ilegível", name));
             } else {
-                std::memcpy(block.heights.data(), in.data(), block.heights.size() * sizeof(float));
-                in.remove_prefix(block.heights.size() * sizeof(float));
-                // Versão 1 (antes da pintura): fica tudo na camada 1. Pesos cortados: o que faltar também.
-                if (version >= 2 && in.size() >= block.weights.size() * 4) {
-                    for (size_t k = 0; k < block.weights.size(); ++k) {
-                        glm::vec4 w;
-                        for (int c = 0; c < 4; ++c) w[c] = static_cast<float>(static_cast<uint8_t>(in[k * 4 + static_cast<size_t>(c)])) / 255.0f;
-                        const float sum = w.x + w.y + w.z + w.w;
-                        block.weights[k] = sum > 0.0f ? w / sum : glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-                    }
-                } else if (version >= 2) {
+                if (read == BlockRead::WeightsCut) {
                     log::Warn("Terreno {}: pesos do bloco {} cortados; o bloco ficou só na camada 1",
                               ToUtf8(file.filename()), name);
                 }

@@ -24,6 +24,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace motor {
@@ -98,6 +99,9 @@ public:
 
     // Sobe a cada mudança (quem guarda algo tirado das alturas compara).
     uint64_t Version() const { return m_version; }
+    // Sobe quando as alturas do bloco (ou de um vizinho, pelas normais da borda) mudam; os pesos não contam. 0 se o
+    // bloco não existe. A física refaz só os blocos em que ela subiu.
+    uint64_t BlockVersion(TerrainBlockKey key) const;
     bool IsDirty() const;  // há bloco mudado desde o último Save ou Load
 
     // Grava o cabeçalho e os blocos mudados desde a última gravação (todos, se o arquivo é outro). Atômico por
@@ -109,6 +113,16 @@ public:
     // Como Load, mas quem abre o mesmo arquivo recebe o mesmo objeto enquanto alguém o usar (cópias da cena para o
     // desfazer e o Play dividem as alturas).
     static std::shared_ptr<TerrainData> Open(const std::filesystem::path& file, std::string* error = nullptr);
+    // Arquivos de bloco ("x_z.mtbloco") na pasta dos blocos de `file` que não são de nenhum bloco atual: os tirados
+    // (RemoveBlock) depois de gravados. O editor os manda para a Lixeira depois do Save (SaveTerrains).
+    std::vector<std::filesystem::path> UnusedBlockFiles(const std::filesystem::path& file) const;
+
+    // Recuperação do editor (autossalvamento, Fase 28): grava em `folder` a lista dos blocos e os arquivos só dos
+    // blocos mudados desde o último Save, sem mexer no "não salvo" (o terreno inteiro de 1 km levaria segundos).
+    // ApplyChanges põe isso por cima destas alturas (as do disco, depois de uma queda): tira e põe blocos como a lista
+    // e lê os mudados, que ficam como não salvos.
+    bool SaveChanges(const std::filesystem::path& folder, std::string* error = nullptr) const;
+    bool ApplyChanges(const std::filesystem::path& folder, std::string* error = nullptr);
 
     static std::filesystem::path BlocksFolder(const std::filesystem::path& file);  // "Ilha.blocos" ao lado
     static std::string BlockFileName(TerrainBlockKey key);                         // "3_-2.mtbloco"
@@ -124,6 +138,10 @@ private:
         uint64_t weightsVersion = 1;
         mutable uint64_t weightsUploaded = 0;  // versão dos pesos já levada para m_weightsTexture
     };
+
+    enum class BlockRead { Ok, Unreadable, WeightsCut };
+    std::string EncodeBlock(TerrainBlockKey key, const Block& block) const;  // o arquivo .mtbloco
+    BlockRead DecodeBlock(std::string_view bytes, TerrainBlockKey key, Block& block) const;
 
     Block* Find(TerrainBlockKey key);
     const Block* Find(TerrainBlockKey key) const;

@@ -16,6 +16,7 @@
 #include <Jolt/Physics/Collision/Shape/Shape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -61,10 +62,14 @@ struct PhysicsSystem::World {
         BodyRecord* record = nullptr;
     };
 
-    // Terreno com colisão (Fase 28): um corpo estático por bloco, todos com a entidade como dono. Refeitos quando as
-    // alturas, a matriz de mundo ou os campos de física mudam.
+    // Terreno com colisão (Fase 28): um corpo estático por bloco, todos com a entidade como dono. Alturas mudadas
+    // refazem só os blocos delas (TerrainData::BlockVersion); a matriz de mundo e os campos de física, todos.
+    struct TerrainBody {
+        JPH::BodyID id;
+        uint64_t version = 0;  // TerrainData::BlockVersion de quando foi feito
+    };
     struct TerrainRecord {
-        std::vector<JPH::BodyID> blocks;
+        std::map<TerrainBlockKey, TerrainBody> blocks;
         const TerrainData* data = nullptr;
         uint64_t version = 0;
         glm::mat4 world{1.0f};
@@ -127,6 +132,7 @@ struct PhysicsSystem::World {
     // Terrenos -> corpos (PhysicsTerrain.cpp), no mesmo lote de estáticos do SyncBodies.
     void SyncTerrains(Scene& scene, std::vector<JPH::BodyID>& addStatic);
     void RemoveTerrain(TerrainRecord& r);
+    void RemoveTerrainBodies(std::vector<JPH::BodyID>& ids);
     // Height field de um bloco, com a escala do mundo e o canto do bloco já aplicados (relativo à entidade).
     JPH::ShapeRefC BuildTerrainBlock(const TerrainData& data, TerrainBlockKey key, const glm::vec3& worldScale);
 
@@ -183,6 +189,7 @@ struct PhysicsSystem::World {
     JPH::BodyIDVector activeBodies;  // WriteBack: os corpos acordados do passo
     std::unordered_map<EntityId, CharacterRecord> characters;  // depois de physics: sai antes dele
     std::unordered_map<EntityId, TerrainRecord> terrains;
+    int terrainBlocksBuilt = 0;  // no último SyncTerrains (PhysicsStats)
     std::unordered_map<const Mesh*, std::shared_ptr<MeshData>> meshData;
     std::unordered_map<uint64_t, PairState> pairs;
     std::vector<Exit> pendingExits;

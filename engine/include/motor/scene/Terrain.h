@@ -13,6 +13,7 @@
 #include "motor/scene/Component.h"
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -78,8 +79,10 @@ struct Terrain {
 };
 
 // Grava as alturas mudadas de cada terreno da cena no arquivo dele (TerrainData::Save; terreno sem arquivo fica só na
-// memória). Continua nos outros se um falhar; `error` junta as falhas.
-bool SaveTerrains(const Scene& scene, std::string* error = nullptr);
+// memória). Continua nos outros se um falhar; `error` junta as falhas. Com `discard`, depois de gravar, os arquivos
+// dos blocos tirados (TerrainData::UnusedBlockFiles) vão para ela (o editor manda para a Lixeira).
+bool SaveTerrains(const Scene& scene, std::string* error = nullptr,
+                  const std::function<void(const std::filesystem::path&)>& discard = {});
 
 template <> struct FieldTraits<TerrainRef> {
     static CustomFieldType Describe();

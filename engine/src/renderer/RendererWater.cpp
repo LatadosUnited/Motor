@@ -79,8 +79,8 @@ void Renderer::DrawWater(const Frustum& view, bool depthAfter) {
     shader.Bind();
     glBindTextureUnit(kUnitRefractColor, m_post->RefractionColor());
     glBindTextureUnit(kUnitSceneDepth, m_post->LiveDepth());
-    // O relógio do GLFW (o mesmo do quadro): as ondas andam também com o jogo parado, como o céu do editor.
-    const float time = static_cast<float>(std::fmod(glfwGetTime(), 3600.0));
+    // O tempo do jogo, se quem desenha deu (SetWaterTime); senão o relógio do GLFW, que anda também com o jogo parado.
+    const float time = static_cast<float>(std::fmod(m_waterTime ? *m_waterTime : glfwGetTime(), 3600.0));
     auto setWaves = [&](Shader& s, const WaterUniforms& u, const WaterItem& item) {
         const WaterSurface& w = item.surface;
         s.SetMat4(u.model, ModelRelativeToOrigin(item.model, m_camera.position));

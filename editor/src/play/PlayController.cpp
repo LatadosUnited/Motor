@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 #include <utility>
 
 namespace editor {
@@ -57,6 +58,8 @@ PlayController::Event PlayController::ApplyRequest(EditorContext& ctx, UndoHisto
 
 void PlayController::ApplyQuality(Renderer& renderer) const {
     ApplyGameQuality(renderer, m_mode.IsActive() ? m_host.Options() : GameOptions{});
+    const motor::SceneRuntime* runtime = m_mode.Runtime();
+    renderer.SetWaterTime(runtime ? std::optional<double>(runtime->Time().elapsed) : std::nullopt);
 }
 
 bool PlayController::Stop(EditorContext& ctx) {

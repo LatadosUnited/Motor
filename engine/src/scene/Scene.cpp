@@ -585,10 +585,11 @@ bool Scene::SyncRenderLists() const {
         m_static.world.Clear();
         m_static.dynamic.clear();
         m_static.sources.clear();
-        auto add = [&](EntityId entity, const RenderObject& object) {
+        auto add = [&](EntityId entity, const RenderObject& object, const TerrainData* terrain = nullptr,
+                       TerrainBlockKey key = {}) {
             const RenderWorld::Id id = m_static.world.Add(object);
             if (m_static.sources.size() <= id) m_static.sources.resize(id + 1);
-            m_static.sources[id] = {entity, object.mesh.get(), object.model};
+            m_static.sources[id] = {entity, object.mesh.get(), object.model, terrain, key};
         };
         for (uint32_t i = 0; i < list.items.size(); ++i) {
             const auto [e, mr] = list.items[i];
@@ -621,7 +622,8 @@ bool Scene::SyncRenderLists() const {
             for (const TerrainBlockKey key : data->Blocks()) {
                 const glm::vec3 corner(static_cast<float>(key.x) * size, 0.0f, static_cast<float>(key.z) * size);
                 // Os vértices do bloco partem do canto dele: a matriz leva o canto ao lugar no terreno.
-                add(e->id, {data->BlockMesh(key), material, glm::translate(world, corner), terrain->shadows});
+                add(e->id, {data->BlockMesh(key), material, glm::translate(world, corner), terrain->shadows}, data,
+                    key);
             }
         }
         m_static.terrains = terrains;
@@ -709,9 +711,10 @@ std::optional<float> RayAabb(const glm::vec3& o, const glm::vec3& d, const glm::
     return tmin;
 }
 
-// Raio contra triângulo (Möller-Trumbore), dos dois lados. Retorna o t, se houver.
+// Raio contra triângulo (Möller-Trumbore), dos dois lados. Retorna o t, se houver. A folga nas coordenadas do triângulo
+// fecha as frestas entre vizinhos (o raio que passa bem num vértice ou aresta da grade do terreno).
 std::optional<float> RayTriangle(const glm::vec3& o, const glm::vec3& d, const glm::vec3& a, const glm::vec3& b,
-                                 const glm::vec3& c) {
+                                 const glm::vec3& c, float slack = 0.0f) {
     const glm::vec3 e1 = b - a, e2 = c - a;
     const glm::vec3 p = glm::cross(d, e2);
     const float det = glm::dot(e1, p);
@@ -719,12 +722,65 @@ std::optional<float> RayTriangle(const glm::vec3& o, const glm::vec3& d, const g
     const float inv = 1.0f / det;
     const glm::vec3 s = o - a;
     const float u = glm::dot(s, p) * inv;
-    if (u < 0.0f || u > 1.0f) return std::nullopt;
+    if (u < -slack || u > 1.0f + slack) return std::nullopt;
     const glm::vec3 q = glm::cross(s, e1);
     const float v = glm::dot(d, q) * inv;
-    if (v < 0.0f || u + v > 1.0f) return std::nullopt;
+    if (v < -slack || u + v > 1.0f + slack) return std::nullopt;
     const float t = glm::dot(e2, q) * inv;
     return t >= 0.0f ? std::optional<float>(t) : std::nullopt;
+}
+
+// Primeiro triângulo de um bloco de terreno atingido (espaço do bloco: o canto na origem). Anda pelas células da grade
+// que o raio cruza em XZ, da mais perto à mais longe (Amanatides-Woo), testando os 2 triângulos de cada uma (os da
+// malha, com a diagonal de (0, 0) a (1, 1)): poucas dezenas de testes em vez dos 2048 triângulos do bloco.
+std::optional<float> RayTerrainBlock(const glm::vec3& o, const glm::vec3& d, const std::vector<float>& heights,
+                                     int resolution, float spacing, const glm::vec3& bmin, const glm::vec3& bmax) {
+    const int n = resolution - 1;
+    if (n < 1 || heights.size() < static_cast<size_t>(resolution) * resolution) return std::nullopt;
+    // Trecho do raio dentro da caixa do bloco.
+    float t0 = 0.0f, t1 = std::numeric_limits<float>::max();
+    for (int i = 0; i < 3; ++i) {
+        if (std::abs(d[i]) < 1e-12f) {
+            if (o[i] < bmin[i] || o[i] > bmax[i]) return std::nullopt;
+            continue;
+        }
+        float a = (bmin[i] - o[i]) / d[i], b = (bmax[i] - o[i]) / d[i];
+        if (a > b) std::swap(a, b);
+        t0 = std::max(t0, a);
+        t1 = std::min(t1, b);
+        if (t0 > t1) return std::nullopt;
+    }
+    const auto vertex = [&](int i, int j) {
+        return glm::vec3(static_cast<float>(i) * spacing, heights[static_cast<size_t>(j * resolution + i)],
+                         static_cast<float>(j) * spacing);
+    };
+    const glm::vec3 start = o + d * t0;
+    int i = std::clamp(static_cast<int>(std::floor(start.x / spacing)), 0, n - 1);
+    int j = std::clamp(static_cast<int>(std::floor(start.z / spacing)), 0, n - 1);
+    const int stepI = d.x > 0.0f ? 1 : -1, stepJ = d.z > 0.0f ? 1 : -1;
+    // t em que o raio cruza a próxima linha da grade em x e em z, e quanto t anda por célula.
+    const float inf = std::numeric_limits<float>::max();
+    const float deltaI = std::abs(d.x) > 1e-12f ? spacing / std::abs(d.x) : inf;
+    const float deltaJ = std::abs(d.z) > 1e-12f ? spacing / std::abs(d.z) : inf;
+    float nextI = std::abs(d.x) > 1e-12f ? (static_cast<float>(i + (stepI > 0 ? 1 : 0)) * spacing - o.x) / d.x : inf;
+    float nextJ = std::abs(d.z) > 1e-12f ? (static_cast<float>(j + (stepJ > 0 ? 1 : 0)) * spacing - o.z) / d.z : inf;
+    for (int guard = 0; guard < 2 * n + 2; ++guard) {
+        const glm::vec3 v00 = vertex(i, j), v10 = vertex(i + 1, j), v01 = vertex(i, j + 1), v11 = vertex(i + 1, j + 1);
+        constexpr float kSlack = 1e-4f;
+        std::optional<float> best = RayTriangle(o, d, v00, v01, v11, kSlack);
+        if (const auto t = RayTriangle(o, d, v00, v11, v10, kSlack); t && (!best || *t < *best)) best = t;
+        if (best) return best;  // as células vêm em ordem: o primeiro acerto é o mais perto
+        if (std::min(nextI, nextJ) > t1) break;
+        if (nextI < nextJ) {
+            i += stepI;
+            nextI += deltaI;
+        } else {
+            j += stepJ;
+            nextJ += deltaJ;
+        }
+        if (i < 0 || i >= n || j < 0 || j >= n) break;
+    }
+    return std::nullopt;
 }
 
 // Primeiro triângulo da malha atingido (espaço local). Sem a cópia na CPU, a caixa dos limites.
@@ -745,6 +801,25 @@ std::optional<float> RayMesh(const glm::vec3& o, const glm::vec3& d, const Mesh&
     return best;
 }
 } // namespace
+
+std::optional<RaycastHit> Scene::RaycastWater(const glm::vec3& origin, const glm::vec3& direction) const {
+    std::optional<RaycastHit> best;
+    for (const EntityId id : EntitiesWith<Water>()) {
+        const Entity* e = Find(id);
+        const Water* water = e ? e->Get<Water>() : nullptr;
+        if (!water || !IsActiveInHierarchy(*e)) continue;
+        // No espaço da entidade a água é o plano y = 0, de -size/2 a size/2 em x e z.
+        const glm::mat4 inv = glm::inverse(CachedWorld(*e));
+        const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
+        const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
+        if (std::abs(d.y) < 1e-12f) continue;
+        const float t = -o.y / d.y;
+        if (t < 0.0f || (best && t >= best->distance)) continue;
+        const glm::vec3 p = o + d * t;
+        if (std::abs(p.x) <= water->size.x * 0.5f && std::abs(p.z) <= water->size.y * 0.5f) best = RaycastHit{id, t};
+    }
+    return best;
+}
 
 std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec3& direction) const {
     std::optional<RaycastHit> best;
@@ -770,7 +845,18 @@ std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec
         if (best && m_static.enter[i] > best->distance) break;
         // A malha e a matriz guardadas ao montar: a cena não mudou desde então (SyncRenderLists acima).
         const StaticRender::Source& source = m_static.sources[hits[i]];
-        if (source.mesh) test(source.entity, source.model, *source.mesh);
+        if (source.terrain && source.mesh) {
+            const std::vector<float>* heights = source.terrain->BlockHeights(source.key);
+            if (!heights) continue;
+            const glm::mat4 inv = glm::inverse(source.model);
+            const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
+            const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
+            const auto t = RayTerrainBlock(o, d, *heights, source.terrain->Resolution(), source.terrain->Spacing(),
+                                           source.mesh->BoundsMin(), source.mesh->BoundsMax());
+            if (t && (!best || *t < best->distance)) best = RaycastHit{source.entity, *t};
+        } else if (source.mesh) {
+            test(source.entity, source.model, *source.mesh);
+        }
     }
     return best;
 }

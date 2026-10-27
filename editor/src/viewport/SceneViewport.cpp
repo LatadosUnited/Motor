@@ -330,7 +330,10 @@ void SceneViewport::PickAt(EditorContext& ctx, const glm::vec2& uv) {
         picked = best->entity;
     } else {
         const auto [origin, direction] = Ray(uv);
-        const auto hit = ctx.scene.Raycast(origin, direction);
+        auto hit = ctx.scene.Raycast(origin, direction);
+        // A água também se escolhe pelo clique: a superfície, se vem antes do que está embaixo dela.
+        const auto water = ctx.scene.RaycastWater(origin, direction);
+        if (water && (!hit || water->distance < hit->distance)) hit = water;
         if (hit) picked = hit->entity;
     }
     if (!AddingToSelection()) {

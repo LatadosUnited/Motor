@@ -28,7 +28,8 @@ std::shared_ptr<TerrainData> TerrainRef::SharedData() const {
     return m_data;
 }
 
-bool SaveTerrains(const Scene& scene, std::string* error) {
+bool SaveTerrains(const Scene& scene, std::string* error,
+                  const std::function<void(const std::filesystem::path&)>& discard) {
     bool ok = true;
     std::vector<const TerrainData*> saved;  // duas entidades com o mesmo arquivo: grava uma vez
     for (const EntityId id : scene.EntitiesWith<Terrain>()) {
@@ -42,6 +43,8 @@ bool SaveTerrains(const Scene& scene, std::string* error) {
         if (!data->Save(terrain->terrain.file, &failure)) {
             ok = false;
             if (error) *error += (error->empty() ? "" : "; ") + failure;
+        } else if (discard) {
+            for (const std::filesystem::path& unused : data->UnusedBlockFiles(terrain->terrain.file)) discard(unused);
         }
     }
     return ok;

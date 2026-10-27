@@ -65,7 +65,9 @@ namespace motor {
 // 26: Fase 28: componente Water; o Renderer ganhou a água (SubmitWater, membros novos).
 // 27: Fase 28: os pesos do terreno numa textura só (TerrainLayers::weights é TerrainWeights, sem `block`), sombra do
 //     terreno pelas faces de costas (ShadowParams::backFacesOnly), variantes da água no Renderer.
-inline constexpr int kScriptApiVersion = 27;
+// 28: Fase 28: os estáticos guardados na Scene sabem de qual bloco de terreno vieram (raio pela grade), Scene::
+//     RaycastWater, PhysicsStats::terrainBlocksBuilt, SaveTerrains com descarte, Renderer::SetWaterTime.
+inline constexpr int kScriptApiVersion = 28;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

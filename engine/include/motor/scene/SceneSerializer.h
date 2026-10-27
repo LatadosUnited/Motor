@@ -89,6 +89,9 @@ bool SaveRecovery(const std::filesystem::path& projectRoot, const Scene& scene, 
                   const std::filesystem::path& originalScenePath, std::string_view reason = "autosave",
                   std::string* error = nullptr);
 std::optional<RecoveryInfo> CheckRecovery(const std::filesystem::path& projectRoot);
+// Alturas não salvas dos terrenos guardadas com a recuperação (só os blocos mudados): aplicadas nos terrenos da cena
+// recuperada, que ficam como não salvos. Quantos terrenos receberam alterações; falhas vão para `error`.
+int ApplyRecoveryTerrains(const std::filesystem::path& projectRoot, const Scene& scene, std::string* error = nullptr);
 void ClearRecovery(const std::filesystem::path& projectRoot);
 
 } // namespace SceneSerializer

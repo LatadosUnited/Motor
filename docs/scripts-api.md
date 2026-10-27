@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 27 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 28 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -492,7 +492,7 @@ passo fixo) devolvem `false`/zero.
 | `std::vector<EntityId> OverlapBox(center, halfExtents, rotation = identidade, layerMask = kAll, includeTriggers = true) const` | entidades dentro da caixa (`halfExtents` = metade do tamanho) |
 | `std::optional<PhysicsRaycastHit> SphereCast(origin, radius, direction, maxDistance = 1000, ignore = kNullEntity, layerMask = kAll) const` | raio com espessura: primeiro corpo que a esfera toca (`distance` = quanto andou); triggers não contam |
 | `bool HasBody(EntityId id) const` | a entidade já tem corpo ou personagem |
-| `const PhysicsStats& Stats() const` | números do último passo (corpos, tempos em ms) |
+| `const PhysicsStats& Stats() const` | números do último passo (corpos, tempos em ms, `terrainBlocksBuilt`: blocos de terreno refeitos) |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 `motor::PhysicsRaycastHit`: `entity`, `point`, `normal` (da superfície atingida) e `distance`.

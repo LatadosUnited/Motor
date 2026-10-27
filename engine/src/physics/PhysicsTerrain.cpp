@@ -65,19 +65,28 @@ JPH::ShapeRefC PhysicsSystem::World::BuildTerrainBlock(const TerrainData& data, 
     return nullptr;
 }
 
-void PhysicsSystem::World::RemoveTerrain(TerrainRecord& r) {
-    if (r.blocks.empty()) return;
-    for (const JPH::BodyID id : r.blocks) {
+void PhysicsSystem::World::RemoveTerrainBodies(std::vector<JPH::BodyID>& ids) {
+    if (ids.empty()) return;
+    for (const JPH::BodyID id : ids) {
         WakeAround(id);  // o que estava em cima cai (ou é refeito no lugar novo)
         DropPairsOf(id);
     }
     JPH::BodyInterface& bi = Bodies();
-    bi.RemoveBodies(r.blocks.data(), static_cast<int>(r.blocks.size()));
-    bi.DestroyBodies(r.blocks.data(), static_cast<int>(r.blocks.size()));
+    bi.RemoveBodies(ids.data(), static_cast<int>(ids.size()));
+    bi.DestroyBodies(ids.data(), static_cast<int>(ids.size()));
+    ids.clear();
+}
+
+void PhysicsSystem::World::RemoveTerrain(TerrainRecord& r) {
+    std::vector<JPH::BodyID> ids;
+    ids.reserve(r.blocks.size());
+    for (const auto& [key, body] : r.blocks) ids.push_back(body.id);
+    RemoveTerrainBodies(ids);
     r.blocks.clear();
 }
 
 void PhysicsSystem::World::SyncTerrains(Scene& scene, std::vector<JPH::BodyID>& addStatic) {
+    terrainBlocksBuilt = 0;
     const std::vector<EntityId>& ids = scene.EntitiesWith<Terrain>();
     if (ids.empty() && terrains.empty()) return;
     for (const EntityId id : ids) {
@@ -89,20 +98,33 @@ void PhysicsSystem::World::SyncTerrains(Scene& scene, std::vector<JPH::BodyID>& 
         const glm::mat4 world = scene.WorldMatrix(*entity);
         TerrainRecord& r = terrains[id];
         r.seen = frame;
-        // O caminho comum: nada mudou (as alturas só mudam pelos pincéis, no editor).
-        if (r.data == data && r.version == data->Version() && r.world == world && r.friction == terrain->friction &&
-            r.layer == terrain->layer) {
-            continue;
+        const bool same = r.data == data && r.world == world && r.friction == terrain->friction &&
+                          r.layer == terrain->layer;
+        // O caminho comum: nada mudou (as alturas só mudam pelos pincéis, no editor, ou por script).
+        if (same && r.version == data->Version()) continue;
+        if (!same) {
+            RemoveTerrain(r);
+            r.data = data;
+            r.world = world;
+            r.friction = terrain->friction;
+            r.layer = terrain->layer;
         }
-        RemoveTerrain(r);
-        r.data = data;
         r.version = data->Version();
-        r.world = world;
-        r.friction = terrain->friction;
-        r.layer = terrain->layer;
+        // Saem os blocos tirados e os de alturas mudadas (refeitos abaixo); pintar não muda a versão de bloco nenhum.
+        std::vector<JPH::BodyID> gone;
+        for (auto it = r.blocks.begin(); it != r.blocks.end();) {
+            if (data->BlockVersion(it->first) != it->second.version) {
+                gone.push_back(it->second.id);
+                it = r.blocks.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        RemoveTerrainBodies(gone);
         const Pose pose = Decompose(world);
         const JPH::ObjectLayer layer = MakeLayer(false, terrain->layer.index);
         for (const TerrainBlockKey key : data->Blocks()) {
+            if (r.blocks.contains(key)) continue;
             const JPH::ShapeRefC shape = BuildTerrainBlock(*data, key, pose.scale);
             if (!shape) continue;
             JPH::BodyCreationSettings settings(shape, ToJolt(pose.position), ToJolt(pose.rotation),
@@ -114,8 +136,9 @@ void PhysicsSystem::World::SyncTerrains(Scene& scene, std::vector<JPH::BodyID>& 
                 WarnOnce(id, "Física: limite de corpos atingido (terreno)");
                 break;
             }
-            r.blocks.push_back(body->GetID());
+            r.blocks[key] = {body->GetID(), data->BlockVersion(key)};
             addStatic.push_back(body->GetID());
+            ++terrainBlocksBuilt;
         }
     }
     // Terreno que saiu, foi desativado ou perdeu a colisão.

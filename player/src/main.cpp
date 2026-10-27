@@ -322,6 +322,8 @@ private:
                 camera.LookAt({0.0f, 0.0f, 0.0f});
             }
             camera.aspect = window.AspectRatio();
+            // As ondas da água andam com o tempo do jogo (param com a pausa).
+            renderer.SetWaterTime(m_runtime ? std::optional<double>(m_runtime->Time().elapsed) : std::nullopt);
             renderer.BeginScene(camera, scene.CollectLights(), scene.environment);
             scene.SubmitTo(renderer);
             renderer.EndScene();

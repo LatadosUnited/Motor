@@ -448,7 +448,7 @@ entity.Remove<Girar>();
   **Física:** com Colisão, cada bloco vira um corpo estático da Jolt (height field) com as mesmas alturas e
   triângulos que o desenho, sem precisar de Collider: o personagem anda no terreno, corpos caem e rolam nele, e o
   `Raycast` da física e os eventos de contato devolvem a entidade do terreno. Posição, rotação e escala da entidade
-  valem; mudar as alturas em Play refaz os corpos.
+  valem; mudar as alturas em Play refaz só os corpos dos blocos mudados (pintar não refaz nenhum).
   **LOD:** cada bloco tem 4 níveis mais simples (uma amostra a cada 2, 4, 8 e 16 no miolo, a partir de ~80, 160, 320
   e 640 m com blocos de 32 m; `Renderer::SetLodBias` estica ou encurta essas distâncias), todos com a borda inteira
   do bloco: vizinhos em níveis diferentes não abrem frestas. O nível mais simples tem 136 triângulos (o bloco
@@ -464,7 +464,8 @@ entity.Remove<Girar>();
   e a força; no Viewport, o círculo segue o mouse sobre o terreno selecionado e arrastar com o botão
   esquerdo pinta (Selecionar ou Esc no Viewport volta ao clique que seleciona; o gizmo some enquanto o pincel está
   ligado). Cada pincelada é um passo de desfazer e marca a cena como não salva; salvar a cena grava só os blocos
-  mudados. Pelo MCP: `terrain_brush` (pincelada), `terrain_info` (blocos, caixa e, sob pontos, altura, inclinação e
+  mudados e manda para a Lixeira o arquivo dos blocos tirados. O autossalvamento de recuperação guarda também os
+  blocos mudados (só eles), que voltam por cima do terreno do disco ao recuperar a cena. Pelo MCP: `terrain_brush` (pincelada), `terrain_info` (blocos, caixa e, sob pontos, altura, inclinação e
   pesos), `terrain_heights` (ler ou gravar um retângulo de até 257 x 257 alturas: um número ou as linhas, `set` ou
   `add`) e `terrain_blocks` (pôr ou tirar blocos, por lista ou retângulo); todos com desfazer. Bloco novo começa com
   a borda dos vizinhos que já existem (sem degrau). Dados e arquivos em `motor/assets/TerrainData.h`, pincéis em
@@ -477,9 +478,10 @@ entity.Remove<Girar>();
   lendo uma cópia da cor da cena (só do retângulo da tela que a água cobre) e a profundidade direto (com MSAA, a
   amostra 0), sem gravar profundidade (uma passada só de profundidade vem depois se algo ainda for desenhado por cima)
   (`Renderer::SubmitWater`, `motor/renderer/Water.h`); `WaterSurface::WaveOffset` dá na CPU a mesma altura das ondas
-  do shader. Sem física (não segura nada nem entra nos raios). Pelo MCP, `water_info`: os
-  cantos e, sob pontos, se estão dentro, a altura da superfície com as ondas num tempo dado, o fundo, a profundidade
-  e se o ponto está seco (chão acima da água).
+  do shader. As ondas andam com o tempo do jogo no Play e no jogo exportado (param com a pausa) e com o relógio no
+  editor fora do Play. Sem física (não segura nada nem entra nos raios da física); o clique no viewport seleciona a
+  água (`Scene::RaycastWater`). Pelo MCP, `water_info`: os cantos e, sob pontos, se estão dentro, a altura da
+  superfície com as ondas num tempo dado, o fundo, a profundidade e se o ponto está seco (chão acima da água).
 
 ### Renderização (Fase 7)
 

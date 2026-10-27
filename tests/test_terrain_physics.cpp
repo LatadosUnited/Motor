@@ -178,6 +178,20 @@ int main() {
         data->SetSample(4, 4, 12.0f);
         Run(runtime, kDt);
         CHECK(Near(groundAt(4.0f, 4.0f), 12.0f, 0.01f));
+        // Só os blocos da amostra e os que a têm na normal da borda (aqui, os 4 em volta do canto (0, 0)), não os 16.
+        CHECK(fisica && fisica->Stats().terrainBlocksBuilt > 0 && fisica->Stats().terrainBlocksBuilt <= 4);
+        CHECK(fisica && fisica->Stats().bodies == 16);
+        // Pintar não mexe na colisão: nenhum bloco refeito.
+        data->SetWeights(40, 40, {0.0f, 1.0f, 0.0f, 0.0f});
+        Run(runtime, kDt);
+        CHECK(fisica && fisica->Stats().terrainBlocksBuilt == 0);
+        // Bloco tirado sai da física; posto de volta, entra sozinho.
+        CHECK(data->RemoveBlock({1, 1}));
+        Run(runtime, kDt);
+        CHECK(fisica && fisica->Stats().bodies == 15 && groundAt(40.0f, 40.0f) < -999.0f);
+        CHECK(data->AddBlock({1, 1}, 2.0f));
+        Run(runtime, kDt);
+        CHECK(fisica && fisica->Stats().bodies == 16 && fisica->Stats().terrainBlocksBuilt <= 4);
 
         scene.Find(id)->Get<Terrain>()->collision = false;
         Run(runtime, kDt);

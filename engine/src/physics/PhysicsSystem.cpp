@@ -120,6 +120,7 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
     m_stats.activeBodies = static_cast<int>(w.physics.GetNumActiveBodies(JPH::EBodyType::RigidBody));
     m_stats.characters = static_cast<int>(w.characters.size());
     m_stats.threads = w.threads;
+    m_stats.terrainBlocksBuilt = w.terrainBlocksBuilt;
 
     // Partes do sistema "Fisica" nos contadores do quadro (--perf, MCP): somam nos vários passos fixos do quadro.
     FrameStats& frameStats = FrameStats::Instance();
