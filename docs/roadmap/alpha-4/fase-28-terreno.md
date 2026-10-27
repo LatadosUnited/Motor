@@ -35,7 +35,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 7: Guardar os componentes em blocos contínuos por tipo — 261c9cd
 - [x] Tarefa 8: Criar o componente Terrain com mapa de altura em blocos, um arquivo por bloco — 6c9be78
 - [x] Tarefa 9: Pincéis do terreno no editor: subir, baixar, suavizar — 84bd2db
-- [ ] Tarefa 10: Pintar até 4 camadas de textura no terreno
+- [x] Tarefa 10: Pintar até 4 camadas de textura no terreno — 71d1d3c
 - [ ] Tarefa 11: Dar ao terreno um collider da física (height field da Jolt)
 - [ ] Tarefa 12: LOD do terreno por blocos, sem frestas entre níveis
 - [ ] Tarefa 13: Criar a água: ondas, reflexo do céu, refração e cor pela profundidade
@@ -161,6 +161,23 @@ e a renderização relativa à câmera são também a base do streaming de célu
     volta ao plano e ao "salvo", refazer volta ao morro e ao "não salvo". Uma pincelada dentro do bloco `1_1`
     regravou só ele (1 de 16 arquivos). Inspector visto pelo `PrintWindow`. `test_terrain` (pincéis, desfazer,
     `SaveTerrains`, raio do terreno) e `test_undo` (versão com `unsaved`).
+- Tarefa 10: cada amostra do terreno tem os pesos de 4 camadas (somam 1; tudo na camada 1 no começo), divididos na
+  borda como as alturas. O arquivo do bloco passou à versão 2 (os pesos depois das alturas, um byte por camada); a
+  versão 1 ainda é lida, toda na camada 1. Cada bloco dá uma textura 33 x 33 com os pesos
+  (`TerrainData::BlockWeights`), criada sem OpenGL (`Texture2D::CreateDeferred`, enviada no primeiro uso, como a
+  `Mesh`) e refeita só quando os pesos mudam; pintar não refaz a malha.
+  - Renderer: `Material::terrain` (`TerrainLayers`: pesos, 4 texturas, cores, escalas e o canto do bloco) escolhe a
+    variante TERRAIN do `lit.frag` (shader 3), que mistura as camadas pela textura dos pesos lida nos metros do
+    terreno. As outras partes do material (rugosidade, luz, sombra, neblina) seguem as do lit.
+  - Componente: a camada 1 é a textura e a cor do material, com escala própria; as camadas 2 a 4 (textura, cor,
+    escala) ficam no componente, com cores padrão de terra, rocha e areia. A cena monta um material por bloco.
+    `kScriptApiVersion` 24.
+  - Pincel Pintar (Inspector, com a camada 1 a 4; `terrain_brush` com `layer`), no mesmo passo de desfazer
+    (`TerrainEdit` com alturas e pesos).
+  - Pelo MCP ("Pintura Ação"): estrada de terra, rocha no topo do morro e areia aparecem com a mistura suave nas
+    bordas; texturas nas camadas 1 e 2 com escalas diferentes; desfazer volta à camada 1; salvar regravou só os 9
+    blocos tocados (de 16), na versão 2, com o topo do morro gravado como camada 3 pura. `test_terrain` (pesos,
+    normalização, desfazer, malha não refeita, arquivo novo e antigo, camadas do componente).
 
 ## Limitações
 
@@ -187,3 +204,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
   só quando ninguém mais usa o terreno (as alturas ficam na `TerrainData` aberta enquanto houver referência). A cada
   quadro da pincelada a lista de estáticos é refeita inteira (custo que cresce com a cena). Um terreno girado ou
   escalado recebe o raio e a força no espaço dele.
+  Pintura (Tarefa 10): o pixel do terreno lê sempre as 4 texturas e a dos pesos, mesmo onde só há uma camada; cada
+  bloco é um material próprio (um draw por bloco, até o LOD da Tarefa 12 juntar). Os pesos têm a resolução das
+  alturas (1 m): bordas de pintura mais finas que isso não existem. As camadas só têm cor (sem mapa de normal nem
+  rugosidade por camada). Pintar a cada quadro cria um material e uma textura de pesos novos por bloco tocado.
