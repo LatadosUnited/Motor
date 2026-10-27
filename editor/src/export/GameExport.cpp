@@ -352,6 +352,10 @@ bool CopyGameFiles(const motor::Project& project, const Options& options, const 
             !CopyFile(meta, data / PathFromUtf8(rel).parent_path() / meta.filename(), result)) {
             return false;
         }
+        // A pasta dos blocos do terreno (e outros companheiros do asset) vai junto.
+        for (const fs::path& companion : motor::AssetCompanions(from)) {
+            if (!CopyTree(companion, data / PathFromUtf8(rel).parent_path() / companion.filename(), result)) return false;
+        }
     }
     if (!options.scriptsDll.empty() && !CopyFile(options.scriptsDll, data / kScriptsDllName, result)) return false;
     return true;

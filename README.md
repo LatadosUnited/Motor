@@ -439,6 +439,13 @@ entity.Remove<Girar>();
   que o cone alcança), até 4 ao mesmo tempo (as mais perto da câmera que iluminam algo visível). Funciona com
   malhas animadas.
   Entidade > Luz direcional / pontual / spot cria uma. Céu, neblina e **luz ambiente** ficam no painel Cena.
+- **Terreno** (Fase 28): mapa de altura em blocos de 32 m (33 x 33 alturas, 1 m entre elas), num asset
+  `.mterrain` (cabeçalho) com a pasta `.blocos` ao lado (um arquivo `x_z.mtbloco` por bloco: o mundo grande carrega
+  um bloco sem os outros). O painel Projeto move, copia e manda para a Lixeira a pasta junto com o `.mterrain`, e a
+  exportação a leva. Campos: Terreno (o arquivo), Material, Textura (repete a cada metro), Cor, Rugosidade e Sombra.
+  Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta. Entidade >
+  Terreno (ou `entity_create` com `kind: "terrain"` no MCP) cria um plano de 128 x 128 m em `Assets/Terrenos`.
+  Dados e arquivos em `motor/assets/TerrainData.h`; pincéis, pintura, física e LOD vêm nas próximas tarefas.
 
 ### Renderização (Fase 7)
 

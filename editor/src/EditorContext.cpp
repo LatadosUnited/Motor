@@ -3,6 +3,7 @@
 
 #include <motor/core/Paths.h>
 #include <motor/scene/ModelImport.h>
+#include <motor/scene/Terrain.h>
 
 #include <imgui.h>
 
@@ -71,7 +72,7 @@ std::vector<fs::path> AcceptAnyPathDrop() {
 
 motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
     const char* names[] = {"Entidade", "Cubo", "Esfera", "Plano", "Câmera", "Sol", "Lâmpada", "Holofote",
-                           "Cilindro", "Cápsula", "Cone"};
+                           "Cilindro", "Cápsula", "Cone", "Terreno"};
     motor::Entity& e = scene.CreateEntity(names[static_cast<int>(type)], parent);
 
     if (type == Primitive::Camera) {
@@ -90,6 +91,8 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
             e.transform.rotation = motor::RotationLookingAt({0.0f, -1.0f, 0.0f});  // aponta para o chão
         }
         if (parent == kNullEntity) e.transform.position = {0.0f, 3.0f, 0.0f};
+    } else if (type == Primitive::Terrain) {
+        CreateTerrainFile(e);
     } else if (type != Primitive::Empty) {
         e.Add<motor::MeshRenderer>().mesh = assets.FindMesh(names[static_cast<int>(type)]);
         // Em cima do chão: as formas de altura 2 (cilindro e cápsula) sobem 1, as outras 0,5.
@@ -112,6 +115,32 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
     }
     selected = e.id;
     return e;
+}
+
+void EditorContext::CreateTerrainFile(motor::Entity& e) {
+    // 4 x 4 blocos planos em volta da origem (128 m de lado com os blocos de 32 m), gravados num .mterrain novo.
+    auto data = std::make_shared<motor::TerrainData>();
+    for (int z = -2; z < 2; ++z) {
+        for (int x = -2; x < 2; ++x) data->AddBlock({x, z});
+    }
+    motor::Terrain& terrain = e.Add<motor::Terrain>();
+    fs::path file = NewAssetPath("Terrenos", "Terreno", motor::kTerrainFileExtension);
+    // A pasta dos blocos também não pode existir (sobrou de um terreno apagado à mão, por exemplo).
+    std::error_code ec;
+    for (int i = 2; !file.empty() && fs::exists(motor::TerrainData::BlocksFolder(file), ec); ++i) {
+        file = file.parent_path() / motor::PathFromUtf8(std::format("Terreno {}{}", i, motor::kTerrainFileExtension));
+    }
+    std::string error;
+    if (file.empty()) {
+        pendingError = "Abra ou crie um projeto para gravar o terreno: este fica só na memória.";
+    } else if (!data->Save(file, &error)) {
+        pendingError = std::format("Não foi possível gravar o terreno: {}", error);
+    } else {
+        terrain.terrain.file = file;
+        terrain.terrain.guid = assets.Database().GuidFor(file);
+        terrain.terrain.path = assets.KeyForFile(file);
+    }
+    terrain.terrain.SetData(std::move(data));
 }
 
 motor::Entity* EditorContext::CreateFromMeshFile(const fs::path& file, EntityId parent) {
@@ -426,6 +455,8 @@ void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent) {
     if (ImGui::MenuItem("Cilindro")) ctx.CreatePrimitive(Primitive::Cylinder, parent);
     if (ImGui::MenuItem("Cápsula")) ctx.CreatePrimitive(Primitive::Capsule, parent);
     if (ImGui::MenuItem("Cone")) ctx.CreatePrimitive(Primitive::Cone, parent);
+    ImGui::Separator();
+    if (ImGui::MenuItem("Terreno")) ctx.CreatePrimitive(Primitive::Terrain, parent);
     ImGui::Separator();
     if (ImGui::MenuItem("Câmera")) ctx.CreatePrimitive(Primitive::Camera, parent);
     ImGui::Separator();

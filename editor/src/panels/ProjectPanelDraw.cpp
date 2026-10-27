@@ -455,6 +455,7 @@ void ProjectPanel::DrawPopups(const Callbacks& callbacks) {
             std::vector<std::string> errors;
             for (const fs::path& path : m_pendingDelete) {
                 std::string error;
+                const std::vector<fs::path> companions = motor::AssetCompanions(path);
                 if (!Shell::MoveToTrash(path, &error)) {
                     errors.push_back(std::move(error));
                     continue;
@@ -463,6 +464,7 @@ void ProjectPanel::DrawPopups(const Callbacks& callbacks) {
                 if (const fs::path meta = motor::AssetDatabase::MetaPathFor(path); fs::exists(meta, ec)) {
                     Shell::MoveToTrash(meta);
                 }
+                for (const fs::path& companion : companions) Shell::MoveToTrash(companion);
                 if (IsInside(m_currentDir, path)) m_currentDir = path.parent_path();
                 if (callbacks.pathDeleted) callbacks.pathDeleted(path);
             }

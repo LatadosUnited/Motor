@@ -18,7 +18,8 @@ using motor::EntityId;
 using motor::kNullEntity;
 
 // Formas (Cubo a Cone) vêm com o Collider que bate com elas: corpo parado; com Rigidbody, cai.
-enum class Primitive { Empty, Cube, Sphere, Plane, Camera, DirectionalLight, PointLight, SpotLight, Cylinder, Capsule, Cone };
+enum class Primitive { Empty, Cube, Sphere, Plane, Camera, DirectionalLight, PointLight, SpotLight, Cylinder, Capsule, Cone,
+                       Terrain };
 
 // Arquivos arrastados do painel Projeto (payload do ImGui): caminhos UTF-8 um por linha.
 inline constexpr const char* kPathPayload = "MOTOR_PATH";
@@ -121,6 +122,9 @@ struct EditorContext {
                                        const char* extension) const;
 
 private:
+    // Terreno novo (Primitive::Terrain): grava um .mterrain plano em Assets/Terrenos e o liga a `e`.
+    void CreateTerrainFile(motor::Entity& e);
+
     std::filesystem::path m_prefabRoot;  // projeto do cache de prefabs (trocou = limpa o cache)
     bool m_forgetAllAngles = false;
     std::vector<EntityId> m_forgottenAngles;

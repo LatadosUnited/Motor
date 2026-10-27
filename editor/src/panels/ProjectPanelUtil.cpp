@@ -27,6 +27,7 @@ Icon IconFor(bool isDirectory, AssetType type) {
         case AssetType::EnvironmentMap: return Icon::Texture;  // céu HDR
         case AssetType::Audio: break;  // clipes de som: ícone de arquivo
         case AssetType::NavMesh: break;  // navmesh gerado: ícone de arquivo
+        case AssetType::Terrain: return Icon::Mesh;
         case AssetType::Unknown: break;
     }
     return Icon::File;
@@ -129,12 +130,34 @@ fs::path UniqueDestination(const fs::path& source, const fs::path& folder) {
 
 // Depois de renomear/mover um arquivo, leva o .meta junto para o asset manter o GUID.
 // (Pastas não precisam: os .meta de dentro vão com elas.)
+namespace {
+// O companheiro de `from` com o nome de `to`: o começo do nome (o nome do asset sem a extensão) é trocado.
+fs::path CompanionFor(const fs::path& companion, const fs::path& from, const fs::path& to) {
+    const std::string name = ToUtf8(companion.filename()), stem = ToUtf8(from.stem());
+    const std::string rest = name.starts_with(stem) ? name.substr(stem.size()) : name;
+    return to.parent_path() / PathFromUtf8(ToUtf8(to.stem()) + rest);
+}
+} // namespace
+
 void MoveMetaAlong(const fs::path& from, const fs::path& to) {
     std::error_code ec;
+    if (fs::is_directory(to, ec)) return;
+    // `from` já foi movido: os companheiros são procurados ao lado de onde ele estava.
+    for (const fs::path& companion : motor::AssetCompanions(from)) {
+        fs::rename(companion, CompanionFor(companion, from, to), ec);
+        if (ec) motor::log::Warn("Não foi possível mover {}: {}", ToUtf8(companion), ec.message());
+    }
     const fs::path meta = motor::AssetDatabase::MetaPathFor(from);
-    if (fs::is_directory(to, ec) || !fs::exists(meta, ec)) return;
+    if (!fs::exists(meta, ec)) return;
     fs::rename(meta, motor::AssetDatabase::MetaPathFor(to), ec);
     if (ec) motor::log::Warn("Não foi possível mover {}: {}", ToUtf8(meta), ec.message());
+}
+
+void CopyCompanions(const fs::path& from, const fs::path& to, std::error_code& ec) {
+    for (const fs::path& companion : motor::AssetCompanions(from)) {
+        fs::copy(companion, CompanionFor(companion, from, to), fs::copy_options::recursive, ec);
+        if (ec) return;
+    }
 }
 
 // Corta o texto com "..." para caber em `width` (sem partir caracteres UTF-8 ao meio).

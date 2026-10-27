@@ -198,7 +198,7 @@ private:
 
     const Entity* ParentOf(const Entity& e) const;  // Find(e.parent) sem a busca, se a estrutura não mudou
     const glm::mat4& CachedWorld(const Entity& e) const;
-    // m_meshList e os estáticos (m_static) em dia com a cena; false se não há Mesh Renderer.
+    // m_meshList e os estáticos (m_static) em dia com a cena; false se não há Mesh Renderer nem terreno.
     bool SyncRenderLists() const;
 
     // Mudança guardada para o índice, aplicada na próxima consulta (UpdateIndex). As listas ficam ordenadas por id,
@@ -251,7 +251,15 @@ private:
     // movimento começam vazios (e sujos).
     struct StaticRender {
         RenderWorld world;
-        std::vector<EntityId> entities;  // id no world -> entidade (Raycast)
+        // id no world -> de onde veio (Raycast): a entidade, a malha (do MeshRenderer ou de um bloco do terreno) e a
+        // matriz de mundo usada.
+        struct Source {
+            EntityId entity = kNullEntity;
+            const Mesh* mesh = nullptr;
+            glm::mat4 model{1.0f};
+        };
+        std::vector<Source> sources;
+        uint64_t terrains = 0;  // soma das versões dos terrenos (TerrainData::Version): mudou, refaz
         std::vector<float> enter;        // Raycast: entrada do raio na caixa de cada acerto da grade
         std::vector<uint32_t> dynamic;  // posições em m_meshList.items dos que não são estáticos
         uint64_t version = UINT64_MAX;
@@ -260,7 +268,7 @@ private:
         StaticRender(const StaticRender&) {}
         StaticRender& operator=(const StaticRender&) {
             world.Clear();
-            entities.clear();
+            sources.clear();
             dynamic.clear();
             version = UINT64_MAX;
             dirty = true;

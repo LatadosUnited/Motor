@@ -3,6 +3,7 @@
 #include "motor/core/FrameStats.h"
 #include "motor/scene/BlockPool.h"
 #include "motor/scene/EntityRef.h"
+#include "motor/scene/Terrain.h"
 
 #include "motor/renderer/Camera.h"
 #include "motor/renderer/Mesh.h"
@@ -549,9 +550,12 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
 bool Scene::SyncRenderLists() const {
     // O tipo e a lista saem aqui: as duas consultas guardam cache na primeira chamada.
     const ComponentType* meshType = ComponentRegistry::TypeOf<MeshRenderer>();
-    const std::vector<EntityId>& ids = EntitiesWith<MeshRenderer>();
-    if (!meshType || ids.empty()) {
+    static const std::vector<EntityId> kNone;
+    const std::vector<EntityId>& ids = meshType ? EntitiesWith<MeshRenderer>() : kNone;
+    const std::vector<EntityId>& terrainIds = EntitiesWith<Terrain>();
+    if (ids.empty() && terrainIds.empty()) {
         if (m_static.world.Count() > 0 || !m_static.dynamic.empty()) m_static = StaticRender();
+        m_meshList.items.clear();
         return false;
     }
     MeshList& list = m_meshList;
@@ -567,12 +571,24 @@ bool Scene::SyncRenderLists() const {
     }
     // Estáticos (Fase 28): guardados no RenderWorld, refeitos só quando a estrutura muda ou alguém avisa
     // (MarkRenderDirty); fora disso não são lidos. Com pele, nunca: as juntas mudam a cada quadro. Junto sai a lista
-    // dos outros, os únicos percorridos a cada quadro.
-    if (listChanged || m_static.dirty || m_static.version != SceneStructureVersion()) {
+    // dos outros, os únicos percorridos a cada quadro. Os blocos de terreno entram sempre como estáticos; os
+    // terrenos são poucos e conferidos a cada quadro: alturas mudadas (pincel) refazem os estáticos.
+    uint64_t terrains = 0;
+    for (const EntityId id : terrainIds) {
+        const Entity* e = Find(id);
+        const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
+        if (const TerrainData* data = terrain ? terrain->terrain.Data() : nullptr) terrains += data->Version() + 1;
+    }
+    if (listChanged || m_static.dirty || m_static.version != SceneStructureVersion() || m_static.terrains != terrains) {
         MOTOR_PROFILE_STAT("Render: refazer os estáticos");
         m_static.world.Clear();
         m_static.dynamic.clear();
-        m_static.entities.clear();
+        m_static.sources.clear();
+        auto add = [&](EntityId entity, const RenderObject& object) {
+            const RenderWorld::Id id = m_static.world.Add(object);
+            if (m_static.sources.size() <= id) m_static.sources.resize(id + 1);
+            m_static.sources[id] = {entity, object.mesh.get(), object.model};
+        };
         for (uint32_t i = 0; i < list.items.size(); ++i) {
             const auto [e, mr] = list.items[i];
             if (!mr) continue;
@@ -585,10 +601,26 @@ bool Scene::SyncRenderLists() const {
             std::shared_ptr<const Material> material =
                 mr->sharedMaterial ? std::shared_ptr<const Material>(mr->sharedMaterial)
                                    : std::shared_ptr<const Material>(std::shared_ptr<const void>(), &mr->material);
-            const RenderWorld::Id id = m_static.world.Add({mr->mesh, std::move(material), CachedWorld(*e), mr->shadows});
-            if (m_static.entities.size() <= id) m_static.entities.resize(id + 1, kNullEntity);
-            m_static.entities[id] = e->id;
+            add(e->id, {mr->mesh, std::move(material), CachedWorld(*e), mr->shadows});
         }
+        for (const EntityId id : terrainIds) {
+            const Entity* e = Find(id);
+            const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
+            const TerrainData* data = terrain ? terrain->terrain.Data() : nullptr;
+            if (!data || !IsActiveInHierarchy(*e)) continue;
+            const std::shared_ptr<const Material> material =
+                terrain->sharedMaterial
+                    ? std::shared_ptr<const Material>(terrain->sharedMaterial)
+                    : std::shared_ptr<const Material>(std::shared_ptr<const void>(), &terrain->material);
+            const glm::mat4& world = CachedWorld(*e);
+            const float size = data->BlockSize();
+            for (const TerrainBlockKey key : data->Blocks()) {
+                // Os vértices do bloco partem do canto dele: a matriz leva o canto ao lugar no terreno.
+                const glm::vec3 corner(static_cast<float>(key.x) * size, 0.0f, static_cast<float>(key.z) * size);
+                add(e->id, {data->BlockMesh(key), material, glm::translate(world, corner), terrain->shadows});
+            }
+        }
+        m_static.terrains = terrains;
         m_static.version = SceneStructureVersion();
         m_static.dirty = false;
     }
@@ -708,17 +740,17 @@ std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec
     std::optional<RaycastHit> best;
     if (!SyncRenderLists()) return best;
     // Leva o raio para o espaço local; como a transformação é linear, o t vale nos dois espaços.
-    auto test = [&](const Entity& e, const MeshRenderer& mr) {
-        const glm::mat4 inv = glm::inverse(CachedWorld(e));
+    auto test = [&](EntityId entity, const glm::mat4& model, const Mesh& mesh) {
+        const glm::mat4 inv = glm::inverse(model);
         const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
         const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
-        if (auto t = RayMesh(o, d, *mr.mesh)) {
-            if (!best || *t < best->distance) best = RaycastHit{e.id, *t};
+        if (auto t = RayMesh(o, d, mesh)) {
+            if (!best || *t < best->distance) best = RaycastHit{entity, *t};
         }
     };
     for (const uint32_t i : m_static.dynamic) {
         const auto [e, mr] = m_meshList.items[i];
-        if (mr->mesh && IsActiveInHierarchy(*e)) test(*e, *mr);
+        if (mr->mesh && IsActiveInHierarchy(*e)) test(e->id, CachedWorld(*e), *mr->mesh);
     }
     // Estáticos pela grade (Fase 28), do mais perto ao mais longe pela caixa, depois dos outros: os triângulos de um só
     // são testados se a caixa dele começa antes do melhor acerto até aqui.
@@ -726,9 +758,9 @@ std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec
     m_static.world.QueryRay(origin, direction, std::numeric_limits<float>::max(), hits, &m_static.enter);
     for (size_t i = 0; i < hits.size(); ++i) {
         if (best && m_static.enter[i] > best->distance) break;
-        const Entity* e = Find(m_static.entities[hits[i]]);
-        const MeshRenderer* mr = e ? e->Get<MeshRenderer>() : nullptr;
-        if (mr && mr->mesh) test(*e, *mr);
+        // A malha e a matriz guardadas ao montar: a cena não mudou desde então (SyncRenderLists acima).
+        const StaticRender::Source& source = m_static.sources[hits[i]];
+        if (source.mesh) test(source.entity, source.model, *source.mesh);
     }
     return best;
 }

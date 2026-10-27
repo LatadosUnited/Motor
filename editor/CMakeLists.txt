@@ -63,6 +63,7 @@ add_executable(MotorEditor
     src/drawers/ShadowCastingDrawer.cpp
     src/viewport/FrameStatsPanel.cpp
     src/drawers/NavMeshDataDrawer.cpp
+    src/drawers/TerrainRefDrawer.cpp
     src/drawers/NavAreaMaskDrawer.cpp
     src/viewport/NavMeshOverlay.cpp
     src/nav/NavMeshBake.cpp

@@ -60,6 +60,7 @@ motor_add_test(test_render_world)  # Fase 28: objetos guardados entre quadros
 motor_add_test(test_scene_raycast)  # Fase 28: raycast do editor pela grade
 motor_add_test(test_gpu_allocators)  # Fase 28: buffer de malhas e anel de dados por quadro
 motor_add_test(test_block_pool)  # Fase 28: componentes e entidades em blocos por tipo
+motor_add_test(test_terrain)  # Fase 28: terreno em blocos, um arquivo por bloco
 
 # Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o
 # ctest mostra "pulado". Rodar só ele: ctest --test-dir build-release -L desempenho

@@ -58,7 +58,9 @@ namespace motor {
 // 22: Fase 28: MeshRenderer::isStatic e os estáticos guardados na Scene (MarkRenderDirty) mudam os tamanhos; a Mesh
 //     guarda onde está na GPU (Mesh::Gpu) no lugar do VAO próprio; componentes e entidades em blocos por tipo
 //     (ComponentRegistry::Register constrói na memória do BlockPool).
-inline constexpr int kScriptApiVersion = 22;
+// 23: Fase 28: componente Terrain; os estáticos guardados na Scene ganham a origem de cada objeto (malha e matriz, para
+//     o Raycast) e a versão dos terrenos, mudando o tamanho de Scene (MarkRenderDirty é inline).
+inline constexpr int kScriptApiVersion = 23;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

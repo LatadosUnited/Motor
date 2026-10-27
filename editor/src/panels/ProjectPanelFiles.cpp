@@ -163,6 +163,7 @@ void ProjectPanel::DuplicateSelection() {
         const fs::path to = UniqueDestination(source, source.parent_path());
         std::error_code ec;
         fs::copy(source, to, fs::copy_options::recursive, ec);
+        if (!ec) CopyCompanions(source, to, ec);
         if (ec) {
             errors.push_back(std::format("Não foi possível duplicar \"{}\": {}", ToUtf8(source.filename()), ec.message()));
         } else {
@@ -190,6 +191,7 @@ void ProjectPanel::CopyItems(const std::vector<fs::path>& sources, const fs::pat
         }
         const fs::path to = UniqueDestination(source, folder);
         fs::copy(source, to, fs::copy_options::recursive, ec);
+        if (!ec) CopyCompanions(source, to, ec);
         if (ec) {
             errors.push_back(std::format("Não foi possível copiar \"{}\": {}", name, ec.message()));
             continue;
