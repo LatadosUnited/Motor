@@ -263,6 +263,32 @@ e a renderização relativa à câmera são também a base do streaming de célu
   - **60 FPS não alcançado:** quadro mediano 27,1 ms (~37 FPS), preso na GPU: Renderer 22,7 ms (Cena HDR 15,8 com
     326 draws e 218 mil triângulos, água 5,7, cópia para a água 3,1, pós 4,0, sombras 2,9); CPU do Render 7,9 ms e
     física 1,7 ms. Sem MSAA: 21,4 ms (~47 FPS; GPU 17,7: Cena HDR 11,8, água 4,0, cópia 1,7). Ver Limitações.
+- Otimização da GPU do terreno e da água (27/10/2026, depois dos critérios; medido por partes, uma mudança de cada
+  vez, no mesmo Player e opções):
+  - Pesos numa textura só: `TerrainWeights` (`motor/renderer/TerrainWeights.h`) guarda os pesos de todos os blocos
+    num array de texturas RGBA8 com mipmaps (uma camada por bloco, capacidade em potências de 2, camadas livres
+    reaproveitadas) e um índice R32F de onde está cada bloco (-1 sem bloco). `TerrainData::WeightsTexture()` a
+    mantém em dia (blocos novos, mudados e tirados). O `lit.vert` passa o canto do bloco (`flat`) e o `lit.frag`
+    acha a camada pelo índice. Com isso há um material para o terreno inteiro: os blocos entram no mesmo lote
+    (326 draws → 7 no quadro todo) e a CPU do Render cai de 7,9 para 2,3-2,8 ms; os blocos do terreno vão do mais
+    perto ao mais longe (menos pixels desenhados por cima). Cena HDR -2,5 ms e ~-0,5 ms da ordem.
+  - Pixel do terreno: só luz difusa direta (sem o GGX: ~1,6 ms), o reflexo do céu continua; neblina cheia sai cedo,
+    só com a cor da neblina (também na água).
+  - Sombra do terreno pelas faces de costas para o sol (`ShadowParams::backFacesOnly`, culling das faces da frente
+    nas cascatas; não nas faces do cubo das luzes pontuais, que são espelhadas): sombras de 2,9-3,3 para 0,75 ms,
+    com os morros ainda fazendo sombra (visto pelo `viewport_capture` com o sol baixo).
+  - Água: a cópia é só da cor; a profundidade é lida direto do alvo da cena (com MSAA, a profundidade virou textura
+    com amostras, `sampler2DMS`, amostra 0) e a água não grava profundidade na passada de cor; se algo ainda vai por
+    cima (transparentes, fios do editor), uma passada só de profundidade (`water_depth.frag`) vem depois. Cópia de
+    3,1 para 1,1 ms com MSAA 4x.
+  - `kScriptApiVersion` 27 (`TerrainLayers` e `ShadowParams` mudaram). `test_terrain` cobre a textura dos pesos
+    (camadas por bloco, reaproveitar, retângulo do índice ao pôr e tirar blocos).
+  - Conferido pelo `viewport_capture` no editor Release: cores das camadas iguais às de antes, sombra dos morros,
+    sombra do personagem no chão, espuma e cor pela profundidade da água; sem erros de shader no log.
+  - Resultado no Player ("Terreno Ação", duas rodadas intercaladas de 20 s): **MSAA 4x 19,1 e 19,5 ms (~52 FPS)**,
+    antes 27,1 (GPU 16,6-16,9: Cena HDR 11,4, água com a cópia 4,4, pós 4,2, sombras 0,75); **sem MSAA 14,5 e 14,5
+    ms (~69 FPS)**, antes 21,4 (GPU 11,4-11,5: Cena HDR 7,7, água 3,2, pós 2,8). Cena de referência:
+    22,1 e 22,1 ms (GPU 18,1; a mesma de antes).
 
 ## Limitações
 
@@ -288,22 +314,21 @@ e a renderização relativa à câmera são também a base do streaming de célu
   só quando ninguém mais usa o terreno (as alturas ficam na `TerrainData` aberta enquanto houver referência). A cada
   quadro da pincelada a lista de estáticos é refeita inteira (custo que cresce com a cena). Um terreno girado ou
   escalado recebe o raio e a força no espaço dele.
-  Pintura (Tarefa 10): o pixel do terreno lê sempre as 4 texturas e a dos pesos, mesmo onde só há uma camada; cada
-  bloco é um material próprio (um draw por bloco, até o LOD da Tarefa 12 juntar). Os pesos têm a resolução das
+  Pintura (Tarefa 10): o pixel do terreno lê sempre as 4 texturas e a dos pesos, mesmo onde só há uma camada. Os pesos têm a resolução das
   alturas (1 m): bordas de pintura mais finas que isso não existem. As camadas só têm cor (sem mapa de normal nem
-  rugosidade por camada). Pintar a cada quadro cria um material e uma textura de pesos novos por bloco tocado.
+  rugosidade por camada). Pintar a cada quadro reenvia os pesos de cada bloco tocado (desde a otimização da GPU, só
+  a camada dele no array).
   Física (Tarefa 11): qualquer mudança nas alturas ou nos pesos (a versão é uma só) refaz os corpos de todos os
   blocos do terreno, não só os tocados: pintar ou esculpir em Play custa a reconstrução inteira a cada quadro. Sem
   material físico por camada pintada (o atrito é um só por terreno). As alturas guardadas pela Jolt têm até 5 mm de
   erro. Não testado na mão: andar com o personagem pelo teclado sobre o terreno no Play do editor.
   LOD (Tarefa 12): o nível troca de uma vez (sem transição suave), e a borda cheia limita o nível mais simples a 136
-  triângulos por bloco (um terreno de 1 x 1 km longe ainda tem ~140 mil). Cada bloco continua um draw próprio (um
-  material por bloco, por causa da textura dos pesos): juntar os blocos num draw pediria os pesos numa textura só do
-  terreno. Mudar uma altura refaz o bloco e os seus 4 níveis.
+  triângulos por bloco (um terreno de 1 x 1 km longe ainda tem ~140 mil). Mudar uma altura refaz o bloco e os seus 4
+  níveis. (Os blocos num lote só vieram com a otimização da GPU, abaixo.)
   Água (Tarefa 13): sem reflexo dos objetos e do terreno (só o céu; reflexo em tela ou planar fica para depois); sem
   sombra na água; as ondas andam pelo relógio do GLFW, também com o jogo pausado, e não mexem em nada da física (sem
-  empuxo: `WaveOffset` está pronto para quem quiser boias por script). A cópia da cena custa um blit de cor e
-  profundidade por quadro com água na tela (com MSAA, a profundidade com amostras: caro na GPU integrada). Água
+  empuxo: `WaveOffset` está pronto para quem quiser boias por script). A cópia da cena custa um blit de cor por
+  quadro com água na tela, da tela inteira (copiar só o retângulo da água na tela ainda não foi feito). Água
   maior que 256 m tem células maiores que 1 m (ondas curtas ficam serrilhadas de perto). A espuma vem da profundidade
   até o fundo, sem espuma nas cristas. Visto de baixo d'água só há um tom escuro, sem efeito de mergulho. O clique no
   viewport não seleciona a água (sem raio). Não medido no Player (a meta de 60 FPS com 1 km de terreno e água é do
@@ -312,12 +337,20 @@ e a renderização relativa à câmera são também a base do streaming de célu
   do `water_info` é qualquer coisa acima da superfície no ponto (terreno, cubo ou outra entidade com colisão de
   raio), não só o terreno. O tempo das ondas é o pedido (0 por padrão), não o relógio do renderer, então a
   superfície devolvida não é a da tela naquele instante.
-- Meta de 60 FPS com 1 km de terreno e água no Player (HD 530) não alcançada: 27 ms com MSAA 4x, 21 ms sem. O
-  gargalo é a GPU: o pixel do terreno (4 texturas e a dos pesos em toda parte, mesmo sem textura nas camadas) na Cena
-  HDR, a água (5,7 ms) e a cópia da cena para ela (3,1 ms com MSAA). Caminhos: pixel do terreno com só as camadas
-  usadas no bloco, água sem a cópia da profundidade com amostras, menos pós em qualidade baixa. A CPU do Render
-  (7,9 ms com 326 draws, um por bloco visível) também pesa: juntar os blocos num draw (Tarefa 12). Gravar 1024
-  blocos novos leva 12,5 s (um `WriteFileAtomic` por bloco).
+- Meta de 60 FPS com 1 km de terreno e água no Player (HD 530): alcançada **sem MSAA** (14,5 ms, ~69 FPS), **não
+  com MSAA 4x** (19,1-19,5 ms, ~52 FPS), depois da otimização da GPU. Com MSAA o gargalo segue na GPU: o terreno na
+  Cena HDR (~11 ms, o preenchimento com 4 amostras), a água com a cópia (4,4 ms) e o pós (4,2 ms: FXAA, resolve,
+  bloom e tone mapping; o FXAA roda mesmo com MSAA). Caminhos: pular o FXAA com MSAA, copiar para a água só o
+  retângulo dela na tela, MSAA 2x como padrão em GPU integrada. O quadro tem ~2,5-3 ms além da GPU medida
+  (composição da janela, provavelmente). Medidas com ±1 ms de ruído entre rodadas iguais (programas abertos na
+  máquina). Gravar 1024 blocos novos leva 12,5 s (um `WriteFileAtomic` por bloco).
+- Otimização da GPU (27/10/2026): o pixel do terreno não tem brilho especular direto (só o difuso e o reflexo do
+  céu): terreno molhado ou metálico não brilha com o sol. A sombra pelas faces de costas supõe um mapa de altura
+  (uma superfície só, sem cavernas nem saliências), e faces de costas que mal passam do horizonte podem dar acne
+  na beira da sombra. A água com MSAA lê só a amostra 0 da profundidade (a borda da espuma em volta de objetos tem
+  o serrilhado da tela). O array dos pesos tem no máximo `GL_MAX_ARRAY_TEXTURE_LAYERS` blocos (2048 na HD 530; além
+  disso os blocos a mais ficam com a camada 1 e há um aviso no log); pintar refaz o mipmap da camada inteira do
+  bloco a cada quadro.
 - `test_runtime_systems` travou uma vez no `ctest -j4` de 27/10/2026 (encerrado pelo PID); sozinho passou 150 vezes
   seguidas e o `ctest` inteiro passou de novo. Ficar de olho. Travou de novo no `ctest` da Tarefa 14 (o processo não
   sai nem pelo PID; os arquivos presos foram renomeados para `*.presa-12844` em `build/bin`); com `--timeout 120` o

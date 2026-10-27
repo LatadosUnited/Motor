@@ -75,3 +75,11 @@ Fase 27; o jogo de exemplo da Fase 18, para a Fase 33.
 - 2026-10-23 — Claude (estudo da engine) — editor: miniaturas e prévia de materiais e modelos no painel Projeto,
   um gráfico dos contadores por quadro dentro do editor (hoje só no Tracy, à parte) e um console de variáveis
   (ex.: `r.shadows 0`) mudáveis em tempo real, também pelo MCP — `editor/src/panels/`, `editor/src/viewport/`
+- 2026-10-27 — Claude (Fase 28, otimização da GPU) — a DLL de scripts não é recompilada quando um header da engine
+  muda (ex.: `kScriptApiVersion` 26 → 27): os headers entram pelo PCH (`-include MotorScriptPch.h`), que o ninja não
+  lista nas dependências dos `.obj`, então "Recompilar" só relinka e o editor e o Player seguem recusando a DLL
+  ("API 26, esperado 27"). Contorno: tocar os `.cpp` de `Scripts/`. Correção: pôr o `.gch` (ou a versão da API)
+  como dependência dos objetos, ou recompilar tudo quando o SDK mudar — `editor/src/scripts/`, `cmake/MotorPackage.cmake`
+- 2026-10-27 — Claude (Fase 28, otimização da GPU) — o Player com `--perf` que recusa a DLL de scripts ("A DLL de
+  scripts não é desta versão do Motor") escreve "Encerrando." e o erro no log mas não sai: o processo fica aberto
+  até ser encerrado pelo PID — `player/src/`
