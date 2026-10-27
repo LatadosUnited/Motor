@@ -31,7 +31,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 3: Guardar no renderer os objetos estáticos entre quadros (registrar, mover, remover) — a65c4a8
 - [x] Tarefa 4: Recortar a cena e as sombras pela grade — 9a37a78, 3993896
 - [x] Tarefa 5: Usar a grade no raycast do editor e nas consultas de área — 7cb35e8
-- [ ] Tarefa 6: Desenhar pela GPU (multi-draw indirect, buffers mapeados de forma persistente)
+- [x] Tarefa 6: Desenhar pela GPU (multi-draw indirect, buffers mapeados de forma persistente) — beaa8b8
 - [ ] Tarefa 7: Guardar os componentes em blocos contínuos por tipo
 - [ ] Tarefa 8: Criar o componente Terrain com mapa de altura em blocos, um arquivo por bloco
 - [ ] Tarefa 9: Pincéis do terreno no editor: subir, baixar, suavizar
@@ -99,6 +99,21 @@ e a renderização relativa à câmera são também a base do streaming de célu
   `QueryBox` e `QueryRay`; o `QueryRay` da `SpatialGrid` devolve também a distância de entrada. `test_scene_raycast`:
   400 raios numa cena de 1500 objetos (filhos, desativados, chão grande) dão o mesmo acerto e distância com e sem
   estáticos; mover ou desativar um estático vale depois do `MarkRenderDirty`. Tempo do raycast não medido.
+- Tarefa 6: as malhas sem pele ficam num buffer de vértices e num de índices de todas (`MeshPool`, privado do
+  renderer, com um VAO comum; cresce copiando, e o intervalo de uma malha apagada volta a ser usado); as com pele
+  continuam com VAO próprio. O que muda a cada quadro (objetos, índices das passadas e comandos de desenho) vai num
+  anel mapeado de forma persistente (`StreamBuffer`), com uma cerca no fim de cada cena: a CPU só espera se o anel
+  der a volta antes de a GPU terminar, e ele cresce se uma cena não cabe. O índice do objeto virou atributo por
+  instância (location 5), para o `baseInstance` do comando valer (o `gl_InstanceID` não o inclui); saiu o
+  `uDrawBase`. Lotes seguidos com o mesmo shader, material e VAO saem num `glMultiDrawElementsIndirect` só, mesmo com
+  malhas diferentes, na cena e nas sombras. As contas de alocação (`motor/renderer/GpuAllocators.h`) são testadas
+  sem GPU (`test_gpu_allocators`). Números (Release, HD 530, antigo e novo alternados, 2 x 15 s cada):
+  - 3000 pedras com 300 malhas diferentes e um material: draws ~600 -> 5 (sombras ~290 -> 3), CPU de "cena e
+    sombras" 18-26 -> 2,3-2,5 ms, CPU do Render 20-29 -> 4,7-4,9 ms. O quadro fica em ~30 ms, preso na GPU.
+  - Referência: draws 15 -> 9; CPU e GPU iguais (o instancing da Fase 23 já juntava quase tudo).
+  - Visto pelo `viewport_capture` (editor antigo e novo, mesma câmera): pedras, vidro transparente, plano de duas
+    faces e o Robo.glb com pele saem iguais; as poucas diferenças são bordas de sombra, do mesmo tamanho que entre
+    duas capturas do mesmo editor (as cascatas distantes alternam quadros).
 
 ## Limitações
 
@@ -106,3 +121,8 @@ e a renderização relativa à câmera são também a base do streaming de célu
 
 - `RenderWorld::QueryBox` ainda não tem quem a use: a seleção por retângulo do viewport e as consultas de área do
   terreno (Tarefas 8 e 9) são as candidatas. O raycast continua testando os não estáticos um a um.
+- Desenho pela GPU (Tarefa 6): materiais diferentes ainda são draws separados (os parâmetros vão em uniforms e as
+  texturas em unidades fixas); juntá-los pediria os materiais num buffer e texturas sem vínculo (bindless). Com pele,
+  um draw por item. Os objetos ainda são copiados inteiros para o anel a cada cena, mesmo os estáticos parados.
+- `test_desempenho` falhou em 27/10/2026 com o binário antigo e o novo do mesmo jeito (testes de cena que não passam
+  pelo renderer 30-140% acima da base): a máquina estava mais lenta. Repetir antes de fechar a fase.
