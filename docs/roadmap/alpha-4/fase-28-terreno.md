@@ -34,7 +34,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 6: Desenhar pela GPU (multi-draw indirect, buffers mapeados de forma persistente) — beaa8b8
 - [x] Tarefa 7: Guardar os componentes em blocos contínuos por tipo — 261c9cd
 - [x] Tarefa 8: Criar o componente Terrain com mapa de altura em blocos, um arquivo por bloco — 6c9be78
-- [ ] Tarefa 9: Pincéis do terreno no editor: subir, baixar, suavizar
+- [x] Tarefa 9: Pincéis do terreno no editor: subir, baixar, suavizar — 84bd2db
 - [ ] Tarefa 10: Pintar até 4 camadas de textura no terreno
 - [ ] Tarefa 11: Dar ao terreno um collider da física (height field da Jolt)
 - [ ] Tarefa 12: LOD do terreno por blocos, sem frestas entre níveis
@@ -145,6 +145,22 @@ e a renderização relativa à câmera são também a base do streaming de célu
   - Pelo MCP ("Terreno Ação"): criar o terreno grava o cabeçalho, os 16 blocos e o `.meta`; trocar para um arquivo de
     morros gerado fora aparece no viewport com luz e sombra certas; salvar, duplicar, desfazer, Play e Stop saem
     certos. `test_terrain` (bordas divididas, altura, normais, arquivos, regravação parcial, cena e raio).
+- Tarefa 9: pincéis Subir, Baixar, Suavizar (média das 8 vizinhas) e Nivelar (na altura de onde a pincelada começou),
+  com raio e força, queda em cosseno do centro à borda e o mesmo resultado com quadros curtos ou longos.
+  `motor::TerrainStroke` (`assets/TerrainBrush.h`, sem editor) guarda a altura de antes de cada amostra mexida; no
+  fim, as mudanças viram um passo de desfazer (`ApplyTerrainChanges` põe e tira). `TerrainData::Raycast` acha a
+  superfície vindo de cima, sem parar em outros objetos na frente.
+  - Editor: no Inspector do Terreno, Selecionar / Subir / Baixar / Suavizar / Nivelar, raio e força. No Viewport
+    (`viewport/TerrainBrushTool`), o círculo segue o mouse sobre o terreno selecionado (no espaço da entidade, que
+    pode estar movida ou girada) e o botão esquerdo pinta em vez de selecionar; o gizmo some com o pincel ligado, Esc
+    volta a selecionar.
+  - Desfazer e salvar: `UndoHistory::PushAction` ganhou `unsaved`, que muda a versão do desfazer (a cena fica "não
+    salva") e desfazer devolve a de antes. Salvar a cena grava antes as alturas mudadas (`SaveTerrains`), só os
+    blocos que mudaram. MCP: `terrain_brush` (uma pincelada por uma lista de pontos do mundo).
+  - Pelo MCP ("Pincel Ação"): subir, baixar, suavizar e nivelar aparecem no viewport; desfazer as cinco pinceladas
+    volta ao plano e ao "salvo", refazer volta ao morro e ao "não salvo". Uma pincelada dentro do bloco `1_1`
+    regravou só ele (1 de 16 arquivos). Inspector visto pelo `PrintWindow`. `test_terrain` (pincéis, desfazer,
+    `SaveTerrains`, raio do terreno) e `test_undo` (versão com `unsaved`).
 
 ## Limitações
 
@@ -166,3 +182,8 @@ e a renderização relativa à câmera são também a base do streaming de célu
   salva (vêm com os pincéis, Tarefa 9); um terreno sem projeto aberto fica só na memória. A textura repete a cada
   metro, sem escala própria (vem com a pintura, Tarefa 10). Todos os blocos são desenhados com a malha cheia, sem LOD
   (Tarefa 12), e o `Raycast` testa os 2048 triângulos de cada bloco que o raio cruza. Sem colisão ainda (Tarefa 11).
+  Pincéis (Tarefa 9): o arraste com o mouse no Viewport (círculo e pintura) não foi testado, só a mesma pincelada
+  pelo MCP; o autossalvamento de recuperação não guarda as alturas, só a cena. Fechar sem salvar descarta as alturas
+  só quando ninguém mais usa o terreno (as alturas ficam na `TerrainData` aberta enquanto houver referência). A cada
+  quadro da pincelada a lista de estáticos é refeita inteira (custo que cresce com a cena). Um terreno girado ou
+  escalado recebe o raio e a força no espaço dele.
