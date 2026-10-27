@@ -5,6 +5,8 @@
 #include "motor/renderer/Environment.h"
 #include "motor/renderer/Shader.h"
 
+#include <glm/vec2.hpp>
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -32,13 +34,14 @@ public:
     // Cópia da cor da cena desenhada até aqui (sem MSAA) numa textura própria, para a água ler o que está por baixo
     // enquanto desenha no alvo da cena (Fase 28). Criada no primeiro uso; o alvo da cena volta vinculado. A
     // profundidade a água lê direto do alvo (LiveDepth), sem gravar nele: copiá-la (resolver as amostras) custava
-    // ~2 ms com MSAA 4x na HD 530.
-    void CopyForRefraction();
+    // ~2 ms com MSAA 4x na HD 530. Só o retângulo `lo`..`hi` da tela (0..1) é copiado: o resto da textura fica com o
+    // que tinha (quem lê fora dele não conta com nada ali).
+    void CopyForRefraction(glm::vec2 lo = glm::vec2(0.0f), glm::vec2 hi = glm::vec2(1.0f));
     unsigned int RefractionColor() const { return m_refractColor; }
     // Profundidade do alvo da cena: textura com amostras (sampler2DMS) com MSAA, a SceneDepth sem.
     unsigned int LiveDepth() const { return m_samples > 1 ? m_depthMsTexture : m_depthTexture; }
     int Samples() const { return m_samples; }
-    // Bloom + tone mapping (+ FXAA) da cor resolvida para o destino final (do mesmo tamanho), que
+    // Bloom + tone mapping (+ FXAA, só sem MSAA) da cor resolvida para o destino final (do mesmo tamanho), que
     // `bindTarget` vincula (framebuffer e viewport). Mexe no estado do GL: blend, profundidade e viewport.
     void Apply(const Environment& environment, const std::function<void()>& bindTarget);
 

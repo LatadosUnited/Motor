@@ -474,10 +474,10 @@ entity.Remove<Girar>();
   4 ondas em volta da direção, mais ondulações pequenas na luz), reflexo do céu com Fresnel, refração do que está
   por baixo (distorcida pelas ondas), cor rasa e funda pela espessura da água até o fundo (Transparência = metros até
   o fundo sumir) e espuma onde a água encontra o chão ou objetos. A água é desenhada depois dos opacos e do céu,
-  lendo uma cópia da cor da cena e a profundidade direto (com MSAA, a amostra 0), sem gravar profundidade (uma
-  passada só de profundidade vem depois se algo ainda for desenhado por cima) (`Renderer::SubmitWater`,
-  `motor/renderer/Water.h`); `WaterSurface::WaveOffset` dá na CPU
-  a mesma altura das ondas do shader. Sem física (não segura nada nem entra nos raios). Pelo MCP, `water_info`: os
+  lendo uma cópia da cor da cena (só do retângulo da tela que a água cobre) e a profundidade direto (com MSAA, a
+  amostra 0), sem gravar profundidade (uma passada só de profundidade vem depois se algo ainda for desenhado por cima)
+  (`Renderer::SubmitWater`, `motor/renderer/Water.h`); `WaterSurface::WaveOffset` dá na CPU a mesma altura das ondas
+  do shader. Sem física (não segura nada nem entra nos raios). Pelo MCP, `water_info`: os
   cantos e, sob pontos, se estão dentro, a altura da superfície com as ondas num tempo dado, o fundo, a profundidade
   e se o ponto está seco (chão acima da água).
 
@@ -485,7 +485,7 @@ entity.Remove<Girar>();
 
 O renderer desenha em passadas no `EndScene` (os `Submit*` só guardam o pedido):
 mapas de sombra → cena em **HDR** (RGBA16F, MSAA 4x) com o céu ao fundo → **bloom** → **tone mapping**
-(ACES, Reinhard ou nenhum) e gama → **FXAA** → contornos do editor por cima.
+(ACES, Reinhard ou nenhum) e gama → **FXAA** (só sem MSAA) → contornos do editor por cima.
 
 - **PBR** de metal/rugosidade (Cook-Torrance com GGX), mapas de normal sem tangentes nos vértices (base pelas
   derivadas da tela, vale também com pele), oclusão e emissão (que o bloom faz brilhar).
@@ -493,8 +493,9 @@ mapas de sombra → cena em **HDR** (RGBA16F, MSAA 4x) com o céu ao fundo → *
   equirretangular** (`.hdr` do projeto, asset "Céu HDR"), com brilho e rotação. O céu também **ilumina a
   cena**: luz difusa em harmônicos esféricos e reflexos de um cubemap pré-filtrado por rugosidade, com a
   tabela da BRDF; "Luz do céu" ajusta quanto. A neblina usa a cor do horizonte.
-- **Pós-processamento** (painel Cena): exposição, tone mapping, bloom (intensidade e limiar) e FXAA. A
-  distância das sombras da luz direcional também fica lá. Tudo entra no desfazer e na cena (versão 6).
+- **Pós-processamento** (painel Cena): exposição, tone mapping, bloom (intensidade e limiar) e FXAA (ignorado
+  com MSAA, que já suaviza as bordas). A distância das sombras da luz direcional também fica lá. Tudo entra no
+  desfazer e na cena (versão 6).
 - O viewport mostra os contadores: FPS, draws (e quantos foram para as sombras, em quantos passes), triângulos.
 - Base para efeitos de ambiente (água, partículas): `Renderer::SceneDepthTexture()` (profundidade da cena),
   `SceneColorTexture()` (luz HDR antes do pós), `SkyCubemap()` e `ReflectionCubemap()` (céu e reflexo).

@@ -8,6 +8,7 @@
 #include <glm/vec2.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace motor {
 
@@ -170,15 +171,21 @@ void PostProcess::Resolve(bool depth) {
     }
 }
 
-void PostProcess::CopyForRefraction() {
+void PostProcess::CopyForRefraction(glm::vec2 lo, glm::vec2 hi) {
     if (!m_refractFbo) {
         m_refraction = true;  // daqui em diante, recriadas com os outros alvos
         CreateRefraction();
     }
     MOTOR_PROFILE_GPU("Cópia para a água");
+    const int x0 = std::clamp(static_cast<int>(std::floor(lo.x * static_cast<float>(m_width))), 0, m_width);
+    const int y0 = std::clamp(static_cast<int>(std::floor(lo.y * static_cast<float>(m_height))), 0, m_height);
+    const int x1 = std::clamp(static_cast<int>(std::ceil(hi.x * static_cast<float>(m_width))), x0, m_width);
+    const int y1 = std::clamp(static_cast<int>(std::ceil(hi.y * static_cast<float>(m_height))), y0, m_height);
     // Com MSAA o blit já resolve as amostras.
-    glBlitNamedFramebuffer(m_sceneFbo, m_refractFbo, 0, 0, m_width, m_height, 0, 0, m_width, m_height,
-                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    if (x1 > x0 && y1 > y0) {
+        glBlitNamedFramebuffer(m_sceneFbo, m_refractFbo, x0, y0, x1, y1, x0, y0, x1, y1, GL_COLOR_BUFFER_BIT,
+                               GL_NEAREST);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, m_sceneFbo);
     glViewport(0, 0, m_width, m_height);
 }
@@ -228,7 +235,9 @@ void PostProcess::Apply(const Environment& env, const std::function<void()>& bin
         glDisable(GL_BLEND);
     }
 
-    if (env.fxaa) {
+    // Com MSAA as bordas já saem suavizadas: o FXAA por cima borraria a imagem e custa ~1 ms na GPU integrada.
+    const bool fxaa = env.fxaa && m_samples <= 1;
+    if (fxaa) {
         glBindFramebuffer(GL_FRAMEBUFFER, m_ldrFbo);
         glViewport(0, 0, m_width, m_height);
     } else {
@@ -246,7 +255,7 @@ void PostProcess::Apply(const Environment& env, const std::function<void()>& bin
         DrawFullscreen();
     }
 
-    if (env.fxaa) {
+    if (fxaa) {
         MOTOR_PROFILE_GPU("FXAA");
         bindTarget();
         m_fxaa->Bind();

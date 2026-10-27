@@ -12,6 +12,7 @@
 #include "renderer/PostProcess.h"
 
 #include <GLFW/glfw3.h>
+#include <glm/common.hpp>
 #include <glm/trigonometric.hpp>
 
 #include <algorithm>
@@ -32,16 +33,39 @@ void Renderer::SubmitWater(const Mesh& mesh, const WaterSurface& water, const gl
 void Renderer::DrawWater(const Frustum& view, bool depthAfter) {
     MOTOR_PROFILE_GPU("Água");
     // Recorte pela caixa da grade com folga das ondas (a altura e o quanto andam para os lados).
+    // Junto, o retângulo da tela que as visíveis cobrem (em 0..1), para copiar só ele.
     std::vector<const WaterItem*> visible;
+    const glm::mat4 viewProj = m_camera.Projection() * m_camera.View();
+    glm::vec2 lo(1.0f), hi(0.0f);
+    float refraction = 0.0f;
     for (const WaterItem& item : m_waters) {
         const float wave = std::max(item.surface.waveHeight, 0.0f) * 1.5f + 0.01f;
-        const Aabb box = TransformAabb({item.mesh->BoundsMin(), item.mesh->BoundsMax()}, item.model);
-        if (view.Intersects({box.min - glm::vec3(wave), box.max + glm::vec3(wave)})) visible.push_back(&item);
+        Aabb box = TransformAabb({item.mesh->BoundsMin(), item.mesh->BoundsMax()}, item.model);
+        box = {box.min - glm::vec3(wave), box.max + glm::vec3(wave)};
+        if (!view.Intersects(box)) continue;
+        visible.push_back(&item);
+        refraction = std::max(refraction, std::abs(item.surface.refraction));
+        for (int i = 0; i < 8; ++i) {
+            const glm::vec3 corner((i & 1) ? box.max.x : box.min.x, (i & 2) ? box.max.y : box.min.y,
+                                   (i & 4) ? box.max.z : box.min.z);
+            const glm::vec4 clip = viewProj * glm::vec4(corner, 1.0f);
+            if (clip.w <= 1e-4f) {  // atrás da câmera: a projeção não serve, vale a tela toda
+                lo = glm::vec2(0.0f);
+                hi = glm::vec2(1.0f);
+                continue;
+            }
+            const glm::vec2 screen = glm::vec2(clip) / clip.w * 0.5f + 0.5f;
+            lo = glm::min(lo, screen);
+            hi = glm::max(hi, screen);
+        }
     }
     m_stats.culled += static_cast<uint32_t>(m_waters.size() - visible.size());
     if (visible.empty()) return;
 
-    m_post->CopyForRefraction();
+    // Folga do deslocamento da refração (o water.frag lê até `refraction` da tela para o lado) e de um pixel.
+    const glm::vec2 size(std::max(m_post->Width(), 1), std::max(m_post->Height(), 1));
+    const glm::vec2 pad = glm::vec2(refraction) + 1.0f / size;
+    m_post->CopyForRefraction(glm::clamp(lo - pad, 0.0f, 1.0f), glm::clamp(hi + pad, 0.0f, 1.0f));
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     // A cor lê a profundidade da cena direto do alvo: nesta passada a água só a testa, não grava (ler e gravar a
