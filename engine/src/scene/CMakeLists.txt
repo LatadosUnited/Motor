@@ -33,6 +33,7 @@ motor_add_layer(scene
         Perception.cpp
         PerceptionTarget.cpp
         Terrain.cpp
+        Water.cpp
         SceneJsonWriter.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

@@ -62,7 +62,8 @@ namespace motor {
 //     o Raycast) e a versão dos terrenos, mudando o tamanho de Scene (MarkRenderDirty é inline).
 // 24: Fase 28: pintura do terreno; Material ganhou `terrain` (camadas) e Texture2D os pixels da textura adiada.
 // 25: Fase 28: Terrain ganhou os campos da física (collision, friction, layer).
-inline constexpr int kScriptApiVersion = 25;
+// 26: Fase 28: componente Water; o Renderer ganhou a água (SubmitWater, membros novos).
+inline constexpr int kScriptApiVersion = 26;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

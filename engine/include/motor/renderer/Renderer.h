@@ -7,6 +7,7 @@
 #include "motor/renderer/Material.h"
 #include "motor/renderer/Mesh.h"
 #include "motor/renderer/Shader.h"
+#include "motor/renderer/Water.h"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -103,6 +104,9 @@ public:
     // EndScene, só entram os que a câmera ou alguma sombra vê (pela grade do mundo). O mundo precisa continuar vivo e
     // sem mudar até o EndScene.
     void SubmitWorld(const RenderWorld& world);
+    // Água (Fase 28): a grade `mesh` (CreateWaterGrid) com as ondas e a cor de `water`. Desenhada depois dos opacos e
+    // do céu, lendo uma cópia deles (refração e profundidade); a malha precisa continuar viva até o EndScene.
+    void SubmitWater(const Mesh& mesh, const WaterSurface& water, const glm::mat4& model);
     void EndScene();
 
     const RenderStats& GetStats() const { return m_stats; }
@@ -122,6 +126,14 @@ private:
         glm::mat4 model;
         glm::vec4 color;
     };
+    struct WaterItem {
+        const Mesh* mesh;
+        WaterSurface surface;
+        glm::mat4 model;
+    };
+    struct WaterUniforms {
+        int model = -1, wave = -1, time = -1, shallow = -1, deep = -1, water = -1;
+    };
     // Posições dos uniforms por desenho do lit.frag, resolvidas uma vez por shader (lit e com pele).
     struct LitUniforms {
         int alphaMode = -1, color = -1, pbr = -1, emissive = -1;
@@ -138,6 +150,7 @@ private:
     // Lotes da cena a partir do lote `first` da passada gravada (InstanceBuffers::UploadPass).
     void DrawSceneBatches(std::span<const DrawBatch> batches, size_t first);
     void DrawWireframes();
+    void DrawWater(const Frustum& view);  // RendererWater.cpp
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);
     DrawItem& AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows);
@@ -149,6 +162,8 @@ private:
     std::unique_ptr<Shader> m_litPlainShader; // lit.frag com NO_MAPS: materiais sem nenhum mapa
     std::unique_ptr<Shader> m_terrainShader;  // lit.frag com TERRAIN: blocos do terreno com camadas (Fase 28)
     std::unique_ptr<Shader> m_unlitShader;
+    std::unique_ptr<Shader> m_waterShader;  // water.vert + water.frag (Fase 28)
+    WaterUniforms m_waterUniforms;
     LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms, m_terrainUniforms;
     ShadowQuality m_litShadowFilter = ShadowQuality::High;  // SHADOW_FILTER dos shaders acima
     int m_unlitModel = -1, m_unlitColor = -1;
@@ -172,6 +187,7 @@ private:
     std::vector<DrawItem> m_items;
     std::vector<glm::mat4> m_joints;
     std::vector<WireItem> m_wires;
+    std::vector<WaterItem> m_waters;
 
     // Ordem de desenho do quadro (Fase 23): número de material de cada item e as ordens da cena e das sombras.
     MaterialIds m_materialIds;

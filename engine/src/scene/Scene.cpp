@@ -4,6 +4,7 @@
 #include "motor/scene/BlockPool.h"
 #include "motor/scene/EntityRef.h"
 #include "motor/scene/Terrain.h"
+#include "motor/scene/Water.h"
 
 #include "motor/renderer/Camera.h"
 #include "motor/renderer/Mesh.h"
@@ -634,6 +635,12 @@ bool Scene::SyncRenderLists() const {
 
 void Scene::SubmitTo(Renderer& renderer) const {
     MOTOR_PROFILE_STAT("Render: enviar a cena");
+    // Água (Fase 28): poucas, enviadas a cada quadro com a grade do tamanho de cada uma.
+    for (const EntityId id : EntitiesWith<Water>()) {
+        const Entity* e = Find(id);
+        const Water* water = e ? e->Get<Water>() : nullptr;
+        if (water && IsActiveInHierarchy(*e)) renderer.SubmitWater(water->GridMesh(), water->surface, CachedWorld(*e));
+    }
     // Entidades na raiz da hierarquia vão em paralelo (Fase 26): a matriz de mundo delas só depende do próprio
     // transform, e cada uma só escreve no próprio cache. Filhos (o cache confere e pode recalcular o do pai, que
     // outra thread estaria lendo) e malhas com pele (procuram o Animator acima) ficam para depois, nesta thread.

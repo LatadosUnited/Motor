@@ -310,13 +310,15 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter&
     protocol.AddTool({
         .name = "entity_create",
         .description = "Cria uma entidade. kind: empty, cube, sphere, plane, cylinder, capsule, cone, camera, "
-                       "directional_light, point_light, spot_light ou terrain (com malha/câmera/luz já configuradas, como "
-                       "no menu Entidade; as formas já vêm com o Collider que bate com elas; terrain grava um "
-                       ".mterrain plano de 128 x 128 m em Assets/Terrenos). Fica selecionada. "
+                       "directional_light, point_light, spot_light, terrain ou water (com malha/câmera/luz já configuradas, "
+                       "como no menu Entidade; as formas já vêm com o Collider que bate com elas; terrain grava um "
+                       ".mterrain plano de 128 x 128 m em Assets/Terrenos; water é uma água de 100 x 100 m). "
+                       "Fica selecionada. "
                        "Devolve a entidade criada.",
         .inputSchema = Schema({{"kind", {{"type", "string"},
                                          {"enum", {"empty", "cube", "sphere", "plane", "cylinder", "capsule", "cone",
-                                                   "camera", "directional_light", "point_light", "spot_light", "terrain"}}}},
+                                                   "camera", "directional_light", "point_light", "spot_light", "terrain",
+                                                   "water"}}}},
                                {"name", Prop("string", "nome (padrão: o do tipo)")},
                                {"parent", kEntityProp},
                                {"position", Vec3Prop("posição local [x, y, z]")},
@@ -329,7 +331,8 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter&
                 {"plane", Primitive::Plane}, {"camera", Primitive::Camera},
                 {"directional_light", Primitive::DirectionalLight}, {"point_light", Primitive::PointLight},
                 {"spot_light", Primitive::SpotLight}, {"cylinder", Primitive::Cylinder},
-                {"capsule", Primitive::Capsule}, {"cone", Primitive::Cone}, {"terrain", Primitive::Terrain}};
+                {"capsule", Primitive::Capsule}, {"cone", Primitive::Cone}, {"terrain", Primitive::Terrain},
+                {"water", Primitive::Water}};
             const std::string kind = args.value("kind", "");
             auto it = std::find_if(std::begin(kinds), std::end(kinds), [&](const auto& k) { return kind == k.first; });
             if (it == std::end(kinds)) throw ToolError("kind inválido: " + kind);

@@ -100,6 +100,7 @@ motor_add_test(test_lights)
 # Física (Jolt): componentes, passo dentro do SceneRuntime, eventos, raios, personagem e contorno do editor.
 motor_add_test(test_physics)
 motor_add_test(test_terrain_physics)  # Fase 28: o terreno na física (height field da Jolt)
+motor_add_test(test_water)  # Fase 28: água (ondas, grade e componente)
 
 # Desempenho da física: caixas caindo e empilhando (pequeno no ctest; números do relatório em Release).
 motor_add_test(test_physics_bench)

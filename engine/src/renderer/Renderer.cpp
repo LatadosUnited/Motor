@@ -121,6 +121,10 @@ Renderer::Renderer() {
     m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag", "#define SINGLE_MODEL\n");
     m_unlitModel = m_unlitShader->Uniform("uModel");
     m_unlitColor = m_unlitShader->Uniform("uColor");
+    m_waterShader = Shader::FromFiles(dir / "water.vert", dir / "water.frag");
+    m_waterUniforms = {m_waterShader->Uniform("uModel"), m_waterShader->Uniform("uWave"),
+                       m_waterShader->Uniform("uTime"), m_waterShader->Uniform("uShallow"),
+                       m_waterShader->Uniform("uDeep"), m_waterShader->Uniform("uWater")};
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
     m_instances = std::make_unique<InstanceBuffers>();
     m_post = std::make_unique<PostProcess>(dir);
@@ -207,6 +211,7 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_items.clear();
     m_joints.clear();
     m_wires.clear();
+    m_waters.clear();
     m_worlds.clear();
     // m_objects não é esvaziado: vale até 2 * m_items.size(). Refazer 20 000 matrizes (o construtor do glm escreve a
     // identidade) custava ~0,7 ms por quadro com 10 000 objetos.
@@ -562,8 +567,10 @@ void Renderer::DrawScene() {
     m_instances->UploadPass(indices, batches);
     DrawSceneBatches(std::span(batches).first(opaqueBatches), 0);
 
-    // 4) Céu ao fundo, onde não há nada.
+    // 4) Céu ao fundo, onde não há nada. Depois a água, que lê a cópia de tudo isso (e grava profundidade: os
+    //    transparentes atrás dela ficam escondidos).
     m_sky->DrawBackground(*m_post);
+    if (!m_waters.empty()) DrawWater(viewFrustum);
 
     // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
     //    vidro continua aparecendo pelo vidro seguinte).

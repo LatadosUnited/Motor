@@ -462,6 +462,13 @@ entity.Remove<Girar>();
   ligado). Cada pincelada é um passo de desfazer e marca a cena como não salva; salvar a cena grava só os blocos
   mudados. Pelo MCP, `terrain_brush`. Dados e arquivos em `motor/assets/TerrainData.h`, pincéis em
   `motor/assets/TerrainBrush.h`, corpos em `engine/src/physics/PhysicsTerrain.cpp`.
+- **Água** (Fase 28): componente Água, um retângulo de água do Tamanho dado centrado na entidade (Entidade > Água,
+  ou `entity_create` com `kind: "water"`: 100 x 100 m). Ondas de Gerstner (altura, comprimento, velocidade e direção;
+  4 ondas em volta da direção, mais ondulações pequenas na luz), reflexo do céu com Fresnel, refração do que está
+  por baixo (distorcida pelas ondas), cor rasa e funda pela espessura da água até o fundo (Transparência = metros até
+  o fundo sumir) e espuma onde a água encontra o chão ou objetos. A água é desenhada depois dos opacos e do céu,
+  lendo uma cópia da cena (`Renderer::SubmitWater`, `motor/renderer/Water.h`); `WaterSurface::WaveOffset` dá na CPU
+  a mesma altura das ondas do shader. Sem física (não segura nada nem entra nos raios).
 
 ### Renderização (Fase 7)
 

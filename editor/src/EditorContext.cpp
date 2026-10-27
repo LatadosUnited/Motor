@@ -72,7 +72,7 @@ std::vector<fs::path> AcceptAnyPathDrop() {
 
 motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
     const char* names[] = {"Entidade", "Cubo", "Esfera", "Plano", "Câmera", "Sol", "Lâmpada", "Holofote",
-                           "Cilindro", "Cápsula", "Cone", "Terreno"};
+                           "Cilindro", "Cápsula", "Cone", "Terreno", "Água"};
     motor::Entity& e = scene.CreateEntity(names[static_cast<int>(type)], parent);
 
     if (type == Primitive::Camera) {
@@ -93,6 +93,8 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
         if (parent == kNullEntity) e.transform.position = {0.0f, 3.0f, 0.0f};
     } else if (type == Primitive::Terrain) {
         CreateTerrainFile(e);
+    } else if (type == Primitive::Water) {
+        e.Add<motor::Water>();  // 100 x 100 m na altura da entidade
     } else if (type != Primitive::Empty) {
         e.Add<motor::MeshRenderer>().mesh = assets.FindMesh(names[static_cast<int>(type)]);
         // Em cima do chão: as formas de altura 2 (cilindro e cápsula) sobem 1, as outras 0,5.
@@ -465,6 +467,7 @@ void DrawCreateEntityMenuItems(EditorContext& ctx, EntityId parent) {
     if (ImGui::MenuItem("Cone")) ctx.CreatePrimitive(Primitive::Cone, parent);
     ImGui::Separator();
     if (ImGui::MenuItem("Terreno")) ctx.CreatePrimitive(Primitive::Terrain, parent);
+    if (ImGui::MenuItem("Água")) ctx.CreatePrimitive(Primitive::Water, parent);
     ImGui::Separator();
     if (ImGui::MenuItem("Câmera")) ctx.CreatePrimitive(Primitive::Camera, parent);
     ImGui::Separator();

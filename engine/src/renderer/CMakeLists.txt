@@ -22,6 +22,8 @@ motor_add_layer(renderer
         GpuMemory.cpp
         SpatialGrid.cpp
         RenderWorld.cpp
+        Water.cpp
+        RendererWater.cpp
         GpuAllocators.cpp
         MeshPool.cpp
         StreamBuffer.cpp

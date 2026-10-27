@@ -112,6 +112,17 @@ void PostProcess::Create() {
 
     m_ldrTexture = CreateTexture2D(GL_RGBA8, m_width, m_height);
     m_ldrFbo = CreateColorFbo(m_ldrTexture);
+
+    if (m_refraction) CreateRefraction();
+}
+
+void PostProcess::CreateRefraction() {
+    m_refractColor = CreateTexture2D(kSceneColorFormat, m_width, m_height);
+    m_refractDepth = CreateTexture2D(GL_DEPTH_COMPONENT32F, m_width, m_height);
+    glTextureParameteri(m_refractDepth, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTextureParameteri(m_refractDepth, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    m_refractFbo = CreateColorFbo(m_refractColor);
+    glNamedFramebufferTexture(m_refractFbo, GL_DEPTH_ATTACHMENT, m_refractDepth, 0);
 }
 
 void PostProcess::Destroy() {
@@ -134,6 +145,12 @@ void PostProcess::Destroy() {
     if (m_depthRbo) glDeleteRenderbuffers(1, &m_depthRbo);
     if (m_colorTexture) glDeleteTextures(1, &m_colorTexture);
     if (m_depthTexture) glDeleteTextures(1, &m_depthTexture);
+    UntrackGpuMemory(GpuObject::Texture, m_refractColor);
+    UntrackGpuMemory(GpuObject::Texture, m_refractDepth);
+    if (m_refractFbo) glDeleteFramebuffers(1, &m_refractFbo);
+    if (m_refractColor) glDeleteTextures(1, &m_refractColor);
+    if (m_refractDepth) glDeleteTextures(1, &m_refractDepth);
+    m_refractFbo = m_refractColor = m_refractDepth = 0;
     m_ldrFbo = m_ldrTexture = m_sceneFbo = m_resolveFbo = m_colorRbo = m_depthRbo = 0;
     m_colorTexture = m_depthTexture = 0;
 }
@@ -156,6 +173,19 @@ void PostProcess::Resolve(bool depth) {
         glBlitNamedFramebuffer(m_sceneFbo, m_resolveFbo, 0, 0, m_width, m_height, 0, 0, m_width, m_height,
                                GL_DEPTH_BUFFER_BIT, GL_NEAREST);
     }
+}
+
+void PostProcess::CopyForRefraction() {
+    if (!m_refractFbo) {
+        m_refraction = true;  // daqui em diante, recriadas com os outros alvos
+        CreateRefraction();
+    }
+    MOTOR_PROFILE_GPU("Cópia para a água");
+    // Com MSAA o blit já resolve as amostras (a profundidade pela mais próxima: GL_NEAREST).
+    glBlitNamedFramebuffer(m_sceneFbo, m_refractFbo, 0, 0, m_width, m_height, 0, 0, m_width, m_height,
+                           GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_sceneFbo);
+    glViewport(0, 0, m_width, m_height);
 }
 
 void PostProcess::DrawFullscreen() const {
