@@ -29,7 +29,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 1: Criar a grade de células (`SpatialGrid`) com consultas por frustum, caixa e raio — cc0dcda
 - [x] Tarefa 2: Levar as posições para a GPU relativas à câmera — ea03e02
 - [x] Tarefa 3: Guardar no renderer os objetos estáticos entre quadros (registrar, mover, remover) — a65c4a8
-- [ ] Tarefa 4: Recortar a cena e as sombras pela grade
+- [x] Tarefa 4: Recortar a cena e as sombras pela grade — 9a37a78, 3993896
 - [ ] Tarefa 5: Usar a grade no raycast do editor e nas consultas de área
 - [ ] Tarefa 6: Desenhar pela GPU (multi-draw indirect, buffers mapeados de forma persistente)
 - [ ] Tarefa 7: Guardar os componentes em blocos contínuos por tipo
@@ -79,6 +79,20 @@ e a renderização relativa à câmera são também a base do streaming de célu
   5,5 -> 4,6 ms (enviar a cena 1,8 -> 1,2; preparar 0,51 -> 0,33); o quadro continua em ~27 ms, preso na GPU
   (~22 ms). Visto pelo MCP: estático criado, movido, recolorido, desativado e desfeito aparece certo.
   `test_render_world`.
+- Tarefa 4: o `RenderWorld` guarda os objetos numa `SpatialGrid`. O `ShadowRenderer` foi dividido em `Plan` (luzes
+  e passadas do quadro) e `Render` (listas e desenho), para o renderer saber o frustum das passadas antes de montar
+  a lista: no `EndScene` a câmera e cada passada consultam a grade, e só entram no quadro os objetos que alguém vê,
+  com a máscara de passadas já pronta (o `BuildPasses` não testa o frustum deles). A consulta da grade passou a olhar
+  só as células sob a caixa do frustum (os 8 cantos pelo encontro dos planos): percorrer as ~3900 células de um
+  mundo de 2 x 2 km custava mais que os objetos. O `SubmitTo` guarda a lista dos não estáticos e não percorre mais
+  os estáticos a cada quadro. Números (Release, HD 530, mediana de 2 x 15 s):
+  - Mundo de 20 000 cubos em 2 x 2 km, câmera vendo ~4% (879): consulta da câmera 0,06 ms e das 4 cascatas ~0,1 ms
+    (sonda fora do repositório); no Player, "recortar os guardados" (consultas e a cópia dos escolhidos para o quadro)
+    0,56-0,83 ms. Todos normais -> todos estáticos: CPU do Render 23,6 -> 3,2-5,3 ms, enviar a cena 10,7 -> 0 ms,
+    quadro 31 -> 19 ms (preso na GPU, ~13,5 ms).
+  - Referência: CPU do Render 4,4 (normais) -> 3,5-4,2 ms (estáticos); o quadro continua preso na GPU (~22 ms).
+  - Visto pelo MCP: torre estática fora da imagem com o sol baixo atrás dela: a sombra dela na imagem sai igual, pixel
+    a pixel, com e sem Estático.
 
 ## Limitações
 
