@@ -245,6 +245,24 @@ e a renderização relativa à câmera são também a base do streaming de célu
   - Pelo editor ("Ferramentas Ação"): terreno aumentado para 8 x 8 blocos (256 m), ilha de 129 x 129 alturas gravada
     de uma vez, mar a -6 m e água de 256 m; leituras, pontos e desfazer conferidos e a ilha vista pelo
     `viewport_capture`.
+- Critérios de "Pronto quando" (27/10/2026, Release, máquina de referência: i5 de 4 núcleos e HD 530; Player
+  1280×720 em janela, MSAA 4x, vsync desligado, sombras altas, mediana depois de 4 s):
+  - `test_spatial_grid` passa (ctest do Debug, 68/68).
+  - `test_desempenho` passa (todas as medidas dentro de +30% da base; `cena_ler` +21%, `cena_json` +12%, o resto
+    entre -6% e +16%). Cena de referência no Player: 22,0 e 22,1 ms em duas rodadas (GPU 17,9 ms; Cena HDR 11,0;
+    sombras 3,0; CPU do Render 4,7), contra 22,1 ms na Fase 24 e 22,6 ms na Fase 26: não ficou mais lenta.
+  - Recorte de 20 000 objetos em 2 x 2 km vendo ~4%: consultas da câmera e das 4 cascatas ~0,16 ms (Tarefa 4),
+    dentro de 0,3 ms; com a cópia dos escolhidos para o quadro, 0,56-0,83 ms.
+  - Objeto longe da origem: visto pelo `viewport_capture` a 100 km igual à origem (Tarefa 2).
+  - Terreno de 1 x 1 km ("Terreno Ação", montado pelo MCP do editor Release): 32 x 32 blocos, morros de -13 a 22 m,
+    camadas 2 a 4 pintadas (terra em manchas, rocha no alto, areia na beira), água de 1024 m em y = 0, personagem
+    com Controlador de personagem andando sozinho por script e a câmera atrás (`Seguir`). Gravar a cena gravou os
+    1024 arquivos de bloco (12,5 s); reaberta, as 1 050 625 alturas saem iguais às geradas (os pesos voltam
+    arredondados para 1 byte por camada, como o formato guarda). No Player, o personagem anda 40 s pelo terreno
+    sempre no chão, subindo e descendo os morros.
+  - **60 FPS não alcançado:** quadro mediano 27,1 ms (~37 FPS), preso na GPU: Renderer 22,7 ms (Cena HDR 15,8 com
+    326 draws e 218 mil triângulos, água 5,7, cópia para a água 3,1, pós 4,0, sombras 2,9); CPU do Render 7,9 ms e
+    física 1,7 ms. Sem MSAA: 21,4 ms (~47 FPS; GPU 17,7: Cena HDR 11,8, água 4,0, cópia 1,7). Ver Limitações.
 
 ## Limitações
 
@@ -294,6 +312,12 @@ e a renderização relativa à câmera são também a base do streaming de célu
   do `water_info` é qualquer coisa acima da superfície no ponto (terreno, cubo ou outra entidade com colisão de
   raio), não só o terreno. O tempo das ondas é o pedido (0 por padrão), não o relógio do renderer, então a
   superfície devolvida não é a da tela naquele instante.
+- Meta de 60 FPS com 1 km de terreno e água no Player (HD 530) não alcançada: 27 ms com MSAA 4x, 21 ms sem. O
+  gargalo é a GPU: o pixel do terreno (4 texturas e a dos pesos em toda parte, mesmo sem textura nas camadas) na Cena
+  HDR, a água (5,7 ms) e a cópia da cena para ela (3,1 ms com MSAA). Caminhos: pixel do terreno com só as camadas
+  usadas no bloco, água sem a cópia da profundidade com amostras, menos pós em qualidade baixa. A CPU do Render
+  (7,9 ms com 326 draws, um por bloco visível) também pesa: juntar os blocos num draw (Tarefa 12). Gravar 1024
+  blocos novos leva 12,5 s (um `WriteFileAtomic` por bloco).
 - `test_runtime_systems` travou uma vez no `ctest -j4` de 27/10/2026 (encerrado pelo PID); sozinho passou 150 vezes
   seguidas e o `ctest` inteiro passou de novo. Ficar de olho. Travou de novo no `ctest` da Tarefa 14 (o processo não
   sai nem pelo PID; os arquivos presos foram renomeados para `*.presa-12844` em `build/bin`); com `--timeout 120` o
