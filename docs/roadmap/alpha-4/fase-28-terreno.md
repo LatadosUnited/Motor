@@ -36,7 +36,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 8: Criar o componente Terrain com mapa de altura em blocos, um arquivo por bloco — 6c9be78
 - [x] Tarefa 9: Pincéis do terreno no editor: subir, baixar, suavizar — 84bd2db
 - [x] Tarefa 10: Pintar até 4 camadas de textura no terreno — 71d1d3c
-- [ ] Tarefa 11: Dar ao terreno um collider da física (height field da Jolt)
+- [x] Tarefa 11: Dar ao terreno um collider da física (height field da Jolt) (`e0e676e`, `37566be`)
 - [ ] Tarefa 12: LOD do terreno por blocos, sem frestas entre níveis
 - [ ] Tarefa 13: Criar a água: ondas, reflexo do céu, refração e cor pela profundidade
 - [ ] Tarefa 14: Ferramentas MCP do terreno e da água
@@ -178,6 +178,25 @@ e a renderização relativa à câmera são também a base do streaming de célu
     bordas; texturas nas camadas 1 e 2 com escalas diferentes; desfazer volta à camada 1; salvar regravou só os 9
     blocos tocados (de 16), na versão 2, com o topo do morro gravado como camada 3 pura. `test_terrain` (pesos,
     normalização, desfazer, malha não refeita, arquivo novo e antigo, camadas do componente).
+- Tarefa 11: com Colisão (padrão), cada bloco do terreno vira um corpo estático da Jolt com um `HeightFieldShape`
+  (`engine/src/physics/PhysicsTerrain.cpp`), na pose da entidade e com ela como dono (`mUserData`): o `Raycast` da
+  física, os contatos e o personagem acertam o terreno sem Collider. Campos novos no componente: Colisão, Atrito e
+  Camada (de colisão). Os corpos são refeitos quando a versão das alturas, a matriz de mundo, o atrito ou a camada
+  mudam, e saem quando a entidade some, é desativada ou perde a Colisão. Só um terreno com colisão já cria o mundo
+  da física. `kScriptApiVersion` 25.
+  - A malha desenhada e o `HeightAt` passaram a dividir cada célula pela diagonal da Jolt ((0,0)-(1,1)), para o
+    corpo ter os mesmos triângulos que se vê.
+  - A compressão das alturas da Jolt usa os bits que deixam o erro abaixo de 5 mm, calculados pela engine: o
+    `CalculateBitsPerSampleForError` da Jolt lê além do vetor quando o número de amostras é ímpar (33) e derrubava o
+    processo.
+  - Renderer: as uniforms das camadas só são buscadas na variante TERRAIN (os outros shaders avisavam no log que não
+    as achavam, desde a Tarefa 10).
+  - `test_terrain_physics`: 200 raios da física acertam a altura desenhada com até 1,6 mm de diferença (entidade
+    movida) e 1,2 mm (girada 90° e escalada); uma esfera para no terreno; o personagem fica no chão e anda 12 m
+    subindo e descendo o morro sem atravessar nem voar; mudar uma amostra em Play muda o raio; Colisão desligada ou
+    entidade desativada tiram os 16 corpos.
+  - Pelo MCP ("Física Ação"): com o plano "Chão" desativado, cinco esferas soltas a 70 m pousam no topo de um morro
+    de ~50 m feito com `terrain_brush`, rolam e param no terreno (y = 0,5, o raio); imagem por `viewport_capture`.
 
 ## Limitações
 
@@ -198,7 +217,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
   (o painel ainda a mostra como pasta comum). Alturas mudadas não entram no desfazer nem marcam a cena como não
   salva (vêm com os pincéis, Tarefa 9); um terreno sem projeto aberto fica só na memória. A textura repete a cada
   metro, sem escala própria (vem com a pintura, Tarefa 10). Todos os blocos são desenhados com a malha cheia, sem LOD
-  (Tarefa 12), e o `Raycast` testa os 2048 triângulos de cada bloco que o raio cruza. Sem colisão ainda (Tarefa 11).
+  (Tarefa 12), e o `Raycast` testa os 2048 triângulos de cada bloco que o raio cruza.
   Pincéis (Tarefa 9): o arraste com o mouse no Viewport (círculo e pintura) não foi testado, só a mesma pincelada
   pelo MCP; o autossalvamento de recuperação não guarda as alturas, só a cena. Fechar sem salvar descarta as alturas
   só quando ninguém mais usa o terreno (as alturas ficam na `TerrainData` aberta enquanto houver referência). A cada
@@ -208,3 +227,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
   bloco é um material próprio (um draw por bloco, até o LOD da Tarefa 12 juntar). Os pesos têm a resolução das
   alturas (1 m): bordas de pintura mais finas que isso não existem. As camadas só têm cor (sem mapa de normal nem
   rugosidade por camada). Pintar a cada quadro cria um material e uma textura de pesos novos por bloco tocado.
+  Física (Tarefa 11): qualquer mudança nas alturas ou nos pesos (a versão é uma só) refaz os corpos de todos os
+  blocos do terreno, não só os tocados: pintar ou esculpir em Play custa a reconstrução inteira a cada quadro. Sem
+  material físico por camada pintada (o atrito é um só por terreno). As alturas guardadas pela Jolt têm até 5 mm de
+  erro. Não testado na mão: andar com o personagem pelo teclado sobre o terreno no Play do editor.
