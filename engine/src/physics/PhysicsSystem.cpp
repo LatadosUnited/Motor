@@ -51,8 +51,16 @@ PhysicsSettings& PhysicsSettings::Global() {
 namespace {
 
 bool SceneHasPhysics(const Scene& scene) {
-    return !scene.EntitiesWith<ColliderComponent>().empty() ||
-           !scene.EntitiesWith<CharacterControllerComponent>().empty();
+    if (!scene.EntitiesWith<ColliderComponent>().empty() || !scene.EntitiesWith<CharacterControllerComponent>().empty()) {
+        return true;
+    }
+    // Terreno com colisão também é física (o personagem pode vir depois, criado por script).
+    for (const EntityId id : scene.EntitiesWith<Terrain>()) {
+        const Entity* e = scene.Find(id);
+        const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
+        if (terrain && terrain->collision) return true;
+    }
+    return false;
 }
 
 double MillisecondsSince(std::chrono::steady_clock::time_point start) {

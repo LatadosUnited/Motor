@@ -3,10 +3,13 @@
 // Terreno (Fase 28): liga um arquivo .mterrain (mapa de altura em blocos, motor/assets/TerrainData.h) à entidade. A
 // cena desenha cada bloco como um objeto estático (Scene::SubmitTo), na posição da entidade, e o Raycast do editor
 // acerta os blocos. Pintura (Tarefa 10): até 4 camadas de textura, misturadas pelos pesos de cada amostra do
-// terreno; a camada 1 é a textura e a cor do material, as outras ficam no componente. Física e LOD vêm depois.
+// terreno; a camada 1 é a textura e a cor do material, as outras ficam no componente. Física (Tarefa 11): com
+// `collision`, a camada física põe um height field da Jolt por bloco (corpo estático da entidade: raios, contatos e o
+// personagem acertam o terreno), sem precisar de Collider. LOD vem depois.
 
 #include "motor/assets/TerrainData.h"
 #include "motor/renderer/Material.h"
+#include "motor/scene/CollisionLayerField.h"
 #include "motor/scene/Component.h"
 
 #include <filesystem>
@@ -57,6 +60,9 @@ struct Terrain {
     TerrainLayer layer3{nullptr, {0.48f, 0.47f, 0.45f, 1.0f}};
     TerrainLayer layer4{nullptr, {0.80f, 0.74f, 0.55f, 1.0f}};
     ShadowCasting shadows = ShadowCasting::On;
+    bool collision = true;   // corpo da física (height field), sem Collider
+    float friction = 0.6f;
+    CollisionLayer layer;    // camada de colisão do projeto
 
     const Material& Resolved() const { return sharedMaterial ? *sharedMaterial : material; }
     // As 4 camadas como o renderer recebe, sem os pesos e o canto do bloco (a cena põe os de cada bloco).

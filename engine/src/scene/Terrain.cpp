@@ -135,7 +135,12 @@ MOTOR_COMPONENT_MODULE(Terrain) {
         .FieldRef("layer4Tiling", "Camada 4: escala", [](Terrain& t) -> auto& { return t.layer4.tiling; }, kTilingOptions)
         .FieldRef("roughness", "Rugosidade", [](Terrain& t) -> auto& { return t.material.roughness; },
                   {.slider = true, .min = 0.0f, .max = 1.0f, .tooltip = "0 = espelho, 1 = fosco"})
-        .Field("shadows", "Sombra", &Terrain::shadows);
+        .Field("shadows", "Sombra", &Terrain::shadows)
+        .Field("collision", "Colisão", &Terrain::collision,
+               {.tooltip = "Corpo da física com as alturas: o personagem anda nele, raios e corpos batem nele"})
+        .Field("friction", "Atrito", &Terrain::friction, {.min = 0.0f, .max = 10.0f})
+        .Field("layer", "Camada", &Terrain::layer,
+               {.tooltip = "Camada de colisão: quem se choca com quem fica em Projeto > Camadas de colisão"});
 }
 
 } // namespace motor

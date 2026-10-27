@@ -160,16 +160,17 @@ void Renderer::LoadLitShaders(ShadowQuality cascadeFilter) {
     // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
     m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define NO_MAPS\n");
     m_terrainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define TERRAIN\n");
-    auto findLitUniforms = [](Shader& shader) {
+    // As uniforms das camadas só existem na variante TERRAIN: nas outras ficam -1 (sem o aviso de "não encontrado").
+    auto findLitUniforms = [](Shader& shader, bool terrain) {
         return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uColor"),
                            shader.Uniform("uPbr"), shader.Uniform("uEmissive"),
-                           shader.Uniform("uLayerColors"), shader.Uniform("uLayerTiling"),
-                           shader.Uniform("uTerrainBlock")};
+                           terrain ? shader.Uniform("uLayerColors") : -1, terrain ? shader.Uniform("uLayerTiling") : -1,
+                           terrain ? shader.Uniform("uTerrainBlock") : -1};
     };
-    m_litUniforms = findLitUniforms(*m_litShader);
-    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
-    m_litPlainUniforms = findLitUniforms(*m_litPlainShader);
-    m_terrainUniforms = findLitUniforms(*m_terrainShader);
+    m_litUniforms = findLitUniforms(*m_litShader, false);
+    m_skinnedUniforms = findLitUniforms(*m_skinnedShader, false);
+    m_litPlainUniforms = findLitUniforms(*m_litPlainShader, false);
+    m_terrainUniforms = findLitUniforms(*m_terrainShader, true);
     m_litShadowFilter = cascadeFilter;
 }
 

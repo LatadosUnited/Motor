@@ -195,9 +195,10 @@ std::optional<float> TerrainData::HeightAt(float x, float z) const {
     const float tx = fx - static_cast<float>(gx), tz = fz - static_cast<float>(gz);
     const auto h00 = Sample(gx, gz), h10 = Sample(gx + 1, gz), h01 = Sample(gx, gz + 1), h11 = Sample(gx + 1, gz + 1);
     if (!h00 || !h10 || !h01 || !h11) return std::nullopt;
-    // Os mesmos dois triângulos da malha (diagonal de (0, 1) a (1, 0)): a altura bate com o que aparece na tela.
-    if (tx + tz <= 1.0f) return *h00 + tx * (*h10 - *h00) + tz * (*h01 - *h00);
-    return *h11 + (1.0f - tx) * (*h01 - *h11) + (1.0f - tz) * (*h10 - *h11);
+    // Os mesmos dois triângulos da malha e do height field da física (diagonal de (0, 0) a (1, 1), como na Jolt): a
+    // altura bate com o que aparece na tela e com onde o personagem pisa.
+    if (tz >= tx) return *h00 + tx * (*h11 - *h01) + tz * (*h01 - *h00);
+    return *h00 + tx * (*h10 - *h00) + tz * (*h11 - *h10);
 }
 
 glm::vec3 TerrainData::NormalAt(int gx, int gz) const {
@@ -294,7 +295,8 @@ std::shared_ptr<Mesh> TerrainData::BlockMesh(TerrainBlockKey key) const {
         for (int i = 0; i < n; ++i) {
             const uint32_t v00 = static_cast<uint32_t>(j * res + i), v10 = v00 + 1;
             const uint32_t v01 = v00 + static_cast<uint32_t>(res), v11 = v01 + 1;
-            indices.insert(indices.end(), {v00, v01, v10, v10, v01, v11});  // anti-horário visto de cima
+            // Anti-horário visto de cima, com a diagonal de v00 a v11 (a do HeightFieldShape da Jolt).
+            indices.insert(indices.end(), {v00, v01, v11, v00, v11, v10});
         }
     }
     block->mesh = std::make_shared<Mesh>(vertices, indices);

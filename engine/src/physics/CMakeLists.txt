@@ -5,6 +5,7 @@ motor_add_layer(physics
         PhysicsSystem.cpp
         PhysicsWorld.cpp
         PhysicsWorldEvents.cpp
+        PhysicsTerrain.cpp
         ColliderGizmo.cpp
         JoltJobs.cpp
     DEPENDS scene

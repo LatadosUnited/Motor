@@ -443,7 +443,12 @@ entity.Remove<Girar>();
   `.mterrain` (cabeçalho) com a pasta `.blocos` ao lado (um arquivo `x_z.mtbloco` por bloco: o mundo grande carrega
   um bloco sem os outros). O painel Projeto move, copia e manda para a Lixeira a pasta junto com o `.mterrain`, e a
   exportação a leva. Campos: Terreno (o arquivo), Material, as 4 camadas (textura, cor e escala: metros por
-  repetição; a camada 1 é a textura e a cor do material), Rugosidade e Sombra.
+  repetição; a camada 1 é a textura e a cor do material), Rugosidade, Sombra, e os da física: Colisão (ligada por
+  padrão), Atrito e Camada (de colisão).
+  **Física:** com Colisão, cada bloco vira um corpo estático da Jolt (height field) com as mesmas alturas e
+  triângulos que o desenho, sem precisar de Collider: o personagem anda no terreno, corpos caem e rolam nele, e o
+  `Raycast` da física e os eventos de contato devolvem a entidade do terreno. Posição, rotação e escala da entidade
+  valem; mudar as alturas em Play refaz os corpos.
   Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta. Entidade >
   Terreno (ou `entity_create` com `kind: "terrain"` no MCP) cria um plano de 128 x 128 m em `Assets/Terrenos`.
   **Pincéis:** no Inspector do Terreno, escolha Subir, Baixar, Suavizar, Nivelar (na altura de onde a pincelada
@@ -452,7 +457,7 @@ entity.Remove<Girar>();
   esquerdo pinta (Selecionar ou Esc no Viewport volta ao clique que seleciona; o gizmo some enquanto o pincel está
   ligado). Cada pincelada é um passo de desfazer e marca a cena como não salva; salvar a cena grava só os blocos
   mudados. Pelo MCP, `terrain_brush`. Dados e arquivos em `motor/assets/TerrainData.h`, pincéis em
-  `motor/assets/TerrainBrush.h`; física e LOD vêm nas próximas tarefas.
+  `motor/assets/TerrainBrush.h`, corpos em `engine/src/physics/PhysicsTerrain.cpp`; o LOD vem na próxima tarefa.
 
 ### Renderização (Fase 7)
 
