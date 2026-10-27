@@ -1,8 +1,9 @@
 #version 450 core
 
-// Água (Fase 28): reflexo do céu (o mapa pré-filtrado, com Fresnel), refração (a cópia da cena feita antes da água,
-// distorcida pela normal), cor pela espessura da água até o fundo (a profundidade da cópia) e espuma na beira. A luz
-// direta é só o brilho do sol nas ondas. A saída é HDR linear, como o lit.frag.
+// Água (Fase 28): reflexo do céu (o mapa pré-filtrado, com Fresnel), refração (a cópia da cor da cena feita antes da
+// água, distorcida pela normal), cor pela espessura da água até o fundo (a profundidade da cena, lida direto do alvo:
+// a água não grava nela nesta passada) e espuma na beira. A luz direta é só o brilho do sol nas ondas. A saída é HDR
+// linear, como o lit.frag. SCENE_MSAA (variante do Renderer): a profundidade tem amostras; lê a primeira.
 
 in VS_OUT {
     vec3 worldPos;
@@ -16,7 +17,11 @@ in VS_OUT {
 
 layout(binding = 7) uniform samplerCube uPrefiltered;
 layout(binding = 14) uniform sampler2D uRefractColor;  // a cena antes da água (luz linear)
-layout(binding = 15) uniform sampler2D uRefractDepth;  // a profundidade dela
+#ifdef SCENE_MSAA
+layout(binding = 15) uniform sampler2DMS uSceneDepth;  // a profundidade da cena (valores do depth buffer)
+#else
+layout(binding = 15) uniform sampler2D uSceneDepth;
+#endif
 
 uniform vec4 uShallow;  // rgb = cor rasa (sRGB), a = metros até o fundo sumir
 uniform vec4 uDeep;     // rgb = cor funda (sRGB), a = distorção da refração
@@ -26,7 +31,8 @@ out vec4 oColor;
 
 // Ponto da cena (relativo à câmera) no pixel `uv` da cópia.
 vec3 ScenePoint(vec2 uv) {
-    float depth = texture(uRefractDepth, uv).r;
+    ivec2 texel = clamp(ivec2(uv * uViewport.xy), ivec2(0), ivec2(uViewport.xy) - 1);
+    float depth = texelFetch(uSceneDepth, texel, 0).r;  // com MSAA, a amostra 0; sem, o nível 0
     vec4 p = uInvViewProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
     return p.xyz / p.w;
 }
@@ -44,6 +50,11 @@ void main() {
     vec3 N = normalize(fs.normal);
     // As ondulações somem com a distância (senão viram ruído) e quando a onda configurada é pequena.
     float dist = length(fs.worldPos);
+    // Longe, a neblina já cobre a água: nada do resto aparece.
+    if (exp(-pow(dist * uFog.a, 2.0)) < 0.002) {
+        oColor = vec4(uFog.rgb, 1.0);
+        return;
+    }
     float rippleScale = 0.08 * clamp(1.0 - dist / 150.0, 0.0, 1.0);
     vec2 ripple = Ripples(fs.uv * (8.0 / max(uWater.w, 1.0)) * 4.0, uWater.z, rippleScale);
     N = normalize(N + vec3(ripple.x, 0.0, ripple.y));

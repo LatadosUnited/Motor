@@ -27,5 +27,6 @@ motor_add_layer(renderer
         GpuAllocators.cpp
         MeshPool.cpp
         StreamBuffer.cpp
+        TerrainWeights.cpp
     DEPENDS core
     PRIVATE_LIBS glfw)

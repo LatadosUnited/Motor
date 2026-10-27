@@ -63,7 +63,9 @@ namespace motor {
 // 24: Fase 28: pintura do terreno; Material ganhou `terrain` (camadas) e Texture2D os pixels da textura adiada.
 // 25: Fase 28: Terrain ganhou os campos da física (collision, friction, layer).
 // 26: Fase 28: componente Water; o Renderer ganhou a água (SubmitWater, membros novos).
-inline constexpr int kScriptApiVersion = 26;
+// 27: Fase 28: os pesos do terreno numa textura só (TerrainLayers::weights é TerrainWeights, sem `block`), sombra do
+//     terreno pelas faces de costas (ShadowParams::backFacesOnly), variantes da água no Renderer.
+inline constexpr int kScriptApiVersion = 27;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

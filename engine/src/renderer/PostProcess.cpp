@@ -78,12 +78,13 @@ void PostProcess::Create() {
         glNamedRenderbufferStorageMultisample(m_colorRbo, m_samples, kSceneColorFormat, m_width, m_height);
         TrackGpuMemory(GpuObject::Renderbuffer, m_colorRbo, GpuMemoryKind::PostProcess,
                        GpuTextureBytes(kSceneColorFormat, m_width, m_height, 1, 1, m_samples));
-        glCreateRenderbuffers(1, &m_depthRbo);
-        glNamedRenderbufferStorageMultisample(m_depthRbo, m_samples, GL_DEPTH_COMPONENT32F, m_width, m_height);
-        TrackGpuMemory(GpuObject::Renderbuffer, m_depthRbo, GpuMemoryKind::PostProcess,
+        // Profundidade com amostras como textura (não renderbuffer): a água a lê direto (LiveDepth).
+        glCreateTextures(GL_TEXTURE_2D_MULTISAMPLE, 1, &m_depthMsTexture);
+        glTextureStorage2DMultisample(m_depthMsTexture, m_samples, GL_DEPTH_COMPONENT32F, m_width, m_height, GL_TRUE);
+        TrackGpuMemory(GpuObject::Texture, m_depthMsTexture, GpuMemoryKind::PostProcess,
                        GpuTextureBytes(GL_DEPTH_COMPONENT32F, m_width, m_height, 1, 1, m_samples));
         glNamedFramebufferRenderbuffer(m_sceneFbo, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, m_colorRbo);
-        glNamedFramebufferRenderbuffer(m_sceneFbo, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthRbo);
+        glNamedFramebufferTexture(m_sceneFbo, GL_DEPTH_ATTACHMENT, m_depthMsTexture, 0);
 
         glCreateFramebuffers(1, &m_resolveFbo);
         glNamedFramebufferTexture(m_resolveFbo, GL_COLOR_ATTACHMENT0, m_colorTexture, 0);
@@ -118,11 +119,7 @@ void PostProcess::Create() {
 
 void PostProcess::CreateRefraction() {
     m_refractColor = CreateTexture2D(kSceneColorFormat, m_width, m_height);
-    m_refractDepth = CreateTexture2D(GL_DEPTH_COMPONENT32F, m_width, m_height);
-    glTextureParameteri(m_refractDepth, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTextureParameteri(m_refractDepth, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     m_refractFbo = CreateColorFbo(m_refractColor);
-    glNamedFramebufferTexture(m_refractFbo, GL_DEPTH_ATTACHMENT, m_refractDepth, 0);
 }
 
 void PostProcess::Destroy() {
@@ -137,21 +134,19 @@ void PostProcess::Destroy() {
     UntrackGpuMemory(GpuObject::Texture, m_colorTexture);
     UntrackGpuMemory(GpuObject::Texture, m_depthTexture);
     UntrackGpuMemory(GpuObject::Renderbuffer, m_colorRbo);
-    UntrackGpuMemory(GpuObject::Renderbuffer, m_depthRbo);
+    UntrackGpuMemory(GpuObject::Texture, m_depthMsTexture);
     if (m_ldrTexture) glDeleteTextures(1, &m_ldrTexture);
     if (m_sceneFbo) glDeleteFramebuffers(1, &m_sceneFbo);
     if (m_resolveFbo) glDeleteFramebuffers(1, &m_resolveFbo);
     if (m_colorRbo) glDeleteRenderbuffers(1, &m_colorRbo);
-    if (m_depthRbo) glDeleteRenderbuffers(1, &m_depthRbo);
+    if (m_depthMsTexture) glDeleteTextures(1, &m_depthMsTexture);
     if (m_colorTexture) glDeleteTextures(1, &m_colorTexture);
     if (m_depthTexture) glDeleteTextures(1, &m_depthTexture);
     UntrackGpuMemory(GpuObject::Texture, m_refractColor);
-    UntrackGpuMemory(GpuObject::Texture, m_refractDepth);
     if (m_refractFbo) glDeleteFramebuffers(1, &m_refractFbo);
     if (m_refractColor) glDeleteTextures(1, &m_refractColor);
-    if (m_refractDepth) glDeleteTextures(1, &m_refractDepth);
-    m_refractFbo = m_refractColor = m_refractDepth = 0;
-    m_ldrFbo = m_ldrTexture = m_sceneFbo = m_resolveFbo = m_colorRbo = m_depthRbo = 0;
+    m_refractFbo = m_refractColor = 0;
+    m_ldrFbo = m_ldrTexture = m_sceneFbo = m_resolveFbo = m_colorRbo = m_depthMsTexture = 0;
     m_colorTexture = m_depthTexture = 0;
 }
 
@@ -181,9 +176,9 @@ void PostProcess::CopyForRefraction() {
         CreateRefraction();
     }
     MOTOR_PROFILE_GPU("Cópia para a água");
-    // Com MSAA o blit já resolve as amostras (a profundidade pela mais próxima: GL_NEAREST).
+    // Com MSAA o blit já resolve as amostras.
     glBlitNamedFramebuffer(m_sceneFbo, m_refractFbo, 0, 0, m_width, m_height, 0, 0, m_width, m_height,
-                           GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+                           GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_FRAMEBUFFER, m_sceneFbo);
     glViewport(0, 0, m_width, m_height);
 }

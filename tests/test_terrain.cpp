@@ -356,17 +356,24 @@ int main(int argc, char** argv) {
         CHECK(data->BlockMesh({0, 0}) == mesh);  // a malha não muda
         CHECK(data->IsDirty());
 
-        // A textura dos pesos de cada bloco: 33 x 33, refeita só depois de mudar.
-        const auto texture = data->BlockWeights({0, 0});
-        CHECK(texture && texture->Width() == 33 && texture->Height() == 33);
-        CHECK(data->BlockWeights({0, 0}) == texture);
+        // Os pesos de todos os blocos numa textura só (uma camada por bloco, 33 x 33), o mesmo objeto sempre.
+        const auto texture = data->WeightsTexture();
+        CHECK(texture && texture->Resolution() == 33 && texture->BlockCount() == 2);
+        CHECK(texture->LayerOf(0, 0) >= 0 && texture->LayerOf(1, 0) >= 0 && texture->LayerOf(0, 0) != texture->LayerOf(1, 0));
+        CHECK(data->WeightsTexture() == texture);
 
         // SetWeights normaliza; tudo zero vira a camada 1.
         data->SetWeights(2, 2, {2.0f, 0.0f, 2.0f, 0.0f});
         CHECK(data->Weights(2, 2) == glm::vec4(0.5f, 0.0f, 0.5f, 0.0f));
         data->SetWeights(2, 2, glm::vec4(0.0f));
         CHECK(data->Weights(2, 2) == glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
-        CHECK(data->BlockWeights({0, 0}) != texture);
+        // Bloco novo e bloco tirado chegam à textura na próxima chamada; o retângulo do índice os cobre.
+        data->AddBlock({-1, 2});
+        CHECK(data->WeightsTexture() == texture && texture->BlockCount() == 3 && texture->LayerOf(-1, 2) >= 0);
+        CHECK(texture->IndexRect() == glm::ivec4(-1, 0, 3, 3));
+        data->RemoveBlock({-1, 2});
+        data->WeightsTexture();
+        CHECK(texture->BlockCount() == 2 && texture->LayerOf(-1, 2) == -1 && texture->IndexRect() == glm::ivec4(0, 0, 2, 1));
 
         // Desfazer e refazer a pincelada; ela não mexeu nas alturas.
         const TerrainEdit edit = paint.Finish();
@@ -401,6 +408,25 @@ int main(int argc, char** argv) {
         CHECK(old && error.empty());
         CHECK(old && old->Weights(40, 16) == glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));  // bloco 1_0 antigo: camada 1
         CHECK(old && old->Weights(16, 16).has_value() && Near(old->Weights(30, 16)->y, data->Weights(30, 16)->y, 1.0f / 255.0f));
+    }
+
+    SECTION("Pesos de todos os blocos: camadas reaproveitadas, índice e retângulo");
+    {
+        TerrainWeights weights(3);
+        std::vector<uint8_t> red(3 * 3 * 4, 0);
+        for (size_t k = 0; k < red.size(); k += 4) red[k] = 255;
+        weights.SetBlock(2, -1, red);
+        weights.SetBlock(-3, 4, red);
+        CHECK(weights.BlockCount() == 2 && weights.LayerOf(2, -1) == 0 && weights.LayerOf(-3, 4) == 1);
+        CHECK(weights.IndexRect() == glm::ivec4(-3, -1, 6, 6));
+        weights.SetBlock(2, -1, red);  // o mesmo bloco de novo: a mesma camada
+        CHECK(weights.BlockCount() == 2 && weights.LayerOf(2, -1) == 0);
+        weights.RemoveBlock(2, -1);
+        CHECK(weights.LayerOf(2, -1) == -1 && weights.IndexRect() == glm::ivec4(-3, 4, 1, 1));
+        weights.SetBlock(7, 7, red);  // a camada livre volta a ser usada
+        CHECK(weights.LayerOf(7, 7) == 0 && weights.BlockCount() == 2);
+        weights.RemoveBlock(9, 9);  // não existe: nada muda
+        CHECK(weights.BlockCount() == 2);
     }
 
     SECTION("Camadas do componente: a 1 é o material, 2 a 4 do componente");

@@ -67,6 +67,8 @@ constexpr GLuint kShadowsBinding = 3;  // lit.frag
 constexpr GLuint kUnitAlbedo = 0, kUnitNormal = 1, kUnitMetalRough = 2, kUnitOcclusion = 3, kUnitEmissive = 4;
 constexpr GLuint kUnitCascades = 5, kUnitCubes = 6, kUnitPrefiltered = 7, kUnitBrdf = 8;
 constexpr GLuint kUnitTerrainWeights = 9, kUnitTerrainLayers = 10;  // 10 a 13: as 4 camadas (lit.frag com TERRAIN)
+constexpr uint32_t kTerrainShaderKey = 3;  // DrawKey.shader do terreno com camadas (PrepareItems)
+constexpr GLuint kUnitTerrainIndex = 14;  // bloco -> camada do array de pesos (a água usa a 14 depois, com outro shader)
 
 LightData Pack(const Light& light, int cubeLayer, bool cascades, const glm::vec3& origin) {
     const float len = glm::length(light.direction);
@@ -121,11 +123,18 @@ Renderer::Renderer() {
     m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag", "#define SINGLE_MODEL\n");
     m_unlitModel = m_unlitShader->Uniform("uModel");
     m_unlitColor = m_unlitShader->Uniform("uColor");
-    m_waterShader = Shader::FromFiles(dir / "water.vert", dir / "water.frag");
-    m_waterUniforms = {m_waterShader->Uniform("uModel"), m_waterShader->Uniform("uWave"),
-                       m_waterShader->Uniform("uTime"), m_waterShader->Uniform("uShallow"),
-                       m_waterShader->Uniform("uDeep"), m_waterShader->Uniform("uWater")};
+    m_waterShaders[0] = Shader::FromFiles(dir / "water.vert", dir / "water.frag");
+    m_waterShaders[1] = Shader::FromFiles(dir / "water.vert", dir / "water.frag", "#define SCENE_MSAA\n");
+    for (int i = 0; i < 2; ++i) {
+        Shader& s = *m_waterShaders[i];
+        m_waterUniforms[i] = {s.Uniform("uModel"), s.Uniform("uWave"), s.Uniform("uTime"),
+                              s.Uniform("uShallow"), s.Uniform("uDeep"), s.Uniform("uWater")};
+    }
+    m_waterDepthShader = Shader::FromFiles(dir / "water.vert", dir / "water_depth.frag");
+    m_waterDepthUniforms = {m_waterDepthShader->Uniform("uModel"), m_waterDepthShader->Uniform("uWave"),
+                            m_waterDepthShader->Uniform("uTime")};
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
+    m_noTerrainWeights = std::make_unique<TerrainWeights>(2);
     m_instances = std::make_unique<InstanceBuffers>();
     m_post = std::make_unique<PostProcess>(dir);
     m_shadows = std::make_unique<ShadowRenderer>(dir);
@@ -169,7 +178,7 @@ void Renderer::LoadLitShaders(ShadowQuality cascadeFilter) {
         return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uColor"),
                            shader.Uniform("uPbr"), shader.Uniform("uEmissive"),
                            terrain ? shader.Uniform("uLayerColors") : -1, terrain ? shader.Uniform("uLayerTiling") : -1,
-                           terrain ? shader.Uniform("uTerrainBlock") : -1};
+                           terrain ? shader.Uniform("uTerrainGrid") : -1};
     };
     m_litUniforms = findLitUniforms(*m_litShader, false);
     m_skinnedUniforms = findLitUniforms(*m_skinnedShader, false);
@@ -443,7 +452,7 @@ void Renderer::PrepareItems(const Frustum& view) {
             // Shader: 0 = lit, 1 = com pele, 2 = lit sem mapas, 3 = terreno com camadas.
             const MaterialParams& params = m_materialIds[item.materialId].params;
             const bool plain = params.alphaMode.z == 0.0f && params.pbr.w == 0.0f;
-            const uint32_t shader = item.skinned ? 1u : params.terrain ? 3u : plain ? 2u : 0u;
+            const uint32_t shader = item.skinned ? 1u : params.terrain ? kTerrainShaderKey : plain ? 2u : 0u;
             m_sceneKeys[i] = {shader, item.materialId, item.mesh};
             m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
             const bool inView = item.retained ? item.cameraVisible : view.Intersects(item.bounds);
@@ -570,7 +579,7 @@ void Renderer::DrawScene() {
     // 4) Céu ao fundo, onde não há nada. Depois a água, que lê a cópia de tudo isso (e grava profundidade: os
     //    transparentes atrás dela ficam escondidos).
     m_sky->DrawBackground(*m_post);
-    if (!m_waters.empty()) DrawWater(viewFrustum);
+    if (!m_waters.empty()) DrawWater(viewFrustum, batches.size() > opaqueBatches || !m_wires.empty() || m_keepSceneDepth);
 
     // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
     //    vidro continua aparecendo pelo vidro seguinte).
@@ -657,6 +666,27 @@ size_t Renderer::CollectSceneBatches(std::vector<uint32_t>& indices, std::vector
         add(i, true);
     }
     const size_t opaqueBatches = batches.size();
+    // Blocos de um terreno (mesmo material, um lote por bloco) da frente para trás: num chão com morros, o que fica
+    // atrás de um morro perto é descartado pela profundidade antes do pixel (~0,5 ms no terreno de 1 km da HD 530).
+    // Os lotes vão no draw indireto na ordem da lista.
+    for (size_t i = 0; i < opaqueBatches;) {
+        const DrawKey& key = m_sceneKeys[batches[i].firstIndex];
+        size_t end = i + 1;
+        while (end < opaqueBatches && m_sceneKeys[batches[end].firstIndex].shader == key.shader &&
+               m_sceneKeys[batches[end].firstIndex].material == key.material) {
+            ++end;
+        }
+        if (key.shader == kTerrainShaderKey && end - i > 1) {
+            auto distance = [this](const DrawBatch& b) {
+                const glm::vec3 center = (b.first->bounds.min + b.first->bounds.max) * 0.5f;
+                const glm::vec3 d = center - m_camera.position;
+                return glm::dot(d, d);
+            };
+            std::sort(batches.begin() + static_cast<std::ptrdiff_t>(i), batches.begin() + static_cast<std::ptrdiff_t>(end),
+                      [&](const DrawBatch& a, const DrawBatch& b) { return distance(a) < distance(b); });
+        }
+        i = end;
+    }
     // Transparentes ordenados pelo centro: do mais longe ao mais perto.
     std::stable_sort(transparent.begin(), transparent.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
     for (const auto& [distance, index] : transparent) add(index, false);
@@ -669,7 +699,7 @@ void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches, size_t first
     // uniforms são de cada programa, por isso a lembrança vale para um shader só.
     const Shader* paramsShader = nullptr;
     const MaterialParams* lastParams = nullptr;
-    GLuint lastTexture[kUnitTerrainLayers + 4] = {};
+    GLuint lastTexture[kUnitTerrainIndex + 1] = {};
     auto bindTexture = [&](GLuint unit, GLuint texture) {
         if (lastTexture[unit] == texture) return;
         lastTexture[unit] = texture;
@@ -724,8 +754,13 @@ void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches, size_t first
                 const glm::mat4 colors(layers->color[0], layers->color[1], layers->color[2], layers->color[3]);
                 shader.SetMat4(u.layerColors, colors);
                 shader.SetVec4(u.layerTiling, layers->tiling);
-                shader.SetVec4(u.terrainBlock, layers->block);
-                bindTexture(kUnitTerrainWeights, (layers->weights ? *layers->weights : white).NativeHandle());
+                // Sem pesos (não deveria acontecer): o array vazio, com o índice todo -1 (camada 1 em tudo).
+                const TerrainWeights& weights = layers->weights ? *layers->weights : *m_noTerrainWeights;
+                bindTexture(kUnitTerrainWeights, weights.ArrayHandle());
+                bindTexture(kUnitTerrainIndex, weights.IndexHandle());
+                const glm::ivec4 rect = weights.IndexRect();
+                shader.SetVec4(u.terrainGrid, {layers->blockSize, static_cast<float>(weights.Resolution()),
+                                               static_cast<float>(rect.x), static_cast<float>(rect.y)});
                 for (GLuint i = 0; i < 4; ++i) {
                     bindTexture(kUnitTerrainLayers + i, (layers->albedo[i] ? *layers->albedo[i] : white).NativeHandle());
                 }

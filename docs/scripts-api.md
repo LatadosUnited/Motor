@@ -1,6 +1,6 @@
 ---
 tipo: guia
-atualizado: 2026-10-18
+atualizado: 2026-10-27
 ---
 
 # Referência da API dos scripts
@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 26 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 27 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 

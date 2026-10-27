@@ -137,7 +137,7 @@ private:
     // Posições dos uniforms por desenho do lit.frag, resolvidas uma vez por shader (lit e com pele).
     struct LitUniforms {
         int alphaMode = -1, color = -1, pbr = -1, emissive = -1;
-        int layerColors = -1, layerTiling = -1, terrainBlock = -1;  // só na variante TERRAIN
+        int layerColors = -1, layerTiling = -1, terrainGrid = -1;  // só na variante TERRAIN
     };
 
     void LoadLitShaders(ShadowQuality cascadeFilter);
@@ -150,7 +150,8 @@ private:
     // Lotes da cena a partir do lote `first` da passada gravada (InstanceBuffers::UploadPass).
     void DrawSceneBatches(std::span<const DrawBatch> batches, size_t first);
     void DrawWireframes();
-    void DrawWater(const Frustum& view);  // RendererWater.cpp
+    // RendererWater.cpp. `depthAfter`: alguém lê ou testa a profundidade depois (transparentes, contornos).
+    void DrawWater(const Frustum& view, bool depthAfter);
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);
     DrawItem& AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows);
@@ -162,12 +163,15 @@ private:
     std::unique_ptr<Shader> m_litPlainShader; // lit.frag com NO_MAPS: materiais sem nenhum mapa
     std::unique_ptr<Shader> m_terrainShader;  // lit.frag com TERRAIN: blocos do terreno com camadas (Fase 28)
     std::unique_ptr<Shader> m_unlitShader;
-    std::unique_ptr<Shader> m_waterShader;  // water.vert + water.frag (Fase 28)
-    WaterUniforms m_waterUniforms;
+    // water.vert + water.frag (Fase 28): [0] sem MSAA, [1] com (SCENE_MSAA: a profundidade da cena com amostras); e a
+    // passada só de profundidade (water_depth.frag).
+    std::unique_ptr<Shader> m_waterShaders[2], m_waterDepthShader;
+    WaterUniforms m_waterUniforms[2], m_waterDepthUniforms;
     LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms, m_terrainUniforms;
     ShadowQuality m_litShadowFilter = ShadowQuality::High;  // SHADOW_FILTER dos shaders acima
     int m_unlitModel = -1, m_unlitColor = -1;
     std::shared_ptr<Texture2D> m_whiteTexture;
+    std::unique_ptr<TerrainWeights> m_noTerrainWeights;  // terreno sem pesos: camada 1 em tudo
     std::unique_ptr<PostProcess> m_post;
     std::unique_ptr<ShadowRenderer> m_shadows;
     std::unique_ptr<SkyRenderer> m_sky;

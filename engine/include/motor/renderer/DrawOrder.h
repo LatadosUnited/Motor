@@ -27,6 +27,10 @@ struct ShadowParams {
     float cutoff = -1.0f;               // < 0: sem recorte; > 1: recortado inteiro (recorte sem textura e alfa baixo)
     float alpha = 1.0f;
     const Texture2D* albedo = nullptr;  // só no recorte com textura
+    // Terreno (Fase 28): nas cascatas, só as faces de costas para o sol. Num mapa de altura são elas que fazem a
+    // sombra dos morros (a encosta virada para o sol não se sombreia: N.L já a ilumina), e o mapa quase não é
+    // preenchido: o chão inteiro em 4 mapas de 2048 custava ~2,8 ms na HD 530.
+    bool backFacesOnly = false;
     bool operator==(const ShadowParams&) const = default;
 };
 ShadowParams ShadowParamsOf(const Material& material);

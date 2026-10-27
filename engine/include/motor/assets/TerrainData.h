@@ -29,7 +29,7 @@
 namespace motor {
 
 class Mesh;
-class Texture2D;
+class TerrainWeights;
 
 inline constexpr const char* kTerrainFileExtension = ".mterrain";
 inline constexpr const char* kTerrainBlocksFolderSuffix = ".blocos";
@@ -74,9 +74,9 @@ public:
     // normaliza (soma 1; tudo zero vira a camada 1) e não refaz a malha, só a textura dos pesos.
     std::optional<glm::vec4> Weights(int gx, int gz) const;
     void SetWeights(int gx, int gz, const glm::vec4& weights);
-    // Pesos de um bloco como textura RGBA (resolution x resolution, uma amostra por texel), para o renderer
-    // (TerrainLayers::weights). Criada sem OpenGL (Texture2D::CreateDeferred) e refeita só quando os pesos mudam.
-    std::shared_ptr<Texture2D> BlockWeights(TerrainBlockKey key) const;
+    // Pesos de todos os blocos para o renderer (TerrainLayers::weights): uma camada por bloco, uma amostra por texel.
+    // Sem OpenGL; cada chamada leva para ela só os blocos que mudaram, entraram ou saíram (sobem no próximo desenho).
+    std::shared_ptr<TerrainWeights> WeightsTexture() const;
 
     // Altura no ponto (x, z) do espaço do terreno, interpolada entre as 4 amostras; nullopt fora dos blocos.
     std::optional<float> HeightAt(float x, float z) const;
@@ -122,8 +122,7 @@ private:
         mutable uint64_t meshVersion = 0;
         std::vector<glm::vec4> weights;  // mesma ordem das alturas
         uint64_t weightsVersion = 1;
-        mutable std::shared_ptr<Texture2D> weightsTexture;
-        mutable uint64_t weightsTextureVersion = 0;
+        mutable uint64_t weightsUploaded = 0;  // versão dos pesos já levada para m_weightsTexture
     };
 
     Block* Find(TerrainBlockKey key);
@@ -136,6 +135,7 @@ private:
     uint64_t m_version = 1;
     bool m_blocksChanged = false;  // blocos entraram ou saíram desde o último Save (o cabeçalho muda)
     std::filesystem::path m_savedFile;  // para onde foi o último Save (ou de onde veio o Load)
+    mutable std::shared_ptr<TerrainWeights> m_weightsTexture;  // WeightsTexture
 };
 
 } // namespace motor

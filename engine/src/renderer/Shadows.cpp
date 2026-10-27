@@ -195,6 +195,13 @@ void ShadowRenderer::DrawPass(const Pass& pass, const glm::vec3& origin, Instanc
         if (paramsVariant != &variant || !lastParams || !(params == *lastParams)) {
             shader.SetFloat(variant.uniforms.alphaCutoff, params.cutoff);
             shader.SetFloat(variant.uniforms.colorAlpha, params.alpha);
+            // Só nas cascatas: as faces dos cubos têm a imagem espelhada (a ordem dos vértices vira).
+            if (params.backFacesOnly && !pass.point) {
+                glEnable(GL_CULL_FACE);
+                glCullFace(GL_FRONT);
+            } else {
+                glDisable(GL_CULL_FACE);
+            }
             paramsVariant = &variant;
             lastParams = &params;
         }

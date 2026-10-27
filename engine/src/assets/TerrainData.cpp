@@ -6,7 +6,7 @@
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
 #include "motor/renderer/Mesh.h"
-#include "motor/renderer/Texture.h"
+#include "motor/renderer/TerrainWeights.h"
 
 #include <nlohmann/json.hpp>
 
@@ -224,20 +224,29 @@ void TerrainData::SetWeights(int gx, int gz, const glm::vec4& weights) {
     if (changed) ++m_version;
 }
 
-std::shared_ptr<Texture2D> TerrainData::BlockWeights(TerrainBlockKey key) const {
-    const Block* block = Find(key);
-    if (!block) return nullptr;
-    if (block->weightsTexture && block->weightsTextureVersion == block->weightsVersion) return block->weightsTexture;
-    std::vector<uint8_t> pixels(block->weights.size() * 4);
-    for (size_t k = 0; k < block->weights.size(); ++k) {
-        for (int c = 0; c < 4; ++c) {
-            pixels[k * 4 + static_cast<size_t>(c)] =
-                static_cast<uint8_t>(std::lround(std::clamp(block->weights[k][c], 0.0f, 1.0f) * 255.0f));
+std::shared_ptr<TerrainWeights> TerrainData::WeightsTexture() const {
+    if (!m_weightsTexture) m_weightsTexture = std::make_shared<TerrainWeights>(m_resolution);
+    TerrainWeights& texture = *m_weightsTexture;
+    // Blocos que saíram e os que mudaram (ou entraram) desde a última vez.
+    if (texture.BlockCount() > m_blocks.size() || m_blocksChanged) {
+        for (const auto& [x, z] : texture.BlockKeys()) {
+            if (!m_blocks.contains({x, z})) texture.RemoveBlock(x, z);
         }
     }
-    block->weightsTexture = Texture2D::CreateDeferred(m_resolution, m_resolution, std::move(pixels));
-    block->weightsTextureVersion = block->weightsVersion;
-    return block->weightsTexture;
+    std::vector<uint8_t> pixels;
+    for (const auto& [key, block] : m_blocks) {
+        if (block.weightsUploaded == block.weightsVersion && texture.HasBlock(key.x, key.z)) continue;
+        pixels.resize(block.weights.size() * 4);
+        for (size_t k = 0; k < block.weights.size(); ++k) {
+            for (int c = 0; c < 4; ++c) {
+                pixels[k * 4 + static_cast<size_t>(c)] =
+                    static_cast<uint8_t>(std::lround(std::clamp(block.weights[k][c], 0.0f, 1.0f) * 255.0f));
+            }
+        }
+        texture.SetBlock(key.x, key.z, pixels);
+        block.weightsUploaded = block.weightsVersion;
+    }
+    return m_weightsTexture;
 }
 
 void TerrainData::Touch(int gx, int gz) {

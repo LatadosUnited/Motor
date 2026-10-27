@@ -609,21 +609,19 @@ bool Scene::SyncRenderLists() const {
             const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
             const TerrainData* data = terrain ? terrain->terrain.Data() : nullptr;
             if (!data || !IsActiveInHierarchy(*e)) continue;
-            // Um material por bloco: as camadas do componente com os pesos e o canto daquele bloco (o lit.frag com
-            // TERRAIN acha o peso de cada ponto pelos metros do terreno).
-            const Material& base = terrain->Resolved();
-            const TerrainLayers layers = terrain->Layers();
-            const glm::mat4& world = CachedWorld(*e);
+            // Um material para todos os blocos: as camadas do componente com os pesos do terreno inteiro (o lit.frag
+            // com TERRAIN acha o bloco de cada triângulo e o peso de cada ponto). Os blocos saem num draw só.
             const float size = data->BlockSize();
+            auto layers = std::make_shared<TerrainLayers>(terrain->Layers());
+            layers->weights = data->WeightsTexture();
+            layers->blockSize = size;
+            auto material = std::make_shared<Material>(terrain->Resolved());
+            material->terrain = std::move(layers);
+            const glm::mat4& world = CachedWorld(*e);
             for (const TerrainBlockKey key : data->Blocks()) {
                 const glm::vec3 corner(static_cast<float>(key.x) * size, 0.0f, static_cast<float>(key.z) * size);
-                auto blockLayers = std::make_shared<TerrainLayers>(layers);
-                blockLayers->weights = data->BlockWeights(key);
-                blockLayers->block = {corner.x, corner.z, size, static_cast<float>(data->Resolution())};
-                auto material = std::make_shared<Material>(base);
-                material->terrain = std::move(blockLayers);
                 // Os vértices do bloco partem do canto dele: a matriz leva o canto ao lugar no terreno.
-                add(e->id, {data->BlockMesh(key), std::move(material), glm::translate(world, corner), terrain->shadows});
+                add(e->id, {data->BlockMesh(key), material, glm::translate(world, corner), terrain->shadows});
             }
         }
         m_static.terrains = terrains;

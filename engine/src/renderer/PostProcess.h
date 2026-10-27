@@ -29,11 +29,15 @@ public:
     void BeginScene();
     // MSAA -> textura de cor (SceneColor passa a valer) e, com `depth`, a de profundidade (SceneDepth).
     void Resolve(bool depth);
-    // Cópia da cena desenhada até aqui (cor e profundidade, sem MSAA) em texturas próprias, para a água ler o que está
-    // por baixo enquanto desenha no alvo da cena (Fase 28). Criadas no primeiro uso; o alvo da cena volta vinculado.
+    // Cópia da cor da cena desenhada até aqui (sem MSAA) numa textura própria, para a água ler o que está por baixo
+    // enquanto desenha no alvo da cena (Fase 28). Criada no primeiro uso; o alvo da cena volta vinculado. A
+    // profundidade a água lê direto do alvo (LiveDepth), sem gravar nele: copiá-la (resolver as amostras) custava
+    // ~2 ms com MSAA 4x na HD 530.
     void CopyForRefraction();
     unsigned int RefractionColor() const { return m_refractColor; }
-    unsigned int RefractionDepth() const { return m_refractDepth; }
+    // Profundidade do alvo da cena: textura com amostras (sampler2DMS) com MSAA, a SceneDepth sem.
+    unsigned int LiveDepth() const { return m_samples > 1 ? m_depthMsTexture : m_depthTexture; }
+    int Samples() const { return m_samples; }
     // Bloom + tone mapping (+ FXAA) da cor resolvida para o destino final (do mesmo tamanho), que
     // `bindTarget` vincula (framebuffer e viewport). Mexe no estado do GL: blend, profundidade e viewport.
     void Apply(const Environment& environment, const std::function<void()>& bindTarget);
@@ -55,9 +59,9 @@ private:
 
     unsigned int m_sceneFbo = 0;    // onde a cena é desenhada (MSAA ou direto nas texturas)
     unsigned int m_resolveFbo = 0;  // só com MSAA
-    unsigned int m_colorRbo = 0, m_depthRbo = 0;
+    unsigned int m_colorRbo = 0, m_depthMsTexture = 0;  // só com MSAA (a profundidade com amostras é textura: LiveDepth)
     unsigned int m_colorTexture = 0, m_depthTexture = 0;
-    unsigned int m_refractFbo = 0, m_refractColor = 0, m_refractDepth = 0;  // CopyForRefraction (só com água)
+    unsigned int m_refractFbo = 0, m_refractColor = 0;  // CopyForRefraction (só com água)
     bool m_refraction = false;  // já foi pedida: recriada junto com os alvos
 
     struct BloomLevel {

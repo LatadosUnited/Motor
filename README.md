@@ -453,7 +453,11 @@ entity.Remove<Girar>();
   e 640 m com blocos de 32 m; `Renderer::SetLodBias` estica ou encurta essas distâncias), todos com a borda inteira
   do bloco: vizinhos em níveis diferentes não abrem frestas. O nível mais simples tem 136 triângulos (o bloco
   cheio, 2048). A física, o raio e os pincéis usam sempre o bloco cheio.
-  Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta. Entidade >
+  Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta. Todos usam o
+  mesmo material: os pesos da pintura de todos os blocos ficam numa textura só (`TerrainWeights`, uma camada de
+  array por bloco e um índice de onde cada bloco está), e os blocos vão juntos no mesmo lote de desenho pela GPU, do mais
+  perto ao mais longe. O pixel do terreno só tem luz difusa do sol e das luzes (o reflexo do céu continua), e a
+  sombra que o terreno faz vem das faces de costas para o sol. Entidade >
   Terreno (ou `entity_create` com `kind: "terrain"` no MCP) cria um plano de 128 x 128 m em `Assets/Terrenos`.
   **Pincéis:** no Inspector do Terreno, escolha Subir, Baixar, Suavizar, Nivelar (na altura de onde a pincelada
   começou) ou Pintar (a camada 1 a 4; sem textura, as camadas 2 a 4 já vêm com cores de terra, rocha e areia), o raio
@@ -470,7 +474,9 @@ entity.Remove<Girar>();
   4 ondas em volta da direção, mais ondulações pequenas na luz), reflexo do céu com Fresnel, refração do que está
   por baixo (distorcida pelas ondas), cor rasa e funda pela espessura da água até o fundo (Transparência = metros até
   o fundo sumir) e espuma onde a água encontra o chão ou objetos. A água é desenhada depois dos opacos e do céu,
-  lendo uma cópia da cena (`Renderer::SubmitWater`, `motor/renderer/Water.h`); `WaterSurface::WaveOffset` dá na CPU
+  lendo uma cópia da cor da cena e a profundidade direto (com MSAA, a amostra 0), sem gravar profundidade (uma
+  passada só de profundidade vem depois se algo ainda for desenhado por cima) (`Renderer::SubmitWater`,
+  `motor/renderer/Water.h`); `WaterSurface::WaveOffset` dá na CPU
   a mesma altura das ondas do shader. Sem física (não segura nada nem entra nos raios). Pelo MCP, `water_info`: os
   cantos e, sob pontos, se estão dentro, a altura da superfície com as ondas num tempo dado, o fundo, a profundidade
   e se o ponto está seco (chão acima da água).
