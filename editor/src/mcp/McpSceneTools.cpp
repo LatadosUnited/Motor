@@ -9,8 +9,10 @@
 #include <motor/scene/RigidbodyComponent.h>
 #include <motor/scene/SceneRuntime.h>
 #include <motor/scene/SceneSerializer.h>
+#include <motor/scene/Terrain.h>
 
 #include <glm/gtc/quaternion.hpp>
+#include <glm/matrix.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -362,7 +364,67 @@ void AddEntityTools(Protocol& protocol, EditorContext& ctx, const RuntimeGetter&
             return ToolResult::Data(EntityToJson(ctx, e));
         },
     });
-}
+
+    protocol.AddTool({
+        .name = "terrain_brush",
+        .description = "Passa um pincel no terreno de uma entidade, como arrastar no Viewport com o pincel ligado: "
+                       "uma pincelada só (um passo de desfazer, marca a cena como não salva). mode: raise (subir), "
+                       "lower (baixar), smooth (suavizar) ou flatten (nivelar na altura do primeiro ponto). points: "
+                       "pontos [x, z] do mundo, na ordem do arraste; cada um recebe o pincel por `seconds`. "
+                       "Devolve quantas amostras mudaram e a altura (no mundo) sob cada ponto depois.",
+        .inputSchema = Schema({{"entity", kEntityProp},
+                               {"mode", {{"type", "string"}, {"enum", {"raise", "lower", "smooth", "flatten"}}}},
+                               {"points", {{"type", "array"},
+                                           {"items", {{"type", "array"}, {"items", {{"type", "number"}}},
+                                                      {"minItems", 2}, {"maxItems", 2}}},
+                                           {"minItems", 1}}},
+                               {"radius", Prop("number", "raio em metros (padrão: o do Inspector)")},
+                               {"strength", Prop("number", "força de 0 a 1 (padrão: a do Inspector)")},
+                               {"seconds", Prop("number", "tempo do pincel em cada ponto (padrão 0,1)")}},
+                              {"entity", "mode", "points"}),
+        .run = [&ctx](const Json& args) {
+            if (ctx.playing) throw ToolError("pare o Play antes de mexer no terreno");
+            Entity& e = ResolveEntity(ctx, args);
+            const Terrain* terrain = e.Get<Terrain>();
+            if (!terrain) throw ToolError(std::format("{} não tem Terreno", e.name));
+            std::shared_ptr<TerrainData> data = terrain->terrain.SharedData();
+            if (!data) throw ToolError(std::format("o Terreno de {} não tem arquivo de alturas", e.name));
+            static const std::pair<const char*, TerrainBrushMode> modes[] = {
+                {"raise", TerrainBrushMode::Raise}, {"lower", TerrainBrushMode::Lower},
+                {"smooth", TerrainBrushMode::Smooth}, {"flatten", TerrainBrushMode::Flatten}};
+            const std::string mode = args.value("mode", "");
+            auto it = std::find_if(std::begin(modes), std::end(modes), [&](const auto& m) { return mode == m.first; });
+            if (it == std::end(modes)) throw ToolError("mode inválido: " + mode);
+            TerrainBrush brush = ctx.terrainBrush.brush;
+            brush.mode = it->second;
+            brush.radius = args.value("radius", brush.radius);
+            brush.strength = args.value("strength", brush.strength);
+            const float seconds = args.value("seconds", 0.1f);
+            if (seconds <= 0.0f) throw ToolError("seconds tem de ser maior que zero");
+
+            // Os pontos vão para o espaço do terreno (a entidade pode estar movida, girada ou escalada).
+            const glm::mat4 world = ctx.scene.WorldMatrix(e.id);
+            const glm::mat4 toLocal = glm::inverse(world);
+            TerrainStroke stroke(data, brush);
+            std::vector<glm::vec2> local;
+            for (const Json& point : args["points"]) {
+                const glm::vec4 p = toLocal * glm::vec4(point[0].get<float>(), world[3].y, point[1].get<float>(), 1.0f);
+                local.emplace_back(p.x, p.z);
+                stroke.Apply(p.x, p.z, seconds);
+            }
+            const auto changes = stroke.Finish();
+            ctx.PushTerrainStroke(stroke);
+            Json heights = Json::array();
+            for (const glm::vec2& p : local) {
+                if (const auto h = data->HeightAt(p.x, p.y)) {
+                    heights.push_back((world * glm::vec4(p.x, *h, p.y, 1.0f)).y);
+                } else {
+                    heights.push_back(nullptr);  // fora do terreno
+                }
+            }
+            return ToolResult::Data({{"changed", changes.size()}, {"heights", std::move(heights)}});
+        },
+    });}
 
 // Apagar, duplicar e selecionar entidades.
 void AddEntityEditTools(Protocol& protocol, EditorContext& ctx) {

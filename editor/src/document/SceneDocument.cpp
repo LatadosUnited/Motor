@@ -118,7 +118,8 @@ bool SceneDocument::SaveScene(bool saveAs) {
     }
 
     std::string error;
-    if (!SceneSerializer::Save(path, m_ctx.scene, m_ctx.assets, &error)) {
+    // As alturas mudadas pelos pincéis vão com a cena (cada terreno no seu arquivo, um por bloco).
+    if (!SaveTerrains(m_ctx.scene, &error) || !SceneSerializer::Save(path, m_ctx.scene, m_ctx.assets, &error)) {
         ShowError(error);
         return false;
     }
@@ -178,7 +179,9 @@ bool SceneDocument::SaveSceneTo(const fs::path& path, std::string& error) {
     }
     std::error_code ec;
     fs::create_directories(target.parent_path(), ec);  // ex.: Assets/Cenas ainda não existe no projeto
-    if (!SceneSerializer::Save(target, m_ctx.scene, m_ctx.assets, &error)) return false;
+    if (!SaveTerrains(m_ctx.scene, &error) || !SceneSerializer::Save(target, m_ctx.scene, m_ctx.assets, &error)) {
+        return false;
+    }
     m_scenePath = target;
     MarkSaved();
     ClearRecovery();

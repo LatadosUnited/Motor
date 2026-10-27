@@ -4,6 +4,7 @@
 
 #include "motor/assets/AssetLibrary.h"
 #include "motor/assets/AssetLoaders.h"
+#include "motor/assets/TerrainBrush.h"
 #include "motor/assets/TerrainData.h"
 #include "motor/common/FileRead.h"
 #include "motor/project/Project.h"
@@ -14,7 +15,9 @@
 
 #include <glm/geometric.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <memory>
 #include <fstream>
 
 using namespace motor;
@@ -241,7 +244,106 @@ int main(int argc, char** argv) {
             CHECK(copy.Find(e.id)->Get<Terrain>()->terrain.Data() == terrain.terrain.Data());
 
             CHECK(ComponentRegistry::TypeOf<Terrain>() != nullptr);
+
+            // SaveTerrains grava a altura mudada (só do terreno sujo) e o arquivo relido a tem.
+            CHECK(terrain.terrain.Data()->IsDirty());
+            CHECK(SaveTerrains(scene, &error));
+            CHECK(!terrain.terrain.Data()->IsDirty());
+            const auto reread = TerrainData::Load(file, &error);
+            CHECK(reread && Near(reread->Sample(-10, 5).value_or(0.0f), 4.0f));
         }
+    }
+
+    SECTION("Pincéis: subir e baixar com queda do centro à borda, só dentro do raio e dos blocos");
+    {
+        auto data = std::make_shared<TerrainData>(32.0f, 33);
+        data->AddBlock({0, 0});
+        data->AddBlock({1, 0});
+        TerrainBrush brush;
+        brush.radius = 8.0f;
+        brush.strength = 1.0f;
+        TerrainStroke raise(data, brush);
+        CHECK(raise.Apply(32.0f, 16.0f, 0.5f) > 0);  // na borda entre os dois blocos
+        const float center = data->Sample(32, 16).value_or(0.0f);
+        CHECK(Near(center, TerrainBrush::kRaiseSpeed * 0.5f));
+        const float middle = data->Sample(36, 16).value_or(0.0f);
+        CHECK(middle > 0.0f && middle < center);
+        CHECK(Near(data->Sample(40, 16).value_or(-1.0f), 0.0f));  // na borda do raio: nada
+        CHECK(Near(data->Sample(32, 25).value_or(-1.0f), 0.0f));
+        // A borda dividida subiu nos dois blocos (a malha dos dois bate).
+        CHECK(Near(data->BlockHeights({0, 0})->at(16 * 33 + 32), center));
+        CHECK(Near(data->BlockHeights({1, 0})->at(16 * 33 + 0), center));
+        // Fora dos blocos não há o que mudar, e nada quebra.
+        TerrainStroke outside(data, brush);
+        CHECK(outside.Apply(-50.0f, -50.0f, 0.5f) == 0);
+        CHECK(outside.Finish().empty());
+        // Força 0, ou dt 0: nada.
+        CHECK(TerrainStroke(data, TerrainBrush{.strength = 0.0f}).Apply(10.0f, 10.0f, 1.0f) == 0);
+
+        // Finish guarda o antes e o depois de cada amostra mudada; desfazer e refazer põem as alturas.
+        const auto changes = raise.Finish();
+        CHECK(!changes.empty());
+        bool allBefore0 = true;
+        for (const auto& c : changes) allBefore0 = allBefore0 && c.before == 0.0f && c.after > 0.0f;
+        CHECK(allBefore0);
+        ApplyTerrainChanges(*data, changes, false);
+        CHECK(Near(data->Sample(32, 16).value_or(-1.0f), 0.0f));
+        ApplyTerrainChanges(*data, changes, true);
+        CHECK(Near(data->Sample(32, 16).value_or(-1.0f), center));
+
+        // Baixar a mesma coisa volta a zero; a pincelada que volta ao início não tem mudança.
+        brush.mode = TerrainBrushMode::Lower;
+        TerrainStroke lower(data, brush);
+        lower.Apply(32.0f, 16.0f, 0.5f);
+        CHECK(Near(data->Sample(32, 16).value_or(-1.0f), 0.0f, 1e-3f));
+        CHECK(Near(data->Sample(36, 16).value_or(-1.0f), 0.0f, 1e-3f));
+        // Várias passadas na mesma amostra: o "antes" é o do começo da pincelada.
+        brush.mode = TerrainBrushMode::Raise;
+        TerrainStroke twice(data, brush);
+        const float start = data->Sample(32, 16).value_or(0.0f);
+        twice.Apply(32.0f, 16.0f, 0.1f);
+        twice.Apply(32.0f, 16.0f, 0.1f);
+        const auto twiceChanges = twice.Finish();
+        const auto it = std::find_if(twiceChanges.begin(), twiceChanges.end(),
+                                     [](const TerrainSampleChange& c) { return c.gx == 32 && c.gz == 16; });
+        CHECK(it != twiceChanges.end() && Near(it->before, start) && Near(it->after, start + TerrainBrush::kRaiseSpeed * 0.2f));
+    }
+
+    SECTION("Pincéis: suavizar diminui o degrau, nivelar leva à altura de onde começou");
+    {
+        auto data = std::make_shared<TerrainData>(32.0f, 33);
+        data->AddBlock({0, 0});
+        for (int gz = 0; gz <= 32; ++gz) {
+            for (int gx = 0; gx <= 32; ++gx) data->SetSample(gx, gz, gx < 16 ? 0.0f : 4.0f);  // degrau em x = 16
+        }
+        TerrainBrush brush{.mode = TerrainBrushMode::Smooth, .radius = 6.0f, .strength = 1.0f};
+        TerrainStroke smooth(data, brush);
+        for (int i = 0; i < 20; ++i) smooth.Apply(16.0f, 16.0f, 0.1f);
+        const float low = data->Sample(15, 16).value_or(0.0f), high = data->Sample(16, 16).value_or(0.0f);
+        CHECK(low > 0.5f && high < 3.5f && low < high);  // o degrau virou rampa, sem inverter
+        CHECK(Near(data->Sample(15, 2).value_or(-1.0f), 0.0f));  // longe do pincel: igual
+
+        TerrainStroke flatten(data, TerrainBrush{.mode = TerrainBrushMode::Flatten, .radius = 6.0f, .strength = 1.0f});
+        flatten.Apply(4.0f, 4.0f, 1.0f);  // começa no plano baixo (altura 0)...
+        for (int i = 0; i < 30; ++i) flatten.Apply(26.0f, 26.0f, 0.2f);  // ...e arrasta para o alto
+        CHECK(Near(data->Sample(26, 26).value_or(-1.0f), 0.0f, 1e-2f));
+        CHECK(Near(data->Sample(31, 31).value_or(-1.0f), 4.0f));  // fora do raio: igual
+    }
+
+    SECTION("Raio no terreno: de cima, inclinado, por baixo e fora");
+    {
+        TerrainData data = MakeHills(33);
+        // Para baixo no meio: acerta na altura do terreno.
+        const auto down = data.Raycast({3.3f, 50.0f, -2.7f}, {0.0f, -1.0f, 0.0f}, 1000.0f);
+        CHECK(down && Near(down->y, data.HeightAt(3.3f, -2.7f).value_or(0.0f), 1e-3f));
+        // Inclinado, de longe: o ponto achado está na superfície.
+        const auto slanted = data.Raycast({-40.0f, 20.0f, -2.0f}, {1.0f, -0.5f, 0.05f}, 5000.0f);
+        CHECK(slanted && Near(slanted->y, data.HeightAt(slanted->x, slanted->z).value_or(1e9f), 1e-3f));
+        // Por baixo, para cima: não acerta (o pincel só pinta o lado de cima).
+        CHECK(!data.Raycast({3.3f, -50.0f, -2.7f}, {0.0f, 1.0f, 0.0f}, 1000.0f));
+        // Fora dos blocos ou curto demais: nada.
+        CHECK(!data.Raycast({500.0f, 50.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 1000.0f));
+        CHECK(!data.Raycast({3.3f, 50.0f, -2.7f}, {0.0f, -1.0f, 0.0f}, 10.0f));
     }
     return TestResult();
 }

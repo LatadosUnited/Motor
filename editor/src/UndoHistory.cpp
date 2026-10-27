@@ -113,10 +113,13 @@ bool UndoHistory::HasPendingChange(const motor::Scene& scene) const {
 
 void UndoHistory::PushAction(const motor::Scene& scene, motor::EntityId selected,
                              const std::vector<motor::EntityId>* selection, std::function<void()> undo,
-                             std::function<void()> redo) {
+                             std::function<void()> redo, bool unsaved) {
     TrackNow(scene, selected, selection);
     State step;
-    step.action = std::make_shared<State::Action>(State::Action{std::move(undo), std::move(redo)});
+    const uint64_t before = m_current.version;
+    if (unsaved) m_current.version = m_nextVersion++;
+    step.action = std::make_shared<State::Action>(
+        State::Action{std::move(undo), std::move(redo), before, m_current.version});
     m_undo.push_back(std::move(step));
     if (m_undo.size() > kMaxSteps) m_undo.pop_front();
     m_redo.clear();
@@ -130,6 +133,7 @@ bool UndoHistory::Undo(motor::Scene& scene, motor::EntityId& selected, std::vect
     m_undo.pop_back();
     if (previous.action) {  // a cena não muda: só o asset
         previous.action->undo();
+        m_current.version = previous.action->versionBefore;
         m_redo.push_back(std::move(previous));
         return true;
     }
@@ -146,6 +150,7 @@ bool UndoHistory::Redo(motor::Scene& scene, motor::EntityId& selected, std::vect
     m_redo.pop_back();
     if (next.action) {
         next.action->redo();
+        m_current.version = next.action->versionAfter;
         m_undo.push_back(std::move(next));
         return true;
     }

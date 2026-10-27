@@ -174,7 +174,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         }
         DrawSelectedHelpers(ctx, overlay, origin);
         DrawIcons(ctx, overlay, origin);
-        DrawGizmo(ctx, origin);
+        if (!TerrainBrushTool::Enabled(ctx)) DrawGizmo(ctx, origin);  // com o pincel, o clique é dele
         DrawToolbar(ImVec2(origin.x + 8.0f, origin.y + 44.0f));
     }
     const float playLeft = play.DrawControls(origin, m_size.x);
@@ -193,12 +193,22 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     // Cliques que caem no gizmo ou na barra de ferramentas não chegam à cena.
     const bool sceneHovered = !gameView && imageHovered && !ImGui::IsAnyItemHovered() &&
                               !ImGuizmo::IsOver() && !ImGuizmo::IsUsing();
+    bool brushing = false;
+    if (gameView) {
+        m_terrainBrush.Cancel(ctx);
+    } else {
+        const ImVec2 mouse = ImGui::GetMousePos();
+        const glm::vec2 mouseUv{(mouse.x - origin.x) / m_size.x, (mouse.y - origin.y) / m_size.y};
+        brushing = m_terrainBrush.Update(
+            ctx, sceneHovered && !m_looking, m_focused, mouseUv, [this](const glm::vec2& uv) { return Ray(uv); },
+            [this](const glm::vec3& p) { return Project(p); }, ImGui::GetWindowDrawList(), origin);
+    }
     if (sceneHovered) {
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             m_looking = true;
             ImGui::SetWindowFocus();
         }
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (!brushing && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             const ImVec2 mouse = ImGui::GetMousePos();
             const glm::vec2 local{mouse.x - origin.x, mouse.y - origin.y};
             // Ícones de luz/câmera ficam por cima de tudo; depois a UI (desenhada por cima da cena); depois as malhas.

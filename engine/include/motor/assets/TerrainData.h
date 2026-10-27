@@ -66,6 +66,10 @@ public:
     // Normal na amostra (gx, gz), por diferenças centrais com as vizinhas (de qualquer bloco); na borda do terreno, a
     // própria amostra faz o papel da que falta. É a normal dos vértices da malha.
     glm::vec3 NormalAt(int gx, int gz) const;
+    // Ponto onde o raio (espaço do terreno) encontra a superfície vindo de cima, até `maxDistance` (em unidades da
+    // direção normalizada); nullopt se não encontra. Anda em passos de meia amostra e refina por bisseção: serve ao
+    // pincel do editor, que não pode parar em outros objetos na frente.
+    std::optional<glm::vec3> Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance) const;
     // Menor e maior altura de um bloco (a caixa dele no mundo).
     std::pair<float, float> BlockHeightRange(TerrainBlockKey key) const;
 

@@ -3,6 +3,7 @@
 #include "EntityClipboard.h"
 
 #include <motor/Motor.h>
+#include <motor/assets/TerrainBrush.h>
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -59,7 +60,19 @@ struct EditorContext {
     // Material ou prefab editado no Inspector vira um passo de desfazer (UndoHistory::PushAction, ligado pelo
     // EditorApp). `playing`: no Play essas edições não são gravadas e voltam ao parar (RevertPlayAssetEdits).
     std::function<void(std::function<void()> undo, std::function<void()> redo)> pushAssetUndo;
+    // O mesmo para o que é salvo com a cena sem estar nos componentes (alturas do terreno): marca "não salvo".
+    std::function<void(std::function<void()> undo, std::function<void()> redo)> pushSceneUndo;
     bool playing = false;
+
+    // Pincel do terreno (Fase 28): escolhido no Inspector do Terreno e usado no Viewport sobre o terreno selecionado.
+    // `active` false: o clique no Viewport seleciona, como sempre.
+    struct TerrainBrushState {
+        bool active = false;
+        motor::TerrainBrush brush;
+    };
+    TerrainBrushState terrainBrush;
+    // Pincelada terminada (viewport ou MCP): vira um passo de desfazer (pushSceneUndo). Nada se não mudou nada.
+    void PushTerrainStroke(const motor::TerrainStroke& stroke);
 
     // Prefabs do projeto (.mprefab) e o asset mostrado no Inspector quando nenhuma entidade está
     // selecionada (material ou prefab clicado no painel Projeto).

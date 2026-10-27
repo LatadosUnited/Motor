@@ -14,6 +14,8 @@
 
 namespace motor {
 
+class Scene;
+
 // Arquivo .mterrain do projeto, pelo GUID (com o caminho junto, como plano B), como o NavMeshData.
 struct TerrainRef {
     std::string guid;
@@ -27,6 +29,8 @@ struct TerrainRef {
     // Alturas do arquivo, abertas na primeira chamada (TerrainData::Open: as cópias da cena dividem o mesmo objeto).
     // Nulo sem arquivo ou se não deu para ler.
     TerrainData* Data() const;
+    // O mesmo, dividindo a posse (o desfazer guarda as alturas que mudou, mesmo que a entidade saia da cena).
+    std::shared_ptr<TerrainData> SharedData() const;
     // Troca as alturas em memória (o editor, ao criar um terreno novo, antes de qualquer leitura do disco).
     void SetData(std::shared_ptr<TerrainData> data) const;
 
@@ -51,6 +55,10 @@ struct Terrain {
         return m;
     }
 };
+
+// Grava as alturas mudadas de cada terreno da cena no arquivo dele (TerrainData::Save; terreno sem arquivo fica só na
+// memória). Continua nos outros se um falhar; `error` junta as falhas.
+bool SaveTerrains(const Scene& scene, std::string* error = nullptr);
 
 template <> struct FieldTraits<TerrainRef> {
     static CustomFieldType Describe();

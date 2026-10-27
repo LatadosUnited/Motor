@@ -11,6 +11,7 @@ motor_add_layer(assets
         Model.cpp
         BuiltinAssets.cpp
         TerrainData.cpp
+        TerrainBrush.cpp
     DEPENDS renderer project
     PRIVATE_LIBS nlohmann_json::nlohmann_json)
 target_include_directories(motor_assets PRIVATE ${stb_image_SOURCE_DIR} ${cgltf_SOURCE_DIR} ${ufbx_h_SOURCE_DIR}

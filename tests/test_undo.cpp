@@ -122,6 +122,32 @@ int main() {
         CHECK(h.Version() == changed);
     }
 
+    SECTION("Passo de fora da cena: com `unsaved` muda a versão (alturas do terreno), sem ele não");
+    {
+        Scene own(scene);  // histórico e cena próprios: os passos de fora da cena não entram nos testes seguintes
+        UndoHistory a;
+        EntityId sel = selected;
+        a.Reset(own, sel);
+        int value = 0;
+        const uint64_t saved = a.Version();
+        a.PushAction(own, sel, nullptr, [&] { value = 0; }, [&] { value = 1; });
+        value = 1;
+        CHECK(a.Version() == saved);  // material: gravado na hora, a cena continua salva
+        a.PushAction(own, sel, nullptr, [&] { value = 1; }, [&] { value = 2; }, true);
+        value = 2;
+        const uint64_t painted = a.Version();
+        CHECK(painted != saved);
+        // Uma mudança da cena depois e o desfazer volta pelos dois.
+        own.Find(childId)->name = "Depois da pincelada";
+        a.Track(own, sel, true);
+        const uint64_t renamed = a.Version();
+        CHECK(a.Undo(own, sel) && a.Version() == painted);
+        CHECK(a.Undo(own, sel) && value == 1 && a.Version() == saved);
+        CHECK(a.Undo(own, sel) && value == 0 && a.Version() == saved);
+        CHECK(a.Redo(own, sel) && a.Redo(own, sel) && value == 2 && a.Version() == painted);
+        CHECK(a.Redo(own, sel) && a.Version() == renamed && own.Find(childId)->name == "Depois da pincelada");
+    }
+
     SECTION("Desfazer a criação devolve o próximo id (FromEntities)");
     {
         const EntityId created = scene.CreateEntity("Nova").id;

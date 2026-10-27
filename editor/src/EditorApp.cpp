@@ -64,6 +64,11 @@ void EditorApp::OnInit() {
             m_history.PushAction(m_ctx.scene, m_ctx.selected, &m_ctx.selection, std::move(undo), std::move(redo));
         }
     };
+    m_ctx.pushSceneUndo = [this](std::function<void()> undo, std::function<void()> redo) {
+        if (!m_play.IsActive()) {
+            m_history.PushAction(m_ctx.scene, m_ctx.selected, &m_ctx.selection, std::move(undo), std::move(redo), true);
+        }
+    };
     m_history.SetLazyCompare(true);  // compara a cena só depois de entrada ou pedido do MCP (Fase 27)
     log::Info("Motor Editor {} (API de scripts {})", kVersion, kScriptApiVersion);
     if (EditorSettings::IsDisabled()) log::Info("Configuração do editor desligada (--no-settings)");

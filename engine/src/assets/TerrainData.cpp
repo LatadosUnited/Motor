@@ -151,6 +151,62 @@ glm::vec3 TerrainData::NormalAt(int gx, int gz) const {
     return glm::normalize(glm::vec3(left - right, 2.0f * Spacing(), back - front));
 }
 
+std::optional<glm::vec3> TerrainData::Raycast(const glm::vec3& origin, const glm::vec3& direction,
+                                              float maxDistance) const {
+    if (m_blocks.empty() || glm::length(direction) <= 0.0f) return std::nullopt;
+    const glm::vec3 dir = glm::normalize(direction);
+    // Só o trecho do raio sobre a área dos blocos (em XZ): longe da câmera não se anda à toa.
+    int minX = m_blocks.begin()->first.x, maxX = minX, minZ = m_blocks.begin()->first.z, maxZ = minZ;
+    for (const auto& [key, block] : m_blocks) {
+        minX = std::min(minX, key.x);
+        maxX = std::max(maxX, key.x);
+        minZ = std::min(minZ, key.z);
+        maxZ = std::max(maxZ, key.z);
+    }
+    float t0 = 0.0f, t1 = maxDistance;
+    const float lo[2] = {static_cast<float>(minX) * m_blockSize, static_cast<float>(minZ) * m_blockSize};
+    const float hi[2] = {static_cast<float>(maxX + 1) * m_blockSize, static_cast<float>(maxZ + 1) * m_blockSize};
+    const float o[2] = {origin.x, origin.z}, d[2] = {dir.x, dir.z};
+    for (int axis = 0; axis < 2; ++axis) {
+        if (std::abs(d[axis]) < 1e-8f) {
+            if (o[axis] < lo[axis] || o[axis] > hi[axis]) return std::nullopt;
+            continue;
+        }
+        float a = (lo[axis] - o[axis]) / d[axis], b = (hi[axis] - o[axis]) / d[axis];
+        if (a > b) std::swap(a, b);
+        t0 = std::max(t0, a);
+        t1 = std::min(t1, b);
+    }
+    if (t0 > t1) return std::nullopt;
+
+    // Acima da superfície = positivo. Fora dos blocos (buraco na grade) não há superfície: recomeça depois.
+    const auto above = [&](float t) -> std::optional<float> {
+        const glm::vec3 p = origin + dir * t;
+        const auto h = HeightAt(p.x, p.z);
+        if (!h) return std::nullopt;
+        return p.y - *h;
+    };
+    const float step = Spacing() * 0.5f;
+    std::optional<float> previous = above(t0);
+    float previousT = t0;
+    for (float t = std::min(t0 + step, t1);; t = std::min(t + step, t1)) {
+        const auto current = above(t);
+        if (previous && current && *previous > 0.0f && *current <= 0.0f) {
+            float a = previousT, b = t;
+            for (int i = 0; i < 20; ++i) {
+                const float mid = 0.5f * (a + b);
+                const auto m = above(mid);
+                if (m && *m > 0.0f) a = mid; else b = mid;
+            }
+            return origin + dir * b;
+        }
+        previous = current;
+        previousT = t;
+        if (t >= t1) break;
+    }
+    return std::nullopt;
+}
+
 std::pair<float, float> TerrainData::BlockHeightRange(TerrainBlockKey key) const {
     const Block* block = Find(key);
     if (!block || block->heights.empty()) return {0.0f, 0.0f};

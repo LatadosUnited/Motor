@@ -2,8 +2,11 @@
 
 #include "motor/assets/AssetLibrary.h"
 #include "motor/scene/MeshRenderer.h"
+#include "motor/scene/Scene.h"
 
 #include <nlohmann/json.hpp>
+
+#include <algorithm>
 
 namespace motor {
 
@@ -18,6 +21,30 @@ TerrainData* TerrainRef::Data() const {
         m_loaded = file;
     }
     return m_data.get();
+}
+
+std::shared_ptr<TerrainData> TerrainRef::SharedData() const {
+    Data();
+    return m_data;
+}
+
+bool SaveTerrains(const Scene& scene, std::string* error) {
+    bool ok = true;
+    std::vector<const TerrainData*> saved;  // duas entidades com o mesmo arquivo: grava uma vez
+    for (const EntityId id : scene.EntitiesWith<Terrain>()) {
+        const Entity* e = scene.Find(id);
+        const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
+        if (!terrain || terrain->terrain.file.empty()) continue;
+        TerrainData* data = terrain->terrain.Data();
+        if (!data || !data->IsDirty() || std::find(saved.begin(), saved.end(), data) != saved.end()) continue;
+        saved.push_back(data);
+        std::string failure;
+        if (!data->Save(terrain->terrain.file, &failure)) {
+            ok = false;
+            if (error) *error += (error->empty() ? "" : "; ") + failure;
+        }
+    }
+    return ok;
 }
 
 void TerrainRef::SetData(std::shared_ptr<TerrainData> data) const {

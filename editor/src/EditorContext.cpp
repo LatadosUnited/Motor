@@ -117,6 +117,14 @@ motor::Entity& EditorContext::CreatePrimitive(Primitive type, EntityId parent) {
     return e;
 }
 
+void EditorContext::PushTerrainStroke(const motor::TerrainStroke& stroke) {
+    auto changes = std::make_shared<const std::vector<motor::TerrainSampleChange>>(stroke.Finish());
+    if (changes->empty() || !pushSceneUndo) return;
+    std::shared_ptr<motor::TerrainData> data = stroke.Data();
+    pushSceneUndo([data, changes] { motor::ApplyTerrainChanges(*data, *changes, false); },
+                  [data, changes] { motor::ApplyTerrainChanges(*data, *changes, true); });
+}
+
 void EditorContext::CreateTerrainFile(motor::Entity& e) {
     // 4 x 4 blocos planos em volta da origem (128 m de lado com os blocos de 32 m), gravados num .mterrain novo.
     auto data = std::make_shared<motor::TerrainData>();

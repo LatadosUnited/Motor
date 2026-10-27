@@ -1,11 +1,13 @@
 // Desenhador do Inspector para o arquivo do Terreno (motor::TerrainRef, ver motor/scene/Terrain.h): combo com os
-// .mterrain do projeto e, embaixo, o tamanho do terreno ligado.
+// .mterrain do projeto, embaixo o tamanho do terreno ligado e os pincéis (usados no Viewport, TerrainBrushTool).
 #include "drawers/FieldDrawers.h"
 
 #include <motor/assets/AssetLoaders.h>
 #include <motor/scene/Terrain.h>
 
 #include <imgui.h>
+
+#include <utility>
 
 MOTOR_FIELD_DRAWER(TerrainRef) {
     auto& ref = *static_cast<motor::TerrainRef*>(value);
@@ -28,8 +30,36 @@ MOTOR_FIELD_DRAWER(TerrainRef) {
             ref.path = *chosen;
         }
     }
-    if (const motor::TerrainData* data = ref.Data()) {
-        ImGui::TextDisabled("%zu blocos de %.0f m, %d x %d amostras%s", data->BlockCount(), data->BlockSize(),
-                            data->Resolution(), data->Resolution(), data->IsDirty() ? " (não salvo)" : "");
+    const motor::TerrainData* data = ref.Data();
+    if (!data) return;
+    ImGui::TextDisabled("%zu blocos de %.0f m, %d x %d amostras%s", data->BlockCount(), data->BlockSize(),
+                        data->Resolution(), data->Resolution(), data->IsDirty() ? " (não salvo)" : "");
+
+    // Pincel: o mesmo para todos os terrenos; vale para o selecionado.
+    auto& state = ctx.terrainBrush;
+    ImGui::BeginDisabled(ctx.playing);
+    static constexpr std::pair<const char*, motor::TerrainBrushMode> kModes[] = {
+        {"Subir", motor::TerrainBrushMode::Raise}, {"Baixar", motor::TerrainBrushMode::Lower},
+        {"Suavizar", motor::TerrainBrushMode::Smooth}, {"Nivelar", motor::TerrainBrushMode::Flatten}};
+    if (ImGui::RadioButton("Selecionar", !state.active)) state.active = false;
+    ImGui::SetItemTooltip("O clique no Viewport seleciona (Esc no Viewport volta para cá)");
+    for (const auto& [label, mode] : kModes) {
+        ImGui::SameLine();
+        if (ImGui::GetContentRegionAvail().x < ImGui::CalcTextSize(label).x + ImGui::GetFrameHeight() * 1.5f) ImGui::NewLine();
+        if (ImGui::RadioButton(label, state.active && state.brush.mode == mode)) {
+            state.active = true;
+            state.brush.mode = mode;
+        }
     }
+    if (state.active) {
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::SliderFloat("##raio", &state.brush.radius, motor::TerrainBrush::kMinRadius, 64.0f, "Raio %.1f m",
+                           ImGuiSliderFlags_Logarithmic);
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::SliderFloat("##forca", &state.brush.strength, 0.01f, 1.0f, "Força %.2f");
+        ImGui::TextDisabled(state.brush.mode == motor::TerrainBrushMode::Flatten
+                                ? "Arraste no Viewport: nivela na altura de onde começou"
+                                : "Clique e arraste no terreno, no Viewport");
+    }
+    ImGui::EndDisabled();
 }
