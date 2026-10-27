@@ -88,6 +88,41 @@ int main() {
         std::sort(brute.begin(), brute.end());
         CHECK(found == brute);
         CHECK(!found.empty() && found.size() < big.Count() / 2);
+
+        // Caixa e raio (Tarefa 5): os mesmos que testar todos; o raio em ordem de entrada na caixa.
+        const Aabb area{{-100, -1, -60}, {40, 10, 90}};
+        found.clear();
+        brute.clear();
+        big.QueryBox(area, found);
+        for (RenderWorld::Id id : ids) {
+            if (!big.Contains(id)) continue;
+            const Aabb& b = big.Bounds(id);
+            if (glm::all(glm::lessThanEqual(b.min, area.max)) && glm::all(glm::lessThanEqual(area.min, b.max))) {
+                brute.push_back(id);
+            }
+        }
+        std::sort(found.begin(), found.end());
+        std::sort(brute.begin(), brute.end());
+        CHECK(found == brute && !found.empty());
+
+        std::vector<float> enter;
+        found.clear();
+        const Aabb target = big.Bounds(ids[2]);
+        const glm::vec3 origin(-500.0f, 0.5f * (target.min.y + target.max.y), 0.5f * (target.min.z + target.max.z));
+        big.QueryRay(origin, {1, 0, 0}, 2000.0f, found, &enter);
+        brute.clear();
+        for (RenderWorld::Id id : ids) {
+            if (!big.Contains(id)) continue;
+            const Aabb& b = big.Bounds(id);
+            if (origin.y >= b.min.y && origin.y <= b.max.y && origin.z >= b.min.z && origin.z <= b.max.z) {
+                brute.push_back(id);
+            }
+        }
+        CHECK(enter.size() == found.size() && std::is_sorted(enter.begin(), enter.end()));
+        CHECK(std::find(found.begin(), found.end(), ids[2]) != found.end());
+        std::sort(found.begin(), found.end());
+        std::sort(brute.begin(), brute.end());
+        CHECK(found == brute);
     }
 
     world.Clear();

@@ -528,15 +528,14 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
     renderer.EndScene();
 }
 
-void Scene::SubmitTo(Renderer& renderer) const {
-    MOTOR_PROFILE_STAT("Render: enviar a cena");
-    // Entidades na raiz da hierarquia vão em paralelo (Fase 26): a matriz de mundo delas só depende do próprio
-    // transform, e cada uma só escreve no próprio cache. Filhos (o cache confere e pode recalcular o do pai, que
-    // outra thread estaria lendo) e malhas com pele (procuram o Animator acima) ficam para depois, nesta thread.
-    // O tipo e a lista saem aqui antes: as duas consultas guardam cache na primeira chamada.
+bool Scene::SyncRenderLists() const {
+    // O tipo e a lista saem aqui: as duas consultas guardam cache na primeira chamada.
     const ComponentType* meshType = ComponentRegistry::TypeOf<MeshRenderer>();
     const std::vector<EntityId>& ids = EntitiesWith<MeshRenderer>();
-    if (!meshType || ids.empty()) return;
+    if (!meshType || ids.empty()) {
+        if (m_static.world.Count() > 0 || !m_static.dynamic.empty()) m_static = StaticRender();
+        return false;
+    }
     MeshList& list = m_meshList;
     bool listChanged = false;
     if (list.version != SceneStructureVersion() || list.items.size() != ids.size()) {
@@ -555,6 +554,7 @@ void Scene::SubmitTo(Renderer& renderer) const {
         MOTOR_PROFILE_STAT("Render: refazer os estáticos");
         m_static.world.Clear();
         m_static.dynamic.clear();
+        m_static.entities.clear();
         for (uint32_t i = 0; i < list.items.size(); ++i) {
             const auto [e, mr] = list.items[i];
             if (!mr) continue;
@@ -567,11 +567,23 @@ void Scene::SubmitTo(Renderer& renderer) const {
             std::shared_ptr<const Material> material =
                 mr->sharedMaterial ? std::shared_ptr<const Material>(mr->sharedMaterial)
                                    : std::shared_ptr<const Material>(std::shared_ptr<const void>(), &mr->material);
-            m_static.world.Add({mr->mesh, std::move(material), CachedWorld(*e), mr->shadows});
+            const RenderWorld::Id id = m_static.world.Add({mr->mesh, std::move(material), CachedWorld(*e), mr->shadows});
+            if (m_static.entities.size() <= id) m_static.entities.resize(id + 1, kNullEntity);
+            m_static.entities[id] = e->id;
         }
         m_static.version = SceneStructureVersion();
         m_static.dirty = false;
     }
+    return true;
+}
+
+void Scene::SubmitTo(Renderer& renderer) const {
+    MOTOR_PROFILE_STAT("Render: enviar a cena");
+    // Entidades na raiz da hierarquia vão em paralelo (Fase 26): a matriz de mundo delas só depende do próprio
+    // transform, e cada uma só escreve no próprio cache. Filhos (o cache confere e pode recalcular o do pai, que
+    // outra thread estaria lendo) e malhas com pele (procuram o Animator acima) ficam para depois, nesta thread.
+    if (!SyncRenderLists()) return;
+    const MeshList& list = m_meshList;
     renderer.SubmitWorld(m_static.world);
 
     const std::vector<uint32_t>& dynamic = m_static.dynamic;
@@ -676,18 +688,29 @@ std::optional<float> RayMesh(const glm::vec3& o, const glm::vec3& d, const Mesh&
 
 std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec3& direction) const {
     std::optional<RaycastHit> best;
-    for (const auto& e : m_entities) {
-        const MeshRenderer* mr = e->Get<MeshRenderer>();
-        if (!mr || !mr->mesh || !IsActiveInHierarchy(*e)) continue;
-
-        // Leva o raio para o espaço local; como a transformação é linear, o t vale nos dois espaços.
-        const glm::mat4 inv = glm::inverse(WorldMatrix(e->id));
+    if (!SyncRenderLists()) return best;
+    // Leva o raio para o espaço local; como a transformação é linear, o t vale nos dois espaços.
+    auto test = [&](const Entity& e, const MeshRenderer& mr) {
+        const glm::mat4 inv = glm::inverse(CachedWorld(e));
         const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
         const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
-
-        if (auto t = RayMesh(o, d, *mr->mesh)) {
-            if (!best || *t < best->distance) best = RaycastHit{e->id, *t};
+        if (auto t = RayMesh(o, d, *mr.mesh)) {
+            if (!best || *t < best->distance) best = RaycastHit{e.id, *t};
         }
+    };
+    for (const uint32_t i : m_static.dynamic) {
+        const auto [e, mr] = m_meshList.items[i];
+        if (mr->mesh && IsActiveInHierarchy(*e)) test(*e, *mr);
+    }
+    // Estáticos pela grade (Fase 28), do mais perto ao mais longe pela caixa, depois dos outros: os triângulos de um só
+    // são testados se a caixa dele começa antes do melhor acerto até aqui.
+    std::vector<RenderWorld::Id> hits;
+    m_static.world.QueryRay(origin, direction, std::numeric_limits<float>::max(), hits, &m_static.enter);
+    for (size_t i = 0; i < hits.size(); ++i) {
+        if (best && m_static.enter[i] > best->distance) break;
+        const Entity* e = Find(m_static.entities[hits[i]]);
+        const MeshRenderer* mr = e ? e->Get<MeshRenderer>() : nullptr;
+        if (mr && mr->mesh) test(*e, *mr);
     }
     return best;
 }

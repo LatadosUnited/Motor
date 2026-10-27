@@ -292,7 +292,7 @@ void SpatialGrid::QueryBox(const Aabb& box, std::vector<uint32_t>& out) const {
 }
 
 void SpatialGrid::QueryRay(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
-                           std::vector<uint32_t>& out) const {
+                           std::vector<uint32_t>& out, std::vector<float>* enter) const {
     BeginQuery();
     const glm::vec3 invDir = 1.0f / direction;  // eixo parado vira infinito, tratado no RayEnter
     std::vector<std::pair<float, uint32_t>> hits;
@@ -310,7 +310,10 @@ void SpatialGrid::QueryRay(const glm::vec3& origin, const glm::vec3& direction, 
         if (t >= 0.0f) hits.emplace_back(t, id);
     }
     std::sort(hits.begin(), hits.end());
-    for (const auto& hit : hits) out.push_back(hit.second);
+    for (const auto& hit : hits) {
+        out.push_back(hit.second);
+        if (enter) enter->push_back(hit.first);
+    }
 }
 
 } // namespace motor

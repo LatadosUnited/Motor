@@ -30,6 +30,20 @@ void RenderWorld::Query(const Frustum& frustum, std::vector<Id>& out) const {
     for (size_t i = first; i < out.size(); ++i) out[i] = m_idOf[out[i]];
 }
 
+void RenderWorld::QueryBox(const Aabb& box, std::vector<Id>& out) const {
+    m_hits.clear();
+    m_grid.QueryBox(box, m_hits);
+    for (uint32_t cell : m_hits) out.push_back(m_idOf[m_entryOfCell[cell]]);
+}
+
+void RenderWorld::QueryRay(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                           std::vector<Id>& out, std::vector<float>* enter) const {
+    m_hits.clear();
+    if (enter) enter->clear();
+    m_grid.QueryRay(origin, direction, maxDistance, m_hits, enter);
+    for (uint32_t cell : m_hits) out.push_back(m_idOf[m_entryOfCell[cell]]);
+}
+
 void RenderWorld::QueryEntries(const Frustum& frustum, std::vector<uint32_t>& out) const {
     m_hits.clear();
     m_grid.QueryFrustum(frustum, m_hits);

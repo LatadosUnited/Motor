@@ -50,6 +50,11 @@ public:
     size_t MaterialCount() const { return m_materials.Size(); }
     // Ids dos objetos cuja caixa toca o frustum, pela grade, sem ordem definida. Uma thread de cada vez.
     void Query(const Frustum& frustum, std::vector<Id>& out) const;
+    // Os que a caixa toca `box`, e os que o raio cruza até `maxDistance` (do mais perto ao mais longe pela entrada na
+    // caixa; `enter` recebe essas distâncias, em comprimentos de `direction`). Pela grade, uma thread de cada vez.
+    void QueryBox(const Aabb& box, std::vector<Id>& out) const;
+    void QueryRay(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, std::vector<Id>& out,
+                  std::vector<float>* enter = nullptr) const;
 
 private:
     friend class Renderer;

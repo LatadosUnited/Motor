@@ -55,9 +55,10 @@ public:
     // Os objetos cuja caixa toca `box`.
     void QueryBox(const Aabb& box, std::vector<uint32_t>& out) const;
     // Os objetos cuja caixa o raio cruza até `maxDistance`, do mais perto ao mais longe (pela entrada na caixa).
-    // `direction` não precisa ser unitária; a distância é medida em comprimentos dela.
+    // `direction` não precisa ser unitária; a distância é medida em comprimentos dela. `enter` (opcional) recebe, na
+    // mesma ordem, a distância da entrada em cada caixa.
     void QueryRay(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
-                  std::vector<uint32_t>& out) const;
+                  std::vector<uint32_t>& out, std::vector<float>* enter = nullptr) const;
 
 private:
     struct Cell {
