@@ -28,7 +28,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 
 - [x] Tarefa 1: Criar a grade de células (`SpatialGrid`) com consultas por frustum, caixa e raio — cc0dcda
 - [x] Tarefa 2: Levar as posições para a GPU relativas à câmera — ea03e02
-- [ ] Tarefa 3: Guardar no renderer os objetos estáticos entre quadros (registrar, mover, remover)
+- [x] Tarefa 3: Guardar no renderer os objetos estáticos entre quadros (registrar, mover, remover) — a65c4a8
 - [ ] Tarefa 4: Recortar a cena e as sombras pela grade
 - [ ] Tarefa 5: Usar a grade no raycast do editor e nas consultas de área
 - [ ] Tarefa 6: Desenhar pela GPU (multi-draw indirect, buffers mapeados de forma persistente)
@@ -68,6 +68,17 @@ e a renderização relativa à câmera são também a base do streaming de célu
   agora sai da direção. Na tela, a 10 km: erro de 5,5e-6 antes, 8e-9 depois (`test_render`). Visto pelo
   `viewport_capture` a 100 km, câmera a 40 cm de uma esfera: antes, silhueta facetada, manchas e sombra serrilhada;
   depois, igual à origem.
+- Tarefa 3: `motor::RenderWorld` (`renderer/RenderWorld.h`) guarda objetos com caixa no mundo, matriz da normal e
+  número de material já prontos (Add, Update, SetTransform, Remove); `Renderer::SubmitWorld` os copia para o quadro
+  e troca os números de material uma vez por material diferente, não por objeto. Na cena, o Mesh Renderer ganhou o
+  campo **Estático** (`isStatic`): os estáticos ficam num `RenderWorld` da `Scene`, refeito só quando a estrutura
+  muda ou depois de `Scene::MarkRenderDirty` (no editor, a cada entrada do usuário, pedido do MCP, recarga de assets
+  e enquanto o botão esquerdo está apertado; voar com o direito não refaz). No jogo, script que mexe num estático
+  chama `MarkRenderDirty`, como o "Static" da Unity. `kScriptApiVersion` 22. Cena de referência no Player (Release,
+  HD 530, mediana de 2 x 15 s) com os 4001 objetos sem corpo nem script marcados como estáticos: CPU do Render
+  5,5 -> 4,6 ms (enviar a cena 1,8 -> 1,2; preparar 0,51 -> 0,33); o quadro continua em ~27 ms, preso na GPU
+  (~22 ms). Visto pelo MCP: estático criado, movido, recolorido, desativado e desfeito aparece certo.
+  `test_render_world`.
 
 ## Limitações
 

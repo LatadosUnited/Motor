@@ -426,7 +426,8 @@ entity.Remove<Girar>();
   estado interno).
 - No Inspector, o X do cabeçalho remove o componente; clique direito no cabeçalho tem "Redefinir valores".
 - Componentes da engine hoje: **Mesh Renderer** (malha e material: textura, cor, metal, rugosidade,
-  reflexo, mapas e emissão) e **Câmera**
+  reflexo, mapas e emissão; **Estático** para cenário que não se mexe no jogo: o renderer o guarda entre quadros, e
+  um script que mexer nele chama `GetScene().MarkRenderDirty()`) e **Câmera**
   (campo de visão, planos perto/longe, principal). A câmera olha para o -Z local da entidade; no Play vale
   a primeira câmera ativa marcada como principal (senão, a primeira ativa). Entidade > Câmera cria uma.
 - **Luz**: tipo (direcional, pontual ou spot), cor, intensidade, alcance (pontual e spot) e ângulos interno/
