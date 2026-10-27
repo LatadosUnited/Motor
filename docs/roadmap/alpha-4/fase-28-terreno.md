@@ -306,10 +306,29 @@ e a renderização relativa à câmera são também a base do streaming de célu
     Medidas com a máquina ora calma ora carregada (outros programas): rodadas descartadas quando até a CPU do Render,
     que não mudou, subia junto. `test_desempenho` falhou duas vezes em testes de cena que não passam pelo renderer
     (`cena_montar`, `cena_copiar`, `cena_ler`, um diferente a cada vez) e passou na terceira.
+- Limitações rápidas (27/10/2026, `c1a611a`):
+  - Física por bloco: o corpo de cada bloco guarda a versão dele (`TerrainData::BlockVersion`); mudar alturas refaz
+    só os blocos tocados e os vizinhos de borda (até 4 num ponto), pintar não refaz nenhum, tirar e pôr bloco mexe
+    só nele. `PhysicsStats::terrainBlocksBuilt` conta os refeitos no passo (no `Stats()` dos scripts).
+  - Raio da cena pela grade: os estáticos guardados sabem de qual bloco vieram, e o `Scene::Raycast` anda pelas
+    células que o raio cruza (Amanatides-Woo, 2 triângulos por célula, com uma folga de 1e-4 que fecha as frestas
+    num vértice da grade) em vez dos 2048 triângulos do bloco. O teste confere 40 raios de raspão: o ponto está na
+    superfície e não há cruzamento antes (o `TerrainData::Raycast`, de meia célula, perde alguns desses).
+  - Clique seleciona a água: `Scene::RaycastWater` (o retângulo da água no espaço dela), usado pelo viewport quando
+    está mais perto que o acerto do `Raycast`.
+  - Salvar manda para a Lixeira os arquivos dos blocos tirados (`TerrainData::UnusedBlockFiles`, só os de nome
+    `x_z.mtbloco`; outros arquivos na pasta ficam).
+  - Ondas no tempo do jogo: `Renderer::SetWaterTime` com o `elapsed` do runtime no Play do editor e no Player
+    (com o jogo pausado, param); fora do Play, o relógio do GLFW.
+  - Autossalvamento com as alturas: a recuperação grava de cada terreno mudado só os blocos sujos e a lista de blocos
+    (`TerrainData::SaveChanges`, `alteracoes.json` por último); ao recuperar, `ApplyRecoveryTerrains` aplica por cima
+    do terreno lido do disco (blocos tirados e postos, alturas e pesos) e a cena fica não salva.
+  - `kScriptApiVersion` 28. `test_terrain` cobre os blocos tirados, a recuperação (mudar, gravar, "cair", aplicar,
+    salvar e reler) e o raio pela grade e na água; `test_terrain_physics`, os blocos refeitos.
+  - MSAA 2x no Player ("Terreno Ação", rodadas intercaladas de 20 s): **15,9 e 17,3 ms (~58-63 FPS)**; MSAA 4x 18,9 e
+    19,4; sem MSAA 14,2 (GPU 13,0-13,6 com 2x: Cena HDR 9,4-9,6, água 3,8, pós 2,8-3,0).
 
 ## Limitações
-
-(Preencher ao terminar: o que ficou para trás e para onde foi.)
 
 - `RenderWorld::QueryBox` ainda não tem quem a use: a seleção por retângulo do viewport e as consultas de área do
   terreno (Tarefas 8 e 9) são as candidatas. O raycast continua testando os não estáticos um a um.
@@ -321,13 +340,16 @@ e a renderização relativa à câmera são também a base do streaming de célu
   ~0,45 µs por objeto, a maior parte no `SubmitMany` (matriz de mundo conferida, material e chave por item). Um ECS
   de verdade muda a API de `Entity::components`; fica para quando um mundo grande dinâmico precisar.
 - `test_desempenho` falhou em 27/10/2026 com o binário antigo e o novo do mesmo jeito (testes de cena que não passam
-  pelo renderer 30-140% acima da base): a máquina estava mais lenta. Repetir antes de fechar a fase.
+  pelo renderer 30-140% acima da base): a máquina estava mais lenta. Repetido 4 vezes depois das Limitações rápidas:
+  falhou sempre, em testes diferentes a cada vez (`cena_ler`, `cena_montar`, `cena_copiar`, `cena_json`,
+  `jogo_passo`, 5-30% além do limite), com um processo de outro programa (`python host.py`) usando mais de um núcleo o
+  tempo todo. Repetir com a máquina calma antes de regravar a base.
 - Terreno (Tarefa 8): mexer na pasta `.blocos` pelo Explorer, ou só nela pelo painel Projeto, separa os dois
   (o painel ainda a mostra como pasta comum). Alturas mudadas não entram no desfazer nem marcam a cena como não
   salva (vêm com os pincéis, Tarefa 9); um terreno sem projeto aberto fica só na memória. A textura repete a cada
-  metro, sem escala própria (vem com a pintura, Tarefa 10). O `Raycast` testa os 2048 triângulos de cada bloco que o raio cruza.
+  metro, sem escala própria (vem com a pintura, Tarefa 10).
   Pincéis (Tarefa 9): o arraste com o mouse no Viewport (círculo e pintura) não foi testado, só a mesma pincelada
-  pelo MCP; o autossalvamento de recuperação não guarda as alturas, só a cena. Fechar sem salvar descarta as alturas
+  pelo MCP. Fechar sem salvar descarta as alturas
   só quando ninguém mais usa o terreno (as alturas ficam na `TerrainData` aberta enquanto houver referência). A cada
   quadro da pincelada a lista de estáticos é refeita inteira (custo que cresce com a cena). Um terreno girado ou
   escalado recebe o raio e a força no espaço dele.
@@ -335,22 +357,19 @@ e a renderização relativa à câmera são também a base do streaming de célu
   alturas (1 m): bordas de pintura mais finas que isso não existem. As camadas só têm cor (sem mapa de normal nem
   rugosidade por camada). Pintar a cada quadro reenvia os pesos de cada bloco tocado (desde a otimização da GPU, só
   a camada dele no array).
-  Física (Tarefa 11): qualquer mudança nas alturas ou nos pesos (a versão é uma só) refaz os corpos de todos os
-  blocos do terreno, não só os tocados: pintar ou esculpir em Play custa a reconstrução inteira a cada quadro. Sem
-  material físico por camada pintada (o atrito é um só por terreno). As alturas guardadas pela Jolt têm até 5 mm de
+  Física (Tarefa 11): esculpir refaz o corpo dos blocos tocados (desde as Limitações rápidas), mas o bloco inteiro,
+  não só as células mudadas. Sem material físico por camada pintada (o atrito é um só por terreno). As alturas guardadas pela Jolt têm até 5 mm de
   erro. Não testado na mão: andar com o personagem pelo teclado sobre o terreno no Play do editor.
   LOD (Tarefa 12): o nível troca de uma vez (sem transição suave), e a borda cheia limita o nível mais simples a 136
   triângulos por bloco (um terreno de 1 x 1 km longe ainda tem ~140 mil). Mudar uma altura refaz o bloco e os seus 4
   níveis. (Os blocos num lote só vieram com a otimização da GPU, abaixo.)
   Água (Tarefa 13): sem reflexo dos objetos e do terreno (só o céu; reflexo em tela ou planar fica para depois); sem
-  sombra na água; as ondas andam pelo relógio do GLFW, também com o jogo pausado, e não mexem em nada da física (sem
-  empuxo: `WaveOffset` está pronto para quem quiser boias por script). A cópia da cena custa um blit de cor por
+  sombra na água; as ondas não mexem em nada da física (sem empuxo: `WaveOffset` está pronto para quem quiser boias por script). A cópia da cena custa um blit de cor por
   quadro com água na tela (só o retângulo que ela cobre, desde a otimização; um mar grande cobre quase tudo). Água
   maior que 256 m tem células maiores que 1 m (ondas curtas ficam serrilhadas de perto). A espuma vem da profundidade
-  até o fundo, sem espuma nas cristas. Visto de baixo d'água só há um tom escuro, sem efeito de mergulho. O clique no
-  viewport não seleciona a água (sem raio). Não medido no Player (a meta de 60 FPS com 1 km de terreno e água é do
-  fim da fase).
-  Ferramentas MCP (Tarefa 14): o arquivo de um bloco tirado fica no disco (só sai da lista do cabeçalho). O "seco"
+  até o fundo, sem espuma nas cristas. Visto de baixo d'água só há um tom escuro, sem efeito de mergulho. O clique na
+  água seleciona a água mesmo com um objeto embaixo dela, mais longe (o `RaycastWater` não sabe da transparência).
+  Ferramentas MCP (Tarefa 14): o "seco"
   do `water_info` é qualquer coisa acima da superfície no ponto (terreno, cubo ou outra entidade com colisão de
   raio), não só o terreno. O tempo das ondas é o pedido (0 por padrão), não o relógio do renderer, então a
   superfície devolvida não é a da tela naquele instante.
@@ -358,8 +377,8 @@ e a renderização relativa à câmera são também a base do streaming de célu
   com MSAA 4x** (18,3-19,0 ms, ~53 FPS), depois das duas rodadas de otimização da GPU. Com MSAA o gargalo segue na
   GPU: o terreno na Cena HDR (~11 ms contra 7,8 sem MSAA: o preenchimento com 4 amostras), a água (~3 ms além da
   cópia, o mesmo com um shader trivial ou menos vértices: é ler a profundidade com amostras na tela toda) e o pós (2,9
-  ms: resolve 1,25, bloom 0,85, tone mapping 0,8). Caminhos que sobram: MSAA 2x como padrão em GPU integrada, bloom em
-  menos níveis, sombra recebida mais barata no terreno (~1,4 ms). O quadro tem ~3,5 ms além da GPU medida (composição
+  ms: resolve 1,25, bloom 0,85, tone mapping 0,8). Com MSAA 2x fica perto (15,9-17,3 ms, ~58-63 FPS). Caminhos que
+  sobram: MSAA 2x como padrão em GPU integrada (as opções do jogador ainda vêm com 4x), bloom em menos níveis, sombra recebida mais barata no terreno (~1,4 ms). O quadro tem ~3,5 ms além da GPU medida (composição
   da janela, provavelmente; não testado em tela cheia, que trocaria o modo do monitor). Medidas com ±1 ms de ruído
   entre rodadas iguais (programas abertos na máquina). Gravar 1024 blocos novos leva 12,5 s (um `WriteFileAtomic` por
   bloco).
@@ -374,3 +393,9 @@ e a renderização relativa à câmera são também a base do streaming de célu
   seguidas e o `ctest` inteiro passou de novo. Ficar de olho. Travou de novo no `ctest` da Tarefa 14 (o processo não
   sai nem pelo PID; os arquivos presos foram renomeados para `*.presa-12844` em `build/bin`); com `--timeout 120` o
   `ctest` inteiro passou.
+- Limitações rápidas (27/10/2026): a pincelada ainda refaz a lista de estáticos inteira a cada quadro. O
+  `EditorApp` marca a cena para remontar a cada quadro com o botão esquerdo apertado (e depois de cada pedido do
+  MCP), então o terreno só se atualizaria por partes mudando um ponto de coordenação; fica para depois, com o
+  usuário. A recuperação das alturas só vale para terreno com arquivo (o de um terreno novo, sem `.mterrain`, ainda
+  não entra) e pede o mesmo tamanho de bloco e resolução do arquivo; se o `.mterrain` mudou por fora, as mudanças
+  são aplicadas por cima do que estiver lá.
