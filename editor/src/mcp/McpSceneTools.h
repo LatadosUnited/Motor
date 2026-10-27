@@ -20,6 +20,8 @@ using RuntimeGetter = std::function<motor::SceneRuntime*()>;
 void AddSceneTools(Protocol& protocol, EditorContext& ctx, RuntimeGetter runtime = {});
 // Navegação (Fase 34, McpNavTools.cpp): nav_bake, nav_path e nav_agents.
 void AddNavTools(Protocol& protocol, EditorContext& ctx, RuntimeGetter runtime = {});
+// Terreno e água (Fase 28, McpTerrainTools.cpp): terrain_info, terrain_heights, terrain_blocks e water_info.
+void AddTerrainTools(Protocol& protocol, EditorContext& ctx);
 
 // Entidade pelo argumento "entity" (id numérico ou nome). Lança ToolError se não existir.
 motor::Entity& ResolveEntity(EditorContext& ctx, const Json& args, const char* key = "entity");

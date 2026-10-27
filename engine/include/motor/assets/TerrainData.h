@@ -53,8 +53,12 @@ public:
     int Resolution() const { return m_resolution; }
     float Spacing() const { return m_blockSize / static_cast<float>(m_resolution - 1); }
 
-    // Bloco plano na altura dada; false se já existe.
+    // Bloco plano na altura dada; false se já existe. A borda que ele divide com blocos que já existem fica com as
+    // alturas e os pesos deles (sem degrau na emenda).
     bool AddBlock(TerrainBlockKey key, float height = 0.0f);
+    // Tira o bloco (as amostras da borda continuam nos vizinhos); false se não existe. O arquivo dele fica no disco,
+    // fora da lista do cabeçalho, até o próximo Save.
+    bool RemoveBlock(TerrainBlockKey key);
     bool HasBlock(TerrainBlockKey key) const { return m_blocks.contains(key); }
     std::vector<TerrainBlockKey> Blocks() const;  // em ordem (z, depois x)
     size_t BlockCount() const { return m_blocks.size(); }
@@ -130,6 +134,7 @@ private:
     int m_resolution;
     std::map<TerrainBlockKey, Block> m_blocks;
     uint64_t m_version = 1;
+    bool m_blocksChanged = false;  // blocos entraram ou saíram desde o último Save (o cabeçalho muda)
     std::filesystem::path m_savedFile;  // para onde foi o último Save (ou de onde veio o Load)
 };
 

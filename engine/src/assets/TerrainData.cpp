@@ -91,12 +91,39 @@ bool TerrainData::AddBlock(TerrainBlockKey key, float height) {
     Block& block = m_blocks[key];
     block.heights.assign(static_cast<size_t>(m_resolution) * m_resolution, height);
     block.weights.assign(block.heights.size(), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
-    // Os vizinhos refazem a malha: as normais da borda passam a ver este bloco.
+    // A borda dividida com os vizinhos vem deles; e eles refazem a malha (as normais da borda passam a ver este bloco).
+    const int n = m_resolution - 1;
+    for (int dz = -1; dz <= 1; ++dz) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            Block* other = (dx || dz) ? Find({key.x + dx, key.z + dz}) : nullptr;
+            if (!other) continue;
+            ++other->version;
+            // Amostras do bloco novo que também são do vizinho: a coluna/linha da borda (ou o canto) do lado dele.
+            const int i0 = dx < 0 ? 0 : dx > 0 ? n : 0, i1 = dx < 0 ? 0 : dx > 0 ? n : n;
+            const int j0 = dz < 0 ? 0 : dz > 0 ? n : 0, j1 = dz < 0 ? 0 : dz > 0 ? n : n;
+            for (int j = j0; j <= j1; ++j) {
+                for (int i = i0; i <= i1; ++i) {
+                    const size_t mine = static_cast<size_t>(j * m_resolution + i);
+                    const size_t theirs = static_cast<size_t>((j - dz * n) * m_resolution + (i - dx * n));
+                    block.heights[mine] = other->heights[theirs];
+                    block.weights[mine] = other->weights[theirs];
+                }
+            }
+        }
+    }
+    m_blocksChanged = true;
+    ++m_version;
+    return true;
+}
+
+bool TerrainData::RemoveBlock(TerrainBlockKey key) {
+    if (m_blocks.erase(key) == 0) return false;
     for (int dz = -1; dz <= 1; ++dz) {
         for (int dx = -1; dx <= 1; ++dx) {
             if (Block* n = Find({key.x + dx, key.z + dz})) ++n->version;
         }
     }
+    m_blocksChanged = true;
     ++m_version;
     return true;
 }
@@ -363,7 +390,7 @@ std::shared_ptr<Mesh> TerrainData::BlockMesh(TerrainBlockKey key) const {
 }
 
 bool TerrainData::IsDirty() const {
-    return std::any_of(m_blocks.begin(), m_blocks.end(), [](const auto& b) { return b.second.dirty; });
+    return m_blocksChanged || std::any_of(m_blocks.begin(), m_blocks.end(), [](const auto& b) { return b.second.dirty; });
 }
 
 fs::path TerrainData::BlocksFolder(const fs::path& file) {
@@ -410,6 +437,7 @@ bool TerrainData::Save(const fs::path& file, std::string* error) {
     };
     if (!WriteFileAtomic(file, header.dump(1) + "\n", error)) return false;
     for (auto& [key, block] : m_blocks) block.dirty = false;
+    m_blocksChanged = false;
     m_savedFile = file;
     return true;
 }
@@ -478,6 +506,7 @@ std::shared_ptr<TerrainData> TerrainData::Load(const fs::path& file, std::string
         }
     }
     data->m_savedFile = file;
+    data->m_blocksChanged = false;  // os blocos são os do cabeçalho
     data->m_version = 1;
     if (!problems.empty()) {
         std::string message = std::format("Terreno {}: ", ToUtf8(file.filename()));

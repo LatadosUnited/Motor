@@ -101,6 +101,17 @@ motor_add_test(test_lights)
 motor_add_test(test_physics)
 motor_add_test(test_terrain_physics)  # Fase 28: o terreno na física (height field da Jolt)
 motor_add_test(test_water)  # Fase 28: água (ondas, grade e componente)
+# Fase 28: ferramentas MCP do terreno e da água (terrain_info, terrain_heights, terrain_blocks, water_info), sem janela.
+motor_add_test(test_mcp_terrain
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpTerrainTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
+target_include_directories(test_mcp_terrain PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_mcp_terrain PRIVATE nlohmann_json::nlohmann_json)
 
 # Desempenho da física: caixas caindo e empilhando (pequeno no ctest; números do relatório em Release).
 motor_add_test(test_physics_bench)

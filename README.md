@@ -460,7 +460,10 @@ entity.Remove<Girar>();
   e a força; no Viewport, o círculo segue o mouse sobre o terreno selecionado e arrastar com o botão
   esquerdo pinta (Selecionar ou Esc no Viewport volta ao clique que seleciona; o gizmo some enquanto o pincel está
   ligado). Cada pincelada é um passo de desfazer e marca a cena como não salva; salvar a cena grava só os blocos
-  mudados. Pelo MCP, `terrain_brush`. Dados e arquivos em `motor/assets/TerrainData.h`, pincéis em
+  mudados. Pelo MCP: `terrain_brush` (pincelada), `terrain_info` (blocos, caixa e, sob pontos, altura, inclinação e
+  pesos), `terrain_heights` (ler ou gravar um retângulo de até 257 x 257 alturas: um número ou as linhas, `set` ou
+  `add`) e `terrain_blocks` (pôr ou tirar blocos, por lista ou retângulo); todos com desfazer. Bloco novo começa com
+  a borda dos vizinhos que já existem (sem degrau). Dados e arquivos em `motor/assets/TerrainData.h`, pincéis em
   `motor/assets/TerrainBrush.h`, corpos em `engine/src/physics/PhysicsTerrain.cpp`.
 - **Água** (Fase 28): componente Água, um retângulo de água do Tamanho dado centrado na entidade (Entidade > Água,
   ou `entity_create` com `kind: "water"`: 100 x 100 m). Ondas de Gerstner (altura, comprimento, velocidade e direção;
@@ -468,7 +471,9 @@ entity.Remove<Girar>();
   por baixo (distorcida pelas ondas), cor rasa e funda pela espessura da água até o fundo (Transparência = metros até
   o fundo sumir) e espuma onde a água encontra o chão ou objetos. A água é desenhada depois dos opacos e do céu,
   lendo uma cópia da cena (`Renderer::SubmitWater`, `motor/renderer/Water.h`); `WaterSurface::WaveOffset` dá na CPU
-  a mesma altura das ondas do shader. Sem física (não segura nada nem entra nos raios).
+  a mesma altura das ondas do shader. Sem física (não segura nada nem entra nos raios). Pelo MCP, `water_info`: os
+  cantos e, sob pontos, se estão dentro, a altura da superfície com as ondas num tempo dado, o fundo, a profundidade
+  e se o ponto está seco (chão acima da água).
 
 ### Renderização (Fase 7)
 
@@ -871,7 +876,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Grupo | Ferramentas |
   |---|---|
   | Situação | `editor_status`, `scene_tree`, `entity_get` (no Play, também o estado do jogo: clipe do Animator, no chão, velocidade), `component_types`, `log_read`, `events_read` (o que mudou no editor: seleção, cena, Play, scripts), `docs_read` (documentação de scripts desta versão; o `editor_status` mostra em `script_reference` as pastas da documentação e dos headers do SDK) |
-  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `terrain_brush` (uma pincelada no terreno por uma lista de pontos: relevo ou pintura de uma camada), `undo`, `redo` |
+  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `terrain_brush` (uma pincelada no terreno por uma lista de pontos: relevo ou pintura de uma camada), `terrain_info`, `terrain_heights`, `terrain_blocks`, `water_info`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `game_mouse` (movimento, botões e roda), `game_text` (texto digitado), `game_gamepad` (até 4 controles), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
 | Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia), `ai_perception` (olhos, cone e alcances de cada Percepção e os alvos; no Play, quem vê, o que ouviu e o que lembra) |
