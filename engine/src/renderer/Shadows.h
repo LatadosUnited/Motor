@@ -88,7 +88,7 @@ private:
 
     // Posições dos uniforms do shadow.vert/.frag, resolvidas uma vez por variante.
     struct Uniforms {
-        int lightViewProjection = -1, lightPositionRange = -1, drawBase = -1, alphaCutoff = -1, colorAlpha = -1;
+        int lightViewProjection = -1, lightPositionRange = -1, alphaCutoff = -1, colorAlpha = -1;
     };
     struct Variant {
         std::unique_ptr<Shader> shader;

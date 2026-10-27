@@ -32,8 +32,18 @@ public:
     Mesh& operator=(const Mesh&) = delete;
 
     void Draw() const;
-    // `count` cópias numa chamada só (instancing, Fase 23): cada uma acha os seus dados por gl_InstanceID.
-    void DrawInstanced(uint32_t count) const;
+
+    // Onde a malha está na GPU, para o desenho em lote do Renderer (Fase 28): sem pele, num buffer de todas
+    // (o mesmo VAO, com baseVertex e firstIndex dela); com pele, num VAO próprio. Envia os vértices na primeira
+    // chamada; vazia, vao = 0.
+    struct GpuDraw {
+        unsigned int vao = 0;
+        uint32_t indexCount = 0;
+        uint32_t firstIndex = 0;
+        int32_t baseVertex = 0;
+        uint32_t vertexCount = 0;
+    };
+    const GpuDraw& Gpu() const;
 
     uint32_t IndexCount() const { return static_cast<uint32_t>(m_indices.size()); }
 
@@ -88,7 +98,9 @@ private:
 
     // Vértices completos esperando o upload (liberados depois dele).
     mutable std::vector<Vertex> m_pendingVertices;
-    mutable unsigned int m_vao = 0;
+    mutable GpuDraw m_gpu;
+    mutable bool m_uploaded = false;
+    // Só com pele (as outras ficam no buffer de todas, MeshPool).
     mutable unsigned int m_vbo = 0;
     mutable unsigned int m_skinVbo = 0;
     mutable unsigned int m_ibo = 0;

@@ -124,7 +124,7 @@ private:
     };
     // Posições dos uniforms por desenho do lit.frag, resolvidas uma vez por shader (lit e com pele).
     struct LitUniforms {
-        int alphaMode = -1, drawBase = -1, color = -1, pbr = -1, emissive = -1;
+        int alphaMode = -1, color = -1, pbr = -1, emissive = -1;
     };
 
     void LoadLitShaders(ShadowQuality cascadeFilter);
@@ -134,7 +134,8 @@ private:
     void SortDrawOrder(const Frustum& frustum);
     void UploadFrameData(const glm::mat4& view, const glm::mat4& projection);
     size_t CollectSceneBatches(std::vector<uint32_t>& indices, std::vector<DrawBatch>& batches);  // devolve os opacos
-    void DrawSceneBatches(std::span<const DrawBatch> batches);
+    // Lotes da cena a partir do lote `first` da passada gravada (InstanceBuffers::UploadPass).
+    void DrawSceneBatches(std::span<const DrawBatch> batches, size_t first);
     void DrawWireframes();
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);

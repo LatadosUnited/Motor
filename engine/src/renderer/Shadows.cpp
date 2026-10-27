@@ -57,7 +57,7 @@ ShadowRenderer::Variant ShadowRenderer::MakeVariant(const std::filesystem::path&
     Shader& s = *v.shader;
     const bool point = defines.find("POINT") != std::string_view::npos;
     v.uniforms = {s.Uniform("uLightViewProjection"), point ? s.Uniform("uLightPositionRange") : -1,
-                  s.Uniform("uDrawBase"), s.Uniform("uAlphaCutoff"), s.Uniform("uColorAlpha")};
+                  s.Uniform("uAlphaCutoff"), s.Uniform("uColorAlpha")};
     return v;
 }
 
@@ -153,7 +153,7 @@ void ShadowRenderer::DrawPass(const Pass& pass, const glm::vec3& origin, Instanc
     if (pass.skip) return;
     ++stats.shadowPasses;
     if (pass.batches.empty()) return;
-    instances.UploadIndices(pass.indices);
+    instances.UploadPass(pass.indices, pass.batches);
 
     Variant& base = pass.point ? m_point : m_directional;
     Variant& skinned = pass.point ? m_pointSkinned : m_directionalSkinned;
@@ -169,9 +169,22 @@ void ShadowRenderer::DrawPass(const Pass& pass, const glm::vec3& origin, Instanc
     const Variant* paramsVariant = nullptr;
     const ShadowParams* lastParams = nullptr;
     GLuint lastAlbedo = 0;
-    for (const DrawBatch& batch : pass.batches) {
+    // Lotes seguidos com o mesmo recorte e alfa, sem pele e na mesma malha-VAO (todas sem pele dividem um) saem num
+    // draw indireto só (Fase 28): numa passada sem recorte, em geral um draw para tudo.
+    const std::vector<DrawBatch>& batches = pass.batches;
+    auto vao = [](const DrawBatch& b) { return b.first->mesh->Gpu().vao; };
+    for (size_t i = 0; i < batches.size();) {
+        const DrawBatch& batch = batches[i];
         const DrawItem& item = *batch.first;
-        const ShadowParams& params = (*order.params)[order.keys[batch.firstIndex].material];
+        const uint32_t paramsId = order.keys[batch.firstIndex].material;
+        size_t end = i + 1;
+        if (!item.skinned) {
+            while (end < batches.size() && !batches[end].first->skinned &&
+                   order.keys[batches[end].firstIndex].material == paramsId && vao(batches[end]) == vao(batch)) {
+                ++end;
+            }
+        }
+        const ShadowParams& params = (*order.params)[paramsId];
         Variant& variant = item.skinned ? skinned : base;
         Shader& shader = *variant.shader;
         if (bound != &variant) {
@@ -189,10 +202,10 @@ void ShadowRenderer::DrawPass(const Pass& pass, const glm::vec3& origin, Instanc
             lastAlbedo = params.albedo->NativeHandle();
             params.albedo->Bind(0);
         }
-        shader.SetInt(variant.uniforms.drawBase, static_cast<int>(batch.start));
-        item.mesh->DrawInstanced(batch.count);
+        instances.Draw(i, end - i);
         ++stats.drawCalls;
         ++stats.shadowDrawCalls;
+        i = end;
     }
 }
 

@@ -22,5 +22,8 @@ motor_add_layer(renderer
         GpuMemory.cpp
         SpatialGrid.cpp
         RenderWorld.cpp
+        GpuAllocators.cpp
+        MeshPool.cpp
+        StreamBuffer.cpp
     DEPENDS core
     PRIVATE_LIBS glfw)

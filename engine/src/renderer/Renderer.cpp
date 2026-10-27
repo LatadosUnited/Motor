@@ -159,7 +159,7 @@ void Renderer::LoadLitShaders(ShadowQuality cascadeFilter) {
     // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
     m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define NO_MAPS\n");
     auto findLitUniforms = [](Shader& shader) {
-        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
+        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uColor"),
                            shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
     };
     m_litUniforms = findLitUniforms(*m_litShader);
@@ -495,6 +495,7 @@ void Renderer::EndScene() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, m_windowWidth, m_windowHeight);
     m_target = nullptr;
+    m_instances->Fence();  // objetos, índices e comandos desta cena: o anel só os reescreve depois da GPU
 }
 
 void Renderer::DrawScene() {
@@ -552,8 +553,8 @@ void Renderer::DrawScene() {
     std::vector<uint32_t> indices;
     std::vector<DrawBatch> batches;
     const size_t opaqueBatches = CollectSceneBatches(indices, batches);
-    m_instances->UploadIndices(indices);
-    DrawSceneBatches(std::span(batches).first(opaqueBatches));
+    m_instances->UploadPass(indices, batches);
+    DrawSceneBatches(std::span(batches).first(opaqueBatches), 0);
 
     // 4) Céu ao fundo, onde não há nada.
     m_sky->DrawBackground(*m_post);
@@ -569,7 +570,7 @@ void Renderer::DrawScene() {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
-        DrawSceneBatches(std::span(batches).subspan(opaqueBatches));  // o céu trocou o shader e as texturas
+        DrawSceneBatches(std::span(batches).subspan(opaqueBatches), opaqueBatches);  // o céu trocou o shader e as texturas
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         m_stats.transparent += static_cast<uint32_t>(batches.size() - opaqueBatches);
@@ -649,7 +650,7 @@ size_t Renderer::CollectSceneBatches(std::vector<uint32_t>& indices, std::vector
     return opaqueBatches;
 }
 
-void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches) {
+void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches, size_t first) {
     const Shader* bound = nullptr;
     // Material e texturas do lote anterior: lotes seguidos com o mesmo material não reenviam nada disso. Os
     // uniforms são de cada programa, por isso a lembrança vale para um shader só.
@@ -662,9 +663,23 @@ void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches) {
         glBindTextureUnit(unit, texture);
     };
     const Texture2D& white = *m_whiteTexture;
-    for (const DrawBatch& batch : batches) {
+    // Lotes seguidos com a mesma chave de shader e material, sem pele e no mesmo VAO (todas as malhas sem pele dividem
+    // um) saem num draw indireto só (Fase 28), mesmo com malhas diferentes. Transparentes também: os comandos de um
+    // draw são desenhados na ordem.
+    auto vao = [](const DrawBatch& b) { return b.first->mesh->Gpu().vao; };
+    for (size_t i = 0; i < batches.size();) {
+        const DrawBatch& batch = batches[i];
         const DrawItem& item = *batch.first;
-        const uint32_t variant = m_sceneKeys[batch.firstIndex].shader;
+        const DrawKey& key = m_sceneKeys[batch.firstIndex];
+        size_t end = i + 1;
+        if (!item.skinned) {
+            while (end < batches.size() && !batches[end].first->skinned && vao(batches[end]) == vao(batch)) {
+                const DrawKey& next = m_sceneKeys[batches[end].firstIndex];
+                if (next.shader != key.shader || next.material != key.material) break;
+                ++end;
+            }
+        }
+        const uint32_t variant = key.shader;
         Shader& shader = variant == 1 ? *m_skinnedShader : variant == 2 ? *m_litPlainShader : *m_litShader;
         const LitUniforms& u = variant == 1 ? m_skinnedUniforms : variant == 2 ? m_litPlainUniforms : m_litUniforms;
         if (bound != &shader) {
@@ -689,11 +704,11 @@ void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches) {
             lastParams = &params;
             paramsShader = &shader;
         }
-        shader.SetInt(u.drawBase, static_cast<int>(batch.start));
-        item.mesh->DrawInstanced(batch.count);
+        m_instances->Draw(first + i, end - i);
         if (doubleSided) glEnable(GL_CULL_FACE);
         ++m_stats.drawCalls;
-        m_stats.triangles += item.mesh->IndexCount() / 3 * batch.count;
+        for (size_t b = i; b < end; ++b) m_stats.triangles += batches[b].first->mesh->IndexCount() / 3 * batches[b].count;
+        i = end;
     }
 }
 

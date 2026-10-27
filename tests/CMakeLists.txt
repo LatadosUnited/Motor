@@ -58,6 +58,7 @@ motor_add_test(test_perception)  # Fase 37: percepção dos agentes (visão, aud
 motor_add_test(test_spatial_grid)  # Fase 28: grade de células (recorte, raio, área)
 motor_add_test(test_render_world)  # Fase 28: objetos guardados entre quadros
 motor_add_test(test_scene_raycast)  # Fase 28: raycast do editor pela grade
+motor_add_test(test_gpu_allocators)  # Fase 28: buffer de malhas e anel de dados por quadro
 
 # Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o
 # ctest mostra "pulado". Rodar só ele: ctest --test-dir build-release -L desempenho
