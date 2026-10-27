@@ -39,7 +39,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 11: Dar ao terreno um collider da física (height field da Jolt) (`e0e676e`, `37566be`)
 - [x] Tarefa 12: LOD do terreno por blocos, sem frestas entre níveis (`bc51f61`)
 - [x] Tarefa 13: Criar a água: ondas, reflexo do céu, refração e cor pela profundidade (`d07da6f`)
-- [ ] Tarefa 14: Ferramentas MCP do terreno e da água
+- [x] Tarefa 14: Ferramentas MCP do terreno e da água (`4cfa048`)
 
 ## Pronto quando
 
@@ -229,6 +229,22 @@ e a renderização relativa à câmera são também a base do streaming de célu
     cubo meio submersos: ondas, reflexo do céu, espuma na beira e em volta dos objetos, turquesa no raso e azul
     escuro no fundo, a parte submersa da esfera vista pela refração; também na visão do jogo (Play). Sem avisos de
     shader no log.
+- Tarefa 14: ferramentas MCP em `editor/src/mcp/McpTerrainTools.cpp`, além do `terrain_brush` (Tarefa 9):
+  - `terrain_info`: tamanho do bloco, resolução, espaçamento, blocos (até 1024 na lista), caixa, "não salvo" e, sob
+    pontos (x, z do mundo), altura, inclinação, pesos das camadas e a amostra da grade.
+  - `terrain_heights`: lê ou grava um retângulo de amostras (até 257 x 257), com um número ou as linhas, trocando
+    (`set`) ou somando (`add`); amostra fora dos blocos lê `null` e não é gravada. Grava pela mesma edição dos pincéis
+    (malha, física e "não salvo"), um passo de desfazer; recusada durante o Play.
+  - `terrain_blocks`: põe ou tira blocos por lista e/ou retângulo (até 4096), na altura dada; desfazer devolve as
+    alturas e os pesos dos blocos tirados. `TerrainData::RemoveBlock` é novo, e `AddBlock` copia as alturas e os pesos
+    da borda dos vizinhos que já existem (sem degrau). Blocos que entram ou saem marcam o terreno como mudado (o
+    cabeçalho é gravado no próximo Save).
+  - `water_info`: tamanho, cantos, altura de repouso e das ondas e, sob pontos, se está dentro, a superfície com as
+    ondas no tempo pedido (`WaveOffset`), o fundo, a profundidade e se está seco (algo acima da água ali).
+  - `test_mcp_terrain`: as quatro ferramentas sem janela, com erros, desfazer e refazer.
+  - Pelo editor ("Ferramentas Ação"): terreno aumentado para 8 x 8 blocos (256 m), ilha de 129 x 129 alturas gravada
+    de uma vez, mar a -6 m e água de 256 m; leituras, pontos e desfazer conferidos e a ilha vista pelo
+    `viewport_capture`.
 
 ## Limitações
 
@@ -274,5 +290,11 @@ e a renderização relativa à câmera são também a base do streaming de célu
   até o fundo, sem espuma nas cristas. Visto de baixo d'água só há um tom escuro, sem efeito de mergulho. O clique no
   viewport não seleciona a água (sem raio). Não medido no Player (a meta de 60 FPS com 1 km de terreno e água é do
   fim da fase).
+  Ferramentas MCP (Tarefa 14): o arquivo de um bloco tirado fica no disco (só sai da lista do cabeçalho). O "seco"
+  do `water_info` é qualquer coisa acima da superfície no ponto (terreno, cubo ou outra entidade com colisão de
+  raio), não só o terreno. O tempo das ondas é o pedido (0 por padrão), não o relógio do renderer, então a
+  superfície devolvida não é a da tela naquele instante.
 - `test_runtime_systems` travou uma vez no `ctest -j4` de 27/10/2026 (encerrado pelo PID); sozinho passou 150 vezes
-  seguidas e o `ctest` inteiro passou de novo. Ficar de olho.
+  seguidas e o `ctest` inteiro passou de novo. Ficar de olho. Travou de novo no `ctest` da Tarefa 14 (o processo não
+  sai nem pelo PID; os arquivos presos foram renomeados para `*.presa-12844` em `build/bin`); com `--timeout 120` o
+  `ctest` inteiro passou.
