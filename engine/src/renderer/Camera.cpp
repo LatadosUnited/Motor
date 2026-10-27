@@ -39,7 +39,13 @@ glm::vec3 Camera::Up() const {
 }
 
 glm::mat4 Camera::View() const {
-    return glm::lookAt(position, position + Forward(), Up());
+    // Pela direção, não por lookAt(position, position + Forward()): longe da origem a soma em float perde a direção
+    // (a 10 km, ~1 milésimo de radiano).
+    return glm::translate(ViewRotation(), -position);
+}
+
+glm::mat4 Camera::ViewRotation() const {
+    return glm::lookAt(glm::vec3(0.0f), Forward(), Up());
 }
 
 glm::mat4 Camera::Projection() const {

@@ -23,6 +23,8 @@ public:
     glm::vec3 Up() const;
 
     glm::mat4 View() const;
+    // Só a rotação da vista: a vista para pontos relativos à câmera (renderização relativa à câmera, Fase 28).
+    glm::mat4 ViewRotation() const;
     glm::mat4 Projection() const;
 
     void LookAt(const glm::vec3& target);

@@ -66,14 +66,14 @@ constexpr GLuint kShadowsBinding = 3;  // lit.frag
 constexpr GLuint kUnitAlbedo = 0, kUnitNormal = 1, kUnitMetalRough = 2, kUnitOcclusion = 3, kUnitEmissive = 4;
 constexpr GLuint kUnitCascades = 5, kUnitCubes = 6, kUnitPrefiltered = 7, kUnitBrdf = 8;
 
-LightData Pack(const Light& light, int cubeLayer, bool cascades) {
+LightData Pack(const Light& light, int cubeLayer, bool cascades, const glm::vec3& origin) {
     const float len = glm::length(light.direction);
     const glm::vec3 direction = len > 1e-6f ? light.direction / len : glm::vec3(0.0f, -1.0f, 0.0f);
     // Ângulos limitados para o cone não degenerar (externo > interno, abaixo de 90°).
     const float outer = glm::clamp(light.outerAngle, 1.0f, 89.0f);
     const float inner = glm::clamp(light.innerAngle, 0.0f, outer - 0.5f);
     return {
-        glm::vec4(light.position, glm::max(light.range, 0.01f)),
+        glm::vec4(light.position - origin, glm::max(light.range, 0.01f)),  // relativa à câmera (Fase 28)
         glm::vec4(direction, static_cast<float>(light.type)),
         glm::vec4(light.color * glm::max(light.intensity, 0.0f), 1.0f),
         glm::vec4(std::cos(glm::radians(inner)), std::cos(glm::radians(outer)), static_cast<float>(cubeLayer),
@@ -366,6 +366,8 @@ void Renderer::PrepareItems(const Frustum& view) {
             m_sceneKeys[i] = {shader, item.materialId, item.mesh};
             m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
             m_visible[i] = item.shadows != ShadowCasting::ShadowsOnly && view.Intersects(item.bounds);
+            // Para a GPU, relativa à câmera (Fase 28): a caixa e o LOD acima já saíram no mundo.
+            m_objects[2 * i] = ModelRelativeToOrigin(model, m_camera.position);
         }
     });
 }
@@ -427,16 +429,18 @@ void Renderer::EndScene() {
 void Renderer::DrawScene() {
     const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
 
-    // 0) Ordem de desenho (SortDrawOrder).
-    const glm::mat4 view = m_camera.View();
+    // 0) Ordem de desenho (SortDrawOrder). O recorte é no mundo; a GPU recebe tudo relativo à câmera (Fase 28):
+    //    a vista sem translação, os objetos, as luzes e as sombras menos a posição dela.
+    const glm::vec3 origin = m_camera.position;
     const glm::mat4 projection = m_camera.Projection();
-    SortDrawOrder(Frustum::FromMatrix(projection * view));
+    SortDrawOrder(Frustum::FromMatrix(projection * m_camera.View()));
+    const glm::mat4 view = m_camera.ViewRotation();
 
     // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
     m_instances->UploadObjects(std::span(m_objects.data(), 2 * m_items.size()));
     const ShadowRenderer::Result shadows = [&] {
         MOTOR_PROFILE_GPU("Sombras");
-        return m_shadows->Render(m_camera, m_lights, m_environment, m_items, *m_instances,
+        return m_shadows->Render(m_camera, origin, m_lights, m_environment, m_items, *m_instances,
                                  {m_shadowOrder, m_shadowKeys, &m_shadowIds}, uploadJoints, m_stats);
     }();
 
@@ -445,7 +449,8 @@ void Renderer::DrawScene() {
     LightsData lightsData{};
     lightsData.count = glm::ivec4(static_cast<int>(m_lights.size()), 0, 0, 0);
     for (size_t i = 0; i < m_lights.size(); ++i) {
-        lightsData.lights[i] = Pack(m_lights[i], shadows.cubeLayer[i], shadows.cascadeLight == static_cast<int>(i));
+        const bool cascades = shadows.cascadeLight == static_cast<int>(i);
+        lightsData.lights[i] = Pack(m_lights[i], shadows.cubeLayer[i], cascades, origin);
     }
     // Só o cabeçalho e as luzes usadas: o resto do bloco o shader não lê.
     glNamedBufferSubData(m_lightsUbo, 0, static_cast<GLsizeiptr>(sizeof(glm::ivec4) + m_lights.size() * sizeof(LightData)), &lightsData);
@@ -519,7 +524,7 @@ void Renderer::UploadFrameData(const glm::mat4& view, const glm::mat4& projectio
     FrameData frame{};
     frame.view = view;
     frame.projection = projection;
-    frame.cameraPosition = glm::vec4(m_camera.position, 1.0f);
+    frame.cameraPosition = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);  // a câmera é a origem do que a GPU recebe (Fase 28)
     frame.ambient = glm::vec4(env.ambient, 1.0f);
     frame.fog = glm::vec4(m_sky->HorizonColor() * skyIntensity, std::max(env.fogDensity, 0.0f));
     frame.invViewProjection = glm::inverse(projection * view);
@@ -626,7 +631,7 @@ void Renderer::DrawWireframes() {
     m_unlitShader->Bind();
     glBindTextureUnit(0, m_post->SceneDepth());
     for (const WireItem& wire : m_wires) {
-        m_unlitShader->SetMat4(m_unlitModel, wire.model);
+        m_unlitShader->SetMat4(m_unlitModel, ModelRelativeToOrigin(wire.model, m_camera.position));
         m_unlitShader->SetVec4(m_unlitColor, wire.color);
         wire.mesh->Draw();
         ++m_stats.drawCalls;

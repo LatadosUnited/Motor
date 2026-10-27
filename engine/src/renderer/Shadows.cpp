@@ -140,8 +140,8 @@ void ShadowRenderer::BuildPasses(std::span<const DrawItem> items, const ShadowOr
     });
 }
 
-void ShadowRenderer::DrawPass(const Pass& pass, InstanceBuffers& instances, const ShadowOrder& order,
-                              const JointUploader& uploadJoints, RenderStats& stats) {
+void ShadowRenderer::DrawPass(const Pass& pass, const glm::vec3& origin, InstanceBuffers& instances,
+                              const ShadowOrder& order, const JointUploader& uploadJoints, RenderStats& stats) {
     const float clearDepth = 1.0f;
     glViewport(0, 0, pass.resolution, pass.resolution);
     glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, pass.texture, 0, pass.layer);
@@ -154,8 +154,11 @@ void ShadowRenderer::DrawPass(const Pass& pass, InstanceBuffers& instances, cons
     Variant& base = pass.point ? m_point : m_directional;
     Variant& skinned = pass.point ? m_pointSkinned : m_directionalSkinned;
     for (Variant* v : {&base, &skinned}) {
-        v->shader->SetMat4(v->uniforms.lightViewProjection, pass.viewProjection);
-        if (pass.point) v->shader->SetVec4(v->uniforms.lightPositionRange, pass.positionRange);
+        // As passadas ficam no mundo (recorte e cache das cascatas); o buffer de objetos é relativo à câmera.
+        v->shader->SetMat4(v->uniforms.lightViewProjection, RelativeToOrigin(pass.viewProjection, origin));
+        if (pass.point) {
+            v->shader->SetVec4(v->uniforms.lightPositionRange, pass.positionRange - glm::vec4(origin, 0.0f));
+        }
     }
     const Variant* bound = nullptr;
     // Recorte e alfa do lote anterior (por shader): o mesmo valor seguido não reenvia nada.
@@ -189,7 +192,8 @@ void ShadowRenderer::DrawPass(const Pass& pass, InstanceBuffers& instances, cons
     }
 }
 
-ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<const Light> lights, const Environment& env,
+ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, const glm::vec3& origin,
+                                              std::span<const Light> lights, const Environment& env,
                                               std::span<const DrawItem> items, InstanceBuffers& instances,
                                               const ShadowOrder& order, const JointUploader& uploadJoints,
                                               RenderStats& stats) {
@@ -217,10 +221,12 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
     glPolygonOffset(1.5f, 2.0f);
     for (size_t p = 0; p < m_passCount; ++p) {
         if (p == cascadePasses) glDisable(GL_POLYGON_OFFSET_FILL);
-        DrawPass(m_passes[p], instances, order, uploadJoints, stats);
+        DrawPass(m_passes[p], origin, instances, order, uploadJoints, stats);
     }
     glDisable(GL_POLYGON_OFFSET_FILL);
     glNamedFramebufferTexture(m_fbo, GL_DEPTH_ATTACHMENT, 0, 0);
+    // O lit.frag lê as cascatas com a posição relativa à câmera.
+    for (glm::mat4& matrix : result.data.cascadeMatrices) matrix = RelativeToOrigin(matrix, origin);
     return result;
 }
 

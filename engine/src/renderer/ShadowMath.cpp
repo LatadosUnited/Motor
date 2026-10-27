@@ -21,6 +21,20 @@ Aabb TransformAabb(const Aabb& box, const glm::mat4& m) {
     return {c - h, c + h};
 }
 
+glm::mat4 RelativeToOrigin(const glm::mat4& m, const glm::vec3& origin) {
+    // Só a última coluna muda: m * (origin, 1). Em double, porque os termos grandes se cancelam.
+    const glm::dmat4 d(m);
+    glm::mat4 result = m;
+    result[3] = glm::vec4(d[0] * double(origin.x) + d[1] * double(origin.y) + d[2] * double(origin.z) + d[3]);
+    return result;
+}
+
+glm::mat4 ModelRelativeToOrigin(const glm::mat4& model, const glm::vec3& origin) {
+    glm::mat4 result = model;
+    result[3] -= glm::vec4(origin, 0.0f);
+    return result;
+}
+
 glm::mat3 NormalMatrix(const glm::mat4& model) {
     const glm::vec3 a(model[0]), b(model[1]), c(model[2]);
     glm::mat3 cof(glm::cross(b, c), glm::cross(c, a), glm::cross(a, b));

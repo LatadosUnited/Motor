@@ -518,5 +518,46 @@ int main(int argc, char** argv) {
         }
     }
 
+    SECTION("Renderização relativa à câmera: longe da origem não perde precisão (Fase 28)");
+    {
+        // Câmera a 10 km da origem, olhando um ponto a 3 m. A conta no mundo em float (o que a GPU fazia) erra o
+        // lugar na tela; relativa à câmera, fica igual à conta em double.
+        Camera camera;
+        camera.position = {10000.37f, 2.0f, -10000.71f};
+        camera.LookAt(camera.position + glm::vec3(0.3f, -0.1f, -1.0f));
+        const glm::mat4 projection = camera.Projection();
+        const glm::mat4 model = glm::translate(glm::mat4(1.0f), camera.position + glm::vec3(0.6f, -0.2f, -3.0f));
+        const glm::vec4 local(0.013f, 0.021f, -0.017f, 1.0f);
+
+        const glm::dmat4 exactModel = glm::translate(glm::dmat4(1.0), glm::dvec3(model[3]));
+        const glm::dmat4 exactView = glm::lookAt(glm::dvec3(camera.position),
+                                                 glm::dvec3(camera.position) + glm::dvec3(camera.Forward()),
+                                                 glm::dvec3(camera.Up()));
+        const glm::dvec4 exactClip = glm::dmat4(projection) * exactView * exactModel * glm::dvec4(local);
+        const glm::dvec2 exact = glm::dvec2(exactClip) / exactClip.w;
+
+        const glm::vec4 relativeClip = projection * camera.ViewRotation() *
+                                       (ModelRelativeToOrigin(model, camera.position) * local);
+        const glm::vec2 relative = glm::vec2(relativeClip) / relativeClip.w;
+        const glm::vec4 worldClip = projection * camera.View() * (model * local);
+        const glm::vec2 inWorldFloat = glm::vec2(worldClip) / worldClip.w;
+        std::printf("  erro na tela: relativo %.2e, no mundo %.2e\n", glm::length(glm::dvec2(relative) - exact),
+                    glm::length(glm::dvec2(inWorldFloat) - exact));
+        CHECK(glm::length(glm::dvec2(relative) - exact) < 1e-7);
+        CHECK(glm::length(glm::dvec2(relative) - exact) * 50.0 < glm::length(glm::dvec2(inWorldFloat) - exact));
+
+        // Luz e sombra: a matriz do mundo aplicada ao ponto relativo dá o mesmo que no mundo.
+        const glm::mat4 lightViewProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, 0.1f, 100.0f) *
+                                              glm::lookAt(camera.position + glm::vec3(10, 30, 5), camera.position,
+                                                          glm::vec3(0, 1, 0));
+        const glm::vec3 world = camera.position + glm::vec3(1.5f, -1.0f, 2.5f);
+        const glm::vec4 inWorld = lightViewProjection * glm::vec4(world, 1.0f);
+        const glm::vec4 inRelative =
+            RelativeToOrigin(lightViewProjection, camera.position) * glm::vec4(world - camera.position, 1.0f);
+        CHECK(glm::length(inWorld - inRelative) < 1e-3f);
+        const glm::mat4 rotation = camera.ViewRotation();
+        CHECK(rotation[3] == glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    }
+
     return TestResult();
 }

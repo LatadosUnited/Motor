@@ -48,7 +48,9 @@ public:
     ShadowRenderer& operator=(const ShadowRenderer&) = delete;
 
     // Escolhe as luzes com sombra e desenha os mapas. Deixa o framebuffer próprio vinculado.
-    Result Render(const Camera& camera, std::span<const Light> lights, const Environment& environment,
+    // `origin`: a câmera; as matrizes e posições que vão para a GPU são relativas a ela (Fase 28), as de Result também.
+    Result Render(const Camera& camera, const glm::vec3& origin, std::span<const Light> lights,
+                  const Environment& environment,
                   std::span<const DrawItem> items, InstanceBuffers& instances, const ShadowOrder& order,
                   const JointUploader& uploadJoints, RenderStats& stats);
 
@@ -76,7 +78,7 @@ private:
     size_t AddCascadePasses(const Camera& camera, std::span<const Light> lights, float distance, Result& result);
     void AddCubePasses(const Camera& camera, std::span<const Light> lights, float distance, Result& result);
     void BuildPasses(std::span<const DrawItem> items, const ShadowOrder& order);
-    void DrawPass(const Pass& pass, InstanceBuffers& instances, const ShadowOrder& order,
+    void DrawPass(const Pass& pass, const glm::vec3& origin, InstanceBuffers& instances, const ShadowOrder& order,
                   const JointUploader& uploadJoints, RenderStats& stats);
 
     // Posições dos uniforms do shadow.vert/.frag, resolvidas uma vez por variante.
