@@ -538,7 +538,9 @@ void Scene::SubmitTo(Renderer& renderer) const {
     const std::vector<EntityId>& ids = EntitiesWith<MeshRenderer>();
     if (!meshType || ids.empty()) return;
     MeshList& list = m_meshList;
+    bool listChanged = false;
     if (list.version != SceneStructureVersion() || list.items.size() != ids.size()) {
+        listChanged = true;
         list.items.resize(ids.size());
         for (size_t i = 0; i < ids.size(); ++i) {
             const Entity* e = Find(ids[i]);
@@ -547,13 +549,20 @@ void Scene::SubmitTo(Renderer& renderer) const {
         list.version = SceneStructureVersion();
     }
     // Estáticos (Fase 28): guardados no RenderWorld, refeitos só quando a estrutura muda ou alguém avisa
-    // (MarkRenderDirty); fora disso não são lidos. Com pele, nunca: as juntas mudam a cada quadro.
-    auto isStatic = [](const MeshRenderer* mr) { return mr->isStatic && !mr->mesh->IsSkinned(); };
-    if (m_static.dirty || m_static.version != SceneStructureVersion()) {
+    // (MarkRenderDirty); fora disso não são lidos. Com pele, nunca: as juntas mudam a cada quadro. Junto sai a lista
+    // dos outros, os únicos percorridos a cada quadro.
+    if (listChanged || m_static.dirty || m_static.version != SceneStructureVersion()) {
         MOTOR_PROFILE_STAT("Render: refazer os estáticos");
         m_static.world.Clear();
-        for (const auto& [e, mr] : list.items) {
-            if (!mr || !mr->mesh || !isStatic(mr) || !IsActiveInHierarchy(*e)) continue;
+        m_static.dynamic.clear();
+        for (uint32_t i = 0; i < list.items.size(); ++i) {
+            const auto [e, mr] = list.items[i];
+            if (!mr) continue;
+            if (!mr->mesh || !mr->isStatic || mr->mesh->IsSkinned()) {
+                m_static.dynamic.push_back(i);
+                continue;
+            }
+            if (!IsActiveInHierarchy(*e)) continue;
             // O material próprio do componente vai sem dono: vive enquanto a estrutura não mudar (refeito antes).
             std::shared_ptr<const Material> material =
                 mr->sharedMaterial ? std::shared_ptr<const Material>(mr->sharedMaterial)
@@ -565,10 +574,11 @@ void Scene::SubmitTo(Renderer& renderer) const {
     }
     renderer.SubmitWorld(m_static.world);
 
-    std::vector<uint8_t> later(ids.size(), 0);
-    renderer.SubmitMany(ids.size(), [&](size_t i, Renderer::SubmitRequest& request) {
-        const auto [e, mr] = list.items[i];
-        if (!mr || !mr->mesh || isStatic(mr)) return false;
+    const std::vector<uint32_t>& dynamic = m_static.dynamic;
+    std::vector<uint8_t> later(dynamic.size(), 0);
+    renderer.SubmitMany(dynamic.size(), [&](size_t i, Renderer::SubmitRequest& request) {
+        const auto [e, mr] = list.items[dynamic[i]];
+        if (!mr->mesh) return false;
         if (e->parent != kNullEntity || mr->mesh->IsSkinned()) {
             later[i] = 1;
             return false;
@@ -582,9 +592,9 @@ void Scene::SubmitTo(Renderer& renderer) const {
     });
 
     std::vector<glm::mat4> joints;
-    for (size_t i = 0; i < ids.size(); ++i) {
+    for (size_t i = 0; i < dynamic.size(); ++i) {
         if (!later[i]) continue;
-        const auto [e, mr] = list.items[i];
+        const auto [e, mr] = list.items[dynamic[i]];
         if (!IsActiveInHierarchy(*e)) continue;
         if (mr->mesh->IsSkinned()) {
             // Pose do Animator mais próximo (a própria entidade ou acima) que anima o esqueleto desta pele;

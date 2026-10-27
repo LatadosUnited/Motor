@@ -2,9 +2,13 @@
 
 #include <glm/geometric.hpp>
 
+#include <glm/common.hpp>
+
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <utility>
 
 namespace motor {
@@ -28,6 +32,27 @@ bool FrustumContains(const Frustum& frustum, const Aabb& box) {
         if (glm::dot(glm::vec3(p), v) + p.w < 0.0f) return false;
     }
     return true;
+}
+
+// Caixa dos 8 cantos do frustum, cada um o encontro de três planos (esquerda/direita, baixo/cima, perto/longe).
+// Sem resposta se dois planos forem paralelos.
+std::optional<Aabb> FrustumBox(const Frustum& frustum) {
+    Aabb box{glm::vec3(std::numeric_limits<float>::max()), glm::vec3(std::numeric_limits<float>::lowest())};
+    const auto& p = frustum.planes;
+    for (int i = 0; i < 8; ++i) {
+        const glm::vec4& a = p[i & 1 ? 1 : 0];
+        const glm::vec4& b = p[i & 2 ? 3 : 2];
+        const glm::vec4& c = p[i & 4 ? 5 : 4];
+        const glm::vec3 na(a), nb(b), nc(c);
+        const glm::vec3 bc = glm::cross(nb, nc);
+        const float det = glm::dot(na, bc);
+        if (std::abs(det) < 1e-12f) return std::nullopt;
+        const glm::vec3 corner = (-a.w * bc - b.w * glm::cross(nc, na) - c.w * glm::cross(na, nb)) / det;
+        if (!std::isfinite(corner.x) || !std::isfinite(corner.z)) return std::nullopt;
+        box.min = glm::min(box.min, corner);
+        box.max = glm::max(box.max, corner);
+    }
+    return box;
 }
 
 bool BoxesTouch(const Aabb& a, const Aabb& b) {
@@ -206,10 +231,16 @@ bool SpatialGrid::Mark(uint32_t id) const {
 
 void SpatialGrid::QueryFrustum(const Frustum& frustum, std::vector<uint32_t>& out) const {
     BeginQuery();
-    for (const auto& [key, cell] : m_cells) {
-        const GridCell coord = FromKey(key);
+    // Só as células debaixo da caixa do frustum (os 8 cantos): percorrer todas as células custava mais que testar os
+    // objetos quando a câmera vê pouco de um mundo grande.
+    GridCell first{INT_MIN, INT_MIN}, last{INT_MAX, INT_MAX};
+    if (const std::optional<Aabb> box = FrustumBox(frustum)) {
+        first = CellOf(box->min);
+        last = CellOf(box->max);
+    }
+    auto visit = [&](GridCell coord, const Cell& cell) {
         const Aabb bounds = CellBounds(coord, cell.minY, cell.maxY);
-        if (!frustum.Intersects(bounds)) continue;
+        if (!frustum.Intersects(bounds)) return;
         // Célula inteira dentro: os objetos dela (que podem passar das bordas) só estão dentro se a caixa deles
         // também estiver na célula; os que passam são testados.
         const bool inside = FrustumContains(frustum, bounds);
@@ -222,35 +253,39 @@ void SpatialGrid::QueryFrustum(const Frustum& frustum, std::vector<uint32_t>& ou
                 out.push_back(id);
             }
         }
-    }
+    };
+    VisitCells(first, last, visit);
     for (uint32_t id : m_large) {
         if (frustum.Intersects(m_objects[id].box)) out.push_back(id);
     }
 }
 
+void SpatialGrid::VisitCells(GridCell first, GridCell last,
+                             const std::function<void(GridCell, const Cell&)>& visit) const {
+    const int64_t span = (static_cast<int64_t>(last.x) - first.x + 1) * (static_cast<int64_t>(last.z) - first.z + 1);
+    if (span > static_cast<int64_t>(m_cells.size())) {
+        // Região maior que a parte ocupada da grade: mais barato passar pelas células que existem.
+        for (const auto& [key, cell] : m_cells) {
+            const GridCell coord = FromKey(key);
+            if (coord.x >= first.x && coord.x <= last.x && coord.z >= first.z && coord.z <= last.z) visit(coord, cell);
+        }
+        return;
+    }
+    for (int x = first.x; x <= last.x; ++x) {
+        for (int z = first.z; z <= last.z; ++z) {
+            auto it = m_cells.find(Key(x, z));
+            if (it != m_cells.end()) visit({x, z}, it->second);
+        }
+    }
+}
+
 void SpatialGrid::QueryBox(const Aabb& box, std::vector<uint32_t>& out) const {
     BeginQuery();
-    const GridCell first = CellOf(box.min), last = CellOf(box.max);
-    const int64_t span = (static_cast<int64_t>(last.x) - first.x + 1) * (static_cast<int64_t>(last.z) - first.z + 1);
-    auto visit = [&](const Cell& cell) {
+    VisitCells(CellOf(box.min), CellOf(box.max), [&](GridCell, const Cell& cell) {
         for (uint32_t id : cell.objects) {
             if (m_stamps[id] != m_query && BoxesTouch(m_objects[id].box, box) && Mark(id)) out.push_back(id);
         }
-    };
-    if (span > static_cast<int64_t>(m_cells.size())) {
-        // Caixa maior que a parte ocupada da grade: mais barato passar pelas células que existem.
-        for (const auto& [key, cell] : m_cells) {
-            const GridCell coord = FromKey(key);
-            if (coord.x >= first.x && coord.x <= last.x && coord.z >= first.z && coord.z <= last.z) visit(cell);
-        }
-    } else {
-        for (int x = first.x; x <= last.x; ++x) {
-            for (int z = first.z; z <= last.z; ++z) {
-                auto it = m_cells.find(Key(x, z));
-                if (it != m_cells.end()) visit(it->second);
-            }
-        }
-    }
+    });
     for (uint32_t id : m_large) {
         if (BoxesTouch(m_objects[id].box, box)) out.push_back(id);
     }

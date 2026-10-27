@@ -245,12 +245,14 @@ private:
     // movimento começam vazios (e sujos).
     struct StaticRender {
         RenderWorld world;
+        std::vector<uint32_t> dynamic;  // posições em m_meshList.items dos que não são estáticos
         uint64_t version = UINT64_MAX;
         bool dirty = true;
         StaticRender() = default;
         StaticRender(const StaticRender&) {}
         StaticRender& operator=(const StaticRender&) {
             world.Clear();
+            dynamic.clear();
             version = UINT64_MAX;
             dirty = true;
             return *this;

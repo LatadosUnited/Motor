@@ -9,6 +9,7 @@
 #include <glm/vec3.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -78,6 +79,8 @@ private:
     void Unlink(uint32_t id);
     bool Mark(uint32_t id) const;  // true na primeira vez que o objeto aparece nesta consulta
     void BeginQuery() const;
+    // As células que existem de first a last (inclusive), por coordenada ou pelo mapa, o que for menor.
+    void VisitCells(GridCell first, GridCell last, const std::function<void(GridCell, const Cell&)>& visit) const;
 
     float m_cellSize;
     std::unordered_map<uint64_t, Cell> m_cells;
