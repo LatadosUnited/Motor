@@ -32,7 +32,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - [x] Tarefa 4: Recortar a cena e as sombras pela grade — 9a37a78, 3993896
 - [x] Tarefa 5: Usar a grade no raycast do editor e nas consultas de área — 7cb35e8
 - [x] Tarefa 6: Desenhar pela GPU (multi-draw indirect, buffers mapeados de forma persistente) — beaa8b8
-- [ ] Tarefa 7: Guardar os componentes em blocos contínuos por tipo
+- [x] Tarefa 7: Guardar os componentes em blocos contínuos por tipo — 261c9cd
 - [ ] Tarefa 8: Criar o componente Terrain com mapa de altura em blocos, um arquivo por bloco
 - [ ] Tarefa 9: Pincéis do terreno no editor: subir, baixar, suavizar
 - [ ] Tarefa 10: Pintar até 4 camadas de textura no terreno
@@ -114,6 +114,16 @@ e a renderização relativa à câmera são também a base do streaming de célu
   - Visto pelo `viewport_capture` (editor antigo e novo, mesma câmera): pedras, vidro transparente, plano de duas
     faces e o Robo.glb com pele saem iguais; as poucas diferenças são bordas de sombra, do mesmo tamanho que entre
     duas capturas do mesmo editor (as cascatas distantes alternam quadros).
+- Tarefa 7: `motor::BlockPool` (`scene/BlockPool.h`) guarda objetos de um tamanho em blocos de 64 KB, na ordem de
+  criação, com lista de livres; há um pool por tipo de componente (nome, tamanho e alinhamento: um script recarregado
+  com a mesma forma volta para o mesmo) e um para as entidades (`Entity::operator new`). O `Register<T>` constrói os
+  componentes nele em vez de `new`. Escolhido assim para a API de `Entity::components` não mudar: scripts,
+  Inspector, serializador e prefabs ficam iguais. Os blocos nunca voltam ao sistema (componentes vivos na saída do
+  processo não acham memória já liberada). Números (Release, HD 530, antigo e novo alternados):
+  - Mundo de 20 000 cubos não estáticos: "enviar a cena" 10,5 -> 9,1 ms, Update 3,4 -> 2,3 ms. Referência: igual.
+  - `test_desempenho`: `cena_copiar` 3,4 -> 2,0-2,2 ms e `cena_montar` 4,5 -> 2,1-2,4 ms (o desfazer e o Play copiam
+    a cena), `cena_comparar` 6-11% menor; base regravada só nessas três linhas.
+  - Pelo MCP: criar 50, duplicar, apagar, desfazer, Play e Stop no editor saem certos. `test_block_pool`.
 
 ## Limitações
 
@@ -124,5 +134,9 @@ e a renderização relativa à câmera são também a base do streaming de célu
 - Desenho pela GPU (Tarefa 6): materiais diferentes ainda são draws separados (os parâmetros vão em uniforms e as
   texturas em unidades fixas); juntá-los pediria os materiais num buffer e texturas sem vínculo (bindless). Com pele,
   um draw por item. Os objetos ainda são copiados inteiros para o anel a cada cena, mesmo os estáticos parados.
+- Blocos por tipo (Tarefa 7): os componentes ficam juntos por tipo, mas o acesso continua pela entidade (lista de
+  componentes de cada uma), e não em arrays por campo como num ECS. O envio dos 20 000 objetos ainda custa ~9 ms:
+  ~0,45 µs por objeto, a maior parte no `SubmitMany` (matriz de mundo conferida, material e chave por item). Um ECS
+  de verdade muda a API de `Entity::components`; fica para quando um mundo grande dinâmico precisar.
 - `test_desempenho` falhou em 27/10/2026 com o binário antigo e o novo do mesmo jeito (testes de cena que não passam
   pelo renderer 30-140% acima da base): a máquina estava mais lenta. Repetir antes de fechar a fase.
