@@ -263,7 +263,7 @@ e a renderização relativa à câmera são também a base do streaming de célu
   - **60 FPS não alcançado:** quadro mediano 27,1 ms (~37 FPS), preso na GPU: Renderer 22,7 ms (Cena HDR 15,8 com
     326 draws e 218 mil triângulos, água 5,7, cópia para a água 3,1, pós 4,0, sombras 2,9); CPU do Render 7,9 ms e
     física 1,7 ms. Sem MSAA: 21,4 ms (~47 FPS; GPU 17,7: Cena HDR 11,8, água 4,0, cópia 1,7). Ver Limitações.
-- Otimização da GPU do terreno e da água (27/10/2026, depois dos critérios; medido por partes, uma mudança de cada
+- Otimização da GPU do terreno e da água (27/10/2026, `2572b64`, depois dos critérios; medido por partes, uma mudança de cada
   vez, no mesmo Player e opções):
   - Pesos numa textura só: `TerrainWeights` (`motor/renderer/TerrainWeights.h`) guarda os pesos de todos os blocos
     num array de texturas RGBA8 com mipmaps (uma camada por bloco, capacidade em potências de 2, camadas livres
