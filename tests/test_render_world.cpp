@@ -7,7 +7,9 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <memory>
+#include <vector>
 
 using namespace motor;
 
@@ -61,6 +63,31 @@ int main() {
         CHECK(id != RenderWorld::kInvalid);
         local.Clear();
         CHECK(local.Count() == 0 && local.MaterialCount() == 0);
+    }
+
+    SECTION("Consulta pela grade: o mesmo que testar todos, também depois de mover e remover");
+    {
+        RenderWorld big;
+        std::vector<RenderWorld::Id> ids;
+        for (int i = 0; i < 3000; ++i) {
+            const glm::vec3 pos(static_cast<float>((i * 37) % 900) - 450.0f, 0.5f,
+                                static_cast<float>((i * 53) % 900) - 450.0f);
+            ids.push_back(big.Add({cube, red, glm::translate(glm::mat4(1.0f), pos)}));
+        }
+        for (int i = 0; i < 3000; i += 3) big.SetTransform(ids[i], glm::translate(glm::mat4(1.0f), {i * 0.1f, 2, 0}));
+        for (int i = 1; i < 3000; i += 7) big.Remove(ids[i]);
+        const glm::mat4 projection = glm::perspective(glm::radians(60.0f), 1.5f, 0.1f, 200.0f);
+        const Frustum frustum =
+            Frustum::FromMatrix(projection * glm::lookAt(glm::vec3(0, 10, 0), glm::vec3(80, 0, 120), glm::vec3(0, 1, 0)));
+        std::vector<RenderWorld::Id> found, brute;
+        big.Query(frustum, found);
+        for (RenderWorld::Id id : ids) {
+            if (big.Contains(id) && frustum.Intersects(big.Bounds(id))) brute.push_back(id);
+        }
+        std::sort(found.begin(), found.end());
+        std::sort(brute.begin(), brute.end());
+        CHECK(found == brute);
+        CHECK(!found.empty() && found.size() < big.Count() / 2);
     }
 
     world.Clear();

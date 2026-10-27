@@ -201,6 +201,7 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_items.clear();
     m_joints.clear();
     m_wires.clear();
+    m_worlds.clear();
     // m_objects não é esvaziado: vale até 2 * m_items.size(). Refazer 20 000 matrizes (o construtor do glm escreve a
     // identidade) custava ~0,7 ms por quadro com 10 000 objetos.
     m_materialIds.Clear();
@@ -312,35 +313,66 @@ void Renderer::SubmitMany(size_t count, const SubmitFill& fill) {
 
 void Renderer::SubmitWorld(const RenderWorld& world) {
     MOTOR_ASSERT(m_inScene, "SubmitWorld fora de BeginScene/EndScene");
-    MOTOR_PROFILE_SCOPE("Renderer: SubmitWorld");
-    const size_t count = world.m_entries.size();
-    if (count == 0) return;
-    // Os números de material do mundo viram os do quadro uma vez por material diferente, não por objeto.
-    m_worldMaterials.resize(world.m_materials.Size());
-    for (uint32_t i = 0; i < m_worldMaterials.size(); ++i) m_worldMaterials[i] = m_materialIds.Id(world.m_materials[i]);
-    m_worldShadows.resize(world.m_shadows.Size());
-    for (uint32_t i = 0; i < m_worldShadows.size(); ++i) m_worldShadows[i] = m_shadowIds.Id(world.m_shadows[i]);
-    m_lastMaterial = nullptr;  // o próximo Submit não pode reaproveitar o número do anterior a este
+    if (world.Count() > 0) m_worlds.push_back(&world);
+}
 
-    const size_t base = m_items.size();
-    m_items.resize(base + count);
-    if (m_objects.size() < 2 * (base + count)) m_objects.resize(2 * (base + count));
-    std::copy(world.m_objects.begin(), world.m_objects.end(), m_objects.begin() + static_cast<std::ptrdiff_t>(2 * base));
-    JobSystem::Get().ParallelFor(count, 1024, [&](size_t begin, size_t end) {
-        for (size_t i = begin; i < end; ++i) {
-            const RenderWorld::Entry& entry = world.m_entries[i];
-            DrawItem& item = m_items[base + i];
-            item = DrawItem{};
-            item.mesh = entry.mesh.get();
-            item.material = entry.material.get();
-            item.bounds = entry.bounds;
-            item.materialId = m_worldMaterials[entry.materialId];
-            item.shadowId = m_worldShadows[entry.shadowId];
-            item.transparent = entry.transparent;
-            item.shadows = entry.shadows;
-            item.retained = true;
+void Renderer::AppendWorlds(const Frustum& view) {
+    MOTOR_PROFILE_STAT("Render: recortar os guardados");
+    JobSystem& jobs = JobSystem::Get();
+    for (const RenderWorld* world : m_worlds) {
+        const size_t count = world->m_entries.size();
+        // Os números de material do mundo viram os do quadro uma vez por material diferente, não por objeto.
+        m_worldMaterials.resize(world->m_materials.Size());
+        for (uint32_t i = 0; i < m_worldMaterials.size(); ++i) {
+            m_worldMaterials[i] = m_materialIds.Id(world->m_materials[i]);
         }
-    });
+        m_worldShadows.resize(world->m_shadows.Size());
+        for (uint32_t i = 0; i < m_worldShadows.size(); ++i) m_worldShadows[i] = m_shadowIds.Id(world->m_shadows[i]);
+
+        // Recorte pela grade (Fase 28): a câmera e cada passada de sombra perguntam à grade quem elas veem. Só entram
+        // no quadro os objetos que alguém vê; os outros nem são lidos.
+        m_worldCamera.assign(count, 0);
+        m_worldMasks.assign(count, 0);
+        m_worldHits.clear();
+        world->QueryEntries(view, m_worldHits);
+        for (const uint32_t e : m_worldHits) m_worldCamera[e] = 1;
+        for (size_t p = 0; p < m_shadows->PassCount(); ++p) {
+            const Frustum* frustum = m_shadows->PassFrustum(p);
+            if (!frustum) continue;
+            m_worldHits.clear();
+            world->QueryEntries(*frustum, m_worldHits);
+            for (const uint32_t e : m_worldHits) m_worldMasks[e] |= 1u << p;
+        }
+        m_worldHits.clear();
+        for (uint32_t e = 0; e < count; ++e) {
+            if (m_worldCamera[e] || m_worldMasks[e]) m_worldHits.push_back(e);
+        }
+        m_stats.culled += static_cast<uint32_t>(count - m_worldHits.size());  // os de fora de tudo
+
+        const size_t base = m_items.size(), selected = m_worldHits.size();
+        m_items.resize(base + selected);
+        if (m_objects.size() < 2 * (base + selected)) m_objects.resize(2 * (base + selected));
+        jobs.ParallelFor(selected, 1024, [&](size_t begin, size_t end) {
+            for (size_t i = begin; i < end; ++i) {
+                const uint32_t e = m_worldHits[i];
+                const RenderWorld::Entry& entry = world->m_entries[e];
+                DrawItem& item = m_items[base + i];
+                item = DrawItem{};
+                item.mesh = entry.mesh.get();
+                item.material = entry.material.get();
+                item.bounds = entry.bounds;
+                item.materialId = m_worldMaterials[entry.materialId];
+                item.shadowId = m_worldShadows[entry.shadowId];
+                item.transparent = entry.transparent;
+                item.shadows = entry.shadows;
+                item.retained = true;
+                item.cameraVisible = m_worldCamera[e] != 0;
+                item.shadowMask = m_worldMasks[e];
+                m_objects[2 * (base + i)] = world->m_objects[2 * e];
+                m_objects[2 * (base + i) + 1] = world->m_objects[2 * e + 1];
+            }
+        });
+    }
 }
 
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
@@ -403,7 +435,8 @@ void Renderer::PrepareItems(const Frustum& view) {
             const uint32_t shader = item.skinned ? 1u : plain ? 2u : 0u;
             m_sceneKeys[i] = {shader, item.materialId, item.mesh};
             m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
-            m_visible[i] = item.shadows != ShadowCasting::ShadowsOnly && view.Intersects(item.bounds);
+            const bool inView = item.retained ? item.cameraVisible : view.Intersects(item.bounds);
+            m_visible[i] = item.shadows != ShadowCasting::ShadowsOnly && inView;
             // Para a GPU, relativa à câmera (Fase 28): a caixa e o LOD acima já saíram no mundo.
             m_objects[2 * i] = ModelRelativeToOrigin(model, m_camera.position);
         }
@@ -469,17 +502,21 @@ void Renderer::DrawScene() {
 
     // 0) Ordem de desenho (SortDrawOrder). O recorte é no mundo; a GPU recebe tudo relativo à câmera (Fase 28):
     //    a vista sem translação, os objetos, as luzes e as sombras menos a posição dela.
+    //    Antes, as passadas de sombra e os objetos guardados que a câmera ou elas veem (pela grade).
     const glm::vec3 origin = m_camera.position;
     const glm::mat4 projection = m_camera.Projection();
-    SortDrawOrder(Frustum::FromMatrix(projection * m_camera.View()));
+    const Frustum viewFrustum = Frustum::FromMatrix(projection * m_camera.View());
+    m_shadows->Plan(m_camera, m_lights, m_environment);
+    AppendWorlds(viewFrustum);
+    SortDrawOrder(viewFrustum);
     const glm::mat4 view = m_camera.ViewRotation();
 
     // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
     m_instances->UploadObjects(std::span(m_objects.data(), 2 * m_items.size()));
     const ShadowRenderer::Result shadows = [&] {
         MOTOR_PROFILE_GPU("Sombras");
-        return m_shadows->Render(m_camera, origin, m_lights, m_environment, m_items, *m_instances,
-                                 {m_shadowOrder, m_shadowKeys, &m_shadowIds}, uploadJoints, m_stats);
+        return m_shadows->Render(origin, m_items, *m_instances, {m_shadowOrder, m_shadowKeys, &m_shadowIds},
+                                 uploadJoints, m_stats);
     }();
 
     // 2) Blocos de dados do quadro.

@@ -24,6 +24,18 @@ RenderWorld::Id RenderWorld::Add(const RenderObject& object) {
     return id;
 }
 
+void RenderWorld::Query(const Frustum& frustum, std::vector<Id>& out) const {
+    const size_t first = out.size();
+    QueryEntries(frustum, out);
+    for (size_t i = first; i < out.size(); ++i) out[i] = m_idOf[out[i]];
+}
+
+void RenderWorld::QueryEntries(const Frustum& frustum, std::vector<uint32_t>& out) const {
+    m_hits.clear();
+    m_grid.QueryFrustum(frustum, m_hits);
+    for (uint32_t cell : m_hits) out.push_back(m_entryOfCell[cell]);
+}
+
 bool RenderWorld::Update(Id id, const RenderObject& object) {
     if (!Contains(id) || !object.mesh || !object.material || object.mesh->IsSkinned()) return false;
     const size_t index = m_indexOf[id];
@@ -42,12 +54,14 @@ void RenderWorld::Remove(Id id) {
     if (!Contains(id)) return;
     const size_t index = m_indexOf[id];
     const size_t last = m_entries.size() - 1;
+    m_grid.Remove(m_entries[index].cell);
     if (index != last) {
         m_entries[index] = std::move(m_entries[last]);
         m_objects[2 * index] = m_objects[2 * last];
         m_objects[2 * index + 1] = m_objects[2 * last + 1];
         m_idOf[index] = m_idOf[last];
         m_indexOf[m_idOf[index]] = static_cast<uint32_t>(index);
+        m_entryOfCell[m_entries[index].cell] = static_cast<uint32_t>(index);
     }
     m_entries.pop_back();
     m_objects.resize(2 * m_entries.size());
@@ -62,6 +76,8 @@ void RenderWorld::Clear() {
     m_indexOf.clear();
     m_idOf.clear();
     m_free.clear();
+    m_grid.Clear();
+    m_entryOfCell.clear();
     m_materials.Clear();
     m_shadows.Clear();
 }
@@ -79,6 +95,13 @@ void RenderWorld::Fill(Entry& entry, const RenderObject& object) {
 void RenderWorld::SetMatrices(size_t index, const glm::mat4& model) {
     Entry& entry = m_entries[index];
     entry.bounds = TransformAabb({entry.mesh->BoundsMin(), entry.mesh->BoundsMax()}, model);
+    if (entry.cell == SpatialGrid::kInvalid) {
+        entry.cell = m_grid.Insert(entry.bounds);
+        if (m_entryOfCell.size() <= entry.cell) m_entryOfCell.resize(entry.cell + 1);
+    } else {
+        m_grid.Update(entry.cell, entry.bounds);
+    }
+    m_entryOfCell[entry.cell] = static_cast<uint32_t>(index);
     m_objects[2 * index] = model;
     m_objects[2 * index + 1] = glm::mat4(NormalMatrix(model));
 }

@@ -47,12 +47,17 @@ public:
     ShadowRenderer(const ShadowRenderer&) = delete;
     ShadowRenderer& operator=(const ShadowRenderer&) = delete;
 
-    // Escolhe as luzes com sombra e desenha os mapas. Deixa o framebuffer próprio vinculado.
+    // 1) Escolhe as luzes com sombra e as passadas do quadro (cascatas e faces de cubo). Separado do Render porque o
+    //    recorte pela grade (Fase 28) precisa do frustum das passadas antes de montar a lista de itens.
+    void Plan(const Camera& camera, std::span<const Light> lights, const Environment& environment);
+    size_t PassCount() const { return m_passCount; }
+    // nullptr: passada que só limpa o mapa (face de cubo fora do cone do spot).
+    const Frustum* PassFrustum(size_t pass) const { return m_passes[pass].skip ? nullptr : &m_passes[pass].frustum; }
+    // 2) Monta as listas das passadas do Plan e desenha os mapas. Deixa o framebuffer próprio vinculado. Item do
+    //    RenderWorld (`retained`) entra nas passadas do seu shadowMask, sem o teste do frustum.
     // `origin`: a câmera; as matrizes e posições que vão para a GPU são relativas a ela (Fase 28), as de Result também.
-    Result Render(const Camera& camera, const glm::vec3& origin, std::span<const Light> lights,
-                  const Environment& environment,
-                  std::span<const DrawItem> items, InstanceBuffers& instances, const ShadowOrder& order,
-                  const JointUploader& uploadJoints, RenderStats& stats);
+    Result Render(const glm::vec3& origin, std::span<const DrawItem> items, InstanceBuffers& instances,
+                  const ShadowOrder& order, const JointUploader& uploadJoints, RenderStats& stats);
 
     unsigned int CascadeTexture() const { return m_cascades; }
     unsigned int CubeTexture() const { return m_cubes; }
@@ -94,6 +99,8 @@ private:
     Variant m_directional, m_directionalSkinned, m_point, m_pointSkinned;
     std::vector<Pass> m_passes;     // as do quadro: as primeiras m_passCount valem
     size_t m_passCount = 0;
+    size_t m_cascadePasses = 0;  // as primeiras m_passCount (Plan)
+    Result m_planned;            // do Plan: completado pelo Render
     std::vector<uint32_t> m_masks;  // por item: um bit por passada em que ele aparece
     unsigned int m_fbo = 0;
     unsigned int m_cascades = 0;

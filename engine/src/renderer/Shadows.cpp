@@ -108,10 +108,14 @@ void ShadowRenderer::BuildPasses(std::span<const DrawItem> items, const ShadowOr
         for (size_t i = begin; i < end; ++i) {
             const DrawItem& item = items[i];
             uint32_t mask = 0;
-            // Vidro e água não fazem sombra.
+            // Vidro e água não fazem sombra. Do RenderWorld, as passadas já saíram da grade (Fase 28).
             if (!item.transparent && item.shadows != ShadowCasting::Off) {
-                for (size_t p = 0; p < m_passCount; ++p) {
-                    if (!m_passes[p].skip && m_passes[p].frustum.Intersects(item.bounds)) mask |= 1u << p;
+                if (item.retained) {
+                    mask = item.shadowMask;
+                } else {
+                    for (size_t p = 0; p < m_passCount; ++p) {
+                        if (!m_passes[p].skip && m_passes[p].frustum.Intersects(item.bounds)) mask |= 1u << p;
+                    }
                 }
             }
             m_masks[i] = mask;
@@ -192,21 +196,24 @@ void ShadowRenderer::DrawPass(const Pass& pass, const glm::vec3& origin, Instanc
     }
 }
 
-ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, const glm::vec3& origin,
-                                              std::span<const Light> lights, const Environment& env,
-                                              std::span<const DrawItem> items, InstanceBuffers& instances,
-                                              const ShadowOrder& order, const JointUploader& uploadJoints,
-                                              RenderStats& stats) {
-    Result result;
-    result.cubeLayer.assign(lights.size(), -1);
+void ShadowRenderer::Plan(const Camera& camera, std::span<const Light> lights, const Environment& env) {
+    m_planned = Result{};
+    m_planned.cubeLayer.assign(lights.size(), -1);
     const float distance = std::clamp(env.shadowDistance, 1.0f, std::max(camera.farPlane, 1.0f));
-    // Primeiro as passadas do quadro (cascatas e faces de cubo), depois as listas de todas em paralelo, por fim o
-    // desenho. Até 4 cascatas e 6 faces por luz pontual: um bit de m_masks por passada.
+    // Primeiro as passadas do quadro (cascatas e faces de cubo); no Render, as listas de todas em paralelo e o
+    // desenho. Até 4 cascatas e 6 faces por luz pontual: um bit de m_masks (e do shadowMask dos itens) por passada.
     static_assert(kCascades + 6 * kMaxPointShadows <= 32);
     m_passes.resize(kCascades + 6 * kMaxPointShadows);
     m_passCount = 0;
-    const size_t cascadePasses = AddCascadePasses(camera, lights, distance, result);
-    AddCubePasses(camera, lights, distance, result);
+    m_cascadePasses = AddCascadePasses(camera, lights, distance, m_planned);
+    AddCubePasses(camera, lights, distance, m_planned);
+}
+
+ShadowRenderer::Result ShadowRenderer::Render(const glm::vec3& origin, std::span<const DrawItem> items,
+                                              InstanceBuffers& instances, const ShadowOrder& order,
+                                              const JointUploader& uploadJoints, RenderStats& stats) {
+    Result result = std::move(m_planned);
+    const size_t cascadePasses = m_cascadePasses;
     if (m_passCount > 0) BuildPasses(items, order);
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);

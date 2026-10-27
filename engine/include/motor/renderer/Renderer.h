@@ -99,8 +99,9 @@ public:
     };
     using SubmitFill = std::function<bool(size_t index, SubmitRequest& request)>;
     void SubmitMany(size_t count, const SubmitFill& fill);
-    // Os objetos guardados de `world` (Fase 28), sem refazer caixa, matriz da normal e material de cada um. O mundo
-    // precisa continuar vivo e sem mudar até o EndScene.
+    // Os objetos guardados de `world` (Fase 28), sem refazer caixa, matriz da normal e material de cada um. No
+    // EndScene, só entram os que a câmera ou alguma sombra vê (pela grade do mundo). O mundo precisa continuar vivo e
+    // sem mudar até o EndScene.
     void SubmitWorld(const RenderWorld& world);
     void EndScene();
 
@@ -139,6 +140,7 @@ private:
     void UploadJoints(const DrawItem& item);
     DrawItem& AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows);
     void PrepareItems(const Frustum& view);
+    void AppendWorlds(const Frustum& view);  // os objetos dos RenderWorld que a câmera ou as sombras veem
 
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
@@ -191,7 +193,12 @@ private:
         bool ok = false;
     };
     std::vector<PendingSubmit> m_pending;
-    std::vector<uint32_t> m_worldMaterials, m_worldShadows;  // SubmitWorld: número do mundo -> número do quadro
+    // SubmitWorld (Fase 28): os mundos do quadro e, no AppendWorlds, os números de material de cada um (do mundo ->
+    // do quadro), o que a câmera e as passadas de sombra veem por entrada e as entradas escolhidas.
+    std::vector<const RenderWorld*> m_worlds;
+    std::vector<uint32_t> m_worldMaterials, m_worldShadows;
+    std::vector<uint8_t> m_worldCamera;
+    std::vector<uint32_t> m_worldMasks, m_worldHits;
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;
