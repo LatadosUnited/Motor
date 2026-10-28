@@ -3,6 +3,8 @@
 #include "motor/scene/Scene.h"
 #include "motor/ui/UiDocument.h"
 
+#include "UiFlexLayout.h"
+
 #include <glm/common.hpp>
 
 #include <algorithm>
@@ -73,26 +75,13 @@ struct LayoutBuilder {
                 // O documento ocupa o pai (ou o próprio UiRect, se a entidade tiver um).
                 if (!document->visible) continue;
                 const UiBox box = rect ? ResolveUiRect(*rect, parentBox, scale) : parentBox;
-                if (UiDocumentData* tree = document->Tree()) VisitElements(e->id, tree->elements, box, depth);
+                if (UiDocumentData* tree = document->Tree()) LayoutUiDocument(e->id, tree->elements, box, scale, depth, nodes);
                 Visit(e->id, box, depth + 1);
                 continue;
             }
             const UiBox box = ResolveUiRect(rect ? *rect : kDefaultRect, parentBox, scale);
-            nodes.push_back({e->id, box, depth});
+            nodes.push_back({e->id, box, depth, nullptr, box, UiBox{}, false});
             Visit(e->id, box, depth + 1);
-        }
-    }
-
-    void VisitElements(EntityId owner, std::vector<UiElement>& elements, const UiBox& parentBox, int depth) {
-        for (UiElement& element : elements) {
-            if (!element.visible) continue;
-            UiRect rect;
-            rect.anchor = element.anchor;
-            rect.position = element.position;
-            rect.size = element.size;
-            const UiBox box = ResolveUiRect(rect, parentBox, scale);
-            nodes.push_back({owner, box, depth, &element});
-            VisitElements(owner, element.children, box, depth + 1);
         }
     }
 };
@@ -127,7 +116,7 @@ std::vector<UiNode> ComputeUiLayout(const Scene& scene, const glm::vec2& screenS
 const UiNode* UiHitTestNode(const Scene& scene, const std::vector<UiNode>& layout, const glm::vec2& point,
                             UiHitFilter filter) {
     for (auto it = layout.rbegin(); it != layout.rend(); ++it) {
-        if (!it->box.Contains(point)) continue;
+        if (!it->box.Contains(point) || (it->clipped && !it->clip.Contains(point))) continue;  // recortado: não pega
         if (filter == UiHitFilter::Any) return &*it;
         if (it->element) {
             if (it->element->BlocksPointer()) return &*it;

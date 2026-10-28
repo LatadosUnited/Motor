@@ -5,6 +5,7 @@
 #include "motor/common/FileWrite.h"
 #include "motor/core/Log.h"
 #include "motor/core/Paths.h"
+#include "motor/ui/Font.h"
 
 #include <nlohmann/json.hpp>
 
@@ -22,6 +23,114 @@ constexpr UiAnchor kAnchors[] = {UiAnchor::TopLeft,    UiAnchor::Top,    UiAncho
                                  UiAnchor::BottomLeft, UiAnchor::Bottom, UiAnchor::BottomRight,
                                  UiAnchor::Stretch};
 constexpr UiTextAlign kAligns[] = {UiTextAlign::Left, UiTextAlign::Center, UiTextAlign::Right};
+constexpr UiVerticalAlign kVerticalAligns[] = {UiVerticalAlign::Top, UiVerticalAlign::Middle, UiVerticalAlign::Bottom};
+constexpr UiPlacement kPlacements[] = {UiPlacement::Flow, UiPlacement::Absolute};
+constexpr UiDirection kDirections[] = {UiDirection::Column, UiDirection::Row};
+constexpr UiJustify kJustifies[] = {UiJustify::Start, UiJustify::Center, UiJustify::End, UiJustify::SpaceBetween,
+                                    UiJustify::SpaceAround};
+constexpr UiAlign kAlignments[] = {UiAlign::Auto, UiAlign::Start, UiAlign::Center, UiAlign::End, UiAlign::Stretch};
+constexpr UiOverflow kOverflows[] = {UiOverflow::Visible, UiOverflow::Hidden, UiOverflow::Scroll};
+
+const char* VerticalAlignName(UiVerticalAlign v) {
+    switch (v) {
+        case UiVerticalAlign::Top: return "Top";
+        case UiVerticalAlign::Middle: return "Middle";
+        case UiVerticalAlign::Bottom: return "Bottom";
+    }
+    return "Middle";
+}
+const char* PlacementName(UiPlacement p) { return p == UiPlacement::Absolute ? "Absolute" : "Flow"; }
+const char* DirectionName(UiDirection d) { return d == UiDirection::Row ? "Row" : "Column"; }
+const char* JustifyName(UiJustify j) {
+    switch (j) {
+        case UiJustify::Start: return "Start";
+        case UiJustify::Center: return "Center";
+        case UiJustify::End: return "End";
+        case UiJustify::SpaceBetween: return "SpaceBetween";
+        case UiJustify::SpaceAround: return "SpaceAround";
+    }
+    return "Start";
+}
+const char* AlignName(UiAlign a) {
+    switch (a) {
+        case UiAlign::Auto: return "Auto";
+        case UiAlign::Start: return "Start";
+        case UiAlign::Center: return "Center";
+        case UiAlign::End: return "End";
+        case UiAlign::Stretch: return "Stretch";
+    }
+    return "Auto";
+}
+const char* OverflowName(UiOverflow o) {
+    switch (o) {
+        case UiOverflow::Visible: return "Visible";
+        case UiOverflow::Hidden: return "Hidden";
+        case UiOverflow::Scroll: return "Scroll";
+    }
+    return "Visible";
+}
+
+// Tamanho: número = pixels, "50%" = porcentagem do pai, "auto".
+Json Length(const UiLength& l) {
+    switch (l.unit) {
+        case UiUnit::Auto: return "auto";
+        case UiUnit::Px: return l.value;
+        case UiUnit::Percent: return std::format("{}%", l.value);
+    }
+    return "auto";
+}
+
+void ReadLength(const Json& json, const char* key, UiLength& out) {
+    const auto it = json.find(key);
+    if (it == json.end()) return;
+    if (it->is_number()) {
+        out = UiLength::Px(it->get<float>());
+    } else if (it->is_string()) {
+        std::string text = it->get<std::string>();
+        if (text == "auto") {
+            out = {};
+            return;
+        }
+        UiUnit unit = UiUnit::Px;
+        if (text.ends_with('%')) {
+            unit = UiUnit::Percent;
+            text.pop_back();
+        } else if (text.ends_with("px")) {
+            text.resize(text.size() - 2);
+        }
+        try {
+            size_t used = 0;
+            const float v = std::stof(text, &used);
+            if (used == text.size()) out = {v, unit};
+        } catch (...) {
+        }
+    }
+}
+
+// Lados: um número, [vertical, horizontal] ou [cima, direita, baixo, esquerda].
+Json Edges(const UiEdges& e) {
+    if (e.top == e.right && e.top == e.bottom && e.top == e.left) return e.top;
+    return Json::array({e.top, e.right, e.bottom, e.left});
+}
+
+void ReadEdges(const Json& json, const char* key, UiEdges& out) {
+    const auto it = json.find(key);
+    if (it == json.end()) return;
+    if (it->is_number()) {
+        out = UiEdges::All(it->get<float>());
+        return;
+    }
+    if (!it->is_array()) return;
+    for (const Json& v : *it) {
+        if (!v.is_number()) return;
+    }
+    if (it->size() == 2) out = UiEdges::Symmetric((*it)[0].get<float>(), (*it)[1].get<float>());
+    if (it->size() == 4) out = {(*it)[0].get<float>(), (*it)[1].get<float>(), (*it)[2].get<float>(), (*it)[3].get<float>()};
+}
+
+void ReadFloat(const Json& json, const char* key, float& out) {
+    if (const auto it = json.find(key); it != json.end() && it->is_number()) out = it->get<float>();
+}
 
 Json Vec(const glm::vec2& v) { return Json::array({v.x, v.y}); }
 Json Vec(const glm::vec4& v) { return Json::array({v.x, v.y, v.z, v.w}); }
@@ -63,10 +172,24 @@ Json ElementToJson(const UiElement& e) {
     Json json{{"type", UiElementTypeName(e.type)}};
     if (!e.name.empty()) json["name"] = e.name;
     if (!e.classes.empty()) json["classes"] = e.classes;
-    json["anchor"] = UiAnchorName(e.anchor);
-    json["position"] = Vec(e.position);
-    json["size"] = Vec(e.size);
+    if (e.placement != def.placement) json["placement"] = PlacementName(e.placement);
+    if (e.placement == UiPlacement::Absolute) {
+        json["anchor"] = UiAnchorName(e.anchor);
+        json["position"] = Vec(e.position);
+    }
+    if (e.width != def.width) json["width"] = Length(e.width);
+    if (e.height != def.height) json["height"] = Length(e.height);
+    if (e.margin != def.margin) json["margin"] = Edges(e.margin);
+    if (e.grow != def.grow) json["grow"] = e.grow;
+    if (e.shrink != def.shrink) json["shrink"] = e.shrink;
+    if (e.alignSelf != def.alignSelf) json["alignSelf"] = AlignName(e.alignSelf);
     if (e.visible != def.visible) json["visible"] = e.visible;
+    if (e.direction != def.direction) json["direction"] = DirectionName(e.direction);
+    if (e.justify != def.justify) json["justify"] = JustifyName(e.justify);
+    if (e.alignItems != def.alignItems) json["alignItems"] = AlignName(e.alignItems);
+    if (e.gap != def.gap) json["gap"] = e.gap;
+    if (e.padding != def.padding) json["padding"] = Edges(e.padding);
+    if (e.overflow != def.overflow) json["overflow"] = OverflowName(e.overflow);
     if (e.color != def.color) json["color"] = Vec(e.color);
     if (!e.image.IsDefault()) json["image"] = FileRef(e.image);
     if (e.text != def.text) json["text"] = e.text;
@@ -74,6 +197,8 @@ Json ElementToJson(const UiElement& e) {
     if (e.fontSize != def.fontSize) json["fontSize"] = e.fontSize;
     if (e.textColor != def.textColor) json["textColor"] = Vec(e.textColor);
     if (e.align != def.align) json["align"] = UiTextAlignName(e.align);
+    if (e.verticalAlign != def.verticalAlign) json["verticalAlign"] = VerticalAlignName(e.verticalAlign);
+    if (e.wrap != def.wrap) json["wrap"] = e.wrap;
     if (e.type == UiElementType::Button) {
         if (e.normalColor != def.normalColor) json["normalColor"] = Vec(e.normalColor);
         if (e.hoverColor != def.hoverColor) json["hoverColor"] = Vec(e.hoverColor);
@@ -88,10 +213,10 @@ Json ElementToJson(const UiElement& e) {
     return json;
 }
 
-void ElementsFromJson(const Json& list, std::vector<UiElement>& out, std::vector<std::string>* warnings,
+void ElementsFromJson(const Json& list, int version, std::vector<UiElement>& out, std::vector<std::string>* warnings,
                       const std::string& where);
 
-UiElement ElementFromJson(const Json& json, std::vector<std::string>* warnings, const std::string& where) {
+UiElement ElementFromJson(const Json& json, int version, std::vector<std::string>* warnings, const std::string& where) {
     UiElementType type = UiElementType::Panel;
     const std::string typeName = json.value("type", std::string("Panel"));
     bool known = false;
@@ -104,16 +229,43 @@ UiElement ElementFromJson(const Json& json, std::vector<std::string>* warnings, 
     if (!known && warnings) warnings->push_back(std::format("{}: tipo \"{}\" desconhecido, lido como Panel", where, typeName));
 
     UiElement e = UiElement::Make(type);
+    if (version < 2) {
+        // Antes do flex: tudo por âncora, 200x60 sem "size", texto sem quebra nem preenchimento.
+        e.placement = UiPlacement::Absolute;
+        e.width = UiLength::Px(200.0f);
+        e.height = UiLength::Px(60.0f);
+        e.wrap = false;
+        e.padding = {};
+    }
     e.name = json.value("name", std::string());
     if (const auto it = json.find("classes"); it != json.end() && it->is_array()) {
         for (const Json& c : *it) {
             if (c.is_string()) e.classes.push_back(c.get<std::string>());
         }
     }
+    ReadEnum(json, "placement", kPlacements, PlacementName, e.placement);
     ReadEnum(json, "anchor", kAnchors, UiAnchorName, e.anchor);
     ReadVec(json, "position", e.position);
-    ReadVec(json, "size", e.size);
+    glm::vec2 size{0.0f};
+    if (json.contains("size")) {  // atalho (e o da versão 1): largura e altura em pixels
+        size = {e.width.value, e.height.value};
+        ReadVec(json, "size", size);
+        e.width = UiLength::Px(size.x);
+        e.height = UiLength::Px(size.y);
+    }
+    ReadLength(json, "width", e.width);
+    ReadLength(json, "height", e.height);
+    ReadEdges(json, "margin", e.margin);
+    ReadFloat(json, "grow", e.grow);
+    ReadFloat(json, "shrink", e.shrink);
+    ReadEnum(json, "alignSelf", kAlignments, AlignName, e.alignSelf);
     e.visible = json.value("visible", e.visible);
+    ReadEnum(json, "direction", kDirections, DirectionName, e.direction);
+    ReadEnum(json, "justify", kJustifies, JustifyName, e.justify);
+    ReadEnum(json, "alignItems", kAlignments, AlignName, e.alignItems);
+    ReadFloat(json, "gap", e.gap);
+    ReadEdges(json, "padding", e.padding);
+    ReadEnum(json, "overflow", kOverflows, OverflowName, e.overflow);
     ReadVec(json, "color", e.color);
     ReadFileRef(json, "image", e.image);
     if (const auto it = json.find("text"); it != json.end() && it->is_string()) e.text = it->get<std::string>();
@@ -121,22 +273,24 @@ UiElement ElementFromJson(const Json& json, std::vector<std::string>* warnings, 
     if (const auto it = json.find("fontSize"); it != json.end() && it->is_number()) e.fontSize = it->get<float>();
     ReadVec(json, "textColor", e.textColor);
     ReadEnum(json, "align", kAligns, UiTextAlignName, e.align);
+    ReadEnum(json, "verticalAlign", kVerticalAligns, VerticalAlignName, e.verticalAlign);
+    e.wrap = json.value("wrap", e.wrap);
     ReadVec(json, "normalColor", e.normalColor);
     ReadVec(json, "hoverColor", e.hoverColor);
     ReadVec(json, "pressedColor", e.pressedColor);
     e.interactable = json.value("interactable", e.interactable);
     if (const auto it = json.find("children"); it != json.end()) {
-        ElementsFromJson(*it, e.children, warnings, where + "/" + (e.name.empty() ? typeName : e.name));
+        ElementsFromJson(*it, version, e.children, warnings, where + "/" + (e.name.empty() ? typeName : e.name));
     }
     return e;
 }
 
-void ElementsFromJson(const Json& list, std::vector<UiElement>& out, std::vector<std::string>* warnings,
+void ElementsFromJson(const Json& list, int version, std::vector<UiElement>& out, std::vector<std::string>* warnings,
                       const std::string& where) {
     if (!list.is_array()) return;
     for (const Json& item : list) {
         if (item.is_object()) {
-            out.push_back(ElementFromJson(item, warnings, where));
+            out.push_back(ElementFromJson(item, version, warnings, where));
         } else if (warnings) {
             warnings->push_back(where + ": item que não é objeto ignorado");
         }
@@ -183,6 +337,18 @@ void ResolveElements(std::vector<UiElement>& list, AssetLibrary& assets) {
     for (UiElement& e : list) {
         ResolveRef(e.font, assets);
         ResolveRef(e.image, assets);
+        e.fontData = nullptr;
+        if (!e.font.IsDefault()) {
+            std::filesystem::path file;
+            if (!e.font.guid.empty()) file = assets.Database().PathFor(e.font.guid);
+            if (file.empty() && !e.font.path.empty()) file = assets.FileForKey(e.font.path);
+            std::string error;
+            if (!file.empty()) e.fontData = LoadUiFont(file, &error);
+            if (!e.fontData) {
+                log::Warn("UI: fonte {} do elemento {}: {}; usando a padrão", e.font.path, e.name,
+                          error.empty() ? std::string("não encontrada") : error);
+            }
+        }
         e.texture = nullptr;
         if (!e.image.IsDefault()) {
             std::string error;
@@ -210,9 +376,18 @@ UiElement UiElement::Make(UiElementType type) {
     e.type = type;
     switch (type) {
         case UiElementType::Panel: e.color = glm::vec4(0.0f); break;  // só agrupa, até ganhar uma cor
-        case UiElementType::Text: e.text = "Texto"; break;
-        case UiElementType::Image: break;
-        case UiElementType::Button: e.text = "Botão"; break;
+        case UiElementType::Text:
+            e.text = "Texto";
+            e.wrap = true;
+            break;
+        case UiElementType::Image:
+            e.width = UiLength::Px(100.0f);
+            e.height = UiLength::Px(100.0f);
+            break;
+        case UiElementType::Button:
+            e.text = "Botão";
+            e.padding = UiEdges::Symmetric(12.0f, 24.0f);
+            break;
     }
     return e;
 }
@@ -240,10 +415,16 @@ glm::vec4 UiElement::BackgroundColor() const {
     return *state * color;
 }
 
+const FontData* UiElement::Font() const { return fontData ? fontData.get() : DefaultUiFont(); }
+
 bool UiElement::SameContent(const UiElement& o) const {
-    return type == o.type && name == o.name && classes == o.classes && anchor == o.anchor && position == o.position &&
-           size == o.size && visible == o.visible && color == o.color && image == o.image && text == o.text &&
-           font == o.font && fontSize == o.fontSize && textColor == o.textColor && align == o.align &&
+    return type == o.type && name == o.name && classes == o.classes && placement == o.placement &&
+           anchor == o.anchor && position == o.position && width == o.width && height == o.height &&
+           margin == o.margin && grow == o.grow && shrink == o.shrink && alignSelf == o.alignSelf &&
+           visible == o.visible && direction == o.direction && justify == o.justify && alignItems == o.alignItems &&
+           gap == o.gap && padding == o.padding && overflow == o.overflow && color == o.color && image == o.image &&
+           text == o.text && font == o.font && fontSize == o.fontSize && textColor == o.textColor &&
+           align == o.align && verticalAlign == o.verticalAlign && wrap == o.wrap &&
            normalColor == o.normalColor && hoverColor == o.hoverColor && pressedColor == o.pressedColor &&
            interactable == o.interactable && SameElements(children, o.children);
 }
@@ -276,7 +457,7 @@ bool UiDocumentFromJson(std::string_view text, UiDocumentData& out, std::string*
         return false;
     }
     UiDocumentData document;
-    if (const auto it = json.find("elements"); it != json.end()) ElementsFromJson(*it, document.elements, warnings, "");
+    if (const auto it = json.find("elements"); it != json.end()) ElementsFromJson(*it, version, document.elements, warnings, "");
     out = std::move(document);
     return true;
 }

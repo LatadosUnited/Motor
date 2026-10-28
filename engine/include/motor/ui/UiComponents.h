@@ -29,6 +29,7 @@ class Texture2D;
 // Stretch: ocupa o pai inteiro menos as margens (posição = esquerda/cima, tamanho = direita/baixo).
 enum class UiAnchor { TopLeft, Top, TopRight, Left, Center, Right, BottomLeft, Bottom, BottomRight, Stretch };
 enum class UiTextAlign { Left, Center, Right };
+enum class UiVerticalAlign { Top, Middle, Bottom };  // texto na caixa (documentos de UI)
 
 // Fonte de um texto: um .ttf/.otf do projeto, pelo GUID (com o caminho junto, como plano B). Vazio = fonte
 // padrão da engine (Roboto Medium).

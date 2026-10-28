@@ -132,6 +132,10 @@ target_include_directories(test_ui PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 # cliques e API dos scripts pelo nome do elemento.
 motor_add_test(test_ui_documento)
 
+# Layout dos documentos de UI: flex (coluna, linha, gap, grow, shrink, porcentagem, justify, align, margem, padding),
+# absoluto, texto com quebra, recorte e rolagem, em paisagem e retrato.
+motor_add_test(test_ui_flex)
+
 # Modelos glTF e animação esquelética (Fase 11): leitura, asset, importação como prefab, dados da malha na
 # CPU (raycast e collider exatos), amostragem dos clipes, skinning e Animator. Gera os próprios arquivos glTF.
 motor_add_test(test_gltf)

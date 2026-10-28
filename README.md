@@ -650,11 +650,14 @@ desfazer:
 - **Criar:** Entidade > Interface (UI) > Texto, Imagem, Botão, Painel ou Documento (também no "+ Criar" da
   Hierarquia).
 - **Documento de UI (`.mui`, em construção):** a tela inteira (menu, HUD) num arquivo JSON do projeto, com a árvore
-  de elementos (`Panel`, `Text`, `Image`, `Button`, cada um com nome, âncora, posição e tamanho dentro do pai); a
-  entidade com **UI: Documento** mostra o arquivo ocupando o pai. A Hierarquia fica com uma entidade só, e os
-  scripts acham os elementos pelo nome (`WasClicked("jogar")`). Formato e plano em
+  de elementos (`Panel`, `Text`, `Image`, `Button`); a entidade com **UI: Documento** mostra o arquivo ocupando o
+  pai. Os elementos se arrumam por um **layout flex** próprio: coluna ou linha, `gap`, `padding`, `margin`, `grow`
+  e `shrink`, `justify` e `alignItems`, tamanhos em pixels, porcentagem ou automáticos (o texto quebra na
+  largura); `placement: Absolute` prende por âncora, como o UiRect; `overflow: Hidden` recorta os filhos e
+  `Scroll` faz uma lista que rola com a roda do mouse. A Hierarquia fica com uma entidade só, e os scripts acham
+  os elementos pelo nome (`WasClicked("jogar")`). Formato e plano em
   [Interface em documentos](docs/roadmap/alpha-5/interface-em-documentos.md); por ora o arquivo se edita fora do
-  editor.
+  editor. Pelo MCP: `ui_click` com `element` e `ui_scroll` rolam e clicam pelo nome.
 - **Unidades:** pixels de uma tela de 1080 de altura, escalados pela altura real (o HUD fica igual no
   viewport do editor e em tela cheia). Filho de um elemento de UI se posiciona dentro do pai; esconder o pai
   esconde os filhos. Entre irmãos, maior **Ordem** desenha por cima e recebe o clique primeiro.

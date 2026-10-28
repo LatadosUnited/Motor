@@ -70,6 +70,11 @@ private:
         float fontSize = 0.0f;
         glm::vec4 textColor{0.0f};
         UiTextAlign align = UiTextAlign::Center;
+        UiBox textBox;          // dentro do padding
+        float wrapWidth = 0.0f;  // > 0: quebra o texto nessa largura
+        UiVerticalAlign vertical = UiVerticalAlign::Middle;
+        UiBox clip;             // recorte (overflow Hidden/Scroll de um pai), se `clipped`
+        bool clipped = false;
         bool operator==(const ElementKey&) const = default;
     };
     struct CachedElement {
@@ -96,12 +101,12 @@ private:
         bool operator==(const Piece&) const = default;
     };
 
-    std::shared_ptr<FontData> LoadFont(const std::string& key, const std::filesystem::path& file);
+    std::shared_ptr<const FontData> LoadFont(const std::string& key, const std::filesystem::path& file);
     const FontData* DefaultFont();
     void Rebuild(CachedElement& cached, const ElementKey& key, const FontData* font);
 
     AtlasTextureFn m_atlasTexture;
-    std::map<std::string, std::shared_ptr<FontData>> m_fonts;  // caminho UTF-8 -> fonte (nula = falhou)
+    std::map<std::string, std::shared_ptr<const FontData>> m_fonts;  // caminho UTF-8 -> fonte (nula = falhou)
     std::unordered_map<PieceId, CachedElement, PieceIdHash> m_cache;
     std::vector<Piece> m_pieces;  // o que formou a lista atual
     std::vector<UiNode> m_layout;

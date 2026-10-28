@@ -169,6 +169,7 @@ private:
     std::unique_ptr<motor::Framebuffer> m_capture;
     // Clique num botão da UI do jogo: posição na tela do jogo e etapa (1 = apertar, 2 = soltar, 0 = nada).
     int m_clickStage = 0;
+    int m_hoverFrames = 0;  // ui_scroll: quadros com o mouse parado no elemento (a roda entra num deles)
     glm::vec2 m_clickPos{0.0f};
     glm::vec2 m_clickScreen{0.0f};
 };

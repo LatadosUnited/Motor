@@ -366,6 +366,35 @@ void McpController::AddPlayTools() {
     });
 
     m_protocol.AddTool({
+        .name = "ui_scroll",
+        .description = "Rola com a roda do mouse uma lista da interface do jogo (elemento com overflow Scroll de um "
+                       "documento de UI) durante o Play: o mouse vai para o centro do elemento e a roda gira. "
+                       "Negativo desce; confira com viewport_capture ou num script (UiElement::scroll).",
+        .inputSchema = Schema({{"element", Prop("string", "nome do elemento (a lista ou algo dentro dela)")},
+                               {"notches", Prop("number", "entalhes da roda (+ para cima, - para baixo)")}},
+                              {"element", "notches"}),
+        .run = [this](const Json& args) {
+            SceneRuntime* runtime = m_host.play.Runtime();
+            if (!runtime || m_host.play.IsPaused()) throw ToolError("o jogo precisa estar rodando (play, sem pausa)");
+            UiSystem* ui = runtime->GetSystem<UiSystem>();
+            if (!ui) throw ToolError("a cena não tem o sistema de UI");
+            const std::string name = args["element"].get<std::string>();
+            const UiElement* element = ui->FindElement(name);
+            UiBox box;
+            if (!element) throw ToolError("nenhum documento de UI da cena tem o elemento " + name);
+            if (!ui->ScreenRect(*element, box) || box.Size().x <= 0.0f) throw ToolError(name + " não está na tela");
+            const float notches = args["notches"].get<float>();
+            m_clickPos = box.Center();
+            m_clickScreen = ui->Pointer().screenSize;
+            m_hoverFrames = 4;
+            m_pendingScroll += notches;
+            m_host.play.SetExternalInput(true);
+            return ToolResult::Text(std::format("roda {:+.0f} sobre {} ({:.0f}, {:.0f})", notches, name, m_clickPos.x,
+                                                m_clickPos.y));
+        },
+    });
+
+    m_protocol.AddTool({
         .name = "audio_status",
         .description = "Áudio durante o Play: se há saída de som, posição do ouvinte, nível do som que sai (RMS por "
                        "canal, esquerdo e direito) e as fontes que já tocaram (tocando, distância até o ouvinte e "

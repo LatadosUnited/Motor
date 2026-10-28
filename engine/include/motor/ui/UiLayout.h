@@ -48,6 +48,9 @@ struct UiNode {
     UiBox box;
     int depth = 0;  // 0 = elemento de UI sem pai de UI
     UiElement* element = nullptr;  // elemento da árvore viva do documento (UiDocument::Tree), ou nulo
+    UiBox content;         // dentro do padding (onde vai o texto); igual a `box` sem padding
+    UiBox clip;            // recorte de um pai com overflow Hidden/Scroll, se `clipped`
+    bool clipped = false;
 };
 
 // Elementos de UI visíveis (entidade ativa na hierarquia e UiRect::visible, também dos pais), na ordem de

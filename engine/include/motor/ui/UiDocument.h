@@ -4,17 +4,24 @@
 // do projeto, ligado à cena por um componente UiDocument. A Hierarquia fica com uma entidade ("Menu"), não com uma
 // por texto e botão.
 //
-//   {"format": "motor-ui", "version": 1, "elements": [
-//       {"type": "Panel", "name": "menu", "anchor": "Center", "size": [600, 400], "color": [0, 0, 0, 0.6],
-//        "children": [
-//           {"type": "Text", "name": "titulo", "anchor": "Top", "position": [0, 30], "size": [600, 80],
-//            "text": "Pausa", "fontSize": 56},
-//           {"type": "Button", "name": "jogar", "classes": ["menu"], "anchor": "Bottom", "position": [0, -40],
-//            "size": [320, 90], "text": "Continuar"}]}]}
+//   {"format": "motor-ui", "version": 2, "elements": [
+//       {"type": "Panel", "name": "menu", "placement": "Absolute", "anchor": "Center", "width": 600,
+//        "padding": 30, "gap": 16, "color": [0, 0, 0, 0.6], "children": [
+//           {"type": "Text", "name": "titulo", "text": "Pausa", "fontSize": 56},
+//           {"type": "Button", "name": "jogar", "classes": ["menu"], "text": "Continuar"},
+//           {"type": "Button", "name": "sair", "text": "Sair"}]}]}
 //
-// Cada elemento se posiciona dentro do pai por âncora, como o UiRect (o layout flex vem depois); a ordem na lista é a
-// ordem de desenho (o último fica por cima). Campos ausentes ficam com o padrão do tipo; só os diferentes do padrão
-// são gravados. Os scripts acham um elemento pelo nome (UiSystem::WasClicked("jogar"), SetText, SetVisible).
+// Layout (um subconjunto do flex do CSS, feito aqui; ver UiFlexLayout.cpp): os filhos de um elemento ficam em
+// coluna (ou linha, `direction`), um depois do outro, com `gap` entre eles e `padding` dentro do pai; `grow` reparte a
+// sobra, `shrink` a falta; `justify` arruma no eixo principal e `alignItems`/`alignSelf` no outro (Stretch, o padrão,
+// estica). Tamanhos em pixels da tela de referência, em porcentagem do pai ("50%") ou "auto" (o conteúdo: texto,
+// filhos). `placement: Absolute` tira o elemento do fluxo e o prende por âncora no pai, como o UiRect. A raiz do
+// documento é uma coluna que ocupa o pai da entidade. `overflow: Hidden` recorta os filhos na caixa; `Scroll` também
+// rola na vertical com a roda do mouse.
+//
+// A ordem na lista é a ordem de desenho (o último fica por cima). Campos ausentes ficam com o padrão do tipo; só os
+// diferentes do padrão são gravados. Arquivo da versão 1 (antes do flex): todo elemento é Absolute, com "size" em
+// pixels e texto sem quebra. Os scripts acham um elemento pelo nome (UiSystem::WasClicked("jogar"), SetText).
 
 #include "motor/scene/Component.h"
 #include "motor/ui/UiComponents.h"
@@ -30,7 +37,36 @@
 namespace motor {
 
 class AssetLibrary;
+class FontData;
 class Texture2D;
+
+// Medida de um tamanho: pixels da tela de referência, porcentagem do pai ou automática (o conteúdo).
+enum class UiUnit { Auto, Px, Percent };
+struct UiLength {
+    float value = 0.0f;
+    UiUnit unit = UiUnit::Auto;
+
+    static UiLength Px(float v) { return {v, UiUnit::Px}; }
+    static UiLength Percent(float v) { return {v, UiUnit::Percent}; }
+    bool IsAuto() const { return unit == UiUnit::Auto; }
+    bool operator==(const UiLength&) const = default;
+};
+
+// Margem e preenchimento, em pixels da referência (no arquivo: um número para os 4 lados, [vertical, horizontal]
+// ou [cima, direita, baixo, esquerda], como no CSS).
+struct UiEdges {
+    float top = 0.0f, right = 0.0f, bottom = 0.0f, left = 0.0f;
+
+    static UiEdges All(float v) { return {v, v, v, v}; }
+    static UiEdges Symmetric(float vertical, float horizontal) { return {vertical, horizontal, vertical, horizontal}; }
+    bool operator==(const UiEdges&) const = default;
+};
+
+enum class UiPlacement { Flow, Absolute };  // no fluxo do pai, ou preso por âncora
+enum class UiDirection { Column, Row };
+enum class UiJustify { Start, Center, End, SpaceBetween, SpaceAround };
+enum class UiAlign { Auto, Start, Center, End, Stretch };  // Auto: só em alignSelf (usa o alignItems do pai)
+enum class UiOverflow { Visible, Hidden, Scroll };
 
 enum class UiElementType {
     Panel,   // fundo com cor (transparente por padrão): agrupa os filhos
@@ -46,11 +82,25 @@ struct UiElement {
     std::string name;                  // único no documento, para os scripts ("jogar")
     std::vector<std::string> classes;  // para as consultas e os estilos (etapas seguintes)
 
-    // Posição no pai, como o UiRect (o campo order não é usado: vale a ordem na lista).
+    // Lugar no pai: no fluxo (flex) ou preso por âncora (Absolute, como o UiRect: posição a partir da âncora).
+    UiPlacement placement = UiPlacement::Flow;
     UiAnchor anchor = UiAnchor::Center;
     glm::vec2 position{0.0f};
-    glm::vec2 size{200.0f, 60.0f};
+    UiLength width;   // automático por padrão (o conteúdo; no fluxo, Stretch estica no eixo cruzado)
+    UiLength height;
+    UiEdges margin;
+    float grow = 0.0f;    // parte da sobra do pai no eixo principal (proporcional entre os irmãos)
+    float shrink = 1.0f;  // parte da falta (proporcional ao tamanho)
+    UiAlign alignSelf = UiAlign::Auto;
     bool visible = true;
+
+    // Como os filhos se arrumam dentro deste.
+    UiDirection direction = UiDirection::Column;
+    UiJustify justify = UiJustify::Start;
+    UiAlign alignItems = UiAlign::Stretch;
+    float gap = 0.0f;
+    UiEdges padding;
+    UiOverflow overflow = UiOverflow::Visible;
 
     glm::vec4 color{1.0f};  // fundo do painel e da imagem; no botão, multiplica a cor do estado
     UiFont image;           // textura (.png...) do projeto, pelo GUID; vazio = cor sólida
@@ -58,9 +108,12 @@ struct UiElement {
 
     std::string text;  // texto do Text e rótulo do Button
     UiFont font;
+    std::shared_ptr<const FontData> fontData;  // a de `font`, carregada por ResolveUiDocumentAssets (nula = padrão)
     float fontSize = 36.0f;
     glm::vec4 textColor{1.0f};
     UiTextAlign align = UiTextAlign::Center;
+    UiVerticalAlign verticalAlign = UiVerticalAlign::Middle;
+    bool wrap = false;  // quebra nos espaços para caber na largura (o padrão do Text)
 
     glm::vec4 normalColor{0.18f, 0.22f, 0.30f, 0.92f};
     glm::vec4 hoverColor{0.26f, 0.33f, 0.46f, 0.96f};
@@ -69,10 +122,12 @@ struct UiElement {
 
     std::vector<UiElement> children;
 
-    // Estado do jogo, escrito pelo UiSystem (não vai para o arquivo).
+    // Estado do jogo, escrito pelo UiSystem e pelo layout (não vai para o arquivo).
     bool hovered = false;
     bool pressed = false;
     bool clicked = false;
+    float scroll = 0.0f;     // overflow Scroll: quanto rolou para baixo (pixels da referência)
+    float scrollMax = 0.0f;  // o conteúdo que passa da caixa (calculado pelo layout)
 
     // Elemento com os padrões do tipo (o painel começa transparente, o texto com "Texto").
     static UiElement Make(UiElementType type);
@@ -81,6 +136,7 @@ struct UiElement {
     bool BlocksPointer() const;  // pega o clique: botão e imagem; painel com fundo visível
     glm::vec4 BackgroundColor() const;  // com a cor do estado no botão
     bool HasText() const { return (type == UiElementType::Text || type == UiElementType::Button) && !text.empty(); }
+    const FontData* Font() const;  // a fonte do texto (a padrão se não houver outra)
 
     // Campos do arquivo iguais (o estado do jogo e a textura carregada não contam).
     bool SameContent(const UiElement& other) const;
@@ -96,7 +152,7 @@ struct UiDocumentData {
 };
 
 inline constexpr const char* kUiDocumentFormat = "motor-ui";
-inline constexpr int kUiDocumentVersion = 1;
+inline constexpr int kUiDocumentVersion = 2;  // 2: layout flex (1: só âncoras)
 
 // Texto JSON <-> documento. A leitura é tolerante (campo ausente = padrão, tipo desconhecido = painel, com aviso em
 // `warnings`); falha só com JSON inválido, outro formato ou versão mais nova que esta engine.
@@ -106,7 +162,7 @@ bool UiDocumentFromJson(std::string_view json, UiDocumentData& out, std::string*
 bool SaveUiDocument(const std::filesystem::path& file, const UiDocumentData& document, std::string* error = nullptr);
 bool LoadUiDocument(const std::filesystem::path& file, UiDocumentData& out, std::string* error = nullptr);
 
-// Acerta as fontes e imagens pelo GUID (arquivo movido) e carrega as texturas.
+// Acerta as fontes e imagens pelo GUID (arquivo movido) e carrega as texturas e as fontes.
 void ResolveUiDocumentAssets(UiDocumentData& document, AssetLibrary& assets);
 
 // Referência a um .mui do projeto, com o conteúdo lido junto (como uma textura: carregado ao ler a cena ou ao

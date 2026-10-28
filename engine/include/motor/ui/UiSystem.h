@@ -14,6 +14,7 @@
 //
 // Documentos de UI (UiDocument.h): os mesmos nomes valem para os elementos deles. Sem entidade com o nome, as
 // funções procuram um elemento com esse nome nos documentos da cena (WasClicked("jogar"), SetText("pontos", ...)).
+// A roda do mouse rola o elemento com overflow Scroll sob o mouse (UiElement::scroll; um script também pode mudar).
 //
 // Clique da interface não vai para o jogo: antes dos scripts (UiPointerSystem), a UI diz ao runtime se o mouse
 // está sobre um botão ou imagem e se o clique começou num deles; até soltar, o botão esquerdo fica solto para
@@ -34,6 +35,8 @@ namespace motor {
 class Scene;
 struct Entity;
 struct UiElement;
+
+inline constexpr float kUiScrollStep = 60.0f;  // pixels da referência por entalhe da roda numa lista com rolagem
 
 // Mouse em relação à tela do jogo, informado por quem roda o jogo (no editor, o viewport) a cada frame.
 struct UiPointer {

@@ -7,28 +7,41 @@
 #include "motor/scene/Scene.h"
 #include "motor/ui/UiDocument.h"
 
+#include <glm/common.hpp>
+
 #include <algorithm>
 
 namespace motor {
 
 // --- UiCanvas -------------------------------------------------------------------------
 
-std::shared_ptr<FontData> UiCanvas::LoadFont(const std::string& key, const std::filesystem::path& file) {
+std::shared_ptr<const FontData> UiCanvas::LoadFont(const std::string& key, const std::filesystem::path& file) {
     if (const auto it = m_fonts.find(key); it != m_fonts.end()) return it->second;
-    auto font = std::make_shared<FontData>();
     std::string error;
-    if (!font->LoadFile(file, &error)) {
-        log::Warn("UI: fonte {}: {}", key, error);
-        font = nullptr;  // fica no cache como falha: o aviso sai uma vez só
-    }
-    m_fonts[key] = font;
+    auto font = LoadUiFont(file, &error);  // a mesma dos documentos, que o layout usa para medir
+    if (!font) log::Warn("UI: fonte {}: {}", key, error.empty() ? std::string("não abriu") : error);
+    m_fonts[key] = font;  // falha fica no cache: o aviso sai uma vez só
     return font;
 }
 
-const FontData* UiCanvas::DefaultFont() {
-    const std::filesystem::path file = DefaultFontPath();
-    return LoadFont(ToUtf8(file), file).get();
+const FontData* UiCanvas::DefaultFont() { return DefaultUiFont(); }
+
+namespace {
+// Corta o quadrado no retângulo, acertando as coordenadas de textura na mesma proporção. false se sobrou nada.
+bool ClipQuad(glm::vec2& min, glm::vec2& max, glm::vec2& uvMin, glm::vec2& uvMax, const UiBox& clip) {
+    const glm::vec2 cmin = glm::max(min, clip.min), cmax = glm::min(max, clip.max);
+    if (cmin.x >= cmax.x || cmin.y >= cmax.y) return false;
+    const glm::vec2 size = glm::max(max - min, glm::vec2(1e-6f));
+    const glm::vec2 du = uvMax - uvMin;
+    const glm::vec2 a = uvMin + du * ((cmin - min) / size);
+    const glm::vec2 b = uvMin + du * ((cmax - min) / size);
+    min = cmin;
+    max = cmax;
+    uvMin = a;
+    uvMax = b;
+    return true;
 }
+} // namespace
 
 const FontData* UiCanvas::FontFor(const UiFont& font, const AssetLibrary& assets) {
     if (font.IsDefault()) return DefaultFont();
@@ -61,15 +74,20 @@ void UiCanvas::Rebuild(CachedElement& cached, const ElementKey& key, const FontD
         if (!key.texture) {
             if (const FontData* white = DefaultFont()) uvMin = uvMax = white->WhiteUv();
         }
-        const UiBox& b = key.box;
+        UiBox b = key.box;
         const glm::vec4& c = key.background;
-        cached.background = {{{b.min.x, b.min.y}, {uvMin.x, uvMin.y}, c, 0.0f},
-                             {{b.max.x, b.min.y}, {uvMax.x, uvMin.y}, c, 0.0f},
-                             {{b.max.x, b.max.y}, {uvMax.x, uvMax.y}, c, 0.0f},
-                             {{b.min.x, b.max.y}, {uvMin.x, uvMax.y}, c, 0.0f}};
+        if (!key.clipped || ClipQuad(b.min, b.max, uvMin, uvMax, key.clip)) {
+            cached.background = {{{b.min.x, b.min.y}, {uvMin.x, uvMin.y}, c, 0.0f},
+                                 {{b.max.x, b.min.y}, {uvMax.x, uvMin.y}, c, 0.0f},
+                                 {{b.max.x, b.max.y}, {uvMax.x, uvMax.y}, c, 0.0f},
+                                 {{b.min.x, b.max.y}, {uvMin.x, uvMax.y}, c, 0.0f}};
+        }
     }
     if (font && !key.text.empty()) {
-        LayoutText(*font, key.text, key.fontSize, key.align, key.box, m_quads);
+        LayoutText(*font, key.text, key.fontSize, key.align, key.textBox, m_quads, key.wrapWidth, key.vertical);
+        if (key.clipped) {
+            std::erase_if(m_quads, [&](TextQuad& q) { return !ClipQuad(q.min, q.max, q.uvMin, q.uvMax, key.clip); });
+        }
         cached.text.reserve(m_quads.size() * 4);
         const glm::vec4& c = key.textColor;
         for (const TextQuad& q : m_quads) {
@@ -91,6 +109,9 @@ bool UiCanvas::Build(const Scene& scene, const AssetLibrary& assets, const glm::
     for (const UiNode& node : m_layout) {
         ElementKey key;
         key.box = node.box;
+        key.textBox = node.content;
+        key.clip = node.clip;
+        key.clipped = node.clipped;
         if (const UiElement* element = node.element) {
             // Elemento de um documento: os mesmos campos, vindos da árvore viva.
             key.hasBackground = element->HasBackground();
@@ -98,12 +119,14 @@ bool UiCanvas::Build(const Scene& scene, const AssetLibrary& assets, const glm::
             key.texture = element->texture.get();
             const FontData* font = nullptr;
             if (element->HasText()) {
-                font = FontFor(element->font, assets);
+                font = element->Font();  // a mesma que o layout usou para medir
                 key.text = element->text;
                 key.font = font;
                 key.fontSize = element->fontSize * scale;
                 key.textColor = element->textColor;
                 key.align = element->align;
+                key.vertical = element->verticalAlign;
+                key.wrapWidth = element->wrap ? std::max(1.0f, node.content.Size().x) : 0.0f;
             }
             const PieceId id{node.entity, element};
             CachedElement& cached = m_cache[id];

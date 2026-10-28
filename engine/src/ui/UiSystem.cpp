@@ -1,8 +1,11 @@
 #include "motor/ui/UiSystem.h"
 
+#include "motor/core/Input.h"
 #include "motor/scene/Scene.h"
 #include "motor/scene/SceneRuntime.h"
 #include "motor/ui/UiDocument.h"
+
+#include <algorithm>
 
 namespace motor {
 
@@ -88,6 +91,18 @@ void UiSystem::OnUpdate(SceneRuntime& runtime, float) {
     m_hovered = hovered;
     m_hoveredElement = hoveredElement;
     UpdateElementStates(scene, down, clickedElement);
+
+    // Roda do mouse: rola a lista (overflow Scroll) de cima que está sob o mouse e ainda tem para onde ir.
+    const float wheel = m_pointer.inside ? Input::ScrollDelta() : 0.0f;
+    if (wheel != 0.0f) {
+        for (auto it = m_layout.rbegin(); it != m_layout.rend(); ++it) {
+            UiElement* e = it->element;
+            if (!e || e->overflow != UiOverflow::Scroll || e->scrollMax <= 0.0f) continue;
+            if (!it->box.Contains(m_pointer.position) || (it->clipped && !it->clip.Contains(m_pointer.position))) continue;
+            e->scroll = std::clamp(e->scroll - wheel * kUiScrollStep, 0.0f, e->scrollMax);  // para cima = positivo
+            break;
+        }
+    }
 
     // O estado vai nos componentes (o editor mostra a cor certa; os scripts leem com WasClicked).
     for (EntityId id : scene.EntitiesWith<UiButton>()) {

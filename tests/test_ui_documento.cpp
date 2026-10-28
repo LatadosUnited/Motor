@@ -29,9 +29,11 @@ bool Near(const glm::vec2& a, const glm::vec2& b) { return std::abs(a.x - b.x) <
 UiElement Element(UiElementType type, const char* name, UiAnchor anchor, glm::vec2 position, glm::vec2 size) {
     UiElement e = UiElement::Make(type);
     e.name = name;
+    e.placement = UiPlacement::Absolute;  // como na Etapa 2: tudo por âncora
     e.anchor = anchor;
     e.position = position;
-    e.size = size;
+    e.width = UiLength::Px(size.x);
+    e.height = UiLength::Px(size.y);
     return e;
 }
 
@@ -129,7 +131,9 @@ int main(int argc, char** argv) {
             42]})", doc, &error, &warnings));
         CHECK(doc.elements.size() == 3);
         const UiElement& ok = doc.elements[0];
-        CHECK(ok.type == UiElementType::Button && ok.text == "Botão" && ok.size == glm::vec2(200, 60));
+        CHECK(ok.type == UiElementType::Button && ok.text == "Botão" &&
+              ok.width == UiLength::Px(200) && ok.height == UiLength::Px(60));  // versão 1: 200x60 por âncora
+        CHECK(ok.placement == UiPlacement::Absolute && !doc.elements[0].wrap);
         CHECK(ok.anchor == UiAnchor::Center && ok.interactable && ok.visible);
         const UiElement& slider = doc.elements[1];
         CHECK(slider.type == UiElementType::Panel && slider.color.a == 0.0f);  // desconhecido: painel transparente

@@ -58,10 +58,10 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 3 — Layout flex
 
-- [ ] Tarefa 6: Layout flex próprio (direção, gap, grow e shrink, align e justify, margem, padding, porcentagem)
-- [ ] Tarefa 7: Posição absoluta dentro do pai, para o que hoje usa âncora (HUD nos cantos)
-- [ ] Tarefa 8: Texto com quebra de linha, corte e alinhamento vertical, medido pelo layout
-- [ ] Tarefa 9: Recorte dos filhos (`overflow: hidden`) e lista com rolagem
+- [x] Tarefa 6: Layout flex próprio (direção, gap, grow e shrink, align e justify, margem, padding, porcentagem)
+- [x] Tarefa 7: Posição absoluta dentro do pai, para o que hoje usa âncora (HUD nos cantos)
+- [x] Tarefa 8: Texto com quebra de linha, corte e alinhamento vertical, medido pelo layout
+- [x] Tarefa 9: Recorte dos filhos (`overflow: hidden`) e lista com rolagem
 
 ### Etapa 4 — Estilos
 
@@ -126,7 +126,27 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
   o `.meta`) aparece na visão do jogo e some da cena sem seleção; no Play, dois `ui_click` em `jogar` deram dois
   `jogar clicado` no `log_read` e "Cliques: 2" na tela pelo `SetText`; `sair` (não clicável) não clicou, e um nome
   que não existe deu erro. Depois do Stop a cena voltou a "Cliques: 0".
+- Tarefas 6 a 9: o `.mui` passou para a versão 2 (a 1 continua lida: tudo por âncora, `size` em pixels, texto sem
+  quebra). `engine/src/ui/UiFlexLayout.cpp` faz um subconjunto do flex, sem biblioteca: `direction` (coluna ou
+  linha), `gap`, `padding`, `margin`, `grow` e `shrink` (na proporção do tamanho), `justify` (Start, Center, End,
+  SpaceBetween, SpaceAround), `alignItems`/`alignSelf` (Stretch é o padrão), `width`/`height` em pixels,
+  porcentagem do pai ou automáticos (o texto medido pela fonte e os filhos). `placement: Absolute` tira o elemento
+  do fluxo e o prende por âncora no pai inteiro. O texto quebra nos espaços (`wrap`, padrão do Text), tem
+  `verticalAlign` e é medido com a mesma fonte que desenha (`LoadUiFont`, compartilhada entre o layout e o
+  `UiCanvas`). `overflow: Hidden` recorta os filhos na CPU (o quadrado e as coordenadas de textura, sem mexer no
+  `Renderer2D`) e no clique; `Scroll` também rola na vertical com a roda (`kUiScrollStep` por entalhe, preso entre
+  0 e `scrollMax`), e numa lista que rola os filhos não encolhem. MCP: `ui_scroll` (mouse no elemento e a roda).
+  Teste novo: `test_ui_flex`, em 1920x1080 e 1080x1920.
+  Conferido pelo MCP com um menu flex (título, parágrafo que quebra, linha de botões com `grow`, lista com 6 fases
+  de altura 200): tudo no lugar na visão do jogo; `ui_click` em `jogar` contou o clique; `ui_scroll` de -2 mostrou
+  as fases 3 a 5 recortadas na lista e de -20 parou na 6, sem passar do fim.
 
 ## Limitações
 
 (Preencher ao terminar: o que ficou para trás e para onde foi.)
+
+Da Etapa 3, por ora: sem `flex-wrap` (os filhos não pulam de linha), sem tamanho mínimo e máximo, sem rolagem
+horizontal nem barra de rolagem desenhada; `grow` reparte a sobra além do tamanho do conteúdo (como o
+`flex-basis: auto` do CSS: dois botões com `grow` 1 e rótulos diferentes ficam com larguras diferentes); palavra
+maior que a largura passa dela em vez de quebrar no meio; o `ui_click` mira o centro do elemento mesmo se ele
+estiver meio recortado numa lista.

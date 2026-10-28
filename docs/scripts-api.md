@@ -536,9 +536,13 @@ Os componentes (`motor/ui/UiComponents.h`) também podem ser lidos e mudados dir
 | `motor::UiDocument` | `document` (`motor::UiDocumentRef`: `guid`, `path` e `data`, o `.mui` lido), `order` (`int`), `visible` (`bool`); `Tree()` devolve a árvore viva (`motor::UiDocumentData`, com `elements` e `Find(name)`) |
 
 Um elemento de documento (`motor::UiElement`, `motor/ui/UiDocument.h`) tem `type` (`motor::UiElementType`:
-`Panel`, `Text`, `Image`, `Button`), `name`, `classes`, `anchor`, `position`, `size`, `visible`, `color`, `image`,
-`text`, `font`, `fontSize`, `textColor`, `align`, as cores do botão e `interactable`, `children` e o estado do jogo
-(`hovered`, `pressed`, `clicked`). Mudar a árvore viva vale só para este Play: o arquivo não muda.
+`Panel`, `Text`, `Image`, `Button`), `name`, `classes`, o lugar no pai (`placement`: `Flow` ou `Absolute`; `anchor`
+e `position` no absoluto; `width` e `height` como `motor::UiLength` em pixels, porcentagem ou automático; `margin`,
+`grow`, `shrink`, `alignSelf`), `visible`, como arruma os filhos (`direction`, `justify`, `alignItems`, `gap`,
+`padding` como `motor::UiEdges`, `overflow`), `color`, `image`, `text`, `font`, `fontSize`, `textColor`, `align`,
+`verticalAlign`, `wrap`, as cores do botão e `interactable`, `children` e o estado do jogo (`hovered`, `pressed`,
+`clicked`, `scroll` e `scrollMax` numa lista com rolagem). Mudar a árvore viva vale só para este Play: o arquivo
+não muda. A roda do mouse rola `kUiScrollStep` pixels por entalhe.
 
 Na âncora, o ponto da tela e o ponto do elemento coincidem (`TopRight` prende o canto superior direito do
 elemento no canto superior direito do pai). Com `Stretch`, `position` são as margens esquerda e de cima e

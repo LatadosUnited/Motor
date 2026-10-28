@@ -221,7 +221,7 @@ void McpController::ApplyGameInput() {
     if (m_pendingScroll != 0.0f) Input::AddScroll(std::exchange(m_pendingScroll, 0.0f));
     if (!m_pendingText.empty()) Input::AddTextInput(std::exchange(m_pendingText, {}));
     m_host.play.SetExternalInput(!m_heldKeys.empty() || !m_heldMouse.empty() || !m_mouseMoves.empty() ||
-                                 m_clickStage != 0 || Input::IsGamepadSimulated());
+                                 m_clickStage != 0 || m_hoverFrames > 0 || Input::IsGamepadSimulated());
 }
 
 void McpController::OnPlayStopped() {
@@ -240,15 +240,23 @@ void McpController::OnPlayStopped() {
     m_pendingText.clear();
     Input::SetGamepadSimulated(false);  // volta o controle de verdade
     m_clickStage = 0;
+    m_hoverFrames = 0;
     m_host.play.SetExternalInput(false);
 }
 
 void McpController::UpdateUiClick() {
-    if (m_clickStage == 0) return;
+    if (m_clickStage == 0 && m_hoverFrames == 0) return;
     SceneRuntime* runtime = m_host.play.Runtime();
     UiSystem* ui = runtime ? runtime->GetSystem<UiSystem>() : nullptr;
     if (!ui) {
         m_clickStage = 0;
+        m_hoverFrames = 0;
+        return;
+    }
+    if (m_clickStage == 0) {
+        // ui_scroll: o mouse fica sobre o elemento alguns quadros, enquanto a roda (game_mouse) entra.
+        ui->SetPointer({m_clickScreen, m_clickPos, true, false});
+        --m_hoverFrames;
         return;
     }
     // Sobrescreve o mouse que o viewport informou neste quadro: aperta num quadro, solta no seguinte.
