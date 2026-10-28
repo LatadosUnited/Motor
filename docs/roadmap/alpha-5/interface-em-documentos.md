@@ -65,10 +65,10 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 4 — Estilos
 
-- [x] Tarefa 10: Formato `.mstyle` com seletores por tipo, classe e nome e estados `:hover`, `:active`, `:disabled`, `:focus`
-- [x] Tarefa 11: Cascata (folhas do documento, estilo padrão da engine, valor no próprio elemento) e herança de cor e fonte
-- [x] Tarefa 12: Propriedades visuais: fundo, borda, cantos arredondados, 9-slice, opacidade de grupo, contorno e sombra do texto
-- [x] Tarefa 13: Transições simples de cor, opacidade e escala entre estados
+- [x] Tarefa 10: Formato `.mstyle` com seletores por tipo, classe e nome e estados `:hover`, `:active`, `:disabled`, `:focus` — e4995c3
+- [x] Tarefa 11: Cascata (folhas do documento, estilo padrão da engine, valor no próprio elemento) e herança de cor e fonte — e4995c3
+- [x] Tarefa 12: Propriedades visuais: fundo, borda, cantos arredondados, 9-slice, opacidade de grupo, contorno e sombra do texto — e4995c3
+- [x] Tarefa 13: Transições simples de cor, opacidade e escala entre estados — e4995c3
 
 ### Etapa 5 — Editor de UI
 
