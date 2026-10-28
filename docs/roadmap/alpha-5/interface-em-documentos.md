@@ -51,10 +51,10 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 2 — Documento e componente
 
-- [x] Tarefa 2: Formato `.mui` (árvore de elementos, JSON versionado, GUID no `.meta`) com leitura e gravação
-- [x] Tarefa 3: Árvore de elementos em memória (`UiElement`: tipo, nome, classes, filhos, propriedades)
-- [x] Tarefa 4: Componente `UiDocument` (documento, ordem, visível) e o `UiCanvas` desenhando documentos
-- [x] Tarefa 5: `UiSystem` com hit test, hover e clique sobre os elementos do documento
+- [x] Tarefa 2: Formato `.mui` (árvore de elementos, JSON versionado, GUID no `.meta`) com leitura e gravação — 05f861d
+- [x] Tarefa 3: Árvore de elementos em memória (`UiElement`: tipo, nome, classes, filhos, propriedades) — 05f861d
+- [x] Tarefa 4: Componente `UiDocument` (documento, ordem, visível) e o `UiCanvas` desenhando documentos — 05f861d
+- [x] Tarefa 5: `UiSystem` com hit test, hover e clique sobre os elementos do documento — 05f861d
 
 ### Etapa 3 — Layout flex
 
