@@ -75,3 +75,9 @@ Fase 27; o jogo de exemplo da Fase 18, para a Fase 33.
 - 2026-10-23 — Claude (estudo da engine) — editor: miniaturas e prévia de materiais e modelos no painel Projeto,
   um gráfico dos contadores por quadro dentro do editor (hoje só no Tracy, à parte) e um console de variáveis
   (ex.: `r.shadows 0`) mudáveis em tempo real, também pelo MCP — `editor/src/panels/`, `editor/src/viewport/`
+- 2026-10-28 — Claude (Interface em documentos) — a exportação do jogo não segue as referências de dentro dos
+  `.mui` e `.mstyle` (folhas, fontes e imagens citadas pelo documento não vão para a pasta exportada) —
+  `editor/src/export/GameExport.cpp` (`WalkRefs`)
+- 2026-10-28 — Claude (Interface em documentos) — a DLL de scripts não recompila o `MotorScriptEntry.cpp` quando o
+  `kScriptApiVersion` sobe (os headers da engine entram com `-isystem` e não contam como dependência), então a
+  DLL segue dizendo a versão antiga até o arquivo ser tocado — `editor/src/scripts/ScriptBuilder`

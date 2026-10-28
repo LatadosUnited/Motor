@@ -3,12 +3,12 @@ tipo: fase
 alpha: 5
 fase:
 titulo: Interface em documentos
-status: em andamento
+status: pronta
 prioridade: 2
 areas: [ui, editor, scene, editor-mcp]
 branch: interface-documentos
 inicio: 2026-10-27
-fim:
+fim: 2026-10-28
 ---
 
 # Interface em documentos
@@ -80,13 +80,13 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 6 — Scripts, controles e MCP
 
-- [x] Tarefa 19: Consultas `Q` e `Query` por nome, classe e tipo, e eventos `OnClick`, `OnChange`, `OnHover`
-- [x] Tarefa 20: Controles barra de progresso, slider, caixa de seleção e campo de texto
-- [x] Tarefa 21: Navegação por foco com teclado e controle, pelo contexto de entrada Menu
-- [x] Tarefa 22: Elemento que segue uma entidade 3D (barra de vida e nome sobre o personagem)
-- [x] Tarefa 23: Ferramentas MCP para criar e editar `.mui` e `.mstyle`, e `ui_click` por consulta
-- [x] Tarefa 24: Converter a UI por entidades de uma cena num documento
-- [x] Tarefa 25: Seção do guia de scripts e menu do jogo de exemplo com documento, rodados pelo `test_script_docs`
+- [x] Tarefa 19: Consultas `Q` e `Query` por nome, classe e tipo, e eventos `OnClick`, `OnChange`, `OnHover` — 848a313
+- [x] Tarefa 20: Controles barra de progresso, slider, caixa de seleção e campo de texto — 848a313
+- [x] Tarefa 21: Navegação por foco com teclado e controle, pelo contexto de entrada Menu — 848a313
+- [x] Tarefa 22: Elemento que segue uma entidade 3D (barra de vida e nome sobre o personagem) — 848a313
+- [x] Tarefa 23: Ferramentas MCP para criar e editar `.mui` e `.mstyle`, e `ui_click` por consulta — 848a313
+- [x] Tarefa 24: Converter a UI por entidades de uma cena num documento — 848a313
+- [x] Tarefa 25: Seção do guia de scripts e menu do jogo de exemplo com documento, rodados pelo `test_script_docs` — 848a313
 
 ## Pronto quando
 
@@ -256,15 +256,17 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ## Limitações
 
-(Preencher ao terminar: o que ficou para trás e para onde foi.)
+O que ficou para trás, por etapa. Dois achados fora da área da fase foram para a
+[entrada](../entrada.md): a exportação do jogo não segue as referências de dentro do `.mui` e do `.mstyle`, e a
+DLL de scripts não recompila o ponto de entrada quando o `kScriptApiVersion` sobe.
 
-Da Etapa 3, por ora: sem `flex-wrap` (os filhos não pulam de linha), sem tamanho mínimo e máximo, sem rolagem
+Da Etapa 3: sem `flex-wrap` (os filhos não pulam de linha), sem tamanho mínimo e máximo, sem rolagem
 horizontal nem barra de rolagem desenhada; `grow` reparte a sobra além do tamanho do conteúdo (como o
 `flex-basis: auto` do CSS: dois botões com `grow` 1 e rótulos diferentes ficam com larguras diferentes); palavra
 maior que a largura passa dela em vez de quebrar no meio; o `ui_click` mira o centro do elemento mesmo se ele
 estiver meio recortado numa lista.
 
-Da Etapa 4, por ora: seletores só compostos (sem descendente, filho nem irmão: `Panel .item` é recusado com aviso);
+Da Etapa 4: seletores só compostos (sem descendente, filho nem irmão: `Panel .item` é recusado com aviso);
 `:hover` e `:active` só no botão clicável sob o mouse (os pais e os painéis não ficam com `:hover`); `:focus` existe
 no seletor, mas nada liga o foco ainda (Etapa 6); a opacidade é por elemento, multiplicada nos filhos, não uma camada
 de grupo de verdade (filhos que se sobrepõem aparecem um através do outro); a borda é a forma inteira na cor da borda
@@ -277,7 +279,7 @@ janela Jogo ao mesmo tempo refazem o layout a cada quadro); campo de estilo muda
 cascata no próximo cálculo (use `SetStyle`); a exportação do jogo ainda não segue as referências de dentro do `.mui`
 e do `.mstyle` (folhas, fontes e imagens citadas só neles).
 
-Da Etapa 5, por ora: o desfazer da janela é por fotos inteiras do documento (até 200 passos; documentos grandes gastam
+Da Etapa 5: o desfazer da janela é por fotos inteiras do documento (até 200 passos; documentos grandes gastam
 memória) e recomeça quando o arquivo é relido do disco; a prévia não tem `:hover` nem transições (sem `UiSystem` nela) e
 não mostra a cena do jogo atrás; fonte nova declarada numa regra só aparece na prévia depois de gravar (as fontes das
 folhas são carregadas a partir do disco); as alças gravam pixels mesmo num tamanho em porcentagem; não dá para
@@ -288,7 +290,7 @@ teste); as fotos antigas do desfazer da cena ganham o documento novo, então des
 arquivo; arrastar na árvore e na paleta, as alças com o mouse, os atalhos, a aba Estilos e o popup de salvar foram
 conferidos só pela lógica e pelo MCP, não com o mouse.
 
-Da Etapa 6, por ora: `kScriptApiVersion` subiu para 22 e o `.mui` para a versão 4 (o editor antigo não abre um `.mui`
+Da Etapa 6: `kScriptApiVersion` subiu para 22 e o `.mui` para a versão 4 (o editor antigo não abre um `.mui`
 novo com controles). Os callbacks são soltos na recarga da DLL e na releitura do documento, e o script registra de novo
 no `OnStart`; mas um callback registrado fora de um script (do próprio jogo, sem dono) também sai na recarga. O
 `OnHover` vale só para controles (botão, slider, caixa, campo), como o `:hover`. A borda da caixa de seleção sempre vai na
