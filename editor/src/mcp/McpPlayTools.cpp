@@ -330,25 +330,38 @@ void McpController::AddPlayTools() {
 
     m_protocol.AddTool({
         .name = "ui_click",
-        .description = "Clica num botão da interface do jogo (componente UI: Botão) durante o Play, pelo nome ou "
-                       "id da entidade. O script vê WasClicked no quadro seguinte.",
-        .inputSchema = Schema({{"entity", {{"type", {"integer", "string"}}, {"description", "botão (id ou nome)"}}}},
-                              {"entity"}),
+        .description = "Clica num botão da interface do jogo durante o Play: pelo nome ou id da entidade (componente "
+                       "UI: Botão) ou pelo nome de um elemento de um documento de UI (.mui). O script vê WasClicked no "
+                       "quadro seguinte.",
+        .inputSchema = Schema({{"entity", {{"type", {"integer", "string"}}, {"description", "botão (id ou nome)"}}},
+                               {"element", Prop("string", "nome do elemento num documento de UI (em vez de entity)")}}),
         .run = [this](const Json& args) {
             SceneRuntime* runtime = m_host.play.Runtime();
             if (!runtime || m_host.play.IsPaused()) throw ToolError("o jogo precisa estar rodando (play, sem pausa)");
             UiSystem* ui = runtime->GetSystem<UiSystem>();
             if (!ui) throw ToolError("a cena não tem o sistema de UI");
-            const Entity& e = mcp::ResolveEntity(m_host.ctx, args);
             UiBox box;
-            if (!ui->ScreenRect(e.id, box) || box.Size().x <= 0.0f) {
-                throw ToolError(e.name + " não está na tela (não é elemento de UI, está escondido ou o jogo acabou de começar)");
+            std::string name;
+            if (args.contains("element")) {
+                name = args["element"].get<std::string>();
+                const UiElement* element = ui->FindElement(name);
+                if (!element) throw ToolError("nenhum documento de UI da cena tem o elemento " + name);
+                if (!ui->ScreenRect(*element, box) || box.Size().x <= 0.0f) {
+                    throw ToolError(name + " não está na tela (escondido ou o jogo acabou de começar)");
+                }
+            } else {
+                if (!args.contains("entity")) throw ToolError("diga 'entity' ou 'element'");
+                const Entity& e = mcp::ResolveEntity(m_host.ctx, args);
+                name = e.name;
+                if (!ui->ScreenRect(e.id, box) || box.Size().x <= 0.0f) {
+                    throw ToolError(e.name + " não está na tela (não é elemento de UI, está escondido ou o jogo acabou de começar)");
+                }
             }
             m_clickPos = box.Center();
             m_clickScreen = ui->Pointer().screenSize;
             m_clickStage = 1;
             m_host.play.SetExternalInput(true);
-            return ToolResult::Text(std::format("clique em {} ({:.0f}, {:.0f})", e.name, m_clickPos.x, m_clickPos.y));
+            return ToolResult::Text(std::format("clique em {} ({:.0f}, {:.0f})", name, m_clickPos.x, m_clickPos.y));
         },
     });
 

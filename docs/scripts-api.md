@@ -502,8 +502,10 @@ cada Play; é para a aplicação, não para scripts.
 ## Interface do jogo: `motor::UiSystem`
 
 `#include <motor/ui/UiSystem.h>` e `auto* ui = GetSystem<motor::UiSystem>();`. Os elementos são achados pelo
-nome da entidade (a primeira com esse nome) ou pelo id. O sistema roda depois dos scripts (ordem
-`kSystemOrderUi`): o clique detectado num frame é lido pelos scripts no `OnUpdate` seguinte.
+nome da entidade (a primeira com esse nome) ou pelo id. Sem entidade com o nome, as funções que recebem um nome
+procuram um elemento com esse nome nos documentos de UI da cena (`.mui`, componente `motor::UiDocument`). O sistema
+roda depois dos scripts (ordem `kSystemOrderUi`): o clique detectado num frame é lido pelos scripts no `OnUpdate`
+seguinte.
 
 | Método | Efeito |
 |---|---|
@@ -514,6 +516,8 @@ nome da entidade (a primeira com esse nome) ou pelo id. O sistema roda depois do
 | `bool WasClicked(entity) const` | o botão foi clicado (soltou o clique nele) no frame anterior; leia no `OnUpdate` |
 | `EntityId HoveredButton() const` | o botão sob o mouse, ou 0 |
 | `bool ScreenRect(EntityId entity, UiBox& out) const` | retângulo do elemento na tela (pixels de verdade, `out.min`/`out.max`) no último passo; `false` se não estava visível |
+| `bool ScreenRect(const UiElement& element, UiBox& out) const` | o mesmo para um elemento de documento |
+| `UiElement* FindElement(std::string_view name) const` | o elemento de documento com esse nome (o primeiro entre os documentos da cena), para ler e mudar os campos direto; `nullptr` se não houver |
 | `void SetPointer(const UiPointer& pointer)`, `const UiPointer& Pointer() const` | o mouse em relação à imagem do jogo; quem chama é o editor (ou o jogo exportado), não um script |
 | `void UpdatePointer(SceneRuntime& runtime)` | diz ao runtime, antes dos scripts, se o mouse está sobre a interface e se o clique é dela; quem chama é a própria engine, não um script |
 | `OnStart`, `OnUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
@@ -529,6 +533,12 @@ Os componentes (`motor/ui/UiComponents.h`) também podem ser lidos e mudados dir
 | `motor::UiText` | `text` (`std::string`, UTF-8, `\n` quebra a linha), `font` (`motor::UiFont`: `guid` e `path` do `.ttf`; vazio = padrão), `fontSize` (`float`), `color` (`glm::vec4`), `align` (`motor::UiTextAlign`: `Left`, `Center`, `Right`) |
 | `motor::UiImage` | `texture` (`std::shared_ptr<motor::Texture2D>`, nula = cor sólida), `color` |
 | `motor::UiButton` | `normalColor`, `hoverColor`, `pressedColor`, `interactable` (`bool`); estado do jogo: `hovered`, `pressed`, `clicked` |
+| `motor::UiDocument` | `document` (`motor::UiDocumentRef`: `guid`, `path` e `data`, o `.mui` lido), `order` (`int`), `visible` (`bool`); `Tree()` devolve a árvore viva (`motor::UiDocumentData`, com `elements` e `Find(name)`) |
+
+Um elemento de documento (`motor::UiElement`, `motor/ui/UiDocument.h`) tem `type` (`motor::UiElementType`:
+`Panel`, `Text`, `Image`, `Button`), `name`, `classes`, `anchor`, `position`, `size`, `visible`, `color`, `image`,
+`text`, `font`, `fontSize`, `textColor`, `align`, as cores do botão e `interactable`, `children` e o estado do jogo
+(`hovered`, `pressed`, `clicked`). Mudar a árvore viva vale só para este Play: o arquivo não muda.
 
 Na âncora, o ponto da tela e o ponto do elemento coincidem (`TopRight` prende o canto superior direito do
 elemento no canto superior direito do pai). Com `Stretch`, `position` são as margens esquerda e de cima e

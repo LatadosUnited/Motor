@@ -27,6 +27,7 @@ Icon IconFor(bool isDirectory, AssetType type) {
         case AssetType::EnvironmentMap: return Icon::Texture;  // céu HDR
         case AssetType::Audio: break;  // clipes de som: ícone de arquivo
         case AssetType::NavMesh: break;  // navmesh gerado: ícone de arquivo
+        case AssetType::UiDocument: break;  // documento de UI: ícone de arquivo
         case AssetType::Unknown: break;
     }
     return Icon::File;

@@ -94,7 +94,7 @@ const char* UiAnchorLabel(UiAnchor anchor);   // no editor ("Em cima, à esquerd
 const char* UiTextAlignName(UiTextAlign align);
 const char* UiTextAlignLabel(UiTextAlign align);
 
-// A entidade tem algum componente de UI (UiRect, UiImage, UiText ou UiButton).
+// A entidade tem algum componente de UI (UiRect, UiImage, UiText, UiButton ou UiDocument).
 bool IsUiEntity(const Entity& entity);
 
 } // namespace motor

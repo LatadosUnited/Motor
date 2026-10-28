@@ -5,6 +5,7 @@
 #include "motor/core/Paths.h"
 #include "motor/renderer/Texture.h"
 #include "motor/scene/Scene.h"
+#include "motor/ui/UiDocument.h"
 
 #include <algorithm>
 
@@ -88,10 +89,31 @@ bool UiCanvas::Build(const Scene& scene, const AssetLibrary& assets, const glm::
     std::vector<Piece> pieces;
     pieces.reserve(m_layout.size());
     for (const UiNode& node : m_layout) {
-        const Entity* e = scene.Find(node.entity);
-        if (!e) continue;
         ElementKey key;
         key.box = node.box;
+        if (const UiElement* element = node.element) {
+            // Elemento de um documento: os mesmos campos, vindos da árvore viva.
+            key.hasBackground = element->HasBackground();
+            key.background = element->BackgroundColor();
+            key.texture = element->texture.get();
+            const FontData* font = nullptr;
+            if (element->HasText()) {
+                font = FontFor(element->font, assets);
+                key.text = element->text;
+                key.font = font;
+                key.fontSize = element->fontSize * scale;
+                key.textColor = element->textColor;
+                key.align = element->align;
+            }
+            const PieceId id{node.entity, element};
+            CachedElement& cached = m_cache[id];
+            if (cached.version == 0 || !(cached.key == key)) Rebuild(cached, key, font);
+            cached.used = true;
+            pieces.push_back({id, cached.version});
+            continue;
+        }
+        const Entity* e = scene.Find(node.entity);
+        if (!e) continue;
         const UiImage* image = e->Get<UiImage>();
         if (const UiButton* button = e->Get<UiButton>()) {
             key.hasBackground = true;
@@ -112,10 +134,10 @@ bool UiCanvas::Build(const Scene& scene, const AssetLibrary& assets, const glm::
             key.align = text->align;
         }
 
-        CachedElement& cached = m_cache[node.entity];
+        CachedElement& cached = m_cache[PieceId{node.entity, nullptr}];
         if (cached.version == 0 || !(cached.key == key)) Rebuild(cached, key, font);
         cached.used = true;
-        pieces.push_back({node.entity, cached.version});
+        pieces.push_back({PieceId{node.entity, nullptr}, cached.version});
     }
     std::erase_if(m_cache, [](const auto& item) { return !item.second.used; });
 
@@ -126,7 +148,7 @@ bool UiCanvas::Build(const Scene& scene, const AssetLibrary& assets, const glm::
         const FontData* defaultFont = DefaultFont();
         const Texture2D* white = defaultFont && m_atlasTexture ? m_atlasTexture(*defaultFont) : nullptr;
         for (const Piece& piece : m_pieces) {
-            const CachedElement& cached = m_cache.at(piece.entity);
+            const CachedElement& cached = m_cache.at(piece.id);
             m_list.AddQuads(cached.key.texture ? cached.key.texture : white, cached.background);
             if (!cached.text.empty()) {
                 const Texture2D* atlas = m_atlasTexture ? m_atlasTexture(*cached.key.font) : nullptr;

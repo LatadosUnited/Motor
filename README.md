@@ -645,8 +645,16 @@ desfazer:
 | **UI: Texto** (`UiText`) | Texto (UTF-8, `\n` quebra a linha), Fonte, Tamanho da fonte, Cor, Alinhamento |
 | **UI: Imagem** (`UiImage`) | Textura (vazia = cor sólida), Cor |
 | **UI: Botão** (`UiButton`) | Cor normal, com o mouse em cima e pressionado; Clicável |
+| **UI: Documento** (`UiDocument`) | Documento (`.mui` do projeto, com **Recarregar**), Ordem, Visível |
 
-- **Criar:** Entidade > Interface (UI) > Texto, Imagem, Botão ou Painel (também no "+ Criar" da Hierarquia).
+- **Criar:** Entidade > Interface (UI) > Texto, Imagem, Botão, Painel ou Documento (também no "+ Criar" da
+  Hierarquia).
+- **Documento de UI (`.mui`, em construção):** a tela inteira (menu, HUD) num arquivo JSON do projeto, com a árvore
+  de elementos (`Panel`, `Text`, `Image`, `Button`, cada um com nome, âncora, posição e tamanho dentro do pai); a
+  entidade com **UI: Documento** mostra o arquivo ocupando o pai. A Hierarquia fica com uma entidade só, e os
+  scripts acham os elementos pelo nome (`WasClicked("jogar")`). Formato e plano em
+  [Interface em documentos](docs/roadmap/alpha-5/interface-em-documentos.md); por ora o arquivo se edita fora do
+  editor.
 - **Unidades:** pixels de uma tela de 1080 de altura, escalados pela altura real (o HUD fica igual no
   viewport do editor e em tela cheia). Filho de um elemento de UI se posiciona dentro do pai; esconder o pai
   esconde os filhos. Entre irmãos, maior **Ordem** desenha por cima e recebe o clique primeiro.
@@ -655,7 +663,8 @@ desfazer:
   menu não esconde o cenário nem pega o clique da seleção 3D. Na cena, os elementos têm contorno; um clique seleciona e arrastar move (um arraste = um passo de desfazer).
   Na visão do jogo (Play), o mouse vai para os botões do jogo.
 - **Scripts:** `GetSystem<motor::UiSystem>()` com `SetText`, `SetVisible`, `IsVisible`, `WasClicked` (pelo
-  nome da entidade ou pelo id) e `Script::LoadScene("Fase1")` para trocar de cena. Ver a seção 13 do
+  nome da entidade ou pelo id; sem entidade com o nome, o elemento de documento com esse nome), `FindElement` e
+  `Script::LoadScene("Fase1")` para trocar de cena. Ver a seção 13 do
   [guia de scripts](docs/scripts.md) e os exemplos `docs/examples/Hud.cpp` e `MenuPrincipal.cpp`.
 - **Fontes:** `.ttf` e `.otf` do projeto são assets (com GUID); o campo Fonte vazio usa a padrão, **Roboto
   Medium** (`engine/assets/fonts/`, Apache License 2.0, ver `LICENSE-Roboto.txt` na mesma pasta). Cada fonte

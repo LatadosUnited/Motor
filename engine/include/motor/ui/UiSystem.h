@@ -12,6 +12,9 @@
 // Clique: apertar e soltar o botão esquerdo em cima do mesmo botão (UiButton clicável). O elemento de cima
 // ganha: uma imagem por cima de um botão bloqueia o clique; texto sozinho não bloqueia.
 //
+// Documentos de UI (UiDocument.h): os mesmos nomes valem para os elementos deles. Sem entidade com o nome, as
+// funções procuram um elemento com esse nome nos documentos da cena (WasClicked("jogar"), SetText("pontos", ...)).
+//
 // Clique da interface não vai para o jogo: antes dos scripts (UiPointerSystem), a UI diz ao runtime se o mouse
 // está sobre um botão ou imagem e se o clique começou num deles; até soltar, o botão esquerdo fica solto para
 // os scripts (IsMouseDown, ações). Com o cursor preso (Locked), a interface não pega o mouse.
@@ -30,6 +33,7 @@ namespace motor {
 
 class Scene;
 struct Entity;
+struct UiElement;
 
 // Mouse em relação à tela do jogo, informado por quem roda o jogo (no editor, o viewport) a cada frame.
 struct UiPointer {
@@ -63,19 +67,26 @@ public:
     // O botão foi clicado (soltou o clique nele no frame anterior). Leia no OnUpdate.
     bool WasClicked(std::string_view entity) const;
     bool WasClicked(EntityId entity) const;
-    EntityId HoveredButton() const { return m_hovered; }  // botão sob o mouse, ou 0
+    EntityId HoveredButton() const { return m_hovered; }  // botão sob o mouse, ou 0 (num documento, a entidade dele)
     // Retângulo do elemento na tela no último OnUpdate (pixels). false se não estava visível.
     bool ScreenRect(EntityId entity, UiBox& out) const;
+    bool ScreenRect(const UiElement& element, UiBox& out) const;
+
+    // Elemento de documento com esse nome (o primeiro, entre as entidades com UiDocument). nullptr se não houver.
+    UiElement* FindElement(std::string_view name) const;
 
 private:
     Entity* FindEntity(std::string_view name) const;
     Entity* FindEntity(EntityId id) const;
+    void UpdateElementStates(Scene& scene, bool down, const UiElement* clicked);
 
     SceneRuntime* m_runtime = nullptr;
     UiPointer m_pointer;
     std::vector<UiNode> m_layout;  // do último OnUpdate
     EntityId m_hovered = 0;
     EntityId m_pressed = 0;        // botão onde o clique começou
+    const UiElement* m_hoveredElement = nullptr;  // num documento: só comparados, nunca lidos (a árvore pode mudar)
+    const UiElement* m_pressedElement = nullptr;
     bool m_wasDown = false;
     bool m_captured = false;       // o clique começou sobre a interface: é dela até soltar
     bool m_captureWasDown = false;

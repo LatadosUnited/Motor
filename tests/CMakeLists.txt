@@ -128,6 +128,10 @@ set_tests_properties(test_script_docs PROPERTIES TIMEOUT 600)
 motor_add_test(test_ui ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp)
 target_include_directories(test_ui PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 
+# Documento de UI (.mui): formato, árvore no layout, hit test e lista de desenho, componente UiDocument na cena e
+# cliques e API dos scripts pelo nome do elemento.
+motor_add_test(test_ui_documento)
+
 # Modelos glTF e animação esquelética (Fase 11): leitura, asset, importação como prefab, dados da malha na
 # CPU (raycast e collider exatos), amostragem dos clipes, skinning e Animator. Gera os próprios arquivos glTF.
 motor_add_test(test_gltf)

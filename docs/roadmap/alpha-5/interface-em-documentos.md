@@ -51,10 +51,10 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 2 — Documento e componente
 
-- [ ] Tarefa 2: Formato `.mui` (árvore de elementos, JSON versionado, GUID no `.meta`) com leitura e gravação
-- [ ] Tarefa 3: Árvore de elementos em memória (`UiElement`: tipo, nome, classes, filhos, propriedades)
-- [ ] Tarefa 4: Componente `UiDocument` (documento, ordem, visível) e o `UiCanvas` desenhando documentos
-- [ ] Tarefa 5: `UiSystem` com hit test, hover e clique sobre os elementos do documento
+- [x] Tarefa 2: Formato `.mui` (árvore de elementos, JSON versionado, GUID no `.meta`) com leitura e gravação
+- [x] Tarefa 3: Árvore de elementos em memória (`UiElement`: tipo, nome, classes, filhos, propriedades)
+- [x] Tarefa 4: Componente `UiDocument` (documento, ordem, visível) e o `UiCanvas` desenhando documentos
+- [x] Tarefa 5: `UiSystem` com hit test, hover e clique sobre os elementos do documento
 
 ### Etapa 3 — Layout flex
 
@@ -110,6 +110,22 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
   Conferido pelo MCP num projeto de teste com um painel de 900x700 no centro: na cena sem seleção o painel some e o
   cubo atrás dele aparece; selecionado, aparece; `view = game` e o Viewport no Play (sem nada selecionado) mostram
   o painel.
+- Tarefas 2 a 5: `engine/include/motor/ui/UiDocument.h`. O `.mui` (`AssetType::UiDocument`, GUID no `.meta`) é
+  JSON `{"format": "motor-ui", "version": 1, "elements": [...]}`; cada `UiElement` tem tipo (`Panel`, `Text`,
+  `Image`, `Button`), nome, classes, âncora/posição/tamanho no pai, cores, imagem, texto e fonte, e filhos. Só o
+  que difere do padrão do tipo é gravado; a leitura é tolerante (tipo desconhecido vira painel, com aviso) e
+  recusa versão mais nova. O componente **UI: Documento** (`UiDocument`: documento, ordem, visível) lê o arquivo
+  ao carregar a cena ou ao escolher no Inspector (com **Recarregar**) e guarda uma cópia viva, refeita a cada
+  cópia do componente: o Play começa do arquivo e não suja a cena. O layout põe os elementos no lugar da entidade
+  (ocupando o pai), o `UiCanvas` desenha no mesmo lote e cache por elemento, o hit test diz quem bloqueia
+  (botão, imagem, painel com fundo; texto não) e o `UiSystem` acende e clica os botões dos documentos. Nos
+  scripts, `WasClicked`, `SetText`, `GetText`, `SetVisible` e `IsVisible` caem no elemento com o nome quando não
+  há entidade com ele, e `FindElement` dá o elemento. Entidade > Interface (UI) > Documento cria a entidade; o
+  `ui_click` do MCP aceita `element`. Teste novo: `test_ui_documento`.
+  Conferido pelo MCP num projeto de teste: um menu `.mui` ligado por `component_add` (o caminho achou o GUID e criou
+  o `.meta`) aparece na visão do jogo e some da cena sem seleção; no Play, dois `ui_click` em `jogar` deram dois
+  `jogar clicado` no `log_read` e "Cliques: 2" na tela pelo `SetText`; `sair` (não clicável) não clicou, e um nome
+  que não existe deu erro. Depois do Stop a cena voltou a "Cliques: 0".
 
 ## Limitações
 

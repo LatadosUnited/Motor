@@ -79,8 +79,19 @@ private:
         uint64_t version = 0;
         bool used = false;
     };
-    struct Piece {
+    // Um elemento desenhado: a entidade de UI, ou um elemento do documento dela.
+    struct PieceId {
         EntityId entity = 0;
+        const UiElement* element = nullptr;
+        bool operator==(const PieceId&) const = default;
+    };
+    struct PieceIdHash {
+        size_t operator()(const PieceId& id) const {
+            return std::hash<const void*>()(id.element) ^ (std::hash<EntityId>()(id.entity) * 0x9e3779b97f4a7c15ull);
+        }
+    };
+    struct Piece {
+        PieceId id;
         uint64_t version = 0;
         bool operator==(const Piece&) const = default;
     };
@@ -91,7 +102,7 @@ private:
 
     AtlasTextureFn m_atlasTexture;
     std::map<std::string, std::shared_ptr<FontData>> m_fonts;  // caminho UTF-8 -> fonte (nula = falhou)
-    std::unordered_map<EntityId, CachedElement> m_cache;
+    std::unordered_map<PieceId, CachedElement, PieceIdHash> m_cache;
     std::vector<Piece> m_pieces;  // o que formou a lista atual
     std::vector<UiNode> m_layout;
     std::vector<TextQuad> m_quads;  // reaproveitado

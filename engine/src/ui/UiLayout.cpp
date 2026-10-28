@@ -1,6 +1,7 @@
 #include "motor/ui/UiLayout.h"
 
 #include "motor/scene/Scene.h"
+#include "motor/ui/UiDocument.h"
 
 #include <glm/common.hpp>
 
@@ -54,8 +55,9 @@ struct LayoutBuilder {
         // Irmãos por ordem (estável: empate fica na ordem da cena). Sem UiRect = ordem 0.
         std::vector<const Entity*> list = it->second;
         auto orderOf = [](const Entity* e) {
-            const UiRect* r = e->Get<UiRect>();
-            return r ? r->order : 0;
+            if (const UiRect* r = e->Get<UiRect>()) return r->order;
+            const UiDocument* d = e->Get<UiDocument>();
+            return d ? d->order : 0;
         };
         std::stable_sort(list.begin(), list.end(), [&](const Entity* a, const Entity* b) { return orderOf(a) < orderOf(b); });
 
@@ -67,9 +69,30 @@ struct LayoutBuilder {
             }
             const UiRect* rect = e->Get<UiRect>();
             if (rect && !rect->visible) continue;
+            if (const UiDocument* document = e->Get<UiDocument>()) {
+                // O documento ocupa o pai (ou o próprio UiRect, se a entidade tiver um).
+                if (!document->visible) continue;
+                const UiBox box = rect ? ResolveUiRect(*rect, parentBox, scale) : parentBox;
+                if (UiDocumentData* tree = document->Tree()) VisitElements(e->id, tree->elements, box, depth);
+                Visit(e->id, box, depth + 1);
+                continue;
+            }
             const UiBox box = ResolveUiRect(rect ? *rect : kDefaultRect, parentBox, scale);
             nodes.push_back({e->id, box, depth});
             Visit(e->id, box, depth + 1);
+        }
+    }
+
+    void VisitElements(EntityId owner, std::vector<UiElement>& elements, const UiBox& parentBox, int depth) {
+        for (UiElement& element : elements) {
+            if (!element.visible) continue;
+            UiRect rect;
+            rect.anchor = element.anchor;
+            rect.position = element.position;
+            rect.size = element.size;
+            const UiBox box = ResolveUiRect(rect, parentBox, scale);
+            nodes.push_back({owner, box, depth, &element});
+            VisitElements(owner, element.children, box, depth + 1);
         }
     }
 };
@@ -92,6 +115,7 @@ std::vector<UiNode> ComputeUiLayout(const Scene& scene, const glm::vec2& screenS
     addWithAncestors(scene.EntitiesWith<UiImage>());
     addWithAncestors(scene.EntitiesWith<UiText>());
     addWithAncestors(scene.EntitiesWith<UiButton>());
+    addWithAncestors(scene.EntitiesWith<UiDocument>());
     if (relevant.empty()) return {};
     for (const auto& e : scene.Entities()) {
         if (relevant.contains(e->id)) builder.children[e->parent].push_back(e.get());
@@ -100,14 +124,24 @@ std::vector<UiNode> ComputeUiLayout(const Scene& scene, const glm::vec2& screenS
     return std::move(builder.nodes);
 }
 
-EntityId UiHitTest(const Scene& scene, const std::vector<UiNode>& layout, const glm::vec2& point, UiHitFilter filter) {
+const UiNode* UiHitTestNode(const Scene& scene, const std::vector<UiNode>& layout, const glm::vec2& point,
+                            UiHitFilter filter) {
     for (auto it = layout.rbegin(); it != layout.rend(); ++it) {
         if (!it->box.Contains(point)) continue;
+        if (filter == UiHitFilter::Any) return &*it;
+        if (it->element) {
+            if (it->element->BlocksPointer()) return &*it;
+            continue;
+        }
         const Entity* e = scene.Find(it->entity);
-        if (!e) continue;
-        if (filter == UiHitFilter::Any || e->Has<UiImage>() || e->Has<UiButton>()) return it->entity;
+        if (e && (e->Has<UiImage>() || e->Has<UiButton>())) return &*it;
     }
-    return kNullEntity;
+    return nullptr;
+}
+
+EntityId UiHitTest(const Scene& scene, const std::vector<UiNode>& layout, const glm::vec2& point, UiHitFilter filter) {
+    const UiNode* node = UiHitTestNode(scene, layout, point, filter);
+    return node ? node->entity : kNullEntity;
 }
 
 } // namespace motor
