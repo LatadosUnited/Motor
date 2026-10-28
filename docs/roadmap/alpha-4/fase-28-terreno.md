@@ -327,6 +327,17 @@ e a renderização relativa à câmera são também a base do streaming de célu
     salvar e reler) e o raio pela grade e na água; `test_terrain_physics`, os blocos refeitos.
   - MSAA 2x no Player ("Terreno Ação", rodadas intercaladas de 20 s): **15,9 e 17,3 ms (~58-63 FPS)**; MSAA 4x 18,9 e
     19,4; sem MSAA 14,2 (GPU 13,0-13,6 com 2x: Cena HDR 9,4-9,6, água 3,8, pós 2,8-3,0).
+- Pincelada sem remontar a cena (27/10/2026, `201942f`, com o ok do usuário para mexer no `EditorApp`):
+  - `Scene::SyncRenderLists` com só a versão de um terreno mudada troca no `RenderWorld` os blocos de outra versão
+    (`RenderWorld::Update` com a malha nova), tira os que saíram e põe os novos; pintar só põe os pesos na textura.
+    Cada terreno registrado guarda o objeto base dos blocos (material e matriz) e cada bloco a versão dele.
+  - O `EditorApp` não marca a cena para remontar a cada quadro com o botão esquerdo apertado durante uma pincelada
+    (`EditorContext::terrainBrush.stroking`, posto pelo `TerrainBrushTool`).
+  - `kScriptApiVersion` 29 (o tamanho de `Scene` mudou). `test_terrain` confere sem `MarkRenderDirty`: alturas,
+    pesos, bloco tirado e posto, duas entidades com o mesmo terreno, e o resultado igual ao de remontar tudo.
+  - Medido no Release (teste temporário, 1 km de terreno em 1024 blocos e 2000 estáticos, 60 quadros mudando 1 a 4
+    blocos): **2,2 ms por quadro contra 3,5 remontando tudo** (rodada com a máquina carregada: 4,2 contra 5,9). O
+    resto é refazer a malha e os 4 níveis de cada bloco tocado.
 
 ## Limitações
 
@@ -350,8 +361,8 @@ e a renderização relativa à câmera são também a base do streaming de célu
   metro, sem escala própria (vem com a pintura, Tarefa 10).
   Pincéis (Tarefa 9): o arraste com o mouse no Viewport (círculo e pintura) não foi testado, só a mesma pincelada
   pelo MCP. Fechar sem salvar descarta as alturas
-  só quando ninguém mais usa o terreno (as alturas ficam na `TerrainData` aberta enquanto houver referência). A cada
-  quadro da pincelada a lista de estáticos é refeita inteira (custo que cresce com a cena). Um terreno girado ou
+  só quando ninguém mais usa o terreno (as alturas ficam na `TerrainData` aberta enquanto houver referência). Cada
+  quadro da pincelada refaz a malha e os níveis de detalhe dos blocos tocados inteiros. Um terreno girado ou
   escalado recebe o raio e a força no espaço dele.
   Pintura (Tarefa 10): o pixel do terreno lê sempre as 4 texturas e a dos pesos, mesmo onde só há uma camada. Os pesos têm a resolução das
   alturas (1 m): bordas de pintura mais finas que isso não existem. As camadas só têm cor (sem mapa de normal nem
@@ -393,9 +404,10 @@ e a renderização relativa à câmera são também a base do streaming de célu
   seguidas e o `ctest` inteiro passou de novo. Ficar de olho. Travou de novo no `ctest` da Tarefa 14 (o processo não
   sai nem pelo PID; os arquivos presos foram renomeados para `*.presa-12844` em `build/bin`); com `--timeout 120` o
   `ctest` inteiro passou.
-- Limitações rápidas (27/10/2026): a pincelada ainda refaz a lista de estáticos inteira a cada quadro. O
-  `EditorApp` marca a cena para remontar a cada quadro com o botão esquerdo apertado (e depois de cada pedido do
-  MCP), então o terreno só se atualizaria por partes mudando um ponto de coordenação; fica para depois, com o
-  usuário. A recuperação das alturas só vale para terreno com arquivo (o de um terreno novo, sem `.mterrain`, ainda
+- Limitações rápidas (27/10/2026): a recuperação das alturas só vale para terreno com arquivo (o de um terreno novo, sem `.mterrain`, ainda
   não entra) e pede o mesmo tamanho de bloco e resolução do arquivo; se o `.mterrain` mudou por fora, as mudanças
   são aplicadas por cima do que estiver lá.
+- Pincelada por bloco (27/10/2026): a pincelada pelo MCP (`terrain_brush`) ainda remonta a cena inteira, porque o
+  editor marca a cena depois de cada pedido do MCP; só o arraste no Viewport usa a troca por bloco, e esse arraste
+  não foi testado na mão (o MCP não move o mouse). Mover, girar ou escalar o terreno por script sem `MarkRenderDirty`
+  continua sem aparecer, como nos outros estáticos.
