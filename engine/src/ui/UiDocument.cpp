@@ -9,15 +9,14 @@
 #include "motor/core/Paths.h"
 #include "motor/ui/Font.h"
 
+#include <algorithm>
+#include <cmath>
 #include <format>
 
 namespace motor {
 
 namespace {
 using Json = UiJson;
-
-constexpr UiElementType kTypes[] = {UiElementType::Panel, UiElementType::Text, UiElementType::Image,
-                                    UiElementType::Button};
 
 int Prop(const char* name) { return FindUiStyleProperty(name); }
 
@@ -62,6 +61,16 @@ Json ElementToJson(const UiElement& e, bool styled) {
     if (e.interactable != def.interactable) json["interactable"] = e.interactable;
     if (!e.image.IsDefault()) json["image"] = FileRef(e.image);
     if (e.text != def.text) json["text"] = e.text;
+    // Controles e follow (versão 4).
+    if (e.value != def.value) json["value"] = e.value;
+    if (e.minValue != def.minValue) json["min"] = e.minValue;
+    if (e.maxValue != def.maxValue) json["max"] = e.maxValue;
+    if (e.step != def.step) json["step"] = e.step;
+    if (e.checked != def.checked) json["checked"] = e.checked;
+    if (e.placeholder != def.placeholder) json["placeholder"] = e.placeholder;
+    if (e.maxLength != def.maxLength) json["maxLength"] = e.maxLength;
+    if (!e.follow.empty()) json["follow"] = e.follow;
+    if (e.followOffset != def.followOffset) json["followOffset"] = {e.followOffset.x, e.followOffset.y, e.followOffset.z};
     WriteUiStyleDeclarations(DeclaredStyle(e, styled), json);
     if (!e.children.empty()) {
         Json children = Json::array();
@@ -78,13 +87,7 @@ UiElement ElementFromJson(const Json& json, int version, std::vector<std::string
                           const UiStyleDeclarations* parentStyle) {
     UiElementType type = UiElementType::Panel;
     const std::string typeName = json.value("type", std::string("Panel"));
-    bool known = false;
-    for (UiElementType t : kTypes) {
-        if (typeName == UiElementTypeName(t)) {
-            type = t;
-            known = true;
-        }
-    }
+    const bool known = ParseUiElementType(typeName, type);
     if (!known && warnings) warnings->push_back(std::format("{}: tipo \"{}\" desconhecido, lido como Panel", where, typeName));
 
     UiElement e = UiElement::Make(type);
@@ -98,6 +101,22 @@ UiElement ElementFromJson(const Json& json, int version, std::vector<std::string
     if (const auto it = json.find("image"); it != json.end()) ReadFileRef(*it, e.image);
     if (const auto it = json.find("text"); it != json.end() && it->is_string()) e.text = it->get<std::string>();
     if (const auto it = json.find("interactable"); it != json.end() && it->is_boolean()) e.interactable = it->get<bool>();
+    auto number = [&](const char* key, float& field) {
+        if (const auto it = json.find(key); it != json.end() && it->is_number()) field = it->get<float>();
+    };
+    number("value", e.value);
+    number("min", e.minValue);
+    number("max", e.maxValue);
+    number("step", e.step);
+    if (const auto it = json.find("checked"); it != json.end() && it->is_boolean()) e.checked = it->get<bool>();
+    if (const auto it = json.find("placeholder"); it != json.end() && it->is_string()) e.placeholder = it->get<std::string>();
+    if (const auto it = json.find("maxLength"); it != json.end() && it->is_number_integer()) e.maxLength = it->get<int>();
+    if (const auto it = json.find("follow"); it != json.end() && it->is_string()) e.follow = it->get<std::string>();
+    if (const auto it = json.find("followOffset");
+        it != json.end() && it->is_array() && it->size() == 3 && (*it)[0].is_number() && (*it)[1].is_number() &&
+        (*it)[2].is_number()) {
+        e.followOffset = {(*it)[0].get<float>(), (*it)[1].get<float>(), (*it)[2].get<float>()};
+    }
 
     if (version < 2) {
         // Antes do flex: tudo por âncora, 200x60 sem "size", texto sem quebra nem preenchimento.
@@ -146,7 +165,10 @@ bool SameElements(const std::vector<UiElement>& a, const std::vector<UiElement>&
 
 bool SameContentOnly(const UiElement& a, const UiElement& b) {
     return a.type == b.type && a.name == b.name && a.classes == b.classes && a.visible == b.visible &&
-           a.image == b.image && a.text == b.text && a.interactable == b.interactable;
+           a.image == b.image && a.text == b.text && a.interactable == b.interactable && a.value == b.value &&
+           a.minValue == b.minValue && a.maxValue == b.maxValue && a.step == b.step && a.checked == b.checked &&
+           a.placeholder == b.placeholder && a.maxLength == b.maxLength && a.follow == b.follow &&
+           a.followOffset == b.followOffset;
 }
 
 // Entre um documento lido e um montado em código: as declarações de cada lado, do jeito que iriam para o arquivo.
@@ -159,6 +181,22 @@ bool SameDeclaredElements(const std::vector<UiElement>& a, bool aStyled, const s
         }
     }
     return true;
+}
+
+void CollectQuery(std::vector<UiElement>& list, const std::vector<UiSelector>& selectors, std::vector<UiElement*>& out,
+                  bool first) {
+    for (UiElement& e : list) {
+        if (first && !out.empty()) return;
+        if (UiQueryMatches(selectors, e)) out.push_back(&e);
+        CollectQuery(e.children, selectors, out, first);
+    }
+}
+
+std::vector<UiElement*> RunQuery(std::vector<UiElement>& list, std::string_view selector, bool first) {
+    std::vector<UiSelector> selectors;
+    std::vector<UiElement*> out;
+    if (ParseUiQuery(selector, selectors)) CollectQuery(list, selectors, out, first);
+    return out;
 }
 
 template <class E> E* FindIn(std::vector<E>& list, std::string_view name) {
@@ -282,8 +320,46 @@ const char* UiElementTypeName(UiElementType type) {
         case UiElementType::Text: return "Text";
         case UiElementType::Image: return "Image";
         case UiElementType::Button: return "Button";
+        case UiElementType::ProgressBar: return "ProgressBar";
+        case UiElementType::Slider: return "Slider";
+        case UiElementType::Toggle: return "Toggle";
+        case UiElementType::TextField: return "TextField";
     }
     return "Panel";
+}
+
+bool ParseUiElementType(std::string_view name, UiElementType& out) {
+    for (UiElementType t : kUiElementTypes) {
+        if (name == UiElementTypeName(t)) {
+            out = t;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ParseUiQuery(std::string_view text, std::vector<UiSelector>& out, std::string* error) {
+    while (!text.empty() && text.front() == ' ') text.remove_prefix(1);
+    while (!text.empty() && text.back() == ' ') text.remove_suffix(1);
+    std::string parseError;
+    if (ParseUiSelectors(text, out, &parseError)) return true;
+    // Só um nome ("jogar"): o elemento com esse nome (como FindElement), mesmo sem o #.
+    if (!text.empty() && text.find_first_of(".#:, >+~*") == std::string_view::npos) {
+        UiSelector byName;
+        byName.name = std::string(text);
+        out = {byName};
+        return true;
+    }
+    SetError(error, parseError);
+    return false;
+}
+
+bool UiQueryMatches(const std::vector<UiSelector>& selectors, const UiElement& element) {
+    const uint8_t states = UiElementStates(element);
+    for (const UiSelector& s : selectors) {
+        if (s.Matches(element, states)) return true;
+    }
+    return false;
 }
 
 UiElement UiElement::Make(UiElementType type) {
@@ -303,32 +379,99 @@ UiElement UiElement::Make(UiElementType type) {
             e.text = "Botão";
             e.padding = UiEdges::Symmetric(12.0f, 24.0f);
             break;
+        case UiElementType::ProgressBar:
+            e.height = UiLength::Px(24.0f);
+            e.padding = UiEdges::All(3.0f);
+            e.color = {0.08f, 0.09f, 0.12f, 0.9f};
+            break;
+        case UiElementType::Slider:
+            e.height = UiLength::Px(36.0f);
+            e.color = {0.08f, 0.09f, 0.12f, 0.9f};
+            // O puxador (cor do estado): claro, para aparecer sobre o trilho escuro e o preenchimento.
+            e.normalColor = {0.85f, 0.88f, 0.94f, 1.0f};
+            e.hoverColor = {1.0f, 1.0f, 1.0f, 1.0f};
+            e.pressedColor = {0.68f, 0.73f, 0.84f, 1.0f};
+            break;
+        case UiElementType::Toggle:
+            e.text = "Opção";
+            e.color = glm::vec4(0.0f);
+            e.align = UiTextAlign::Left;
+            break;
+        case UiElementType::TextField:
+            e.padding = UiEdges::Symmetric(10.0f, 14.0f);
+            e.align = UiTextAlign::Left;
+            break;
     }
     return e;
 }
 
 bool UiElement::HasBackground() const {
     switch (type) {
-        case UiElementType::Text: return false;
-        case UiElementType::Button: return true;
+        case UiElementType::Text:
+        case UiElementType::Slider: return false;  // o trilho e o puxador são desenhados à parte (UiRenderer)
+        case UiElementType::Button:
+        case UiElementType::TextField:
+        case UiElementType::ProgressBar: return true;
         case UiElementType::Panel:
-        case UiElementType::Image: return color.a > 0.0f || texture != nullptr || (borderWidth > 0.0f && borderColor.a > 0.0f);
+        case UiElementType::Image:
+        case UiElementType::Toggle:
+            return color.a > 0.0f || texture != nullptr || (borderWidth > 0.0f && borderColor.a > 0.0f);
     }
     return false;
 }
 
 bool UiElement::BlocksPointer() const {
-    return type == UiElementType::Button || type == UiElementType::Image ||
+    return type == UiElementType::Image || type == UiElementType::ProgressBar || IsControl() ||
            (type == UiElementType::Panel && HasBackground());
 }
 
-glm::vec4 UiElement::BackgroundColor() const {
-    if (type != UiElementType::Button) return color;
+glm::vec4 UiElement::StateColor() const {
     const glm::vec4* state = &normalColor;
     if (interactable && pressed) state = &pressedColor;
     else if (interactable && hovered) state = &hoverColor;
-    return *state * color;
+    return *state;
 }
+
+glm::vec4 UiElement::BackgroundColor() const {
+    if (type != UiElementType::Button && type != UiElementType::TextField) return color;
+    return StateColor() * color;
+}
+
+std::string_view UiElement::DisplayText() const {
+    switch (type) {
+        case UiElementType::Text:
+        case UiElementType::Button:
+        case UiElementType::Toggle: return text;
+        case UiElementType::TextField: return text.empty() ? std::string_view(placeholder) : std::string_view(text);
+        default: return {};
+    }
+}
+
+bool UiElement::IsControl() const {
+    return type == UiElementType::Button || type == UiElementType::Slider || type == UiElementType::Toggle ||
+           type == UiElementType::TextField;
+}
+
+float UiElement::Fraction() const {
+    const float lo = std::min(minValue, maxValue), hi = std::max(minValue, maxValue);
+    if (hi - lo <= 0.0f) return 0.0f;
+    return std::clamp((value - lo) / (hi - lo), 0.0f, 1.0f);
+}
+
+bool UiElement::SetValue(float v) {
+    const float lo = std::min(minValue, maxValue), hi = std::max(minValue, maxValue);
+    if (step > 0.0f) v = lo + std::round((v - lo) / step) * step;
+    v = std::clamp(v, lo, hi);
+    if (v == value) return false;
+    value = v;
+    return true;
+}
+
+UiElement* UiElement::Q(std::string_view selector) {
+    const auto found = RunQuery(children, selector, true);
+    return found.empty() ? nullptr : found.front();
+}
+std::vector<UiElement*> UiElement::Query(std::string_view selector) { return RunQuery(children, selector, false); }
 
 const FontData* UiElement::Font() const { return fontData ? fontData.get() : DefaultUiFont(); }
 
@@ -343,6 +486,11 @@ bool UiDocumentData::SameContent(const UiDocumentData& other) const {
 }
 UiElement* UiDocumentData::Find(std::string_view name) { return name.empty() ? nullptr : FindIn(elements, name); }
 const UiElement* UiDocumentData::Find(std::string_view name) const { return name.empty() ? nullptr : FindIn(elements, name); }
+UiElement* UiDocumentData::Q(std::string_view selector) {
+    const auto found = RunQuery(elements, selector, true);
+    return found.empty() ? nullptr : found.front();
+}
+std::vector<UiElement*> UiDocumentData::Query(std::string_view selector) { return RunQuery(elements, selector, false); }
 
 std::string UiDocumentToJson(const UiDocumentData& document) {
     Json json{{"format", kUiDocumentFormat}, {"version", kUiDocumentVersion}};

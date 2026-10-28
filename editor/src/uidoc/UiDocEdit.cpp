@@ -117,6 +117,19 @@ UiElement NewPaletteElement(UiElementType type, const std::vector<UiElement>& ro
             e.SetStyleValue("height", UiLength::Px(100.0f));
             break;
         case UiElementType::Button: base = "botao"; break;
+        case UiElementType::ProgressBar:
+            base = "barra";
+            e.value = 0.5f;  // meio cheia: aparece na prévia
+            break;
+        case UiElementType::Slider:
+            base = "slider";
+            e.value = 0.5f;
+            break;
+        case UiElementType::Toggle: base = "selecao"; break;
+        case UiElementType::TextField:
+            base = "campo";
+            e.placeholder = "Digite aqui";
+            break;
     }
     e.name = UniqueUiElementName(roots, base);
     return e;

@@ -649,8 +649,9 @@ desfazer:
 
 - **Criar:** Entidade > Interface (UI) > Texto, Imagem, Botão, Painel ou Documento (também no "+ Criar" da
   Hierarquia).
-- **Documento de UI (`.mui`, em construção):** a tela inteira (menu, HUD) num arquivo JSON do projeto, com a árvore
-  de elementos (`Panel`, `Text`, `Image`, `Button`); a entidade com **UI: Documento** mostra o arquivo ocupando o
+- **Documento de UI (`.mui`, versão 4):** a tela inteira (menu, HUD) num arquivo JSON do projeto, com a árvore
+  de elementos (`Panel`, `Text`, `Image`, `Button` e os controles `ProgressBar`, `Slider`, `Toggle` e `TextField`,
+  com `value`, `min`, `max`, `step`, `checked`, `placeholder`, `maxLength`); a entidade com **UI: Documento** mostra o arquivo ocupando o
   pai. Os elementos se arrumam por um **layout flex** próprio: coluna ou linha, `gap`, `padding`, `margin`, `grow`
   e `shrink`, `justify` e `alignItems`, tamanhos em pixels, porcentagem ou automáticos (o texto quebra na
   largura); `placement: Absolute` prende por âncora, como o UiRect; `overflow: Hidden` recorta os filhos e
@@ -662,10 +663,18 @@ desfazer:
   arredondados (`radius`), borda (`borderWidth`, `borderColor`), 9-slice da imagem (`slice`), `opacity` (vale para os
   filhos), contorno e sombra do texto, `scale` (só no desenho) e `transition` (cor, opacidade e escala mudam aos
   poucos entre os estados no Play). Formato e plano em
-  [Interface em documentos](docs/roadmap/alpha-5/interface-em-documentos.md). Pelo MCP: `ui_click` com `element` e
-  `ui_scroll` rolam e clicam pelo nome.
+  [Interface em documentos](docs/roadmap/alpha-5/interface-em-documentos.md). **Controles:** o slider anda com o
+  mouse arrastado, a caixa troca no clique e o campo de texto ganha o foco no clique e recebe o texto digitado.
+  **Foco:** no contexto de entrada `Menu`, setas/direcional/analógico movem o foco para o controle mais perto naquela
+  direção (Tab: o próximo), Enter/Espaço/A clicam e trocam, e o elemento em foco fica com `:focus`. **Seguir
+  entidade:** um elemento `Absolute` com `follow` (nome da entidade) e `followOffset` (metros) fica em cima dela na
+  tela, pela câmera do jogo. **Converter:** clique direito numa entidade com UI por entidades na Hierarquia >
+  **Converter UI em documento** grava um `.mui` em `Assets/UI` com as mesmas caixas e põe uma entidade com UI:
+  Documento no lugar (desfaz com Ctrl+Z). Pelo MCP: `ui_click` com `element` ou `query` (seletor) e `ui_scroll`
+  rolam e clicam; `ui_document_edit` e `ui_style_edit` criam e mudam `.mui` e `.mstyle` direto no arquivo (lista de
+  operações, tudo ou nada); `ui_convert_entities` faz a conversão.
 - **Editor de UI** (Ver > Editor de UI, ou duplo clique num `.mui` no painel Projeto): a árvore do documento, a
-  paleta (Painel, Texto, Imagem, Botão: clique ou arraste para a árvore ou a prévia), a prévia desenhada como no jogo
+  paleta (Painel, Texto, Imagem, Botão, Barra, Slider, Seleção, Campo: clique ou arraste para a árvore ou a prévia), a prévia desenhada como no jogo
   numa resolução escolhida (16:9, 21:9, 4:3, 16:10, retrato ou personalizada; a UI escala pela altura, como no jogo) e
   as propriedades do selecionado (nome, classes, texto, imagem e cada propriedade de estilo, com o valor calculado em
   cinza). Clique na prévia seleciona; as alças redimensionam (grava `width`/`height` em pixels e, por âncora, a
@@ -684,8 +693,10 @@ desfazer:
   Na visão do jogo (Play), o mouse vai para os botões do jogo.
 - **Scripts:** `GetSystem<motor::UiSystem>()` com `SetText`, `SetVisible`, `IsVisible`, `WasClicked` (pelo
   nome da entidade ou pelo id; sem entidade com o nome, o elemento de documento com esse nome), `FindElement` e
-  `Script::LoadScene("Fase1")` para trocar de cena. Ver a seção 13 do
-  [guia de scripts](docs/scripts.md) e os exemplos `docs/examples/Hud.cpp` e `MenuPrincipal.cpp`.
+  `Script::LoadScene("Fase1")` para trocar de cena; nos documentos, `Q("#jogar")`/`Query(".item")` por seletor,
+  `OnClick`, `OnChange`, `OnHover` (callbacks do script, soltos ao parar e na recarga da DLL) e `Focus`. Ver a seção
+  13 do [guia de scripts](docs/scripts.md) e os exemplos `docs/examples/Hud.cpp`, `MenuPrincipal.cpp` e
+  `MenuDocumento.cpp`.
 - **Fontes:** `.ttf` e `.otf` do projeto são assets (com GUID); o campo Fonte vazio usa a padrão, **Roboto
   Medium** (`engine/assets/fonts/`, Apache License 2.0, ver `LICENSE-Roboto.txt` na mesma pasta). Cada fonte
   vira um atlas **SDF** (campo de distância, gerado pelo `imstb_truetype.h` que vem com o Dear ImGui), nítido

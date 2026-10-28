@@ -6,7 +6,10 @@
 #include "McpController.h"
 
 #include "ImageEncode.h"
+#include "McpSceneTools.h"
+#include "uidoc/UiDocConvert.h"
 #include "uidoc/UiDocEditor.h"
+#include "uidoc/UiDocFileOps.h"
 
 #include <motor/core/Paths.h>
 #include <motor/renderer/Framebuffer.h>
@@ -61,11 +64,9 @@ UiPath PathArg(const UiDocEditor& editor, const Json& args, const char* key, boo
 }
 
 UiElementType TypeArg(const Json& args) {
-    const std::string type = args.value("type", std::string());
-    for (const UiElementType t : {UiElementType::Panel, UiElementType::Text, UiElementType::Image, UiElementType::Button}) {
-        if (type == UiElementTypeName(t)) return t;
-    }
-    throw ToolError("type: use Panel, Text, Image ou Button");
+    UiElementType type;
+    if (ParseUiElementType(args.value("type", std::string()), type)) return type;
+    throw ToolError("type: use Panel, Text, Image, Button, ProgressBar, Slider, Toggle ou TextField");
 }
 
 Json DeclarationsJson(const UiStyleDeclarations& declarations) {
@@ -77,13 +78,8 @@ Json DeclarationsJson(const UiStyleDeclarations& declarations) {
 }
 
 Json ElementJson(const UiDocEditor& editor, const UiElement& e, UiPath& path) {
-    Json j{{"path", PathJson(path)}, {"type", UiElementTypeName(e.type)}, {"name", e.name}};
-    if (!e.classes.empty()) j["classes"] = e.classes;
-    if (e.type == UiElementType::Text || e.type == UiElementType::Button) j["text"] = e.text;
-    if (!e.visible) j["visible"] = false;
-    if (!e.interactable) j["interactable"] = false;
-    if (!e.image.IsDefault()) j["image"] = e.image.path.empty() ? e.image.guid : e.image.path;
-    if (!e.inlineStyle.Empty()) j["style"] = DeclarationsJson(e.inlineStyle);
+    Json j = UiElementSummaryJson(e, path);
+    j.erase("children");  // refeitos abaixo, com as caixas
     UiBox box;
     if (editor.BoxOf(path, box)) j["box"] = {box.min.x, box.min.y, box.max.x, box.max.y};
     if (!e.children.empty()) {
@@ -143,6 +139,117 @@ size_t SheetArg(const UiDocEditor& editor, const Json& args) {
 } // namespace
 
 void McpController::AddUiEditorTools() {
+    // --- Arquivos direto, sem a janela (Tarefa 23) ---
+    m_protocol.AddTool({
+        .name = "ui_document_edit",
+        .description =
+            "Cria ou muda um documento de UI (.mui) direto no arquivo, sem abrir o Editor de UI. create = true cria se "
+            "não existe (o .meta vem junto). ops: lista aplicada em ordem; elemento = nome ou caminho [i, j...]: "
+            "{action: add, type: Panel/Text/Image/Button/ProgressBar/Slider/Toggle/TextField, parent, index, ...campos}, "
+            "{action: set, element, ...campos}, {action: move, element, parent, index}, {action: delete, element}, "
+            "{action: duplicate, element}, {action: add_sheet, path: \"Assets/UI/Tema.mstyle\"}, {action: remove_sheet, "
+            "path}. Campos: name, classes, text, visible, interactable, image, value, min, max, step, checked, "
+            "placeholder, maxLength, follow, followOffset e style {propriedade: valor JSON como no .mui, null tira}. "
+            "Grava (tudo ou nada) e as entidades da cena que usam o arquivo releem (também no Play). Devolve a árvore.",
+        .inputSchema = Schema({{"path", Prop("string", "caminho do .mui relativo ao projeto (\"Assets/UI/Menu.mui\")")},
+                               {"create", Prop("boolean", "cria o arquivo se não existir (documento vazio)")},
+                               {"ops", Prop("array", "operações (ver a descrição); vazio = só lê")}},
+                              {"path"}),
+        .run = [this](const Json& args) {
+            const fs::path file = ProjectPath(args.value("path", Json()));
+            if (file.extension() != ".mui") throw ToolError("o arquivo precisa ser .mui");
+            UiDocumentData doc;
+            std::string error;
+            std::error_code ec;
+            const bool exists = fs::is_regular_file(file, ec);
+            if (exists) {
+                if (!LoadUiDocument(file, doc, &error)) throw ToolError("não leu: " + error);
+            } else if (!args.value("create", false)) {
+                throw ToolError("o arquivo não existe (use create = true para criar)");
+            } else {
+                doc.styled = true;
+            }
+            const Json ops = args.value("ops", Json::array());
+            if (!ApplyUiDocumentOps(doc, ops, &error)) throw ToolError(error + " (nada foi gravado)");
+            if (!exists || !ops.empty()) {
+                fs::create_directories(file.parent_path(), ec);
+                if (!SaveUiDocument(file, doc, &error)) throw ToolError("não gravou: " + error);
+                m_host.ctx.assets.Database().GuidFor(file);  // o .meta
+                m_host.uiEditor.NotifyFilesSaved();
+            }
+            Json elements = Json::array();
+            for (size_t i = 0; i < doc.elements.size(); ++i) {
+                UiPath path{static_cast<int>(i)};
+                elements.push_back(UiElementSummaryJson(doc.elements[i], path));
+            }
+            Json styles = Json::array();
+            for (const UiFont& s : doc.styles) styles.push_back(s.path.empty() ? s.guid : s.path);
+            return ToolResult::Data({{"file", m_host.ctx.assets.KeyForFile(file)},
+                                     {"created", !exists},
+                                     {"styles", std::move(styles)},
+                                     {"elements", std::move(elements)}});
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "ui_style_edit",
+        .description = "Cria ou muda uma folha de estilo (.mstyle) direto no arquivo, sem o Editor de UI. create = true "
+                       "cria se não existe. ops: {action: add_rule, selector: \"Button:focus\", set: {propriedade: valor "
+                       "JSON}}, {action: set_rule, rule: índice ou seletor, selector (novo), set: {... null tira}}, "
+                       "{action: delete_rule, rule}. Grava (tudo ou nada); os documentos que usam a folha releem.",
+        .inputSchema = Schema({{"path", Prop("string", "caminho do .mstyle relativo ao projeto")},
+                               {"create", Prop("boolean", "cria o arquivo se não existir (folha vazia)")},
+                               {"ops", Prop("array", "operações (ver a descrição); vazio = só lê")}},
+                              {"path"}),
+        .run = [this](const Json& args) {
+            const fs::path file = ProjectPath(args.value("path", Json()));
+            if (file.extension() != ".mstyle") throw ToolError("o arquivo precisa ser .mstyle");
+            UiStyleSheet sheet;
+            std::string error;
+            std::error_code ec;
+            const bool exists = fs::is_regular_file(file, ec);
+            if (exists) {
+                if (!LoadUiStyleSheet(file, sheet, &error)) throw ToolError("não leu: " + error);
+            } else if (!args.value("create", false)) {
+                throw ToolError("o arquivo não existe (use create = true para criar)");
+            }
+            const Json ops = args.value("ops", Json::array());
+            if (!ApplyUiStyleOps(sheet, ops, &error)) throw ToolError(error + " (nada foi gravado)");
+            if (!exists || !ops.empty()) {
+                fs::create_directories(file.parent_path(), ec);
+                if (!SaveUiStyleSheet(file, sheet, &error)) throw ToolError("não gravou: " + error);
+                m_host.ctx.assets.Database().GuidFor(file);
+                m_host.uiEditor.NotifyFilesSaved();
+            }
+            Json rules = Json::array();
+            for (const UiStyleRule& r : sheet.rules) {
+                rules.push_back({{"selector", r.selector}, {"declarations", DeclarationsJson(r.declarations)}});
+            }
+            return ToolResult::Data(
+                {{"file", m_host.ctx.assets.KeyForFile(file)}, {"created", !exists}, {"rules", std::move(rules)}});
+        },
+    });
+
+    m_protocol.AddTool({
+        .name = "ui_convert_entities",
+        .description = "Converte a UI por entidades (UiRect, UiText, UiImage, UiButton) de uma entidade num documento de UI "
+                       "(.mui), como \"Converter UI em documento\" da Hierarquia: o arquivo vai para Assets/UI/<nome>.mui "
+                       "(ou path), as entidades de UI saem e uma entidade com UI: Documento fica no lugar (a própria, se ela "
+                       "não for de UI). As caixas na tela ficam as mesmas. Desfaz com a ferramenta undo.",
+        .inputSchema = Schema({{"entity", {{"type", {"integer", "string"}}, {"description", "id ou nome da entidade"}}},
+                               {"path", Prop("string", "caminho do .mui (padrão Assets/UI/<nome>.mui)")}},
+                              {"entity"}),
+        .run = [this](const Json& args) {
+            const Entity& e = mcp::ResolveEntity(m_host.ctx, args);
+            UiDocConvertResult result;
+            std::string error;
+            if (!ConvertUiToDocument(m_host.ctx, e.id, args.value("path", std::string()), result, &error)) {
+                throw ToolError(error);
+            }
+            return ToolResult::Data({{"entity", result.entity}, {"file", result.key}, {"elements", result.elements}});
+        },
+    });
+
     m_protocol.AddTool({
         .name = "ui_editor_open",
         .description = "Abre um documento de UI (.mui) na janela Editor de UI (como o duplo clique no painel Projeto) e "
@@ -270,11 +377,12 @@ void McpController::AddUiEditorTools() {
             "(element para parent na posição index, contada sem o elemento), delete, duplicate, resize (arrasta as "
             "alças: handles [\"right\", \"bottom\"...] por dx, dy pixels da prévia; grava width/height em pixels e, "
             "por âncora, a posição), set (name, classes [lista ou texto], text, visible, interactable, image "
-            "\"Assets/...\" ou \"\", e style {propriedade: valor JSON como no .mui, null tira a declaração}).",
+            "\"Assets/...\" ou \"\", value, min, max, step, checked, placeholder, maxLength, follow, followOffset e "
+            "style {propriedade: valor JSON como no .mui, null tira a declaração}).",
         .inputSchema = Schema(
             {{"action", {{"type", "string"}, {"enum", {"add", "move", "delete", "duplicate", "resize", "set"}}}},
              {"element", {{"type", {"string", "array"}}, {"description", "nome ou caminho [i, j...]"}}},
-             {"type", Prop("string", "add: Panel, Text, Image ou Button")},
+             {"type", Prop("string", "add: Panel, Text, Image, Button, ProgressBar, Slider, Toggle ou TextField")},
              {"parent", {{"type", {"string", "array", "null"}}, {"description", "add/move: pai (nome ou caminho); vazio = raiz"}}},
              {"index", Prop("integer", "add/move: posição entre os irmãos (padrão: no fim)")},
              {"handles", Prop("array", "resize: lados que a alça move: left, right, top, bottom")},
@@ -286,6 +394,15 @@ void McpController::AddUiEditorTools() {
              {"visible", Prop("boolean", "set")},
              {"interactable", Prop("boolean", "set")},
              {"image", Prop("string", "set: textura do projeto (\"\" = cor sólida)")},
+             {"value", Prop("number", "set: valor da barra ou do slider")},
+             {"min", Prop("number", "set")},
+             {"max", Prop("number", "set")},
+             {"step", Prop("number", "set: passo do slider (0 = contínuo)")},
+             {"checked", Prop("boolean", "set: caixa de seleção marcada")},
+             {"placeholder", Prop("string", "set: texto do campo vazio")},
+             {"maxLength", Prop("integer", "set: caracteres no máximo do campo (0 = sem limite)")},
+             {"follow", Prop("string", "set: nome da entidade 3D que o elemento (Absolute) segue na tela")},
+             {"followOffset", Prop("array", "set: [x, y, z] metros somados à posição da entidade")},
              {"style", Prop("object", "set: {propriedade: valor JSON ou null}")}},
             {"action"}),
         .run = [this](const Json& args) {
@@ -313,37 +430,13 @@ void McpController::AddUiEditorTools() {
                 result = PathArg(editor, args, "element", false);
                 UiElement& e = *UiElementAt(editor.Edit().doc.elements, result);
                 bool assets = false;
-                if (args.contains("name")) e.name = args["name"].get<std::string>();
-                if (const auto it = args.find("classes"); it != args.end()) {
-                    if (it->is_string()) {
-                        e.classes = ParseUiClassList(it->get<std::string>());
-                    } else if (it->is_array()) {
-                        std::string joined;
-                        for (const Json& c : *it) joined += (c.is_string() ? c.get<std::string>() : std::string()) + " ";
-                        e.classes = ParseUiClassList(joined);
-                    }
+                std::string error;
+                const bool ok = UiElementFieldsFromJson(e, args, &assets, &error);
+                editor.Changed(false, assets);  // o que já entrou antes do erro também vale (e entra no desfazer)
+                if (!ok) {
+                    editor.Commit();
+                    throw ToolError(error);
                 }
-                if (args.contains("text")) e.text = args["text"].get<std::string>();
-                if (args.contains("visible")) e.visible = args["visible"].get<bool>();
-                if (args.contains("interactable")) e.interactable = args["interactable"].get<bool>();
-                if (const auto it = args.find("image"); it != args.end() && it->is_string()) {
-                    e.image = {};
-                    if (!it->get<std::string>().empty()) e.image.path = it->get<std::string>();
-                    assets = true;
-                }
-                if (const auto it = args.find("style"); it != args.end()) {
-                    if (!it->is_object()) throw ToolError("style: objeto {propriedade: valor}");
-                    for (const auto& [prop, value] : it->items()) {
-                        if (FindUiStyleProperty(prop) < 0) throw ToolError("style: propriedade desconhecida '" + prop + "'");
-                        if (value.is_null()) {
-                            e.ClearStyle(prop);
-                        } else if (!e.SetStyle(prop, value.dump())) {
-                            throw ToolError(std::format("style: valor inválido para '{}': {}", prop, value.dump()));
-                        }
-                        assets |= prop == "font";
-                    }
-                }
-                editor.Changed(false, assets);
                 editor.Commit();
             } else {
                 throw ToolError("action: add, move, delete, duplicate, resize ou set");

@@ -7,6 +7,8 @@
 #include "motor/scene/Scene.h"
 #include "motor/ui/UiDocument.h"
 
+#include "UiFlexLayout.h"
+
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
 
@@ -148,11 +150,23 @@ void UiCanvas::Rebuild(CachedElement& cached, const ElementKey& key, const FontD
         return c;
     };
 
+    // Sem textura e sem cantos: bloco branco do atlas da fonte padrão (mesmo lote do texto).
+    const FontData* defaultFont = DefaultFont();
+    const glm::vec2 whiteUv = defaultFont ? defaultFont->WhiteUv() : glm::vec2(0.0f);
+    const Texture2D* white = defaultFont && m_atlasTexture ? m_atlasTexture(*defaultFont) : nullptr;
+    // Pedaço de um controle: cantos arredondados (o círculo em 9 pedaços) ou o retângulo branco.
+    auto partShape = [&](const UiBox& b, float r, const glm::vec4& c) {
+        const float half = std::max(0.0f, std::min(b.Size().x, b.Size().y) * 0.5f);
+        r = std::clamp(r, 0.0f, half);
+        if (r > 0.0f) {
+            const Texture2D* circle = m_shapeTexture ? m_shapeTexture() : nullptr;
+            AppendUiNineSlice(segment(circle), b, UiEdges::All(r), {0.0f, 0.0f}, {1.0f, 1.0f}, UiEdges::All(0.5f), c, clip);
+        } else {
+            PushQuad(segment(white), b.min, b.max, whiteUv, whiteUv, c, 0.0f, clip);
+        }
+    };
+
     if (key.hasBackground) {
-        // Sem textura e sem cantos: bloco branco do atlas da fonte padrão (mesmo lote do texto).
-        const FontData* defaultFont = DefaultFont();
-        const glm::vec2 whiteUv = defaultFont ? defaultFont->WhiteUv() : glm::vec2(0.0f);
-        const Texture2D* white = defaultFont && m_atlasTexture ? m_atlasTexture(*defaultFont) : nullptr;
         const glm::vec2 size = key.box.Size();
         const float half = std::max(0.0f, std::min(size.x, size.y) * 0.5f);
         const float radius = std::clamp(key.radius, 0.0f, half);
@@ -190,6 +204,11 @@ void UiCanvas::Rebuild(CachedElement& cached, const ElementKey& key, const FontD
             shape(inner, innerRadius, fade(key.background));
         }
     }
+    for (const ElementPart& part : key.parts) {
+        if (part.box.max.x > part.box.min.x && part.box.max.y > part.box.min.y && part.color.a > 0.0f) {
+            partShape(part.box, part.radius, fade(part.color));
+        }
+    }
     if (font && !key.text.empty()) {
         LayoutText(*font, key.text, key.fontSize, key.align, key.textBox, m_quads, key.wrapWidth, key.vertical);
         const Texture2D* atlas = m_atlasTexture ? m_atlasTexture(*font) : nullptr;
@@ -205,6 +224,74 @@ void UiCanvas::Rebuild(CachedElement& cached, const ElementKey& key, const FontD
             for (const glm::vec2& dir : kOutlineDirections) emit(dir * key.outlineWidth, key.outlineColor);
         }
         emit({0.0f, 0.0f}, key.textColor);
+    }
+}
+
+void UiCanvas::AddControlParts(const UiElement& e, ElementKey& key, float pixel, const FontData* font) {
+    // `pixel`: pixels da tela por pixel da referência (escala da tela e do desenho). Medidas a partir do conteúdo.
+    const UiBox content = key.textBox;
+    const glm::vec2 size = content.Size();
+    const float radius = std::max(0.0f, e.radius * pixel);
+    // Borda (o :focus) do slider e da caixa de seleção: em volta do puxador e da caixa, não do elemento (o slider não
+    // tem fundo e o da caixa costuma ser transparente: a borda viraria um bloco cheio por baixo dele).
+    const float ring = key.borderColor.a > 0.0f ? key.borderWidth : 0.0f;
+    auto withRing = [&](const UiBox& b, const glm::vec4& color, float r) {
+        if (ring > 0.0f) key.parts.push_back({{b.min - glm::vec2(ring), b.max + glm::vec2(ring)}, key.borderColor, r + ring});
+        key.parts.push_back({b, color, r});
+    };
+    switch (e.type) {
+        case UiElementType::ProgressBar: {
+            const float inner = std::max(0.0f, radius - std::max(e.padding.left, e.padding.top) * pixel);
+            key.parts.push_back({{content.min, {content.min.x + size.x * e.Fraction(), content.max.y}}, e.fillColor, inner});
+            break;
+        }
+        case UiElementType::Slider: {
+            float x0 = 0.0f, x1 = 0.0f;
+            UiSliderTrack(content, x0, x1);
+            const float cy = content.Center().y;
+            const float band = std::max(4.0f * pixel, size.y * 0.3f) * 0.5f;
+            const float x = x0 + (x1 - x0) * e.Fraction();
+            const float thumb = UiSliderThumbWidth(content) * 0.5f;
+            key.parts.push_back({{{x0, cy - band}, {x1, cy + band}}, e.color, radius});
+            key.parts.push_back({{{x0, cy - band}, {x, cy + band}}, e.fillColor, radius});
+            withRing({{x - thumb, content.min.y}, {x + thumb, content.max.y}}, e.StateColor(), radius);
+            break;
+        }
+        case UiElementType::Toggle: {
+            const float box = UiToggleBoxSize(e, pixel);
+            const glm::vec2 min{content.min.x, content.Center().y - box * 0.5f};
+            withRing({min, min + glm::vec2(box)}, e.StateColor(), radius);
+            key.borderWidth = 0.0f;
+            if (e.checked) {
+                const float inset = box * 0.22f;
+                key.parts.push_back({{min + glm::vec2(inset), min + glm::vec2(box - inset)}, e.fillColor,
+                                     std::max(0.0f, radius - inset)});
+            }
+            key.textBox.min.x = std::min(content.max.x, content.min.x + box * 1.3f);
+            break;
+        }
+        case UiElementType::TextField: {
+            if (e.text.empty()) key.textColor.a *= 0.5f;  // o placeholder, apagado
+            float full = 0.0f;
+            if (font && !key.text.empty()) full = MeasureText(*font, key.text, key.fontSize).x;
+            if (full > size.x) key.align = UiTextAlign::Right;  // texto maior que a caixa: mostra o fim (onde digita)
+            if (e.focused && font) {
+                const size_t caret = std::min(e.caret, e.text.size());
+                const float before =
+                    caret > 0 ? MeasureText(*font, std::string_view(e.text).substr(0, caret), key.fontSize).x : 0.0f;
+                const float shown = e.text.empty() ? 0.0f : full;
+                float start = content.min.x;
+                if (key.align == UiTextAlign::Right) start = content.max.x - shown;
+                else if (key.align == UiTextAlign::Center) start = content.Center().x - shown * 0.5f;
+                const float x = std::clamp(start + before, content.min.x, content.max.x);
+                const float h = key.fontSize * 1.1f;
+                const float w = std::max(1.0f, 2.0f * pixel);
+                key.parts.push_back(
+                    {{{x, content.Center().y - h * 0.5f}, {x + w, content.Center().y + h * 0.5f}}, e.fillColor, 0.0f});
+            }
+            break;
+        }
+        default: break;
     }
 }
 
@@ -249,7 +336,7 @@ bool UiCanvas::Build(const Scene& scene, const AssetLibrary& assets, const glm::
             const FontData* font = nullptr;
             if (element->HasText()) {
                 font = element->Font();  // a mesma que o layout usou para medir
-                key.text = element->text;
+                key.text = std::string(element->DisplayText());
                 key.font = font;
                 key.fontSize = element->fontSize * scale * k;
                 key.textColor = shown.textColor;
@@ -261,6 +348,7 @@ bool UiCanvas::Build(const Scene& scene, const AssetLibrary& assets, const glm::
                 key.shadowOffset = element->textShadowOffset * scale * k;
                 key.shadowColor = element->textShadowColor;
             }
+            AddControlParts(*element, key, scale * k, font);
             const PieceId id{node.entity, element};
             CachedElement& cached = m_cache[id];
             if (cached.version == 0 || !(cached.key == key)) Rebuild(cached, key, font);

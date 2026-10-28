@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
         std::string error;
         CHECK(UiDocumentFromJson(R"({"format": "motor-ui", "version": 1, "elements": [
             {"type": "Button", "name": "ok"},
-            {"type": "Slider", "name": "volume", "children": [{"type": "Text"}]},
+            {"type": "Medidor", "name": "volume", "children": [{"type": "Text"}]},
             {"type": "Image", "image": "Assets/Texturas/x.png", "color": [1, 0, 0]},
             42]})", doc, &error, &warnings));
         CHECK(doc.elements.size() == 3);

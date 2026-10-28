@@ -380,7 +380,7 @@ int main() {
         UiDocumentData doc;
         doc.elements = {e};
         const std::string json = UiDocumentToJson(doc);
-        CHECK(json.find("\"version\": 3") != std::string::npos);  // grava a versão atual (3: folhas de estilo)
+        CHECK(json.find("\"version\": 4") != std::string::npos);  // grava a versão atual (4: controles)
         CHECK(json.find("\"50%\"") != std::string::npos && json.find("\"padding\": 8") != std::string::npos);
         CHECK(json.find("\"margin\": [") != std::string::npos);
         CHECK(json.find("\"anchor\"") == std::string::npos);  // no fluxo: sem âncora

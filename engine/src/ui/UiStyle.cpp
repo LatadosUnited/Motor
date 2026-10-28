@@ -98,6 +98,7 @@ const Property kProperties[] = {
     MOTOR_UI_PROP(textShadowColor, Vec4, false, {}),
     MOTOR_UI_PROP(scale, Float, false, {}),
     MOTOR_UI_PROP(transition, Float, false, {}),
+    MOTOR_UI_PROP(fillColor, Vec4, false, {}),
 };
 #undef MOTOR_UI_PROP
 
@@ -203,11 +204,8 @@ bool ParseCompound(std::string_view text, UiSelector& out, std::string* error) {
         ++i;
     } else if (i < text.size() && IsIdentChar(text[i])) {
         out.type = ident();
-        bool known = false;
-        for (UiElementType t : {UiElementType::Panel, UiElementType::Text, UiElementType::Image, UiElementType::Button}) {
-            known = known || out.type == UiElementTypeName(t);
-        }
-        if (!known) {
+        UiElementType parsed;
+        if (!ParseUiElementType(out.type, parsed)) {
             SetError(error, std::format("tipo \"{}\" desconhecido", out.type));
             return false;
         }
@@ -264,7 +262,13 @@ UiStyleSheet ParseDefaultSheet() {
         {"selector": "Text", "wrap": true},
         {"selector": "Image", "width": 100, "height": 100},
         {"selector": "Button", "padding": [12, 24], "normalColor": [0.18, 0.22, 0.30, 0.92],
-         "hoverColor": [0.26, 0.33, 0.46, 0.96], "pressedColor": [0.12, 0.15, 0.21, 1]}]})";
+         "hoverColor": [0.26, 0.33, 0.46, 0.96], "pressedColor": [0.12, 0.15, 0.21, 1]},
+        {"selector": "ProgressBar", "height": 24, "padding": 3, "color": [0.08, 0.09, 0.12, 0.9]},
+        {"selector": "Slider", "height": 36, "color": [0.08, 0.09, 0.12, 0.9], "normalColor": [0.85, 0.88, 0.94, 1],
+         "hoverColor": [1, 1, 1, 1], "pressedColor": [0.68, 0.73, 0.84, 1]},
+        {"selector": "Toggle", "align": "Left"},
+        {"selector": "TextField", "padding": [10, 14], "align": "Left"},
+        {"selector": "*:focus", "borderWidth": 3, "borderColor": [1, 0.82, 0.3, 1]}]})";
     UiStyleSheet sheet;
     std::string error;
     if (!UiStyleSheetFromJson(kJson, sheet, &error)) log::Error("UI: folha padrão: {}", error);
@@ -272,10 +276,11 @@ UiStyleSheet ParseDefaultSheet() {
 }
 
 const UiElement& TypeDefault(UiElementType type) {
-    static const std::array<UiElement, 4> defaults = {UiElement::Make(UiElementType::Panel),
-                                                      UiElement::Make(UiElementType::Text),
-                                                      UiElement::Make(UiElementType::Image),
-                                                      UiElement::Make(UiElementType::Button)};
+    static const std::array<UiElement, kUiElementTypeCount> defaults = [] {
+        std::array<UiElement, kUiElementTypeCount> out;
+        for (UiElementType t : kUiElementTypes) out[static_cast<size_t>(t)] = UiElement::Make(t);
+        return out;
+    }();
     return defaults[static_cast<size_t>(type)];
 }
 

@@ -28,17 +28,29 @@
 // A ordem na lista é a ordem de desenho (o último fica por cima). Campos ausentes ficam com o padrão do tipo (e das
 // folhas); o gravador grava só o que está escrito no elemento. Versões 1 e 2 continuam lidas (as chaves viram
 // declarações do elemento). Arquivo da versão 1 (antes do flex): todo elemento é Absolute, com "size" em
-// pixels e texto sem quebra. Os scripts acham um elemento pelo nome (UiSystem::WasClicked("jogar"), SetText).
+// pixels e texto sem quebra. Os scripts acham um elemento pelo nome (UiSystem::WasClicked("jogar"), SetText) ou por
+// consulta (UiSystem::Q("#jogar"), Query(".item")) e recebem eventos (OnClick, OnChange, OnHover).
+//
+// Versão 4 (Etapa 6): os controles e o que eles guardam no arquivo, só quando diferente do padrão:
+//   {"type": "ProgressBar", "name": "vida", "value": 0.7}
+//   {"type": "Slider", "name": "volume", "value": 5, "min": 0, "max": 10, "step": 1}
+//   {"type": "Toggle", "name": "telaCheia", "text": "Tela cheia", "checked": true}
+//   {"type": "TextField", "name": "nome", "text": "", "placeholder": "Seu nome", "maxLength": 12}
+// e "follow": "Inimigo", "followOffset": [0, 2.2, 0] num elemento Absolute que segue uma entidade 3D. A parte cheia,
+// a marca e o cursor usam a propriedade de estilo fillColor.
 
 #include "motor/scene/Component.h"
 #include "motor/ui/UiComponents.h"
 #include "motor/ui/UiLayout.h"
 #include "motor/ui/UiStyle.h"
 
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <string>
@@ -50,15 +62,45 @@ namespace motor {
 class AssetLibrary;
 class FontData;
 class Texture2D;
+struct UiElement;
 
 enum class UiElementType {
-    Panel,   // fundo com cor (transparente por padrão): agrupa os filhos
-    Text,    // só o texto, não bloqueia o clique
-    Image,   // retângulo com cor e textura
-    Button,  // fundo com a cor do estado, texto e clique
+    Panel,        // fundo com cor (transparente por padrão): agrupa os filhos
+    Text,         // só o texto, não bloqueia o clique
+    Image,        // retângulo com cor e textura
+    Button,       // fundo com a cor do estado, texto e clique
+    // Controles (Etapa 6; versão 4 do .mui)
+    ProgressBar,  // barra de progresso: o fundo (color) e a parte cheia (fillColor) até `value`
+    Slider,       // trilho (color), parte cheia (fillColor) e o puxador com a cor do estado; arrasta com o mouse
+    Toggle,       // caixa de seleção: o quadrado com a cor do estado, a marca (fillColor) se `checked`, e o texto
+    TextField,    // campo de texto: fundo com a cor do estado, o texto (ou `placeholder`) e o cursor quando em foco
 };
 
+inline constexpr UiElementType kUiElementTypes[] = {
+    UiElementType::Panel,       UiElementType::Text,   UiElementType::Image,  UiElementType::Button,
+    UiElementType::ProgressBar, UiElementType::Slider, UiElementType::Toggle, UiElementType::TextField};
+inline constexpr int kUiElementTypeCount = static_cast<int>(std::size(kUiElementTypes));
+
 const char* UiElementTypeName(UiElementType type);  // gravado no arquivo ("Button")
+bool ParseUiElementType(std::string_view name, UiElementType& out);  // false se não for um tipo conhecido
+
+class Script;
+
+// Eventos dos elementos (UiSystem::OnClick, OnChange, OnHover). Estado do jogo: não vão para o arquivo nem para as
+// cópias de quem edita; a árvore refeita (documento relido) começa sem eles.
+enum class UiEventType : uint8_t {
+    Click,   // clique do mouse ou Confirmar no elemento em foco (botão, caixa de seleção...)
+    Change,  // valor mudou: slider, caixa de seleção, texto do campo
+    Hover,   // mouse entrou (true) ou saiu (false)
+};
+
+struct UiEventHandler {
+    UiEventType type = UiEventType::Click;
+    uint32_t id = 0;
+    Script* owner = nullptr;  // o script que registrou (nulo: fora de um script); some junto com ele
+    EntityId ownerEntity = 0;
+    std::function<void(UiElement&, bool)> fn;  // bool: no Hover, entrou
+};
 
 struct UiElement {
     UiElementType type = UiElementType::Panel;
@@ -111,6 +153,7 @@ struct UiElement {
     glm::vec4 textShadowColor{0.0f, 0.0f, 0.0f, 0.0f};  // alfa 0: sem sombra
     float scale = 1.0f;        // só no desenho, em volta do centro (o layout e o clique não mudam)
     float transition = 0.0f;   // segundos para cor, opacidade e escala chegarem ao valor novo (no Play)
+    glm::vec4 fillColor{0.30f, 0.70f, 0.45f, 1.0f};  // controles: parte cheia, marca da caixa e cursor do campo
 
     // --- Conteúdo ---
     bool visible = true;
@@ -118,6 +161,21 @@ struct UiElement {
     std::shared_ptr<Texture2D> texture;  // a de `image`, carregada por ResolveUiDocumentAssets
     std::string text;                    // texto do Text e rótulo do Button
     bool interactable = true;
+
+    // Controles (Etapa 6).
+    float value = 0.0f;       // ProgressBar e Slider, entre minValue e maxValue
+    float minValue = 0.0f;
+    float maxValue = 1.0f;
+    float step = 0.0f;        // Slider: valor em múltiplos do passo (0 = contínuo); teclado e controle andam 1 passo (ou 5%)
+    bool checked = false;     // Toggle
+    std::string placeholder;  // TextField vazio mostra este texto, apagado
+    int maxLength = 0;        // TextField: caracteres no máximo (0 = sem limite)
+
+    // Segue uma entidade 3D (barra de vida, nome sobre o personagem): com `follow` (nome da entidade), o ponto da
+    // entidade mais `followOffset` (metros, no mundo) é projetado pela câmera principal a cada quadro e o elemento
+    // fica com a âncora nele (mais `position`, em pixels). Atrás da câmera, some. Vale para elemento Absolute.
+    std::string follow;
+    glm::vec3 followOffset{0.0f};
 
     // Declarações escritas no próprio elemento (as chaves de estilo do .mui): ganham das folhas.
     UiStyleDeclarations inlineStyle;
@@ -128,12 +186,14 @@ struct UiElement {
     bool hovered = false;
     bool pressed = false;
     bool clicked = false;
-    bool focused = false;     // :focus (a navegação por foco vem na Etapa 6)
+    bool focused = false;     // :focus (UiSystem: teclado e controle no contexto Menu, clique no campo de texto)
     float scroll = 0.0f;      // overflow Scroll: quanto rolou para baixo (pixels da referência)
     float scrollMax = 0.0f;   // o conteúdo que passa da caixa (calculado pelo layout)
     uint8_t styleStates = 0;  // os estados (kUiState*) do último cálculo dos estilos
     bool styleDirty = false;  // inlineStyle mudou: calcular de novo
     UiTransitionState animation;
+    size_t caret = 0;         // TextField: posição do cursor no texto (bytes UTF-8)
+    std::vector<UiEventHandler> handlers;  // eventos registrados pelos scripts (UiSystem::OnClick...)
 
     // Elemento com os padrões do tipo (o painel começa transparente, o texto com "Texto").
     static UiElement Make(UiElementType type);
@@ -146,8 +206,21 @@ struct UiElement {
 
     bool HasBackground() const;  // desenha um retângulo (painel e imagem só se visíveis; texto nunca)
     bool BlocksPointer() const;  // pega o clique: botão e imagem; painel com fundo visível
-    glm::vec4 BackgroundColor() const;  // com a cor do estado no botão
-    bool HasText() const { return (type == UiElementType::Text || type == UiElementType::Button) && !text.empty(); }
+    glm::vec4 BackgroundColor() const;  // com a cor do estado no botão e no campo de texto
+    glm::vec4 StateColor() const;       // normalColor, hoverColor ou pressedColor (puxador do slider, caixa do toggle)
+    bool HasText() const { return !DisplayText().empty(); }
+    // O texto desenhado: o do Text, do Button e do Toggle; no TextField, o texto ou o placeholder.
+    std::string_view DisplayText() const;
+    bool IsControl() const;    // Button, Slider, Toggle ou TextField: hover, clique e foco
+    bool IsFocusable() const { return IsControl() && interactable; }
+    float Fraction() const;    // value entre minValue e maxValue, de 0 a 1
+    // Muda o valor (preso entre min e max, no passo do Slider). true se mudou.
+    bool SetValue(float v);
+
+    // Descendentes que casam com o seletor (como os das folhas: "#jogar", ".item", "Button.menu", "Slider:focus"; um
+    // nome sozinho, sem # nem tipo conhecido, também acha pelo nome). Q: o primeiro, em profundidade; nullptr se nenhum.
+    UiElement* Q(std::string_view selector);
+    std::vector<UiElement*> Query(std::string_view selector);
     const FontData* Font() const;  // a fonte do texto (a padrão se não houver outra)
     UiVisual Visual() const;       // fundo, texto, borda, opacidade e escala calculados
     UiVisual ShownVisual() const { return animation.active ? animation.now : Visual(); }  // no meio da transição
@@ -192,10 +265,19 @@ struct UiDocumentData {
     bool SameContent(const UiDocumentData& other) const;
     UiElement* Find(std::string_view name);  // em profundidade; nullptr se nenhum
     const UiElement* Find(std::string_view name) const;
+    // Elementos que casam com o seletor (ver UiElement::Q), na ordem da árvore.
+    UiElement* Q(std::string_view selector);
+    std::vector<UiElement*> Query(std::string_view selector);
 };
 
+// Seletor de consulta: o das folhas (ParseUiSelectors) ou, se não for válido e for só um nome ("jogar"), o elemento com
+// esse nome. false com o erro.
+bool ParseUiQuery(std::string_view text, std::vector<UiSelector>& out, std::string* error = nullptr);
+bool UiQueryMatches(const std::vector<UiSelector>& selectors, const UiElement& element);
+
 inline constexpr const char* kUiDocumentFormat = "motor-ui";
-inline constexpr int kUiDocumentVersion = 3;  // 3: folhas de estilo (2: layout flex; 1: só âncoras)
+// 4: controles (ProgressBar, Slider, Toggle, TextField) e follow; 3: folhas de estilo; 2: layout flex; 1: só âncoras.
+inline constexpr int kUiDocumentVersion = 4;
 
 // Cascata: recalcula os campos de estilo de todos os elementos (padrão do tipo, folha padrão da engine, folhas do
 // documento por especificidade e ordem, declarações do elemento; herança de textColor, font, fontSize e align) e marca

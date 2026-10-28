@@ -36,6 +36,7 @@ class AssetLibrary;
 class Framebuffer;
 class Scene;
 class Texture2D;
+struct UiElement;
 
 struct UiCanvasStats {
     uint64_t geometryRebuilds = 0;  // elementos cuja geometria foi refeita (desde o início)
@@ -78,6 +79,13 @@ public:
     const FontData* FontFor(const UiFont& font, const AssetLibrary& assets);
 
 private:
+    // Pedaço a mais de um controle (parte cheia, trilho, puxador, caixa e marca, cursor), por cima do fundo.
+    struct ElementPart {
+        UiBox box;
+        glm::vec4 color{0.0f};
+        float radius = 0.0f;
+        bool operator==(const ElementPart&) const = default;
+    };
     // Entradas que definem a geometria de um elemento. Igual ao frame anterior = reaproveita os vértices.
     struct ElementKey {
         UiBox box;  // já com a escala de desenho (scale) do elemento e dos pais
@@ -105,6 +113,7 @@ private:
         glm::vec4 shadowColor{0.0f};
         UiBox clip;             // recorte (overflow Hidden/Scroll de um pai), se `clipped`
         bool clipped = false;
+        std::vector<ElementPart> parts;  // controles (Etapa 6)
         bool operator==(const ElementKey&) const = default;
     };
     // Vértices seguidos com a mesma textura (a borda, o fundo, o texto).
@@ -138,6 +147,8 @@ private:
     std::shared_ptr<const FontData> LoadFont(const std::string& key, const std::filesystem::path& file);
     const FontData* DefaultFont();
     void Rebuild(CachedElement& cached, const ElementKey& key, const FontData* font);
+    // Trilho, parte cheia, puxador, caixa e marca, cursor (key.textBox já é o conteúdo; muda no Toggle).
+    void AddControlParts(const UiElement& element, ElementKey& key, float pixel, const FontData* font);
 
     AtlasTextureFn m_atlasTexture;
     ShapeTextureFn m_shapeTexture;

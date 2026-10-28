@@ -27,6 +27,7 @@
 #include <motor/scene/Scene.h>
 #include <motor/scene/SceneRuntime.h>
 #include <motor/scene/ScriptModule.h>
+#include <motor/ui/UiDocument.h>
 #include <motor/ui/UiSystem.h>
 
 #include <algorithm>
@@ -373,7 +374,7 @@ int main(int argc, char** argv) {
         return TestResult();
     }
     for (const char* type : {"Flutuar", "ExemploCampos", "CicloDeVida", "Projetil", "Disparador", "Placar", "Moeda",
-                             "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "SonsDoMenu", "Girar", "Jogador", "MoverWASD", "Seguir",
+                             "Porta", "Inimigo", "BolaFisica", "Hud", "MenuPrincipal", "MenuDocumento", "SonsDoMenu", "Girar", "Jogador", "MoverWASD", "Seguir",
                              "Lampada", "Interruptor", "Chuva", "Guarda", "Pastor", "Veado"}) {
         const ComponentType* t = ComponentRegistry::Instance().Find(type);
         if (!t) std::printf("  não registrado: %s\n", type);
@@ -697,6 +698,102 @@ int main(int argc, char** argv) {
         click(menuRuntime, {960.0f, 540.0f});
         CHECK(menuRuntime.HasSceneRequest() && menuRuntime.TakeSceneRequest() == "Fase1");
         menuRuntime.Stop();
+    }
+
+    SECTION("Menu em documento: consultas e eventos do script, slider, caixa, campo, foco pelo teclado e recarga");
+    {
+        const glm::vec2 screen{1920.0f, 1080.0f};
+        auto element = [](UiElementType type, const char* name, float y) {
+            UiElement e = UiElement::Make(type);
+            e.name = name;
+            e.placement = UiPlacement::Absolute;
+            e.anchor = UiAnchor::Center;
+            e.position = {0.0f, y};
+            e.width = UiLength::Px(400.0f);
+            e.height = UiLength::Px(60.0f);
+            return e;
+        };
+        UiDocumentData doc;
+        UiElement jogar = element(UiElementType::Button, "jogar", -200.0f);
+        jogar.text = "Jogar";
+        jogar.classes = {"menu"};
+        UiElement sair = element(UiElementType::Button, "sair", -120.0f);
+        sair.text = "Sair";
+        sair.classes = {"menu"};
+        UiElement volumeTexto = element(UiElementType::Text, "volume_texto", -40.0f);
+        doc.elements = {jogar, sair, volumeTexto, element(UiElementType::Slider, "volume", 40.0f),
+                        element(UiElementType::Toggle, "musica", 120.0f), element(UiElementType::TextField, "nome", 200.0f)};
+
+        Scene scene;
+        loadedScenes = {&scene};
+        Entity& menuEntity = scene.CreateEntity("Menu");
+        menuEntity.Add<UiDocument>().document.data = std::make_shared<UiDocumentData>(doc);
+        AddScript(menuEntity, "MenuDocumento");
+        const EntityId menu = menuEntity.id;
+
+        SceneRuntime runtime(scene);
+        runtime.Start();
+        UiSystem* ui = runtime.GetSystem<UiSystem>();
+        auto frame = [&](glm::vec2 at, bool down) {
+            if (ui) ui->SetPointer({screen, at, true, down});
+            runtime.FixedUpdate(kDt);
+            runtime.Update(kDt);
+            Input::BeginFrame();
+        };
+        auto center = [&](const char* selector) {
+            UiBox box;
+            const UiElement* e = ui ? ui->Q(selector) : nullptr;
+            return e && ui->ScreenRect(*e, box) ? box.Center() : glm::vec2(-1.0f);
+        };
+        auto press = [&](Key key) {
+            Hold(key, true);
+            frame({0.0f, 0.0f}, false);
+            Hold(key, false);
+            frame({0.0f, 0.0f}, false);
+        };
+        frame({0.0f, 0.0f}, false);
+        CHECK(ui && ui->Focused() == ui->Q("#jogar"));  // o OnStart deu o foco
+        CHECK(ui && ui->Q("#volume") && std::abs(ui->Q("#volume")->value - 0.8f) < 0.001f);
+        CHECK(ui && ui->Q("#musica") && ui->Q("#musica")->checked);
+
+        // Mouse: passar em cima marca o botão; arrastar o slider até o fim; clicar na caixa.
+        frame(center("#sair"), false);
+        CHECK(ui && ui->Q("#sair")->text == "> Sair");
+        frame({0.0f, 0.0f}, false);
+        CHECK(ui && ui->Q("#sair")->text == "Sair");
+        const glm::vec2 slider = center("#volume");
+        frame(slider, true);
+        frame({slider.x + 400.0f, slider.y}, true);
+        frame({slider.x + 400.0f, slider.y}, false);
+        float* volume = ScriptField<float>(scene, menu, "MenuDocumento", "volume");
+        CHECK(volume && std::abs(*volume - 1.0f) < 0.001f);
+        CHECK(ui && ui->Q("#volume_texto")->text == "Volume: 100%");
+        frame(center("#musica"), true);
+        frame(center("#musica"), false);
+        bool* musica = ScriptField<bool>(scene, menu, "MenuDocumento", "musica");
+        CHECK(musica && !*musica);
+
+        // Campo de texto: clique, digita e Enter.
+        frame(center("#nome"), true);
+        frame(center("#nome"), false);
+        Input::AddTextInput("Ana");
+        frame({0.0f, 0.0f}, false);
+        press(Key::Enter);
+        std::string* jogador = ScriptField<std::string>(scene, menu, "MenuDocumento", "jogador");
+        CHECK(jogador && *jogador == "Ana");
+        press(Key::Escape);
+
+        // Teclado: o foco no Jogar, Enter troca de cena.
+        CHECK(ui && ui->Focus("#sair"));
+        press(Key::Up);
+        CHECK(ui && ui->Focused() == ui->Q("#jogar"));
+        press(Key::Enter);
+        CHECK(runtime.HasSceneRequest() && runtime.TakeSceneRequest() == "Fase1");
+
+        // Recarga dos scripts: os callbacks do código antigo saem; o OnStart do script novo registra de novo.
+        runtime.ForgetScripts();
+        CHECK(ui && ui->Q("#jogar")->handlers.empty() && ui->Q("#volume")->handlers.empty());
+        runtime.Stop();
     }
 
     SECTION("Sons do menu: clique do botão toca o som; M liga e desliga a música (sem dispositivo de áudio)");

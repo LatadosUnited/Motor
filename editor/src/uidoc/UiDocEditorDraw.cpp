@@ -61,12 +61,15 @@ const char* TypeLabel(UiElementType type) {
         case UiElementType::Text: return "Texto";
         case UiElementType::Image: return "Imagem";
         case UiElementType::Button: return "Botão";
+        case UiElementType::ProgressBar: return "Barra";
+        case UiElementType::Slider: return "Slider";
+        case UiElementType::Toggle: return "Seleção";
+        case UiElementType::TextField: return "Campo";
     }
     return "?";
 }
 
-constexpr UiElementType kTypes[] = {UiElementType::Panel, UiElementType::Text, UiElementType::Image,
-                                    UiElementType::Button};
+constexpr const auto& kTypes = kUiElementTypes;
 
 UiPath ParentOf(const UiPath& path) { return path.empty() ? path : UiPath(path.begin(), path.end() - 1); }
 
@@ -92,7 +95,7 @@ const std::vector<PropertyGroup>& PropertyGroups() {
           "pressedColor"}},
         {"Visual",
          {"radius", "borderWidth", "borderColor", "slice", "opacity", "textOutlineWidth", "textOutlineColor",
-          "textShadowOffset", "textShadowColor", "scale", "transition"}},
+          "textShadowOffset", "textShadowColor", "scale", "transition", "fillColor"}},
     };
     return kGroups;
 }
@@ -339,7 +342,7 @@ void UiDocEditor::DrawToolbar() {
 void UiDocEditor::DrawPalette() {
     ImGui::SeparatorText("Paleta");
     const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < kUiElementTypeCount; ++i) {
         const UiElementType type = kTypes[i];
         if (i % 2) ImGui::SameLine();
         if (ImGui::Button(TypeLabel(type), ImVec2(w, 0.0f))) {
@@ -600,8 +603,9 @@ void UiDocEditor::DrawProperties() {
 
     label("Tipo");
     int type = static_cast<int>(e->type);
-    const char* types[] = {"Painel", "Texto", "Imagem", "Botão"};
-    if (ImGui::Combo("##tipo", &type, types, 4)) {
+    const char* types[kUiElementTypeCount];
+    for (int i = 0; i < kUiElementTypeCount; ++i) types[i] = TypeLabel(kTypes[i]);
+    if (ImGui::Combo("##tipo", &type, types, kUiElementTypeCount)) {
         e->type = static_cast<UiElementType>(type);
         Changed();
     }
@@ -621,9 +625,43 @@ void UiDocEditor::DrawProperties() {
         Changed();
     }
     ImGui::SetItemTooltip("Separadas por espaço (\"menu grande\"); as regras .menu das folhas valem para ele");
-    if (e->type == UiElementType::Text || e->type == UiElementType::Button) {
+    if (e->type == UiElementType::Text || e->type == UiElementType::Button || e->type == UiElementType::Toggle ||
+        e->type == UiElementType::TextField) {
         label("Texto");
         if (ImGui::InputTextMultiline("##texto", &e->text, ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 3.5f))) Changed();
+    }
+    // Controles (Etapa 6): o que fica no .mui além do texto.
+    if (e->type == UiElementType::ProgressBar || e->type == UiElementType::Slider) {
+        label("Valor");
+        if (ImGui::DragFloat("##valor", &e->value, 0.01f, std::min(e->minValue, e->maxValue), std::max(e->minValue, e->maxValue), "%.3g")) Changed();
+        label("Mínimo e máximo");
+        if (ImGui::DragFloat2("##minmax", &e->minValue, 0.05f, 0.0f, 0.0f, "%.3g")) Changed();
+    }
+    if (e->type == UiElementType::Slider) {
+        label("Passo");
+        if (ImGui::DragFloat("##passo", &e->step, 0.01f, 0.0f, 1000.0f, "%.3g")) Changed();
+        ImGui::SetItemTooltip("0 = contínuo; o teclado e o controle andam um passo (ou 5%% sem passo)");
+    }
+    if (e->type == UiElementType::Toggle) {
+        label("Marcado");
+        if (ImGui::Checkbox("##marcado", &e->checked)) Changed();
+    }
+    if (e->type == UiElementType::TextField) {
+        label("Placeholder");
+        if (ImGui::InputText("##placeholder", &e->placeholder)) Changed();
+        label("Máx. caracteres");
+        if (ImGui::InputInt("##maxlen", &e->maxLength)) {
+            e->maxLength = std::max(0, e->maxLength);
+            Changed();
+        }
+    }
+    label("Segue entidade");
+    if (ImGui::InputText("##follow", &e->follow)) Changed();
+    ImGui::SetItemTooltip("Nome de uma entidade 3D: o elemento (Absolute) fica sobre ela na tela, pela câmera do jogo\n"
+                          "(barra de vida, nome). Vazio = não segue.");
+    if (!e->follow.empty()) {
+        label("Deslocamento (m)");
+        if (ImGui::DragFloat3("##followOffset", &e->followOffset.x, 0.05f, 0.0f, 0.0f, "%.2f")) Changed();
     }
     label("Visível");
     if (ImGui::Checkbox("##visivel", &e->visible)) Changed();

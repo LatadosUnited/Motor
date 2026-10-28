@@ -106,6 +106,14 @@ public:
     // não iniciados e recebem OnStart no próximo passo). Antes disso, solta o que aponta para os objetos e o
     // código antigos: temporizadores e scripts marcados com erro.
     void ForgetScripts();
+    // O script cujo código roda agora (OnStart, OnUpdate, temporizador, evento...), ou nullptr fora de um script. Quem
+    // guarda callbacks dos scripts (eventos da UI) anota o dono, para esquecê-los quando ele sumir.
+    Script* RunningScript() const { return m_runningScript; }
+    EntityId RunningScriptEntity() const { return m_runningEntity; }
+    // Chama um callback guardado de um script (evento da UI) com a proteção das chamadas dos scripts (exceção desliga o
+    // script). false se o script não está mais na entidade (esqueça o callback); true se chamou ou se só pulou (script
+    // ainda não iniciado, com erro ou entidade desativada).
+    bool CallScriptCallback(Script* owner, EntityId entity, std::string_view callback, const std::function<void()>& fn);
     // Cenas dos prefabs carregados por Instantiate (também têm scripts, para a recarga).
     void ForEachPrefabScene(const std::function<void(Scene&)>& fn);
 
@@ -196,6 +204,8 @@ private:
     };
     std::vector<Timer> m_timers;
     TimerId m_nextTimer = 1;
+    Script* m_runningScript = nullptr;
+    EntityId m_runningEntity = 0;
     std::mt19937 m_random;
 
     // Entidades com pelo menos um script, na ordem da cena: os laços dos scripts não percorrem a cena inteira

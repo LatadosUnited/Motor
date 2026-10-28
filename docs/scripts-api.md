@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 21 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 22 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -518,6 +518,16 @@ seguinte.
 | `bool ScreenRect(EntityId entity, UiBox& out) const` | retângulo do elemento na tela (pixels de verdade, `out.min`/`out.max`) no último passo; `false` se não estava visível |
 | `bool ScreenRect(const UiElement& element, UiBox& out) const` | o mesmo para um elemento de documento |
 | `UiElement* FindElement(std::string_view name) const` | o elemento de documento com esse nome (o primeiro entre os documentos da cena), para ler e mudar os campos direto; `nullptr` se não houver |
+| `UiElement* Q(std::string_view selector) const` | o primeiro elemento dos documentos da cena que casa com o seletor (o das folhas: `"#jogar"`, `".item"`, `"Button.menu"`, `"Slider:focus"`, lista com vírgula; um nome sozinho acha pelo nome); `nullptr` se nenhum. Seletor inválido: nenhum, com aviso no log |
+| `std::vector<UiElement*> Query(std::string_view selector) const` | todos os que casam, na ordem da cena (em cada documento, em profundidade) |
+| `int OnClick(selector, fn)` | chama `fn` (`void()` ou `void(UiElement&)`) quando um dos elementos que casam **agora** é clicado: botão, caixa de seleção, Enter no campo de texto, Confirmar no elemento em foco; devolve quantos ganharam o callback (0: aviso no log) |
+| `int OnChange(selector, fn)` | `fn(UiElement&)` quando `value` (slider), `checked` (caixa) ou `text` (campo) muda pelo jogador |
+| `int OnHover(selector, fn)` | `fn(UiElement&, bool entrou)` quando o mouse entra e sai do controle |
+| `bool OnClick(UiElement* element, fn)`, `OnChange(element, fn)`, `OnHover(element, fn)` | o mesmo num elemento já achado (`Q`); `false` se nulo |
+| `int ClearEvents(std::string_view selector)` | tira os callbacks dos elementos que casam; devolve quantos tirou |
+| `bool Focus(std::string_view selector)`, `bool Focus(UiElement* element)` | põe o foco no primeiro que casa e pode ter foco (Button, Slider, Toggle, TextField interativo e visível); `false` se nenhum |
+| `UiElement* Focused() const`, `void ClearFocus()` | o elemento em foco (`nullptr`: nenhum) e tirar o foco |
+| `OnScriptsForgotten(SceneRuntime& runtime)` | gancho da engine antes da recarga da DLL de scripts (solta todos os callbacks); não chame de um script |
 | `void SetPointer(const UiPointer& pointer)`, `const UiPointer& Pointer() const` | o mouse em relação à imagem do jogo; quem chama é o editor (ou o jogo exportado), não um script |
 | `void UpdatePointer(SceneRuntime& runtime)` | diz ao runtime, antes dos scripts, se o mouse está sobre a interface e se o clique é dela; quem chama é a própria engine, não um script |
 | `OnStart`, `OnUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
@@ -536,14 +546,21 @@ Os componentes (`motor/ui/UiComponents.h`) também podem ser lidos e mudados dir
 | `motor::UiDocument` | `document` (`motor::UiDocumentRef`: `guid`, `path` e `data`, o `.mui` lido), `order` (`int`), `visible` (`bool`); `Tree()` devolve a árvore viva (`motor::UiDocumentData`, com `elements` e `Find(name)`) |
 
 Um elemento de documento (`motor::UiElement`, `motor/ui/UiDocument.h`) tem `type` (`motor::UiElementType`:
-`Panel`, `Text`, `Image`, `Button`), `name`, `classes`, o lugar no pai (`placement`: `Flow` ou `Absolute`; `anchor`
+`Panel`, `Text`, `Image`, `Button`, `ProgressBar`, `Slider`, `Toggle`, `TextField`), `name`, `classes`, o lugar no pai (`placement`: `Flow` ou `Absolute`; `anchor`
 e `position` no absoluto; `width` e `height` como `motor::UiLength` em pixels, porcentagem ou automático; `margin`,
 `grow`, `shrink`, `alignSelf`), `visible`, como arruma os filhos (`direction`, `justify`, `alignItems`, `gap`,
 `padding` como `motor::UiEdges`, `overflow`), `color`, `image`, `text`, `font`, `fontSize`, `textColor`, `align`,
 `verticalAlign`, `wrap`, as cores do botão e `interactable`, o visual (`radius`, `borderWidth`, `borderColor`,
 `slice` como `motor::UiEdges` em pixels da textura, `opacity`, `textOutlineWidth`, `textOutlineColor`,
-`textShadowOffset`, `textShadowColor`, `scale`, `transition` em segundos), `children` e o estado do jogo (`hovered`,
-`pressed`, `clicked`, `focused`, `scroll` e `scrollMax` numa lista com rolagem). Mudar a árvore viva vale só para
+`textShadowOffset`, `textShadowColor`, `scale`, `transition` em segundos, `fillColor` do preenchimento da barra e do
+slider), os dos controles (`value`, `minValue`, `maxValue`, `step` da barra e do slider, `checked` da caixa de
+seleção, `placeholder` e `maxLength` do campo de texto), `follow` e `followOffset` (o elemento `Absolute` segue na
+tela a entidade 3D com esse nome, projetada pela câmera do jogo, `followOffset` metros acima ou ao lado; atrás da
+câmera, some), `children` e o estado do jogo (`hovered`, `pressed`, `clicked`, `focused`, `caret` do campo em
+edição, `scroll` e `scrollMax` numa lista com rolagem, `handlers` com os callbacks registrados).
+`SetValue(float)` muda o valor da barra ou do slider limitado a `minValue`..`maxValue` e no passo (devolve se
+mudou; não chama `OnChange`), `Fraction()` dá o valor de 0 a 1, `DisplayText()` o texto mostrado (o `placeholder`
+num campo vazio), `IsFocusable()` se pode ter foco e `Q`/`Query` procuram entre os descendentes. Mudar a árvore viva vale só para
 este Play: o arquivo não muda. A roda do mouse rola `kUiScrollStep` pixels por entalhe.
 
 Os campos de estilo (lugar, tamanho, cores, fonte, visual) são o resultado da cascata das folhas `.mstyle` do

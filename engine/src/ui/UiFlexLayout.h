@@ -10,6 +10,13 @@
 namespace motor {
 
 struct UiDocumentData;
+struct UiElement;
+
+// Lado do quadrado da caixa de seleção (Toggle), em pixels da tela: um pouco maior que a letra.
+float UiToggleBoxSize(const UiElement& element, float scale);
+// Slider: o puxador tem a altura da caixa de conteúdo e esta largura; o centro dele anda de x0 a x1 (pixels da tela).
+float UiSliderThumbWidth(const UiBox& content);
+void UiSliderTrack(const UiBox& content, float& x0, float& x1);
 
 // Põe os elementos de um documento dentro de `box` (a raiz é uma coluna que estica os filhos) e acrescenta os nós em
 // `out`, na ordem de desenho. Escreve no elemento o scrollMax (e prende o scroll nele). Nada mudou desde a última

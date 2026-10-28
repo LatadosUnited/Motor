@@ -331,10 +331,12 @@ void McpController::AddPlayTools() {
     m_protocol.AddTool({
         .name = "ui_click",
         .description = "Clica num botão da interface do jogo durante o Play: pelo nome ou id da entidade (componente "
-                       "UI: Botão) ou pelo nome de um elemento de um documento de UI (.mui). O script vê WasClicked no "
-                       "quadro seguinte.",
+                       "UI: Botão), pelo nome de um elemento de um documento de UI (.mui) ou por uma consulta (seletor "
+                       "como no .mstyle: \"#jogar\", \".item\", \"Toggle\"; o primeiro visível). O script vê WasClicked e "
+                       "os eventos OnClick/OnChange no quadro seguinte.",
         .inputSchema = Schema({{"entity", {{"type", {"integer", "string"}}, {"description", "botão (id ou nome)"}}},
-                               {"element", Prop("string", "nome do elemento num documento de UI (em vez de entity)")}}),
+                               {"element", Prop("string", "nome do elemento num documento de UI (em vez de entity)")},
+                               {"query", Prop("string", "seletor de elemento, ex.: \"#jogar\", \".opcao:hover\" (em vez de entity)")}}),
         .run = [this](const Json& args) {
             SceneRuntime* runtime = m_host.play.Runtime();
             if (!runtime || m_host.play.IsPaused()) throw ToolError("o jogo precisa estar rodando (play, sem pausa)");
@@ -342,7 +344,20 @@ void McpController::AddPlayTools() {
             if (!ui) throw ToolError("a cena não tem o sistema de UI");
             UiBox box;
             std::string name;
-            if (args.contains("element")) {
+            if (args.contains("query")) {
+                const std::string query = args["query"].get<std::string>();
+                const std::vector<UiElement*> found = ui->Query(query);
+                if (found.empty()) throw ToolError("nenhum elemento dos documentos de UI da cena atende a " + query);
+                const UiElement* element = nullptr;
+                for (const UiElement* e : found) {
+                    if (ui->ScreenRect(*e, box) && box.Size().x > 0.0f) {
+                        element = e;
+                        break;
+                    }
+                }
+                if (!element) throw ToolError("nenhum elemento de " + query + " está na tela (escondidos ou o jogo acabou de começar)");
+                name = element->name.empty() ? query : element->name;
+            } else if (args.contains("element")) {
                 name = args["element"].get<std::string>();
                 const UiElement* element = ui->FindElement(name);
                 if (!element) throw ToolError("nenhum documento de UI da cena tem o elemento " + name);
@@ -350,7 +365,7 @@ void McpController::AddPlayTools() {
                     throw ToolError(name + " não está na tela (escondido ou o jogo acabou de começar)");
                 }
             } else {
-                if (!args.contains("entity")) throw ToolError("diga 'entity' ou 'element'");
+                if (!args.contains("entity")) throw ToolError("diga 'entity', 'element' ou 'query'");
                 const Entity& e = mcp::ResolveEntity(m_host.ctx, args);
                 name = e.name;
                 if (!ui->ScreenRect(e.id, box) || box.Size().x <= 0.0f) {

@@ -1,5 +1,6 @@
 #include "EditorContext.h"
 #include "panels/HierarchyFilter.h"
+#include "uidoc/UiDocConvert.h"
 
 #include <imgui.h>
 #include <imgui_stdlib.h>
@@ -195,6 +196,11 @@ void DrawEntityRow(EditorContext& ctx, const Row& row, bool flat) {
         if (ImGui::MenuItem("Duplicar", "Ctrl+D")) ctx.DuplicateSelected();
         if (ImGui::MenuItem("Excluir", "Del")) ctx.pendingDelete = id;
         ImGui::Separator();
+        if (HasConvertibleUi(ctx.scene, id)) {
+            if (ImGui::MenuItem("Converter UI em documento", nullptr, false, !ctx.playing)) ctx.pendingUiConversion = id;
+            ImGui::SetItemTooltip("Grava a UI por entidades desta entidade (e dos filhos) num .mui em Assets/UI e põe\n"
+                                  "uma entidade com UI: Documento no lugar (as mesmas caixas na tela). Desfaz com Ctrl+Z.");
+        }
         if (ImGui::MenuItem("Criar prefab")) ctx.CreatePrefabFromEntity(id);
         ImGui::SetItemTooltip("Grava a entidade e os filhos em Assets/Prefabs e a transforma numa instância.\n"
                               "Também dá para arrastar a entidade para uma pasta do painel Projeto.");
@@ -246,6 +252,15 @@ void FocusHierarchySearch() {
 }
 
 void DrawHierarchyPanel(EditorContext& ctx) {
+    if (const EntityId convert = std::exchange(ctx.pendingUiConversion, kNullEntity); convert != kNullEntity) {
+        UiDocConvertResult result;
+        std::string error;
+        if (ConvertUiToDocument(ctx, convert, "", result, &error)) {
+            motor::log::Info("UI: {} entidade(s) de UI convertidas em {}", result.elements, result.key);
+        } else {
+            ctx.pendingError = "Converter UI em documento: " + error;
+        }
+    }
     if (!ImGui::Begin("Hierarquia")) {
         ImGui::End();
         return;

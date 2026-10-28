@@ -8,7 +8,8 @@
 //       {"selector": "Button:hover", "normalColor": [0.3, 0.4, 0.6, 1]},
 //       {"selector": ".titulo, #placar", "fontSize": 64, "textOutlineWidth": 2, "textOutlineColor": [0, 0, 0, 1]}]}
 //
-// Seletor: composto só (sem descendente nem filho): tipo opcional (Panel, Text, Image, Button, ou *), `.classe` (quantas
+// Seletor: composto só (sem descendente nem filho): tipo opcional (Panel, Text, Image, Button, ProgressBar, Slider,
+// Toggle, TextField, ou *), `.classe` (quantas
 // quiser), `#nome` e estados `:hover` (mouse em cima), `:active` (apertado), `:disabled` (interactable falso) e
 // `:focus`. Lista com vírgula vale para cada seletor. Especificidade como no CSS (#nome, depois classes e estados,
 // depois tipo); empate: a regra que vem depois ganha (e a folha que vem depois na lista do documento).
@@ -19,7 +20,8 @@
 // verticalAlign, wrap, normalColor, hoverColor, pressedColor) e o visual da Etapa 4: radius, borderWidth,
 // borderColor, slice (9-slice da imagem, em pixels da textura), opacity (0 a 1, vale para os filhos),
 // textOutlineWidth, textOutlineColor, textShadowOffset, textShadowColor, scale (só no desenho, em volta do centro) e
-// transition (segundos: cor, opacidade e escala mudam aos poucos entre os estados, no Play).
+// transition (segundos: cor, opacidade e escala mudam aos poucos entre os estados, no Play); e fillColor (Etapa 6:
+// o preenchimento da barra e do slider e a marca da caixa de seleção).
 //
 // Cascata (ComputeUiStyles, em UiDocument.h): padrão do tipo (UiElement::Make) < folha padrão da engine < folhas do
 // documento (por especificidade, depois ordem) < declarações no próprio elemento (`inlineStyle`). textColor, font,

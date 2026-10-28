@@ -80,13 +80,13 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 6 — Scripts, controles e MCP
 
-- [ ] Tarefa 19: Consultas `Q` e `Query` por nome, classe e tipo, e eventos `OnClick`, `OnChange`, `OnHover`
-- [ ] Tarefa 20: Controles barra de progresso, slider, caixa de seleção e campo de texto
-- [ ] Tarefa 21: Navegação por foco com teclado e controle, pelo contexto de entrada Menu
-- [ ] Tarefa 22: Elemento que segue uma entidade 3D (barra de vida e nome sobre o personagem)
-- [ ] Tarefa 23: Ferramentas MCP para criar e editar `.mui` e `.mstyle`, e `ui_click` por consulta
-- [ ] Tarefa 24: Converter a UI por entidades de uma cena num documento
-- [ ] Tarefa 25: Seção do guia de scripts e menu do jogo de exemplo com documento, rodados pelo `test_script_docs`
+- [x] Tarefa 19: Consultas `Q` e `Query` por nome, classe e tipo, e eventos `OnClick`, `OnChange`, `OnHover`
+- [x] Tarefa 20: Controles barra de progresso, slider, caixa de seleção e campo de texto
+- [x] Tarefa 21: Navegação por foco com teclado e controle, pelo contexto de entrada Menu
+- [x] Tarefa 22: Elemento que segue uma entidade 3D (barra de vida e nome sobre o personagem)
+- [x] Tarefa 23: Ferramentas MCP para criar e editar `.mui` e `.mstyle`, e `ui_click` por consulta
+- [x] Tarefa 24: Converter a UI por entidades de uma cena num documento
+- [x] Tarefa 25: Seção do guia de scripts e menu do jogo de exemplo com documento, rodados pelo `test_script_docs`
 
 ## Pronto quando
 
@@ -204,6 +204,56 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
   documento relido"), o `ui_click` continuou contando, e depois do Stop a cena ficou com o arquivo novo. A janela,
   capturada com o `PrintWindow`, mostra a árvore, a prévia com as alças no selecionado, as propriedades e o `*` no título.
 
+- Tarefas 19 a 25: **consultas e eventos** no `UiSystem`: `Q`/`Query` por seletor (o parser das folhas; um nome
+  sozinho acha pelo nome; `ParseUiQuery`, `UiQueryMatches` e `UiDocumentData::Q`/`Query` em `UiDocument.h`) e
+  `OnClick`, `OnChange`, `OnHover` (por seletor ou num elemento), `ClearEvents`. Os callbacks ficam nos elementos da
+  árvore viva (`UiElement::handlers`), com o script e a entidade que estavam rodando ao registrar
+  (`SceneRuntime::RunningScript`); o `UiSystem` junta os eventos do passo e chama depois do seu `OnUpdate` pelo
+  `SceneRuntime::CallScriptCallback` (que pula script parado, com erro ou inativo, e diz se ele sumiu: o callback sai).
+  Na recarga da DLL, o `ForgetScripts` chama o gancho novo `RuntimeSystem::OnScriptsForgotten` antes de descarregar, e
+  o `UiSystem` solta todos os callbacks (o `std::function` aponta para código da DLL antiga); no `OnStop` também. A
+  árvore relida do arquivo começa sem eles. **Controles** (`UiElementType::ProgressBar`, `Slider`, `Toggle`,
+  `TextField`): campos `value`, `minValue`, `maxValue`, `step`, `checked`, `placeholder`, `maxLength`, a propriedade de
+  estilo `fillColor` e regras na folha padrão; o `UiRenderer` desenha as partes (preenchimento, trilho e pino, caixa e
+  marca, placeholder apagado e cursor) como retângulos extras do mesmo lote. Slider arrastado com o mouse (também fora
+  dele, até soltar), Toggle troca no clique, TextField ganha o foco no clique e edita em UTF-8 (texto do
+  `Input::TextInput`, Backspace, Delete, setas, Home, End, `maxLength` em caracteres; Enter = `OnClick`, Esc ou Voltar
+  sai). **Foco:** `UiElement::focused` (`:focus`, com borda amarela na folha padrão); só com a ação Navegar ativa (o
+  contexto Menu) e o jogo com a entrada ligada; direção pela ação (setas, WASD, direcional, analógico, com repetição a
+  0,4 s e depois 0,12 s) e o vizinho pelo centro das caixas (distância na direção + 2x a de lado); Tab e Shift+Tab na
+  ordem do layout; Confirmar clica o botão e troca a caixa; no slider, esquerda e direita mudam o valor (`step` ou 5%).
+  **Seguir entidade:** `follow` e `followOffset` num elemento `Absolute`; depois do layout flex (o cache continua
+  valendo), o `ComputeUiLayout` projeta a posição da entidade pela câmera principal da cena (na proporção da tela) e
+  desloca a subárvore; atrás da câmera ou sem câmera, a subárvore sai da lista. Formato `.mui` versão 4 (lê 1 a 3;
+  campos novos só gravados quando diferem do padrão do tipo). **Editor de UI:** os quatro controles na paleta e as
+  propriedades deles (valor, mínimo e máximo, passo, marcado, placeholder, máximo de caracteres, segue entidade e
+  deslocamento). **MCP:** `ui_document_edit` e `ui_style_edit` criam e mudam `.mui`/`.mstyle` direto no arquivo por
+  uma lista de operações (tudo ou nada; `editor/src/uidoc/UiDocFileOps`, a mesma lógica do `set` do
+  `ui_editor_element`) e avisam a recarga; `ui_click` aceita `query`; `ui_convert_entities`. **Converter:**
+  `ConvertUiEntities` (`motor/ui/UiConvert.h`: cada entidade de UI vira um elemento `Absolute` com a mesma âncora,
+  posição e tamanho, sem padding; botão com as cores e o texto do UiText; imagem com UiText ganha um Text esticado
+  filho; irmãos pela `order`) e, no editor, "Converter UI em documento" na Hierarquia (`editor/src/uidoc/UiDocConvert`):
+  grava `Assets/UI/<nome>.mui` (com número se já existir) e troca as entidades por uma com UI: Documento, com desfazer
+  da cena. `kScriptApiVersion` 22. Guia: seção "Menus em documento de UI" no `docs/scripts.md`, exemplo
+  `docs/examples/MenuDocumento.cpp` rodado no `test_script_docs` (eventos do script, slider, caixa, campo, foco pelo
+  teclado, troca de cena e a limpeza na recarga), e a referência no `docs/scripts-api.md`. Teste novo:
+  `test_ui_controles` (consultas, controles, formato 4 e leitura do 3, eventos e a limpeza, campo de texto, foco,
+  seguir entidade, conversão com as mesmas caixas e as operações JSON das ferramentas MCP).
+  Na folha padrão, o puxador do slider é claro, e a borda (`:focus`) do slider e da caixa de seleção vai em volta do
+  puxador e da caixa (o slider não tem fundo e o da caixa é transparente). Conferido pelo MCP no projeto de teste: o
+  `Opcoes.mui` (painel com título, três botões `.menu`, slider, caixa, campo e a barra `#vida` seguindo o "Cubo") e o
+  `Opcoes.mstyle` criados só com `ui_document_edit` e `ui_style_edit` aparecem na visão do jogo e não na cena (sem
+  seleção); no Play, com o script `OpcoesDoc` (eventos no `OnStart`, `SetInputContext("Menu")`, `Focus("#jogar")`),
+  `ui_click` com `query` "#jogar" e "Button.menu#jogar" deram "OnClick jogar (1)" e "(2)" no `log_read` e o título virou
+  "Cliques: 2" (`#naoexiste` responde erro); `game_key` baixo, baixo, direita, direita levou o foco ao slider e deu
+  "OnChange volume 0.60" e "0.70"; `game_gamepad` DpadDown e A trocaram a caixa ("OnChange som false"); clique no
+  campo, `game_text` "Léo Ação", Backspace e Enter deram "OnChange nome" e "OnClick nome (enviar) 'Léo Açã'", com o
+  cursor desenhado; a barra de vida acompanhou o cubo indo de um lado ao outro. Recompilar o script no Play trocou o
+  código sem chamar o callback antigo (só "OnClick jogar (1) [código novo]" depois); um botão acrescentado ao `.mui` por
+  `ui_document_edit` no Play apareceu (log "UI: documento relido") e o `ui_click` achou ele. `ui_convert_entities` num
+  "HUD" com dois filhos de UI por entidades gravou `Assets/UI/HUD.mui` (versão 4) e a captura da visão do jogo ficou
+  igual pixel a pixel nos dois cantos; `undo` trouxe as entidades de volta e `redo` o documento.
+
 ## Limitações
 
 (Preencher ao terminar: o que ficou para trás e para onde foi.)
@@ -237,3 +287,18 @@ mudaram nela (`SetText`, `SetVisible`, estilo) volta ao do arquivo, sem avisar o
 teste); as fotos antigas do desfazer da cena ganham o documento novo, então desfazer não traz o conteúdo velho do
 arquivo; arrastar na árvore e na paleta, as alças com o mouse, os atalhos, a aba Estilos e o popup de salvar foram
 conferidos só pela lógica e pelo MCP, não com o mouse.
+
+Da Etapa 6, por ora: `kScriptApiVersion` subiu para 22 e o `.mui` para a versão 4 (o editor antigo não abre um `.mui`
+novo com controles). Os callbacks são soltos na recarga da DLL e na releitura do documento, e o script registra de novo
+no `OnStart`; mas um callback registrado fora de um script (do próprio jogo, sem dono) também sai na recarga. O
+`OnHover` vale só para controles (botão, slider, caixa, campo), como o `:hover`. A borda da caixa de seleção sempre vai na
+caixa, nunca em volta do elemento inteiro, mesmo com um fundo opaco. O campo de texto não tem seleção,
+copiar e colar nem rolagem: o texto maior que a caixa encosta à direita (mostra o fim), e não dá para clicar numa
+posição do texto (o clique põe o cursor no fim); Backspace e as setas seguradas não repetem. O foco não pula para dentro de listas com rolagem (não rola até o elemento) e a navegação
+espacial olha só os centros das caixas. O elemento que segue uma entidade usa a câmera principal da cena (não a da
+janela Jogo de outra cena) e o nome da entidade (a primeira com esse nome; renomear quebra a ligação), e o `ui_click`
+continua mirando o centro do elemento. A conversão de UI por entidades recusa entidades com componentes que não são de
+UI (um script no meio da UI) e documentos aninhados; a imagem com textura vira `image` com o GUID, mas o 9-slice e as
+fontes de UiText com fonte própria passam como estão; o `.mui` gravado não sai com o desfazer da cena (só a troca das
+entidades). `ui_document_edit` e `ui_style_edit` não passam pelo desfazer da janela do Editor de UI (a janela relê o
+arquivo se não tiver alterações; com alterações, avisa).

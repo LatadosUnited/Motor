@@ -71,6 +71,8 @@ add_executable(MotorEditor
     src/FolderWatcher.cpp
     src/uidoc/UiDocEdit.cpp
     src/uidoc/UiDocReload.cpp
+    src/uidoc/UiDocFileOps.cpp
+    src/uidoc/UiDocConvert.cpp
     src/uidoc/UiDocEditor.cpp
     src/uidoc/UiDocEditorDraw.cpp
     src/mcp/McpUiEditorTools.cpp

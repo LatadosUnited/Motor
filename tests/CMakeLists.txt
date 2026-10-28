@@ -302,3 +302,11 @@ motor_add_test(test_input)
 
 # Ações no tempo (InputActionTracker): segurar, toque, toque duplo, buffer, e o buffer de pulo nos scripts.
 motor_add_test(test_input_interactions)
+
+# Documentos de UI, Etapa 6 (interface em documentos): consultas, eventos, controles, foco, elemento que segue uma
+# entidade, conversão da UI por entidades e a edição de .mui/.mstyle por JSON das ferramentas MCP.
+motor_add_test(test_ui_controles
+    ${PROJECT_SOURCE_DIR}/editor/src/uidoc/UiDocEdit.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/uidoc/UiDocFileOps.cpp)
+target_include_directories(test_ui_controles PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_ui_controles PRIVATE nlohmann_json::nlohmann_json)

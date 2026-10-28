@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
         CHECK(UiStyleSheetFromJson(R"({"format": "motor-style", "version": 1, "rules": [
             {"selector": "Panel", "color": [1, 0, 0], "gap": 4, "cor": 1},
             {"selector": "Panel .item", "gap": 2},
-            {"selector": "Slider", "gap": 2},
+            {"selector": "Medidor", "gap": 2},
             {"selector": "Button:pressed", "gap": 2},
             {"gap": 2},
             {"selector": "*", "radius": "x"}]})", tolerant, &error, &warnings));
@@ -138,7 +138,7 @@ int main(int argc, char** argv) {
         CHECK(!ParseUiSelectors("Panel .item", list, &error) && error.find("combinador") != std::string::npos);
         CHECK(!ParseUiSelectors("Panel > Text", list, &error));
         CHECK(!ParseUiSelectors("Button:pressed", list, &error));
-        CHECK(!ParseUiSelectors("Slider", list, &error));
+        CHECK(!ParseUiSelectors("Medidor", list, &error));
         CHECK(!ParseUiSelectors("a,,b", list, &error));
         CHECK(!ParseUiSelectors("#a#b", list, &error));
         CHECK(!ParseUiSelectors("", list, &error));
@@ -214,7 +214,7 @@ int main(int argc, char** argv) {
 
         // Gravado: só o que está no elemento (e o painel com o textColor da folha não ganha nada).
         const std::string json = UiDocumentToJson(doc);
-        CHECK(json.find("\"version\": 3") != std::string::npos);
+        CHECK(json.find("\"version\": 4") != std::string::npos);
         CHECK(json.find("\"radius\"") == std::string::npos && json.find("\"normalColor\"") != std::string::npos);
         UiDocumentData back;
         std::string error;

@@ -48,10 +48,25 @@ glm::vec2 MeasureBox(const UiElement& e, float scale, float parentW, float paren
 // sem limite).
 glm::vec2 ContentSize(const UiElement& e, float scale, float availW) {
     glm::vec2 size{0.0f};
+    const float indicator = e.type == UiElementType::Toggle ? UiToggleBoxSize(e, scale) : 0.0f;
     if (e.HasText()) {
         if (const FontData* font = e.Font()) {
-            size = MeasureText(*font, e.text, e.fontSize * scale, e.wrap && availW > 0.0f ? availW : 0.0f);
+            const float wrapW = e.wrap && availW > 0.0f ? std::max(1.0f, availW - indicator * 1.3f) : 0.0f;
+            size = MeasureText(*font, e.DisplayText(), e.fontSize * scale, wrapW);
         }
+    }
+    switch (e.type) {
+        case UiElementType::Toggle:  // o quadrado à esquerda do texto
+            size.y = std::max(size.y, indicator);
+            size.x += size.x > 0.0f ? indicator * 1.3f : indicator;
+            break;
+        case UiElementType::TextField:  // vazio ainda tem a altura de uma linha e uma largura para digitar
+            size.y = std::max(size.y, e.fontSize * scale * 1.2f);
+            size.x = std::max(size.x, 200.0f * scale);
+            break;
+        case UiElementType::ProgressBar:
+        case UiElementType::Slider: size.x = std::max(size.x, 200.0f * scale); break;
+        default: break;
     }
     const bool row = e.direction == UiDirection::Row;
     float main = 0.0f, cross = 0.0f;
@@ -287,8 +302,9 @@ struct Hasher {
             Float(e.gap);
             Float(e.scroll);
             if (e.HasText()) {
-                Bytes(e.text.data(), e.text.size());
-                Int(static_cast<int64_t>(e.text.size()));
+                const std::string_view text = e.DisplayText();
+                Bytes(text.data(), text.size());
+                Int(static_cast<int64_t>(text.size()));
                 Ptr(e.Font());
                 Float(e.fontSize);
             }
@@ -311,6 +327,16 @@ uint64_t LayoutSignature(EntityId owner, const std::vector<UiElement>& elements,
 }
 
 } // namespace
+
+float UiToggleBoxSize(const UiElement& element, float scale) { return element.fontSize * scale * 1.1f; }
+
+float UiSliderThumbWidth(const UiBox& content) { return std::min(content.Size().y * 0.55f, content.Size().x * 0.5f); }
+
+void UiSliderTrack(const UiBox& content, float& x0, float& x1) {
+    const float half = UiSliderThumbWidth(content) * 0.5f;
+    x0 = content.min.x + half;
+    x1 = std::max(x0, content.max.x - half);
+}
 
 void LayoutUiDocument(EntityId owner, UiDocumentData& document, const UiBox& box, float scale, int depth,
                       std::vector<UiNode>& out) {

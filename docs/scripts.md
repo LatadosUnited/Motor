@@ -995,6 +995,47 @@ vazia `HUD` com **Scripts > HUD (vida e pontos)**. Para o menu: uma cena `Menu` 
 `Jogar` e `Creditos`, um Painel `PainelCreditos` e uma entidade `Menu` com **Scripts > Menu principal**
 (Cena do jogo = o nome da cena do mini jogo). Abra a cena `Menu` e aperte **Play**.
 
+### Menus em documento de UI
+
+Um menu inteiro cabe num **documento de UI** (`.mui`, componente **UI: Documento**, feito no **Editor de UI**): uma
+entidade só na Hierarquia, com a árvore de elementos e as folhas de estilo (`.mstyle`). Além de `Panel`, `Text`,
+`Image` e `Button`, o documento tem controles: **barra** (`ProgressBar`, `value` entre `minValue` e `maxValue`),
+**slider** (`Slider`, arrastado com o mouse; com `step`, anda de passo em passo), **caixa de seleção** (`Toggle`,
+`checked`) e **campo de texto** (`TextField`, com `placeholder` e `maxLength`). Em vez de perguntar `WasClicked` a
+cada frame, o script acha os elementos por **seletor** (o mesmo das folhas: `#nome`, `.classe`, tipo, `:estado`) e
+registra **eventos** no `OnStart` ([examples/MenuDocumento.cpp](examples/MenuDocumento.cpp)):
+
+```cpp
+        if (motor::UiElement* slider = ui->Q("#volume")) slider->SetValue(volume);
+        if (motor::UiElement* caixa = ui->Q("#musica")) caixa->checked = musica;
+        ui->OnClick("#jogar", [this] { LoadScene(cenaDoJogo); });
+        ui->OnClick("#sair", [this] { QuitGame(); });
+        ui->OnChange("#volume", [this](motor::UiElement& e) {
+            volume = e.value;
+```
+
+- `Q(seletor)` devolve o primeiro elemento (ou `nullptr`) e `Query(seletor)` todos; os campos do elemento valem
+  para este Play (`e.text`, `e.value`, `e.checked`, `e.visible`...).
+- `OnClick` vale para botão, caixa de seleção e Enter no campo de texto; `OnChange` quando o jogador muda o valor
+  (slider, caixa, texto); `OnHover(seletor, fn(e, entrou))` quando o mouse entra e sai. O callback roda depois dos
+  scripts, no passo em que a coisa aconteceu.
+- Os callbacks são **do script que registrou**: somem quando a entidade é destruída, ao parar o Play e na
+  **recarga dos scripts** (a DLL nova não chama código da antiga). Um documento relido do arquivo (`.mui` mudado,
+  **Recarregar**) também começa sem eles. Por isso registre no `OnStart`, que roda de novo depois da recarga.
+- **Foco (teclado e controle):** com o contexto de entrada `Menu` ativo (`SetInputContext("Menu")`), a ação
+  **Navegar** (setas, WASD, direcional, analógico) leva o foco ao controle mais perto naquela direção; Tab e
+  Shift+Tab vão ao próximo e ao anterior. **Confirmar** (Enter, Espaço, A) clica o botão em foco e troca a caixa;
+  no slider em foco, esquerda e direita mudam o valor. `Focus("#jogar")` escolhe quem começa; o elemento em foco
+  fica com `:focus` (a folha padrão põe uma borda amarela; mude na sua folha com a regra `*:focus`). No campo de
+  texto, o clique dá o foco, o texto digitado entra (com acentos), Backspace, Delete, setas, Home e End editam, e
+  Esc (ou **Voltar**, B) sai.
+- **Seguir uma entidade:** um elemento `Absolute` com `follow` = nome de uma entidade 3D aparece na tela em cima
+  dela (a barra de vida do inimigo), projetado pela câmera do jogo; `followOffset` soma metros à posição (`[0, 2,
+  0]`: dois metros acima) e `position` ainda desloca em pixels. Atrás da câmera, ou sem câmera, o elemento some.
+- Uma UI antiga por entidades (UI: Retângulo, Texto, Imagem, Botão) vira documento com o clique direito na
+  Hierarquia > **Converter UI em documento** (as mesmas caixas na tela; desfaz com Ctrl+Z). Os nomes das entidades
+  viram os nomes dos elementos, então `WasClicked("Jogar")` continua valendo.
+
 ### Salvar o progresso
 
 `SaveSlot()` é um arquivo de chave/valor (o slot "progresso"; dê outro nome para ter vários, como

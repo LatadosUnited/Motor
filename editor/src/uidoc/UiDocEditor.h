@@ -68,6 +68,11 @@ public:
     bool HasUnsavedChanges() const;
     const std::filesystem::path& File() const { return m_file; }
     std::string Key() const;  // "Assets/UI/Menu.mui"
+    // Arquivos .mui/.mstyle gravados por fora da janela (ferramentas MCP ui_document_edit, ui_style_edit): as entidades
+    // da cena releem já, como depois do Salvar daqui (a janela relê sozinha o documento aberto sem alterações).
+    void NotifyFilesSaved() {
+        if (m_host.filesSaved) m_host.filesSaved();
+    }
 
     const UiEditState& State() const { return m_state; }
     UiEditState& Edit() { return m_state; }  // mudar direto; depois Changed()
