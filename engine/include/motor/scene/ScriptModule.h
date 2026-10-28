@@ -67,7 +67,9 @@ namespace motor {
 //     terreno pelas faces de costas (ShadowParams::backFacesOnly), variantes da água no Renderer.
 // 28: Fase 28: os estáticos guardados na Scene sabem de qual bloco de terreno vieram (raio pela grade), Scene::
 //     RaycastWater, PhysicsStats::terrainBlocksBuilt, SaveTerrains com descarte, Renderer::SetWaterTime.
-inline constexpr int kScriptApiVersion = 28;
+// 29: Fase 28: os blocos de terreno dos estáticos guardam a versão e o terreno de onde vieram (a pincelada troca só
+//     os mudados), mudando o tamanho de Scene.
+inline constexpr int kScriptApiVersion = 29;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

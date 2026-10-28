@@ -548,6 +548,21 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
     renderer.EndScene();
 }
 
+// Um bloco de terreno no RenderWorld, com a origem guardada para o Raycast e a atualização por bloco.
+void Scene::AddTerrainBlock(StaticRender& statics, const StaticRender::TerrainSource& terrain, TerrainBlockKey key) {
+    const TerrainData& data = *terrain.data;
+    const float size = data.BlockSize();
+    RenderObject object = terrain.object;
+    object.mesh = data.BlockMesh(key);
+    // Os vértices do bloco partem do canto dele: a matriz leva o canto ao lugar no terreno.
+    object.model = glm::translate(object.model,
+                                  glm::vec3(static_cast<float>(key.x) * size, 0.0f, static_cast<float>(key.z) * size));
+    const RenderWorld::Id id = statics.world.Add(object);
+    if (id == RenderWorld::kInvalid) return;
+    if (statics.sources.size() <= id) statics.sources.resize(id + 1);
+    statics.sources[id] = {terrain.entity, object.mesh.get(), object.model, &data, key, data.BlockVersion(key)};
+}
+
 bool Scene::SyncRenderLists() const {
     // O tipo e a lista saem aqui: as duas consultas guardam cache na primeira chamada.
     const ComponentType* meshType = ComponentRegistry::TypeOf<MeshRenderer>();
@@ -580,16 +595,19 @@ bool Scene::SyncRenderLists() const {
         const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
         if (const TerrainData* data = terrain ? terrain->terrain.Data() : nullptr) terrains += data->Version() + 1;
     }
-    if (listChanged || m_static.dirty || m_static.version != SceneStructureVersion() || m_static.terrains != terrains) {
+    const bool same = !listChanged && !m_static.dirty && m_static.version == SceneStructureVersion();
+    if (same && m_static.terrains != terrains && UpdateTerrainBlocks()) {
+        m_static.terrains = terrains;
+    } else if (!same || m_static.terrains != terrains) {
         MOTOR_PROFILE_STAT("Render: refazer os estáticos");
         m_static.world.Clear();
         m_static.dynamic.clear();
         m_static.sources.clear();
-        auto add = [&](EntityId entity, const RenderObject& object, const TerrainData* terrain = nullptr,
-                       TerrainBlockKey key = {}) {
+        m_static.terrainSources.clear();
+        auto add = [&](EntityId entity, const RenderObject& object) {
             const RenderWorld::Id id = m_static.world.Add(object);
             if (m_static.sources.size() <= id) m_static.sources.resize(id + 1);
-            m_static.sources[id] = {entity, object.mesh.get(), object.model, terrain, key};
+            m_static.sources[id] = {entity, object.mesh.get(), object.model, nullptr, {}, 0};
         };
         for (uint32_t i = 0; i < list.items.size(); ++i) {
             const auto [e, mr] = list.items[i];
@@ -618,13 +636,9 @@ bool Scene::SyncRenderLists() const {
             layers->blockSize = size;
             auto material = std::make_shared<Material>(terrain->Resolved());
             material->terrain = std::move(layers);
-            const glm::mat4& world = CachedWorld(*e);
-            for (const TerrainBlockKey key : data->Blocks()) {
-                const glm::vec3 corner(static_cast<float>(key.x) * size, 0.0f, static_cast<float>(key.z) * size);
-                // Os vértices do bloco partem do canto dele: a matriz leva o canto ao lugar no terreno.
-                add(e->id, {data->BlockMesh(key), material, glm::translate(world, corner), terrain->shadows}, data,
-                    key);
-            }
+            StaticRender::TerrainSource& source = m_static.terrainSources.emplace_back();
+            source = {e->id, data, data->Version(), {nullptr, std::move(material), CachedWorld(*e), terrain->shadows}};
+            for (const TerrainBlockKey key : data->Blocks()) AddTerrainBlock(m_static, source, key);
         }
         m_static.terrains = terrains;
         m_static.version = SceneStructureVersion();
@@ -801,6 +815,41 @@ std::optional<float> RayMesh(const glm::vec3& o, const glm::vec3& d, const Mesh&
     return best;
 }
 } // namespace
+
+bool Scene::UpdateTerrainBlocks() const {
+    MOTOR_PROFILE_STAT("Render: blocos do terreno");
+    for (StaticRender::TerrainSource& terrain : m_static.terrainSources) {
+        const TerrainData& data = *terrain.data;
+        if (data.Version() == terrain.version) continue;
+        // Os pesos pintados vão para a textura aqui (a mesma do material, posta no lugar).
+        if (data.WeightsTexture() != terrain.object.material->terrain->weights) return false;
+        std::vector<TerrainBlockKey> present;
+        for (RenderWorld::Id id = 0; id < m_static.sources.size(); ++id) {
+            StaticRender::Source& source = m_static.sources[id];
+            if (source.terrain != &data || source.entity != terrain.entity) continue;
+            if (!data.HasBlock(source.key)) {
+                m_static.world.Remove(id);
+                source = {};
+                continue;
+            }
+            present.push_back(source.key);
+            const uint64_t version = data.BlockVersion(source.key);
+            if (version == source.blockVersion) continue;
+            RenderObject object = terrain.object;
+            object.mesh = data.BlockMesh(source.key);
+            object.model = source.model;
+            if (!object.mesh || !m_static.world.Update(id, object)) return false;
+            source.mesh = object.mesh.get();
+            source.blockVersion = version;
+        }
+        std::sort(present.begin(), present.end());
+        for (const TerrainBlockKey key : data.Blocks()) {
+            if (!std::binary_search(present.begin(), present.end(), key)) AddTerrainBlock(m_static, terrain, key);
+        }
+        terrain.version = data.Version();
+    }
+    return true;
+}
 
 std::optional<RaycastHit> Scene::RaycastWater(const glm::vec3& origin, const glm::vec3& direction) const {
     std::optional<RaycastHit> best;

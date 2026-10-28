@@ -453,7 +453,8 @@ entity.Remove<Girar>();
   e 640 m com blocos de 32 m; `Renderer::SetLodBias` estica ou encurta essas distâncias), todos com a borda inteira
   do bloco: vizinhos em níveis diferentes não abrem frestas. O nível mais simples tem 136 triângulos (o bloco
   cheio, 2048). A física, o raio e os pincéis usam sempre o bloco cheio.
-  Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta. Todos usam o
+  Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta; a pincelada
+  troca só os blocos mudados, sem remontar os estáticos da cena. Todos usam o
   mesmo material: os pesos da pintura de todos os blocos ficam numa textura só (`TerrainWeights`, uma camada de
   array por bloco e um índice de onde cada bloco está), e os blocos vão juntos no mesmo lote de desenho pela GPU, do mais
   perto ao mais longe. O pixel do terreno só tem luz difusa do sol e das luzes (o reflexo do céu continua), e a

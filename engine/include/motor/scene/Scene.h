@@ -203,6 +203,9 @@ private:
     const glm::mat4& CachedWorld(const Entity& e) const;
     // m_meshList e os estáticos (m_static) em dia com a cena; false se não há Mesh Renderer nem terreno.
     bool SyncRenderLists() const;
+    // Só os blocos de terreno mudados (pincel): troca no RenderWorld os de outra versão, tira os que saíram e põe os
+    // novos. false se não dá (a textura dos pesos foi trocada): então refaz tudo.
+    bool UpdateTerrainBlocks() const;
 
     // Mudança guardada para o índice, aplicada na próxima consulta (UpdateIndex). As listas ficam ordenadas por id,
     // que é a ordem da cena: as entidades só entram no fim e os ids só crescem (a cópia preserva os dois).
@@ -262,8 +265,17 @@ private:
             glm::mat4 model{1.0f};
             const TerrainData* terrain = nullptr;  // bloco de terreno: o raio anda pela grade de alturas dele
             TerrainBlockKey key;
+            uint64_t blockVersion = 0;  // TerrainData::BlockVersion da malha registrada
         };
         std::vector<Source> sources;
+        // Cada terreno registrado: a versão vista e o objeto base dos blocos (material de todos, matriz do terreno).
+        struct TerrainSource {
+            EntityId entity = kNullEntity;
+            const TerrainData* data = nullptr;
+            uint64_t version = 0;
+            RenderObject object;
+        };
+        std::vector<TerrainSource> terrainSources;
         uint64_t terrains = 0;  // soma das versões dos terrenos (TerrainData::Version): mudou, refaz
         std::vector<float> enter;        // Raycast: entrada do raio na caixa de cada acerto da grade
         std::vector<uint32_t> dynamic;  // posições em m_meshList.items dos que não são estáticos
@@ -274,6 +286,7 @@ private:
         StaticRender& operator=(const StaticRender&) {
             world.Clear();
             sources.clear();
+            terrainSources.clear();
             dynamic.clear();
             version = UINT64_MAX;
             dirty = true;
@@ -281,6 +294,7 @@ private:
         }
     };
     mutable StaticRender m_static;
+    static void AddTerrainBlock(StaticRender& statics, const StaticRender::TerrainSource& terrain, TerrainBlockKey key);
 };
 
 } // namespace motor

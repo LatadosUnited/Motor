@@ -614,6 +614,38 @@ int main(int argc, char** argv) {
         CHECK(!scene.RaycastWater({8.0f, 30.0f, 4.0f}, {0.0f, -1.0f, 0.0f}));
     }
 
+    SECTION("Pincelada sem remontar a cena: só os blocos mudados trocam nos estáticos, em todas as entidades do terreno");
+    {
+        Scene scene;
+        auto shared = std::make_shared<TerrainData>(MakeHills(33));  // blocos de 8 m, 0,25 m por célula
+        TerrainData& data = *shared;
+        Entity& a = scene.CreateEntity("Terreno");
+        a.Add<Terrain>().terrain.SetData(shared);
+        Entity& b = scene.CreateEntity("Cópia");  // o mesmo terreno em outro lugar
+        b.transform.position = {100.0f, 0.0f, 0.0f};
+        b.Add<Terrain>().terrain.SetData(shared);
+        const auto down = [&](float x, float z) { return scene.Raycast({x, 50.0f, z}, {0.0f, -1.0f, 0.0f}); };
+        CHECK(down(4.0f, -4.0f) && scene.StaticRenderCount() == 12);
+        // Sem MarkRenderDirty: a cena acha a versão nova do terreno e troca os blocos dela.
+        data.SetSample(16, -16, 20.0f);  // x = 4, z = -4
+        const auto high = down(4.0f, -4.0f), highCopy = down(104.0f, -4.0f);
+        CHECK(high && high->entity == a.id && Near(high->distance, 30.0f, 1e-3f));
+        CHECK(highCopy && highCopy->entity == b.id && Near(highCopy->distance, 30.0f, 1e-3f));
+        CHECK(scene.StaticRenderCount() == 12);
+        // Pintar não muda a malha; tirar e pôr bloco tira e põe só ele.
+        data.SetWeights(16, -16, {0.0f, 1.0f, 0.0f, 0.0f});
+        CHECK(down(4.0f, -4.0f) && Near(down(4.0f, -4.0f)->distance, 30.0f, 1e-3f));
+        CHECK(data.RemoveBlock({0, -1}));
+        CHECK(!down(4.0f, -4.0f) && !down(104.0f, -4.0f) && scene.StaticRenderCount() == 10);
+        CHECK(down(-4.0f, -4.0f).has_value());  // os outros blocos continuam
+        CHECK(data.AddBlock({0, -1}, 3.0f));
+        const auto added = down(4.0f, -4.0f);
+        CHECK(added && Near(added->distance, 47.0f, 1e-3f) && scene.StaticRenderCount() == 12);
+        // O resultado é o mesmo de remontar tudo.
+        scene.MarkRenderDirty();
+        CHECK(down(4.0f, -4.0f) && Near(down(4.0f, -4.0f)->distance, 47.0f, 1e-3f) && scene.StaticRenderCount() == 12);
+    }
+
     SECTION("LOD: níveis com a borda inteira do bloco, sem buracos nem vértices em T");
     {
         TerrainData data = MakeHills(33);  // blocos de 8 m, 32 células

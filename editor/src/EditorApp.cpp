@@ -294,8 +294,8 @@ void EditorApp::OnImGui() {
         }
     }
     // Arrastar (gizmo, valores do Inspector) muda a cena só com o mouse andando: os estáticos acompanham. O botão
-    // direito (voar com a câmera) não conta.
-    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_ctx.scene.MarkRenderDirty();
+    // direito (voar com a câmera) não conta, nem a pincelada no terreno (a cena troca só os blocos mudados).
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && !m_ctx.terrainBrush.stroking) m_ctx.scene.MarkRenderDirty();
     m_ctx.playing = m_play.IsActive();
     m_ctx.SyncSelection();  // seleção trocada por fora (criar, MCP, desfazer) antes dos painéis
 

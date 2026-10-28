@@ -37,6 +37,7 @@ void TerrainBrushTool::Cancel(EditorContext& ctx) {
     if (m_stroke) ctx.PushTerrainStroke(*m_stroke);
     m_stroke.reset();
     m_entity = kNullEntity;
+    ctx.terrainBrush.stroking = false;
 }
 
 bool TerrainBrushTool::Update(EditorContext& ctx, bool hovered, bool focused, const glm::vec2& mouseUv,
@@ -94,6 +95,7 @@ bool TerrainBrushTool::Update(EditorContext& ctx, bool hovered, bool focused, co
             m_stroke->Apply(hit->x, hit->z, std::min(ImGui::GetIO().DeltaTime, kMaxStepSeconds));
         }
     }
+    ctx.terrainBrush.stroking = m_stroke.has_value();
     return true;
 }
 

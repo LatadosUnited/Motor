@@ -69,6 +69,8 @@ struct EditorContext {
     struct TerrainBrushState {
         bool active = false;
         motor::TerrainBrush brush;
+        // Pincelada em andamento: o EditorApp não remonta os estáticos a cada quadro (a cena troca só os blocos).
+        bool stroking = false;
     };
     TerrainBrushState terrainBrush;
     // Pincelada terminada (viewport ou MCP): vira um passo de desfazer (pushSceneUndo). Nada se não mudou nada.
