@@ -14,9 +14,8 @@
 
 #include <EditorContext.h>
 #include <mcp/ImageEncode.h>
-#include <mcp/McpProtocol.h>
+#include <mcp/Mcp.h>
 #include <mcp/McpSceneTools.h>
-#include <mcp/McpServer.h>
 
 #include <motor/scene/SceneRuntime.h>
 

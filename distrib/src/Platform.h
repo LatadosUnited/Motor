@@ -1,7 +1,7 @@
 #pragma once
 
 // O que a distribuição (servidor, instalador e hub) pede ao Windows: pastas do usuário, Lixeira, versão de um
-// .exe, atalhos (IShellLink), chave de desinstalação no HKCU, abrir um endereço no navegador e a linha de
+// .exe, atalhos (IShellLink), chave de desinstalação e iniciar com o Windows no HKCU, abrir um endereço no navegador e a linha de
 // comando em UTF-8. Fora do núcleo testável (Manifest, Download, InstallPlan).
 
 #include "InstallPlan.h"
@@ -31,6 +31,11 @@ bool CreateShortcut(const Shortcut& shortcut, std::string* error = nullptr);
 bool WriteUninstallKey(const std::string& key, const std::vector<RegistryValue>& values, std::string* error = nullptr);
 bool DeleteUninstallKey(const std::string& key);
 bool UninstallKeyExists(const std::string& key);
+
+// HKCU\Software\Microsoft\Windows\CurrentVersion\Run\<name>: o que o Windows abre ao entrar (sem pedir admin).
+bool WriteStartupValue(const std::string& name, const std::string& command, std::string* error = nullptr);
+bool DeleteStartupValue(const std::string& name);  // true também se não existia
+std::optional<std::string> ReadStartupValue(const std::string& name);
 
 void OpenUrl(const std::string& url);  // navegador padrão
 

@@ -199,6 +199,8 @@ MotorEditor [pasta-do-projeto | arquivo.mproject] [opções]
   --settings <arquivo>          usa outro arquivo de configuração no lugar de %APPDATA%/Motor/editor.json
   --no-settings                 não lê nem grava configuração nenhuma (agentes e testes automáticos)
   --mcp[=porta]                 liga o servidor MCP
+  --mcp-ferramentas <arquivo>   grava a lista de ferramentas do MCP (JSON) sem abrir a janela e sai
+  --hub <porta>                 aberto pelo Hub residente: o MCP exige o token de MOTOR_MCP_TOKEN e avisa o Hub
   --perf <arquivo.csv>          grava os contadores de cada quadro (CPU por painel, GPU) num CSV ao fechar
   --segundos S                  fecha sozinho depois de S segundos, sem perguntar pelo que não foi salvo
   --version                     mostra a versão (e a da API de scripts) e sai
@@ -870,11 +872,18 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
 - **Ligar:** menu **Ver > Servidor MCP**. Fica ligado nas próximas vezes que o editor abrir. Outra opção é a
   linha de comando `MotorEditor <projeto> --mcp` (ou `--mcp=<porta>`). A porta padrão é **47800**, e enquanto
   o servidor estiver ligado aparece "MCP" na barra de menus.
-- **Conectar o Claude Code** (uma vez):
+- **Conectar o Claude Code** (uma vez): pelo **Hub**, que fica na bandeja e repassa para o editor, o endereço não
+  muda e o editor abre sozinho quando o agente precisa dele (ver "MCP dos editores pelo Hub", na seção do Hub). O
+  passo a passo, com o token e um `.mcp.json` sem o token no git, está no
+  [guia de configuração do Claude Code](docs/claude-code.md):
 
   ```bash
-  claude mcp add --transport http motor http://127.0.0.1:47800/mcp
+  claude mcp add --transport http --scope user motor-hub http://127.0.0.1:47600/mcphub --header "Authorization: Bearer <token>"
+  claude mcp add --transport http --scope user motor http://127.0.0.1:47600/mcpengine --header "Authorization: Bearer <token>"
   ```
+
+  Direto no editor, sem o Hub (testes automáticos; cai a cada vez que o editor fecha):
+  `claude mcp add --transport http motor-direto http://127.0.0.1:47800/mcp`.
 
 - **Ferramentas:**
 
@@ -896,10 +905,11 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   do pedido. `play` e `scripts_build` com `wait: true` só respondem quando o pedido valeu (o servidor confere a
   cada quadro, sem travar os outros pedidos), o que dispensa esperar com `sleep` em testes automáticos.
 - **Segurança:** o servidor só escuta em `127.0.0.1` e recusa pedidos vindos de páginas da web (cabeçalhos
-  `Origin`/`Host` de fora). Ele não tem senha: enquanto estiver ligado, qualquer programa deste computador pode
-  usá-lo. Desligue quando não estiver usando.
-- **Como funciona:** o protocolo JSON-RPC fica em `editor/src/mcp/McpProtocol`, o HTTP em `McpServer` e as
-  ferramentas em `McpSceneTools`, `McpNavTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
+  `Origin`/`Host` de fora). Ligado pelo Ver > Servidor MCP ou `--mcp`, ele não tem senha: enquanto estiver ligado,
+  qualquer programa deste computador pode usá-lo. Desligue quando não estiver usando. O editor aberto pelo Hub
+  usa uma porta interna com um token só dele, e o Hub pede o token do `mcp-token`.
+- **Como funciona:** o protocolo JSON-RPC (`McpProtocol`) e o HTTP (`McpServer`) ficam na biblioteca `mcp/`
+  (`motor_mcp`, sem a engine, para o Hub usar também), e as ferramentas do editor em `McpSceneTools`, `McpNavTools` e `McpController`. Os pedidos chegam numa thread do HTTP e são atendidos na
   thread principal, uma vez por quadro. A captura sai em PNG com um compressor próprio (`ImageEncode`).
   Testes: `tests/test_mcp.cpp` e `tests/test_mcp_nav.cpp`.
 
@@ -924,8 +934,46 @@ qualquer versão do editor, inclusive as futuras.
   **Servidores** (padrão `http://127.0.0.1:47900`, o `MotorServidor` desta máquina). **Baixar** mostra o
   progresso e pode ser cancelado; o que já veio fica guardado e o botão vira **Retomar**. Cada arquivo é
   conferido pelo SHA-256 do manifesto, e a versão só aparece instalada quando tudo confere (é baixada em
-  `Versões\.baixando\<versão>\` e renomeada no fim). Um Hub mais novo publicado num servidor aparece no topo,
-  com o link do instalador.
+  `Versões\.baixando\<versão>\` e renomeada no fim). Um Hub mais novo publicado num servidor (com o
+  `MotorSetup.exe`) aparece no topo com **Atualizar o Hub**: o Hub baixa o instalador para `<dados>\Atualizacao\`
+  (conferido pelo SHA-256; um download interrompido continua de onde parou), abre-o sem janela e fecha; o instalador
+  (`MotorSetup --atualizar`) troca o `MotorHub.exe` com as mesmas escolhas da instalação (pasta de dados, atalhos,
+  registro, iniciar com o Windows como está agora) e abre o Hub novo na bandeja com os mesmos argumentos. Os editores
+  abertos continuam: ao sair, o Hub grava `<dados>\editores.json` e o Hub seguinte volta a acompanhá-los (MCP, fechar,
+  avisos). O MCP fica fora do ar por uns 3 s. Se a atualização falhar, o Hub antigo volta e mostra o erro (o
+  instalador escreve `<dados>\Atualizacao\atualizacao.log`). Só o Hub instalado pelo `MotorSetup` (com o
+  `instalacao.json` ao lado) se atualiza sozinho; os outros mostram o link do instalador.
+- **Iniciar com o Windows:** a caixa no canto do cabeçalho (ou o instalador) põe o Hub no
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (valor `MotorHub`, sem pedir administrador), que o abre
+  escondido, só com o ícone na **bandeja** (`MotorHub --bandeja`). Residente (iniciado assim ou com a caixa marcada),
+  fechar a janela só a esconde: o ícone abre o Hub de novo com um clique, e o menu dele (botão direito) tem **Sair do
+  Hub**. Há um Hub aberto por pasta de dados: abrir o atalho com ele na bandeja traz a janela dele.
+- **MCP do Hub:** enquanto o Hub está aberto (também na bandeja), `http://127.0.0.1:47600/mcphub` atende agentes
+  como o Claude Code. Todo pedido precisa de `Authorization: Bearer <token>`, com o token de `<dados>\mcp-token`
+  (criado na primeira vez); o `initialize` dá um `Mcp-Session-Id`, e um id antigo continua valendo depois de o Hub
+  reiniciar. A aba **MCP** mostra o endereço e copia o token e o comando para o Claude Code
+  (`claude mcp add --transport http motor-hub http://127.0.0.1:47600/mcphub --header "Authorization: Bearer <token>"`).
+  Ferramentas: `hub_status` (versões, projetos, editores abertos, download em andamento), `projects_list`,
+  `project_open` (com `engine` para outra versão), `project_create`, `project_add`, `project_remove` (só da lista),
+  `editor_close` (como o X da janela: com algo não salvo o editor pergunta; `force` fecha na hora), `versions_list`,
+  `version_set_default`, `version_remove` (para a Lixeira; recusa com um editor da versão aberto),
+  `versions_available` e `version_download` (`"mais-recente"`; `wait` espera terminar), `hub_update_check` (Hub mais
+  novo nos servidores e se este pode se atualizar) e `hub_update` (a atualização acima; o `hub_status` mostra o
+  progresso e o resultado, `hubUpdate`). O Hub só fecha e conta os
+  editores que ele mesmo abriu. Com o MCP do Hub ligado, cada editor que ele abre (versões com a ligação, que trazem
+  `"hubLink"` no `mcp-ferramentas.json`) liga o MCP dele numa porta interna livre (47801 a 47899) com um token só
+  dele, e avisa o Hub quando fica pronto, quando abre outro projeto e quando fecha (`MotorEditor --hub <porta>`,
+  com o token em `MOTOR_MCP_TOKEN`); o `hub_status` mostra `ready` e `mcpPort`, e `project_open` com `wait`
+  responde quando o editor está pronto. No editor aberto assim, Ver > Servidor MCP fica sempre ligado.
+- **MCP dos editores pelo Hub:** `http://127.0.0.1:47600/mcpengine/<Projeto>` é o MCP do editor daquele projeto
+  (o nome da lista do Hub, codificado na URL: `Jogo%20A%C3%A7%C3%A3o`; maiúsculas não contam), e
+  `http://127.0.0.1:47600/mcpengine`, o do editor aberto por último. Com o mesmo token do Hub. O Hub responde o
+  `initialize` e o `tools/list` com a lista da versão, então o Claude Code conecta com o editor fechado; a primeira
+  ferramenta abre o editor (janela normal), espera ele ficar pronto e repassa. Fechar e abrir o editor de novo não
+  pede para reconectar. A aba MCP copia o comando do servidor `motor`
+  (`claude mcp add --transport http motor http://127.0.0.1:47600/mcpengine --header "Authorization: Bearer <token>"`)
+  e a URL de cada projeto; o `projects_list` traz o `mcpUrl`. Dois projetos com o mesmo nome: renomeie um.
+  Configuração passo a passo e problemas comuns: [guia do Claude Code](docs/claude-code.md).
 - **Configuração:** `%LOCALAPPDATA%\Motor\hub.json` (`{"format": "motor-hub", "version": 2, ...}`, com a lista
   `servers`; o formato 1 é lido com o servidor local na lista), separada da do editor.
 
@@ -938,7 +986,8 @@ cmake --build build --target motor_package     # build/package/Motor-0.2.0/
 A pasta é autossuficiente: `MotorEditor.exe`, `Player.exe`, `libMotor.dll` e o runtime do GCC, `engine/`
 (shaders e fontes), `templates/`, `sdk/` (headers e biblioteca de importação para compilar os scripts dos
 projetos, com caminhos relativos) e `motor-version.json` (`{"version": "0.2.0", "scriptApiVersion": 10, ...}`),
-que o hub lê. Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure. Montada de um build que não é de
+que o hub lê, e `mcp-ferramentas.json` (as ferramentas do MCP do editor, gravadas por
+`MotorEditor --mcp-ferramentas`: o Hub residente as mostra com o editor fechado). Outra pasta de saída: `-DMOTOR_PACKAGE_DIR=...` no configure. Montada de um build que não é de
 Release, ela leva também `release/` (Player, DLLs e SDK de um build de Release, de `MOTOR_RELEASE_BIN_DIR`) para
 os jogos exportados saírem em Release; sem esse build, o `motor_package` avisa.
 **O editor instalado continua precisando do MSYS2 (UCRT64) e do CMake** nos mesmos caminhos do build que montou
@@ -955,10 +1004,11 @@ MotorHub --data "C:/temp/Hub Teste" ... -- --no-settings --mcp   # outra pasta d
 ```
 
 Também: `--remove-version`, `--set-default`, `--add-project`, `--remove-project`, `--aba versões` (abre a janela
-nessa aba), `--version`, `--disponiveis [--servidor URL]` (versões publicadas nos servidores) e
+nessa aba), `--bandeja` (abre escondido, na bandeja), `--mcp-porta <porta>` (outra porta para o
+MCP do Hub, ou 0 para desligar: um Hub de teste ao lado do do usuário), `--aba mcp`, `--version`, `--disponiveis [--servidor URL]` (versões publicadas nos servidores) e
 `--baixar <versão|mais-recente> [--servidor URL]` (baixa, confere e instala; retoma um download interrompido).
 O hub instalado pelo `MotorSetup` com outra pasta de dados a lê do `instalacao.json` ao lado do `MotorHub.exe`. Código em `hub/`: `HubCore` (lógica sem janela, `tests/test_hub.cpp`),
-`HubPlatform` (Windows: processos, Explorer, Lixeira), `HubApp` (janela e ações), `main.cpp` (linha de comando).
+`HubPlatform` (Windows: processos, Explorer, Lixeira), `HubTray` (bandeja e um Hub por pasta de dados), `HubMcp` (MCP do Hub, sobre a `motor_mcp`), `HubApp` (janela e ações), `main.cpp` (linha de comando).
 
 ## Instalar
 
@@ -969,7 +1019,7 @@ seu usuário, sem pedir administrador, e pode já instalar uma versão do Motor.
    `build/bin/MotorSetup.exe` de um build.
 2. Rode e confira: pasta do Hub (padrão `%LOCALAPPDATA%\Programs\Motor Hub\`), pasta de dados (padrão
    `%LOCALAPPDATA%\Motor`: versões do Motor e `hub.json`), atalho no menu Iniciar e, se quiser, na área de
-   trabalho. Em **Versão do Motor**, escolha baixar a mais recente de um servidor (botão **Verificar** mostra o
+   trabalho, e **Iniciar com o Windows** (o Hub fica na bandeja; marcado por padrão). Em **Versão do Motor**, escolha baixar a mais recente de um servidor (botão **Verificar** mostra o
    que ele tem) ou instalar de uma pasta montada (`motor_package`), ou deixe para depois.
 3. **Instalar**. No fim, **Abrir o Hub agora**.
 
@@ -980,7 +1030,7 @@ scripts dos projetos (<https://www.msys2.org/>; no terminal UCRT64:
 `pacman -S mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake make`), mas não os instala.
 
 **Desinstalar:** pelo Aplicativos instalados ou `MotorSetup.exe --desinstalar`. A pasta do Hub vai para a
-Lixeira e os atalhos e o registro saem; a pergunta "também as versões do Motor e o hub.json" decide se
+Lixeira e os atalhos, o registro e o iniciar com o Windows saem; a pergunta "também as versões do Motor e o hub.json" decide se
 `Versões\` e `hub.json` da pasta de dados vão junto. Projetos nunca são tocados. Rodando de dentro da pasta do
 Hub, o desinstalador continua numa cópia em `%TEMP%` (o Windows não move a pasta de um programa aberto), que se
 apaga sozinha no fim.
@@ -988,13 +1038,22 @@ apaga sozinha no fim.
 Sem janela (testes e agentes; o resultado sai no console):
 
 ```bash
-MotorSetup --silencioso --pasta "C:/temp/Hub" --dados "C:/temp/Dados" --servidor http://127.0.0.1:47900 --sem-atalhos --sem-registro
+MotorSetup --silencioso --pasta "C:/temp/Hub" --dados "C:/temp/Dados" --servidor http://127.0.0.1:47900 --sem-atalhos --sem-registro --sem-iniciar-com-windows
 MotorSetup --silencioso --versao-local build/package/Motor-0.2.0 ...   # versão de uma pasta montada
 MotorSetup --desinstalar --silencioso --pasta "C:/temp/Hub" [--apagar-dados]
 ```
 
+Atualizar o Hub instalado (é o que o Hub faz sozinho; `--esperar` espera o Hub aberto fechar, até 60 s):
+
+```bash
+MotorSetup --silencioso --atualizar --pasta "C:/temp/Hub" --esperar <pid> --log "C:/temp/atualizacao.log" --abrir-hub -- --bandeja
+```
+
+Os argumentos depois de `--` são os do Hub aberto no fim (sem eles, só `--data` com a pasta de dados escolhida).
 Também: `--area-de-trabalho`, `--abrir-hub`, e para testes `--atalhos-em <pasta>` (atalhos numa pasta qualquer)
-e `--chave-registro <nome>` (outra chave em `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall`).
+e `--chave-registro <nome>` (outra chave em `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall` e outro
+valor no `...\Run`). **Em testes, passe `--sem-iniciar-com-windows` ou `--chave-registro`**: senão o Hub de teste
+passa a iniciar com o Windows no lugar do instalado.
 Código em `installer/` (`Setup`: instalar e desinstalar; `SetupApp`: janela) sobre o plano de
 `distrib/InstallPlan` (testado em `tests/test_distribuicao.cpp`).
 

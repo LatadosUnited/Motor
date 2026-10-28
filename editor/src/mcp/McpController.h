@@ -2,8 +2,7 @@
 
 #include "../EditorContext.h"
 #include "../EditorSettings.h"
-#include "McpProtocol.h"
-#include "McpServer.h"
+#include "Mcp.h"
 
 #include <motor/core/Input.h>
 
@@ -54,6 +53,11 @@ public:
     McpController(const McpController&) = delete;
     McpController& operator=(const McpController&) = delete;
 
+    // Aberto pelo Hub residente (--hub, motor/mcp/HubLink.h): antes do Start. O servidor passa a exigir o token, o
+    // Hub é avisado quando ele liga, quando o projeto muda e quando desliga, e o menu Ver não o desliga.
+    void LinkHub(int hubPort, std::string token);
+    bool HubLinked() const { return m_hubPort > 0; }
+
     void Start(int port);  // erro vai para o log e para o popup do editor
     void Stop();
     bool IsRunning() const { return m_server.IsRunning(); }
@@ -65,6 +69,8 @@ public:
 
     void DrawMenuItems(EditorSettings& settings);  // no menu Ver
     void DrawStatus();                             // "MCP" na barra de menus enquanto ligado
+
+    mcp::Protocol& GetProtocol() { return m_protocol; }  // --mcp-ferramentas (McpToolList) e testes
 
 private:
     struct LogLine {
@@ -134,6 +140,14 @@ private:
     Host m_host;
     mcp::Protocol m_protocol;
     mcp::Server m_server;
+
+    // Hub residente (LinkHub)
+    void NotifyHub(const char* event);
+    std::string CurrentProjectUtf8();
+    int m_hubPort = 0;
+    std::string m_hubToken;
+    bool m_hubAnnounced = false;     // "pronto" enviado (o "fechando" só vai depois dele)
+    std::string m_announcedProject;  // o projeto do último aviso
 
     // Últimas linhas do log (para log_read), preenchidas por um ouvinte do log de qualquer thread.
     int m_logSink = 0;

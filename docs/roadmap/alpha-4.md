@@ -90,7 +90,7 @@ o número da fase sai quando a alpha 4 for numerada de novo.
 
 ## Hub residente com MCP (sem número ainda)
 
-**Planejada (26/10/2026), a pedido do usuário, para antes da 0.4:** [nota da fase](alpha-4/hub-residente.md). O Hub
+**Pronta (28/10/2026); planejada em 26/10/2026, a pedido do usuário, para antes da 0.4:** [nota da fase](alpha-4/hub-residente.md). O Hub
 inicia com o Windows na bandeja, é dono da porta 47600 (`/mcphub` e `/mcpengine/<Projeto>`, repassado ao editor) e
 o Claude Code não precisa reconectar quando o editor fecha ou reabre; o Hub se atualiza sozinho pelo instalador
 silencioso. A autoatualização veio da [Fase 32](alpha-5.md). Branch `hub-residente`.

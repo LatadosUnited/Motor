@@ -48,9 +48,7 @@ add_executable(MotorEditor
     src/mcp/McpController.cpp
     src/mcp/McpFileTools.cpp
     src/mcp/McpPlayTools.cpp
-    src/mcp/McpProtocol.cpp
     src/mcp/McpSceneTools.cpp
-    src/mcp/McpServer.cpp
     src/export/GameExport.cpp
     src/export/ExeResources.cpp
     src/export/ReleaseRuntime.cpp
@@ -69,6 +67,7 @@ add_executable(MotorEditor
     src/mcp/McpNavTools.cpp
     src/viewport/PerceptionOverlay.cpp
     src/FolderWatcher.cpp
+    src/mcp/McpToolList.cpp
     src/uidoc/UiDocEdit.cpp
     src/uidoc/UiDocReload.cpp
     src/uidoc/UiDocFileOps.cpp
@@ -85,12 +84,8 @@ if(WIN32)
     target_link_libraries(MotorEditor PRIVATE comdlg32 ole32 uuid shell32)
 endif()
 
-# Servidor MCP (src/mcp): cpp-httplib, só no editor. No Windows precisa do Winsock e de Windows 10+.
-target_include_directories(MotorEditor PRIVATE ${httplib_SOURCE_DIR})
-if(WIN32)
-    target_link_libraries(MotorEditor PRIVATE ws2_32)
-    target_compile_definitions(MotorEditor PRIVATE _WIN32_WINNT=0x0A00)
-endif()
+# Servidor MCP (src/mcp): protocolo e transporte HTTP na motor_mcp (mcp/, também usada pelo Hub).
+target_link_libraries(MotorEditor PRIVATE motor_mcp)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(MotorEditor PRIVATE -Wall -Wextra)

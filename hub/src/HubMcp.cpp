@@ -1,0 +1,677 @@
+#include "HubMcp.h"
+
+#include "HubApp.h"
+
+#include <Download.h>
+#include <motor/mcp/HubLink.h>
+
+#include <algorithm>
+#include <chrono>
+#include <format>
+#include <future>
+#include <memory>
+
+#ifndef MOTOR_HUB_VERSION
+#define MOTOR_HUB_VERSION "0.0.0"
+#endif
+
+namespace hub {
+
+using motor::mcp::Json;
+using motor::mcp::Prop;
+using motor::mcp::Schema;
+using motor::mcp::Tool;
+using motor::mcp::ToolError;
+using motor::mcp::ToolResult;
+
+namespace {
+
+constexpr const char* kInstructions =
+    "Hub do Motor: projetos e versões do Motor instaladas nesta máquina. Abra um projeto com project_open; o MCP do "
+    "editor de cada projeto fica em /mcpengine/<Projeto> no mesmo endereço.";
+
+using Clock = std::chrono::steady_clock;
+
+Clock::time_point Deadline(double seconds) {
+    return Clock::now() + std::chrono::milliseconds(static_cast<int64_t>(seconds * 1000.0));
+}
+
+std::string RequiredText(const Json& args, const char* name) {
+    if (!args.contains(name) || !args[name].is_string() || args[name].get<std::string>().empty()) {
+        throw ToolError(std::format("falta o argumento '{}' (texto)", name));
+    }
+    return args[name].get<std::string>();
+}
+
+fs::path RequiredPath(const Json& args, const char* name) {
+    return PathFromUtf8(RequiredText(args, name));
+}
+
+ToolResult Outcome(bool ok, const std::string& message) {
+    if (!ok) throw ToolError(message);
+    return ToolResult::Text(message);
+}
+
+// Lê os servidores numa thread (servidor fora do ar não trava o hub); o `later` confere a cada volta do loop.
+using FetchFuture = std::shared_ptr<std::future<std::vector<HubApp::RemoteServer>>>;
+
+FetchFuture StartFetch(std::vector<std::string> urls) {
+    return std::make_shared<std::future<std::vector<HubApp::RemoteServer>>>(
+        std::async(std::launch::async, [urls = std::move(urls)] { return HubApp::FetchServers(urls); }));
+}
+
+bool Ready(const FetchFuture& f) {
+    return f->wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+}
+
+} // namespace
+
+HubMcp::HubMcp(HubApp& app)
+    : m_app(app), m_protocol("motor-hub", MOTOR_HUB_VERSION, kInstructions), m_server(m_protocol) {
+    AddTools();
+}
+
+bool HubMcp::Start(int port, std::function<void()> wake, std::string& error) {
+    m_token = LoadOrCreateMcpToken(m_app.GetPaths().mcpTokenFile, &error);
+    if (m_token.empty()) {
+        error = "MCP do Hub sem token: " + error;
+        return false;  // sem token não liga: a porta ficaria aberta para qualquer programa
+    }
+    m_server.SetPath(kHubMcpPath);
+    m_server.SetToken(m_token);
+    m_server.SetSessions(true);
+    m_wake = wake;  // o repasse do /mcpengine acorda o hub quando o editor responde
+    m_server.SetWake(std::move(wake));
+    m_server.AddRoute(motor::mcp::hublink::kNotifyPath, [this](const motor::mcp::Server::RouteRequest& request) {
+        return OnEditorNotice(request);
+    });
+    // "/mcpengine" e "/mcpengine/<Projeto>" (a httplib casa a expressão inteira com o caminho).
+    m_server.AddRoute(std::string(kHubEnginePath) + "(/.*)?", [this](const motor::mcp::Server::RouteRequest& request) {
+        return OnEngineRequest(request);
+    });
+    if (!m_server.Start(port, error)) {
+        error = "MCP do Hub desligado: " + error;
+        return false;
+    }
+    m_app.m_linkPort = port;  // daqui em diante os editores abertos ganham a porta interna e avisam aqui
+    return true;
+}
+
+void HubMcp::Stop() {
+    m_server.Stop();
+    m_app.m_linkPort = 0;
+}
+
+motor::mcp::Server::RouteReply HubMcp::OnEditorNotice(const motor::mcp::Server::RouteRequest& request) {
+    namespace link = motor::mcp::hublink;
+    HubApp::OpenEditor* editor = nullptr;
+    for (HubApp::OpenEditor& e : m_app.m_editors) {
+        if (!e.token.empty() && link::SameSecret(request.authorization, "Bearer " + e.token)) editor = &e;
+    }
+    if (!editor) return {401, Json{{"error", "token de editor desconhecido"}}.dump(), {}};
+    const Json notice = Json::parse(request.body, nullptr, false);
+    if (!notice.is_object()) return {400, Json{{"error", "aviso inválido"}}.dump(), {}};
+
+    const std::string event = notice.value("event", std::string());
+    const fs::path project = PathFromUtf8(notice.value("project", std::string())).lexically_normal();
+    if (event == link::kEventReady || event == link::kEventProject) {
+        editor->ready = true;
+        editor->mcpPort = notice.value("port", editor->mcpPort);
+        if (!project.empty() && !SamePath(project, editor->root)) {
+            // Arquivo > Abrir projeto no editor: o hub segue o projeto (e o põe na lista, como o Abrir do hub).
+            editor->root = project;
+            m_app.m_config.MarkOpened(project, NowSeconds());
+            m_app.SaveConfig();
+            m_app.RefreshProjects();
+        }
+    } else if (event == link::kEventClosing) {
+        editor->ready = false;
+    } else {
+        return {400, Json{{"error", "evento desconhecido: " + event}}.dump(), {}};
+    }
+    return {200, Json{{"ok", true}}.dump(), {}};
+}
+
+std::string HubMcp::ClaudeCommand() const {
+    return std::format("claude mcp add --transport http motor-hub {} --header \"Authorization: Bearer {}\"", Url(),
+                       m_token);
+}
+
+std::string HubMcp::EngineUrl(const std::string& projectName) const {
+    const std::string base = std::format("http://127.0.0.1:{}{}", m_server.Port(), kHubEnginePath);
+    return projectName.empty() ? base : base + "/" + UrlEncodePathSegment(projectName);
+}
+
+std::string HubMcp::ClaudeEngineCommand(const std::string& projectName) const {
+    return std::format("claude mcp add --transport http motor {} --header \"Authorization: Bearer {}\"",
+                       EngineUrl(projectName), m_token);
+}
+
+Json HubMcp::EditorsJson() {
+    Json out = Json::array();
+    for (const HubApp::OpenEditor& e : m_app.Editors()) {
+        out.push_back({{"project", ToUtf8(e.root)},
+                       {"version", e.version},
+                       {"pid", e.process.Pid()},
+                       {"opened", FormatLastOpened(e.opened, NowSeconds())},
+                       {"linked", e.mcpPort > 0},  // aberto com a ligação do Hub residente
+                       {"ready", e.ready},          // o MCP dele está no ar (avisou o hub)
+                       {"mcpPort", e.mcpPort}});
+    }
+    return out;
+}
+
+void HubMcp::AddTools() {
+    AddStateTools();
+    AddProjectTools();
+    AddVersionTools();
+    AddUpdateTools();
+}
+
+void HubMcp::AddStateTools() {
+    m_protocol.AddTool({
+        .name = "hub_status",
+        .description = "Estado do Hub do Motor: versão, pasta de dados, versões do Motor instaladas (e a padrão), "
+                       "quantos projetos há na lista, os editores que o Hub abriu, o download em andamento e a "
+                       "atualização do Hub (em andamento ou a última).",
+        .inputSchema = Schema(),
+        .readOnly = true,
+        .run =
+            [this](const Json&) {
+                const InstalledVersion* def = DefaultVersion(m_app.Versions(), m_app.Config().defaultVersion);
+                Json versions = Json::array();
+                for (const InstalledVersion& v : m_app.Versions()) versions.push_back(v.version);
+                Json download = nullptr;
+                if (m_app.m_download) {
+                    std::lock_guard lock(m_app.m_download->mutex);
+                    const distrib::ReleaseProgress& p = m_app.m_download->progress;
+                    download = {{"version", m_app.m_download->release.version},
+                                {"server", m_app.m_download->server},
+                                {"bytesDone", p.done},
+                                {"bytesTotal", p.total}};
+                }
+                Json hubUpdate = nullptr;
+                if (m_app.m_hubUpdate) {
+                    hubUpdate = {{"version", m_app.m_hubUpdate->update.version},
+                                 {"server", m_app.m_hubUpdate->update.server},
+                                 {"bytesDone", m_app.m_hubUpdate->bytes.load()},
+                                 {"bytesTotal", m_app.m_hubUpdate->update.setup.size}};
+                } else if (!m_app.m_hubUpdateMessage.empty()) {
+                    hubUpdate = {{"ok", m_app.m_hubUpdateOk}, {"message", m_app.m_hubUpdateMessage}};
+                }
+                return ToolResult::Data({
+                    {"hubVersion", MOTOR_HUB_VERSION},
+                    {"dataDir", ToUtf8(m_app.GetPaths().dataDir)},
+                    {"versions", std::move(versions)},
+                    {"defaultVersion", def ? def->version : ""},
+                    {"projects", m_app.Projects().size()},
+                    {"editors", EditorsJson()},
+                    {"download", std::move(download)},
+                    {"hubUpdate", std::move(hubUpdate)},
+                    {"startsWithWindows", m_app.StartsWithWindows()},
+                    {"engineUrl", EngineUrl()},  // o editor aberto por último; /<Projeto> para um projeto
+                });
+            },
+    });
+}
+
+void HubMcp::AddProjectTools() {
+    const Json pathProp = Prop("string", "pasta do projeto (a que tem o .mproject) ou o próprio .mproject");
+    const Json engineProp =
+        Prop("string", "versão do Motor (ex.: \"0.3.0\"); sem ela, a do projeto (ou a padrão para um novo)");
+
+    m_protocol.AddTool({
+        .name = "projects_list",
+        .description = "Projetos da lista do Hub, dos abertos por último para os mais antigos: nome, pasta, versão do "
+                       "Motor, última abertura, se o editor dele está aberto (aberto pelo Hub) e mcpUrl, o endereço "
+                       "do MCP do editor dele pelo Hub (/mcpengine/<Projeto>; abre o editor se estiver fechado).",
+        .inputSchema = Schema({{"query", Prop("string", "filtra por nome ou pasta (opcional)")}}),
+        .readOnly = true,
+        .run =
+            [this](const Json& args) {
+                // Na bandeja a janela não desenha (e não relê a lista): um projeto recém-criado já aparece aqui.
+                m_app.RefreshProjects();
+                const std::string query = args.value("query", std::string());
+                Json out = Json::array();
+                for (size_t i = 0; i < m_app.Projects().size(); ++i) {
+                    const ProjectInfo& p = m_app.Projects()[i];
+                    if (!MatchesSearch(p.name, query) && !MatchesSearch(ToUtf8(p.root), query)) continue;
+                    Json item = {{"name", p.name},
+                                 {"path", ToUtf8(p.root)},
+                                 {"found", p.found},
+                                 {"engineVersion", p.engineVersion},
+                                 {"lastOpened", FormatLastOpened(m_app.Config().projects[i].lastOpened, NowSeconds())}};
+                    if (!p.found) item["error"] = p.error;
+                    const size_t sameName = std::count_if(
+                        m_app.Projects().begin(), m_app.Projects().end(),
+                        [&](const ProjectInfo& other) { return SameProjectName(other.name, p.name); });
+                    item["mcpUrl"] = EngineUrl(p.name);
+                    if (sameName > 1) item["mcpUrlError"] = "outro projeto com o mesmo nome: renomeie um (vai na URL)";
+                    const HubApp::OpenEditor* editor = m_app.FindEditor(p.root);
+                    item["editorOpen"] = editor != nullptr;
+                    if (editor) {
+                        item["editorPid"] = editor->process.Pid();
+                        item["editorReady"] = editor->ready;
+                    }
+                    out.push_back(std::move(item));
+                }
+                return ToolResult::Data(out);
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "project_open",
+        .description = "Abre o projeto no editor da versão dele (como o Abrir do Hub). Se a versão do projeto não "
+                       "estiver instalada, falha dizendo qual usar em 'engine' (o editor passa o projeto para essa "
+                       "versão: faça uma cópia de segurança antes). Um projeto já aberto pelo Hub não abre de novo. "
+                       "Com wait = true, responde quando o editor está pronto (o MCP dele no ar).",
+        .inputSchema = Schema({{"path", pathProp},
+                               {"engine", engineProp},
+                               {"wait", Prop("boolean", "esperar o editor ficar pronto (padrão: false)")},
+                               {"timeout", Prop("number", "segundos de espera com wait (padrão: 60)")}},
+                              {"path"}),
+        .run =
+            [this](const Json& args) {
+                const fs::path root = RequiredPath(args, "path");
+                std::string message;
+                const bool ok = m_app.OpenProjectAuto(root, args.value("engine", std::string()), message);
+                if (!ok) throw ToolError(message);
+                const fs::path opened = ReadProject(root).root;
+                const HubApp::OpenEditor* editor = m_app.FindEditor(opened);
+                const uint32_t pid = editor ? editor->process.Pid() : 0;
+                ToolResult now = ToolResult::Data({{"message", message}, {"pid", pid}, {"ready", false}});
+                if (!args.value("wait", false)) return now;
+                if (!editor || editor->mcpPort == 0) {
+                    throw ToolError(message + " Não dá para esperar: esta versão do editor não avisa o Hub (ou o "
+                                              "MCP do Hub está desligado).");
+                }
+                const auto deadline = Deadline(std::clamp(args.value("timeout", 60.0), 1.0, 600.0));
+                now.later = [this, opened, pid, message, deadline](ToolResult& out) {
+                    const HubApp::OpenEditor* e = m_app.FindEditor(opened);
+                    if (!e || e->process.Pid() != pid) {
+                        throw ToolError("o editor fechou antes de ficar pronto (veja o log dele ou abra sem wait)");
+                    }
+                    if (e->ready) {
+                        out = ToolResult::Data({{"message", std::format("'{}' aberto e pronto.",
+                                                                        ToUtf8(opened.filename()))},
+                                                {"pid", pid},
+                                                {"ready", true}});
+                        return true;
+                    }
+                    if (Clock::now() < deadline) return false;
+                    throw ToolError("o editor não ficou pronto a tempo (continua abrindo; veja hub_status)");
+                };
+                return now;
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "project_create",
+        .description = "Cria um projeto novo com o editor de uma versão (como o Novo projeto do Hub): o editor abre "
+                       "com o projeto criado em <parent>/<name>.",
+        .inputSchema = Schema({{"name", Prop("string", "nome do projeto (vira o nome da pasta)")},
+                               {"parent", Prop("string", "pasta onde criar (padrão: a última usada, ou "
+                                                         "Documentos\\Motor)")},
+                               {"engine", engineProp}},
+                              {"name"}),
+        .run =
+            [this](const Json& args) {
+                const std::string name = RequiredText(args, "name");
+                fs::path parent = PathFromUtf8(args.value("parent", std::string())).lexically_normal();
+                if (parent.empty()) {
+                    parent = m_app.Config().newProjectDir.empty() ? m_app.GetPaths().defaultProjectsDir
+                                                                  : m_app.Config().newProjectDir;
+                }
+                std::string message;
+                const InstalledVersion* v = m_app.PickVersion(args.value("engine", std::string()), message);
+                if (!v) throw ToolError(message);
+                const bool ok = m_app.CreateProject(parent, name, *v, message);
+                if (!ok) throw ToolError(message);
+                return ToolResult::Data({{"message", message}, {"path", ToUtf8(parent / PathFromUtf8(name))}});
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "project_add",
+        .description = "Põe na lista do Hub um projeto que já existe no disco.",
+        .inputSchema = Schema({{"path", pathProp}}, {"path"}),
+        .run =
+            [this](const Json& args) {
+                std::string message;
+                const bool ok = m_app.AddProjectFolder(RequiredPath(args, "path"), message);
+                return Outcome(ok, message);
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "project_remove",
+        .description = "Tira o projeto da lista do Hub. A pasta continua no disco, intocada.",
+        .inputSchema = Schema({{"path", pathProp}}, {"path"}),
+        .run =
+            [this](const Json& args) {
+                std::string message;
+                const bool ok = m_app.RemoveProject(ReadProject(RequiredPath(args, "path")).root, message);
+                return Outcome(ok, message);
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "editor_close",
+        .description = "Fecha o editor de um projeto aberto pelo Hub. Sem 'force', é como o X da janela: com algo não "
+                       "salvo, o editor pergunta e não fecha sozinho (salve antes pelo MCP do editor). Com "
+                       "force = true, fecha na hora e o que não estava salvo se perde.",
+        .inputSchema = Schema({{"path", pathProp},
+                               {"force", Prop("boolean", "fechar na hora, sem salvar (padrão: false)")},
+                               {"wait", Prop("boolean", "esperar o editor fechar (padrão: true)")},
+                               {"timeout", Prop("number", "segundos de espera (padrão: 15)")}},
+                              {"path"}),
+        .run =
+            [this](const Json& args) {
+                const fs::path root = ReadProject(RequiredPath(args, "path")).root;
+                std::string message;
+                if (!m_app.CloseEditor(root, args.value("force", false), message)) throw ToolError(message);
+                ToolResult now = ToolResult::Text(message);
+                if (!args.value("wait", true)) return now;
+                const auto deadline = Deadline(std::clamp(args.value("timeout", 15.0), 0.5, 120.0));
+                now.later = [this, root, deadline](ToolResult& out) {
+                    if (!m_app.FindEditor(root)) {
+                        out = ToolResult::Text(std::format("Editor de '{}' fechado.", ToUtf8(root.filename())));
+                        return true;
+                    }
+                    if (Clock::now() < deadline) return false;
+                    throw ToolError("o editor não fechou a tempo: pode estar perguntando se salva (salve pelo MCP "
+                                    "dele) ou use force = true");
+                };
+                return now;
+            },
+    });
+}
+
+void HubMcp::AddVersionTools() {
+    const Json versionProp = Prop("string", "versão do Motor, ex.: \"0.3.0\"");
+    const Json serverProp = Prop("string", "URL de um servidor de versões (padrão: os da lista do Hub)");
+
+    m_protocol.AddTool({
+        .name = "versions_list",
+        .description = "Versões do Motor instaladas: versão, API de scripts, tipo do build, pasta, qual é a padrão "
+                       "(a dos projetos novos) e quantas ferramentas o MCP do editor dela tem (null: versão sem a "
+                       "lista, anterior ao Hub residente).",
+        .inputSchema = Schema(),
+        .readOnly = true,
+        .run =
+            [this](const Json&) {
+                const InstalledVersion* def = DefaultVersion(m_app.Versions(), m_app.Config().defaultVersion);
+                Json out = Json::array();
+                for (const InstalledVersion& v : m_app.Versions()) {
+                    const std::optional<EditorTools> tools = ReadEditorTools(v.dir);
+                    out.push_back({{"version", v.version},
+                                   {"scriptApiVersion", v.scriptApiVersion},
+                                   {"buildType", v.buildType},
+                                   {"dir", ToUtf8(v.dir)},
+                                   {"default", &v == def},
+                                   {"editorTools", tools ? Json(tools->tools.size()) : Json(nullptr)}});
+                }
+                return ToolResult::Data(out);
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "version_set_default",
+        .description = "Escolhe a versão padrão do Motor (a dos projetos novos).",
+        .inputSchema = Schema({{"version", versionProp}}, {"version"}),
+        .run =
+            [this](const Json& args) {
+                std::string message;
+                const bool ok = m_app.SetDefaultVersion(RequiredText(args, "version"), message);
+                return Outcome(ok, message);
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "version_remove",
+        .description = "Manda uma versão do Motor instalada para a Lixeira (dá para restaurar de lá). Recusa se um "
+                       "editor dessa versão estiver aberto pelo Hub. Projetos dessa versão vão pedir outra para abrir.",
+        .inputSchema = Schema({{"version", versionProp}}, {"version"}),
+        .run =
+            [this](const Json& args) {
+                const std::string version = RequiredText(args, "version");
+                for (const HubApp::OpenEditor& e : m_app.Editors()) {
+                    if (e.version == version) {
+                        throw ToolError(std::format("o editor de '{}' está aberto no Motor {}: feche-o antes",
+                                                    ToUtf8(e.root), version));
+                    }
+                }
+                std::string message;
+                const bool ok = m_app.RemoveVersion(version, message);
+                return Outcome(ok, message);
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "versions_available",
+        .description = "Versões do Motor publicadas nos servidores de versões (e um Hub mais novo, se houver), "
+                       "dizendo quais já estão instaladas.",
+        .inputSchema = Schema({{"server", serverProp}}),
+        .readOnly = true,
+        .run =
+            [this](const Json& args) {
+                const std::string server = args.value("server", std::string());
+                std::vector<std::string> urls = server.empty() ? m_app.Config().servers : std::vector{server};
+                if (urls.empty()) throw ToolError("nenhum servidor de versões na lista do Hub (passe 'server')");
+                const FetchFuture fetch = StartFetch(std::move(urls));
+                ToolResult now = ToolResult::Text("procurando...");
+                const auto deadline = Deadline(60.0);
+                now.later = [this, fetch, deadline](ToolResult& out) {
+                    if (!Ready(fetch)) {
+                        if (Clock::now() < deadline) return false;
+                        throw ToolError("os servidores não responderam a tempo");
+                    }
+                    Json servers = Json::array();
+                    for (const HubApp::RemoteServer& s : fetch->get()) {
+                        Json item = {{"url", s.url}};
+                        if (!s.manifest) {
+                            item["error"] = s.error;
+                            servers.push_back(std::move(item));
+                            continue;
+                        }
+                        Json releases = Json::array();
+                        for (const distrib::Release& r : s.manifest->releases) {
+                            releases.push_back({{"version", r.version},
+                                                {"channel", r.channel},
+                                                {"scriptApiVersion", r.scriptApiVersion},
+                                                {"buildType", r.buildType},
+                                                {"size", distrib::FormatSize(r.size)},
+                                                {"installed", FindVersion(m_app.Versions(), r.version) != nullptr}});
+                        }
+                        item["releases"] = std::move(releases);
+                        if (s.manifest->hub) {
+                            item["hub"] = {{"version", s.manifest->hub->version},
+                                           {"newer", CompareVersions(s.manifest->hub->version, MOTOR_HUB_VERSION) > 0}};
+                        }
+                        servers.push_back(std::move(item));
+                    }
+                    out = ToolResult::Data(servers);
+                    return true;
+                };
+                return now;
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "version_download",
+        .description = "Baixa uma versão do Motor de um servidor de versões e a instala (cada arquivo conferido pelo "
+                       "SHA-256; um download interrompido é retomado). O progresso aparece no hub_status e na aba "
+                       "Versões. Um download por vez.",
+        .inputSchema = Schema({{"version", Prop("string", "versão, ou \"mais-recente\"")},
+                               {"server", serverProp},
+                               {"wait", Prop("boolean", "esperar terminar (padrão: false; pode levar minutos)")},
+                               {"timeout", Prop("number", "segundos de espera com wait (padrão: 600)")}},
+                              {"version"}),
+        .run =
+            [this](const Json& args) {
+                const std::string wanted = RequiredText(args, "version");
+                const bool latest = wanted == "mais-recente" || wanted == "latest";
+                const std::string server = args.value("server", std::string());
+                std::vector<std::string> urls = server.empty() ? m_app.Config().servers : std::vector{server};
+                if (urls.empty()) throw ToolError("nenhum servidor de versões na lista do Hub (passe 'server')");
+                if (m_app.m_download) {
+                    throw ToolError(std::format("já há um download em andamento (Motor {})",
+                                                m_app.m_download->release.version));
+                }
+                const FetchFuture fetch = StartFetch(std::move(urls));
+                const bool wait = args.value("wait", false);
+                const auto fetchDeadline = Deadline(60.0);
+                const auto deadline = Deadline(std::clamp(args.value("timeout", 600.0), 1.0, 3600.0));
+                // 1. Lê os servidores e escolhe a versão; 2. começa o download da janela; 3. com wait, espera ele.
+                auto chosen = std::make_shared<std::string>();
+                ToolResult now = ToolResult::Text("procurando a versão nos servidores...");
+                now.later = [this, fetch, latest, wanted, wait, fetchDeadline, deadline, chosen](ToolResult& out) {
+                    if (chosen->empty()) {
+                        if (!Ready(fetch)) {
+                            if (Clock::now() < fetchDeadline) return false;
+                            throw ToolError("os servidores não responderam a tempo");
+                        }
+                        std::string url, errors;
+                        std::optional<distrib::Release> release;
+                        for (const HubApp::RemoteServer& s : fetch->get()) {
+                            if (!s.manifest) {
+                                errors += " " + s.error;
+                                continue;
+                            }
+                            const distrib::Release* r = latest ? s.manifest->Latest() : s.manifest->Find(wanted);
+                            if (r && (!release || (latest && CompareVersions(r->version, release->version) > 0))) {
+                                release = *r;
+                                url = s.url;
+                                if (!latest) break;
+                            }
+                        }
+                        if (!release) {
+                            throw ToolError((latest ? std::string("nenhuma versão publicada nos servidores")
+                                                    : std::format("o Motor {} não está publicado nos servidores", wanted)) +
+                                            errors);
+                        }
+                        if (FindVersion(m_app.Versions(), release->version)) {
+                            throw ToolError(std::format("o Motor {} já está instalado", release->version));
+                        }
+                        if (m_app.m_download) throw ToolError("outro download começou nesse meio-tempo");
+                        m_app.m_lastDownload.reset();
+                        m_app.StartDownload(url, *release);
+                        *chosen = release->version;
+                        if (!wait) {
+                            out = ToolResult::Text(std::format(
+                                "Baixando o Motor {} de {} ({}): acompanhe pelo hub_status.", release->version, url,
+                                distrib::FormatSize(release->size)));
+                            return true;
+                        }
+                    }
+                    if (m_app.m_lastDownload && m_app.m_lastDownload->version == *chosen) {
+                        if (!m_app.m_lastDownload->ok) throw ToolError(m_app.m_lastDownload->message);
+                        out = ToolResult::Text(m_app.m_lastDownload->message);
+                        return true;
+                    }
+                    if (Clock::now() < deadline) return false;
+                    throw ToolError("o download não terminou a tempo (continua em segundo plano; veja hub_status)");
+                };
+                return now;
+            },
+    });
+}
+
+void HubMcp::AddUpdateTools() {
+    const Json serverProp = Prop("string", "URL de um servidor de versões (padrão: os da lista do Hub)");
+    const auto urlsFor = [this](const Json& args) {
+        const std::string server = args.value("server", std::string());
+        std::vector<std::string> urls = server.empty() ? m_app.Config().servers : std::vector{server};
+        if (urls.empty()) throw ToolError("nenhum servidor de versões na lista do Hub (passe 'server')");
+        return urls;
+    };
+
+    m_protocol.AddTool({
+        .name = "hub_update_check",
+        .description = "Procura nos servidores de versões um Hub mais novo que este (publicado com o instalador) e "
+                       "diz se este Hub pode se atualizar sozinho (só o instalado pelo MotorSetup).",
+        .inputSchema = Schema({{"server", serverProp}}),
+        .readOnly = true,
+        .run =
+            [this, urlsFor](const Json& args) {
+                const FetchFuture fetch = StartFetch(urlsFor(args));
+                ToolResult now = ToolResult::Text("procurando...");
+                const auto deadline = Deadline(60.0);
+                now.later = [this, fetch, deadline](ToolResult& out) {
+                    if (!Ready(fetch)) {
+                        if (Clock::now() < deadline) return false;
+                        throw ToolError("os servidores não responderam a tempo");
+                    }
+                    const std::vector<HubApp::RemoteServer> servers = fetch->get();
+                    Json errors = Json::array();
+                    for (const HubApp::RemoteServer& s : servers) {
+                        if (!s.manifest) errors.push_back({{"url", s.url}, {"error", s.error}});
+                    }
+                    const auto update = HubApp::NewestHub(servers);
+                    std::string why;
+                    const bool can = m_app.CanSelfUpdate(&why);
+                    Json result = {{"hubVersion", MOTOR_HUB_VERSION}, {"newer", nullptr}, {"canSelfUpdate", can}};
+                    if (update) {
+                        result["newer"] = {{"version", update->version},
+                                           {"server", update->server},
+                                           {"size", distrib::FormatSize(update->setup.size)}};
+                    }
+                    if (!can) result["why"] = why;
+                    if (!errors.empty()) result["errors"] = std::move(errors);
+                    out = ToolResult::Data(result);
+                    return true;
+                };
+                return now;
+            },
+    });
+
+    m_protocol.AddTool({
+        .name = "hub_update",
+        .description = "Atualiza este Hub para o mais novo publicado: baixa o MotorSetup.exe (SHA-256 conferido), "
+                       "abre-o sem janela e o Hub fecha; o instalador troca o Hub com as mesmas escolhas da "
+                       "instalação e o abre de novo na bandeja, com os mesmos argumentos. Os editores abertos "
+                       "continuam e o MCP volta no mesmo endereço em alguns segundos (reconecte se o cliente cair). "
+                       "Com wait, responde quando o instalador abriu.",
+        .inputSchema = Schema({{"server", serverProp},
+                               {"wait", Prop("boolean", "esperar o download e o instalador abrir (padrão: true)")}}),
+        .run =
+            [this, urlsFor](const Json& args) {
+                std::string why;
+                if (!m_app.CanSelfUpdate(&why)) throw ToolError(why);
+                const FetchFuture fetch = StartFetch(urlsFor(args));
+                const bool wait = args.value("wait", true);
+                const auto deadline = Deadline(600.0);
+                auto version = std::make_shared<std::string>();
+                ToolResult now = ToolResult::Text("procurando o Hub nos servidores...");
+                now.later = [this, fetch, wait, deadline, version](ToolResult& out) {
+                    if (version->empty()) {
+                        if (!Ready(fetch)) {
+                            if (Clock::now() < deadline) return false;
+                            throw ToolError("os servidores não responderam a tempo");
+                        }
+                        const auto update = HubApp::NewestHub(fetch->get());
+                        if (!update) {
+                            throw ToolError(std::format("nenhum Hub mais novo que {} nos servidores", MOTOR_HUB_VERSION));
+                        }
+                        std::string message;
+                        if (!m_app.StartHubUpdate(*update, message)) throw ToolError(message);
+                        *version = update->version;
+                        if (!wait) {
+                            out = ToolResult::Text(message + " Acompanhe pelo hub_status.");
+                            return true;
+                        }
+                    }
+                    if (m_app.m_hubUpdate) {
+                        if (Clock::now() < deadline) return false;
+                        throw ToolError("o download do Hub não terminou a tempo (continua em segundo plano)");
+                    }
+                    if (!m_app.m_hubUpdateOk) throw ToolError(m_app.m_hubUpdateMessage);
+                    out = ToolResult::Text(m_app.m_hubUpdateMessage);
+                    return true;
+                };
+                return now;
+            },
+    });
+}
+
+} // namespace hub

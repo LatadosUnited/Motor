@@ -63,7 +63,9 @@ EditorApp::EditorApp(Options options)
       m_createName(std::move(options.createName)),
       m_startupMcpPort(options.mcpPort),
       m_perfFile(std::move(options.perfFile)),
-      m_quitAfterSeconds(options.seconds) {}
+      m_quitAfterSeconds(options.seconds) {
+    if (options.hubPort > 0) m_mcp.LinkHub(options.hubPort, std::move(options.hubToken));  // Hub residente
+}
 
 void EditorApp::OnInit() {
     m_ctx.pushAssetUndo = [this](std::function<void()> undo, std::function<void()> redo) {

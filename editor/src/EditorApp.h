@@ -36,6 +36,8 @@ public:
         std::string createName;
         std::filesystem::path perfFile;  // --perf: contadores de cada quadro num CSV ao fechar (Fase 27)
         double seconds = 0.0;            // --segundos: > 0 fecha sozinho depois desse tempo
+        int hubPort = 0;                 // --hub: aberto pelo Hub residente (motor/mcp/HubLink.h)
+        std::string hubToken;            // do ambiente (MOTOR_MCP_TOKEN), com --hub
     };
     explicit EditorApp(Options options);
 

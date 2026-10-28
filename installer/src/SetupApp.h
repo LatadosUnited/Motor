@@ -44,6 +44,7 @@ private:
     std::string m_dataDir;
     bool m_startMenu = true;
     bool m_desktop = false;
+    bool m_startup = true;  // iniciar com o Windows, na bandeja
     int m_motor = 0;  // 0 nenhum, 1 servidor, 2 pasta
     std::string m_server;
     std::string m_localVersion;

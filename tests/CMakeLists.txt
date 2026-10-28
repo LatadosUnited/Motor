@@ -47,12 +47,11 @@ motor_add_test(test_mcp_nav
     ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/nav/NavMeshBake.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpNavTools.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
 target_include_directories(test_mcp_nav PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
-target_link_libraries(test_mcp_nav PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_mcp_nav PRIVATE motor_mcp)
 motor_add_test(test_world_cache)  # Fase 25: cache da matriz de mundo
 motor_add_test(test_perception)  # Fase 37: percepção dos agentes (visão, audição, memória)
 
@@ -158,14 +157,12 @@ motor_add_test(test_mcp
     ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/ImageEncode.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpProtocol.cpp
     ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp
-    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpServer.cpp)
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
+# O teste chama o servidor com o cliente da cpp-httplib: precisa do header e do Winsock (este vem da motor_mcp).
 target_include_directories(test_mcp PRIVATE ${PROJECT_SOURCE_DIR}/editor/src ${httplib_SOURCE_DIR})
-target_link_libraries(test_mcp PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(test_mcp PRIVATE motor_mcp)
 if(WIN32)
-    target_link_libraries(test_mcp PRIVATE ws2_32)
     target_compile_definitions(test_mcp PRIVATE _WIN32_WINNT=0x0A00)
 endif()
 
@@ -198,6 +195,44 @@ if(WIN32)
     target_link_libraries(test_hub PRIVATE shell32)  # CommandLineToArgvW
 endif()
 add_test(NAME test_hub COMMAND test_hub ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_hub)
+
+# Transporte HTTP do MCP sem a engine (motor_mcp, Hub residente): caminho, token e sessão, com o cliente da
+# cpp-httplib em loopback. Sem a libMotor.dll, como o hub.
+add_executable(test_mcp_servidor test_mcp_servidor.cpp)
+target_link_libraries(test_mcp_servidor PRIVATE motor_mcp)
+target_include_directories(test_mcp_servidor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${httplib_SOURCE_DIR})
+if(WIN32)
+    target_compile_definitions(test_mcp_servidor PRIVATE _WIN32_WINNT=0x0A00)
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_mcp_servidor PRIVATE -Wall -Wextra)
+endif()
+add_test(NAME test_mcp_servidor COMMAND test_mcp_servidor ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_mcp_servidor)
+
+# Ferramentas do /mcphub (Hub residente) no HubApp de verdade, sem janela. O editor é o próprio teste copiado para
+# a pasta da versão: com --project ou --create ele só espera, e o teste o abre e fecha.
+add_executable(test_hub_mcp test_hub_mcp.cpp)
+target_link_libraries(test_hub_mcp PRIVATE motor_hub_app)
+# O cliente da cpp-httplib faz o papel do Claude Code no /mcpengine.
+target_include_directories(test_hub_mcp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${httplib_SOURCE_DIR})
+if(WIN32)
+    target_compile_definitions(test_hub_mcp PRIVATE _WIN32_WINNT=0x0A00)
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_hub_mcp PRIVATE -Wall -Wextra)
+endif()
+if(MINGW)
+    # A cópia do teste roda fora de build/: sem as DLLs do MinGW ao lado, só funciona estática.
+    target_link_options(test_hub_mcp PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME test_hub_mcp COMMAND test_hub_mcp ${CMAKE_CURRENT_BINARY_DIR}/tmp/test_hub_mcp)
+
+# Lista de ferramentas do MCP do editor sem janela (MotorEditor --mcp-ferramentas, Hub residente): a que o
+# motor_package grava no pacote da versão.
+add_test(NAME editor_mcp_ferramentas
+    COMMAND ${CMAKE_COMMAND} -DEDITOR=$<TARGET_FILE:MotorEditor>
+            -DOUT=${CMAKE_CURRENT_BINARY_DIR}/tmp/editor_mcp_ferramentas
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/EditorToolList.cmake)
 
 # Distribuição (Fase 15): SHA-256, manifesto, pasta de publicações, plano de instalação/desinstalação, hub.json
 # formato 2 e o servidor de versões com o cliente em loopback (porta livre em 127.0.0.1). Sem a libMotor.dll.

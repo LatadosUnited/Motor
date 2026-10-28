@@ -243,22 +243,49 @@ void HubApp::DrawServersSection() {
 }
 
 void HubApp::DrawHubUpdateNotice() {
-    // Hub mais novo publicado em algum servidor: aviso com o link do instalador.
-    const RemoteServer* newest = nullptr;
-    for (const RemoteServer& s : m_remote) {
-        if (!s.manifest || !s.manifest->hub) continue;
-        if (CompareVersions(s.manifest->hub->version, MOTOR_HUB_VERSION) <= 0) continue;
-        if (!newest || CompareVersions(s.manifest->hub->version, newest->manifest->hub->version) > 0) newest = &s;
+    // Atualizando: o progresso do instalador e, depois, o aviso de que o hub vai fechar e voltar.
+    if (m_hubUpdate) {
+        const uint64_t total = m_hubUpdate->update.setup.size;
+        const uint64_t done = m_hubUpdate->bytes;
+        ImGui::SameLine(0.0f, 24.0f);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(kOrange, "Baixando o Hub %s: %d%%", m_hubUpdate->update.version.c_str(),
+                           total ? static_cast<int>(done * 100 / total) : 0);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Cancelar##hub")) m_hubUpdate->cancel = true;
+        return;
     }
-    if (!newest) return;
-    const distrib::HubRelease& h = *newest->manifest->hub;
+    if (m_quitForUpdate) {
+        ImGui::SameLine(0.0f, 24.0f);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(kOrange, "Instalando o Hub novo: ele volta na bandeja em alguns segundos.");
+        return;
+    }
+    // Hub mais novo publicado em algum servidor (com o instalador): atualiza aqui mesmo, ou o link se este hub não foi
+    // instalado pelo MotorSetup.
+    const std::optional<HubUpdate> update = AvailableHubUpdate();
+    if (!update) return;
     ImGui::SameLine(0.0f, 24.0f);
     ImGui::AlignTextToFramePadding();
-    ImGui::TextColored(kOrange, "Hub %s disponível em %s.", h.version.c_str(), newest->url.c_str());
+    ImGui::TextColored(kOrange, "Hub %s disponível em %s.", update->version.c_str(), update->server.c_str());
     ImGui::SameLine();
-    if (ImGui::SmallButton("Baixar o instalador")) {
-        const char* file = h.Find(distrib::kSetupExe) ? distrib::kSetupExe : distrib::kHubExe;
-        distrib::platform::OpenUrl(newest->url + distrib::HubFileUrl(file));
+    std::string why;
+    if (CanSelfUpdate(&why)) {
+        if (ImGui::SmallButton("Atualizar o Hub")) {
+            std::string message;
+            const bool ok = StartHubUpdate(*update, message);
+            SetStatus(message, !ok);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Baixa o instalador (%s, conferido pelo SHA-256), instala sem janela e o Hub volta na "
+                              "bandeja. Os editores abertos continuam.",
+                              distrib::FormatSize(update->setup.size).c_str());
+        }
+    } else {
+        if (ImGui::SmallButton("Baixar o instalador")) {
+            distrib::platform::OpenUrl(update->server + distrib::HubFileUrl(distrib::kSetupExe));
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Não dá para atualizar sozinho: %s.", why.c_str());
     }
 }
 

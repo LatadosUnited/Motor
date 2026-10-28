@@ -6,11 +6,13 @@
 // O hub não liga na libMotor.dll nem inclui headers da engine: ele precisa abrir projetos de qualquer versão,
 // inclusive de versões futuras. Fala com o editor só pelo que é estável entre versões:
 //   - <versão>/motor-version.json   {"version": "0.2.0", "scriptApiVersion": 10, ...} (alvo motor_package)
+//   - <versão>/mcp-ferramentas.json as ferramentas do MCP do editor (a partir do Hub residente)
 //   - <projeto>/<Nome>.mproject     {"name", "engineVersion"} (formato 2; o 1 não tem engineVersion)
 //   - MotorEditor.exe --project <pasta> | --create <pasta-pai> <nome>
 // Todos os caminhos e textos são UTF-8 ("Jogo Ação").
 
 #include <motor/common/Utf8.h>
+#include <nlohmann/json.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -56,6 +58,19 @@ struct InstalledVersion {
 
 // Lê <dir>/motor-version.json. Falha se não existir, for inválido ou não houver o editor na pasta.
 std::optional<InstalledVersion> ReadInstalledVersion(const fs::path& dir, std::string* error = nullptr);
+
+// Ferramentas do MCP do editor de uma versão (Hub residente), gravadas pelo motor_package com
+// MotorEditor --mcp-ferramentas: {"format": "motor-mcp-tools", "version": 1, "initialize": {...}, "tools": [...]}.
+// O Hub responde com elas o initialize e o tools/list de /mcpengine/<Projeto>, mesmo com o editor fechado.
+inline constexpr const char* kMcpToolsFile = "mcp-ferramentas.json";
+struct EditorTools {
+    std::string engineVersion;
+    int hubLink = 0;  // > 0: o editor entende o --hub (motor/mcp/HubLink.h); 0 nas listas sem o campo
+    nlohmann::ordered_json initialize;  // o resultado do initialize do editor (serverInfo, instructions...)
+    nlohmann::ordered_json tools;       // a lista do tools/list
+};
+// Lê <dir>/mcp-ferramentas.json. Versões anteriores ao Hub residente não têm o arquivo: nullopt e `error`.
+std::optional<EditorTools> ReadEditorTools(const fs::path& versionDir, std::string* error = nullptr);
 
 // Subpastas de `versionsRoot` que são versões instaladas, da mais nova para a mais antiga.
 std::vector<InstalledVersion> ScanVersions(const fs::path& versionsRoot);
@@ -154,5 +169,66 @@ std::vector<std::string> CreateProjectArgs(const fs::path& parent, std::string_v
 
 // Junta os argumentos numa linha de comando do Windows (aspas e barras como o CommandLineToArgvW espera).
 std::wstring BuildCommandLine(const fs::path& exe, const std::vector<std::string>& args);
+
+// --- Hub residente (bandeja e iniciar com o Windows) ---------------------------------------------------------
+
+// Um hub aberto por pasta de dados: a chave (16 dígitos hexadecimais) nomeia a trava e a janela escondida que
+// recebe os pedidos. A mesma pasta escrita de outro jeito ("C:\Dados\" e "c:/dados") dá a mesma chave; um hub de
+// teste com --data convive com o do usuário.
+std::string InstanceKey(const fs::path& dataDir);
+// As duas linhas do Run são a mesma (sem diferenciar maiúsculas nem / e \ no Windows)?
+bool SameStartupCommand(std::string_view a, std::string_view b);
+
+// --- MCP do Hub -----------------------------------------------------------------------------------------------
+
+inline constexpr int kHubMcpPort = 47600;
+inline constexpr const char* kHubMcpPath = "/mcphub";
+// MCP do editor de um projeto, repassado pelo Hub: /mcpengine/<nome do projeto, codificado> e /mcpengine (o editor
+// aberto por último).
+inline constexpr const char* kHubEnginePath = "/mcpengine";
+
+// Nome de projeto na URL: igual sem diferenciar maiúsculas (como a busca: "JOGO AÇÃO" é "Jogo Ação").
+bool SameProjectName(std::string_view a, std::string_view b);
+// Codifica para um pedaço de caminho de URL: letras, números e "-._~" ficam; o resto vira %XX dos bytes UTF-8.
+std::string UrlEncodePathSegment(std::string_view text);
+inline constexpr const char* kHubMcpTokenFile = "mcp-token";  // na pasta de dados
+
+std::string NewToken();  // 64 dígitos hexadecimais aleatórios (o do Hub e o de cada editor que ele abre)
+
+// Token do MCP do Hub: lê o arquivo ou, sem ele (ou vazio), cria um novo (NewToken).
+// Vazio se não deu para gravar (`error` diz por quê).
+std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error = nullptr);
+
+// --- Autoatualização do Hub ------------------------------------------------------------------------------------
+
+inline constexpr const char* kUpdateDir = "Atualizacao";        // na pasta de dados: o instalador baixado e o log
+inline constexpr const char* kUpdateLogFile = "atualizacao.log";  // o que o MotorSetup --atualizar escreveu
+inline constexpr const char* kEditorsFile = "editores.json";    // editores abertos quando o hub saiu
+
+// Editores abertos por este hub, gravados ao sair: o hub seguinte (a versão nova, depois da atualização, ou o mesmo
+// aberto de novo) volta a acompanhá-los e a repassar o MCP deles, sem fechar nada.
+struct SavedEditor {
+    uint32_t pid = 0;
+    fs::path root;
+    std::string version;
+    fs::path editor;     // o .exe (o pid só vale se o processo ainda for este programa)
+    int mcpPort = 0;
+    std::string token;
+    bool ready = false;
+};
+struct SavedEditors {
+    static constexpr const char* kFormat = "motor-hub-editors";
+    static constexpr int kVersion = 1;
+    std::vector<SavedEditor> editors;
+
+    static std::optional<SavedEditors> Load(const fs::path& file, std::string* error = nullptr);
+    bool Save(const fs::path& file, std::string* error = nullptr) const;
+};
+
+// Argumentos do MotorSetup baixado: atualiza a instalação da pasta sem janela, espera este hub (`pid`) fechar e
+// abre o hub novo na bandeja com os mesmos argumentos deste (`hubArgs`, ex.: --data, --mcp-porta, -- e os do
+// editor), escrevendo o que fez em `logFile`.
+std::vector<std::string> UpdateInstallerArgs(const fs::path& installDir, uint32_t pid,
+                                             const std::vector<std::string>& hubArgs, const fs::path& logFile);
 
 } // namespace hub

@@ -22,6 +22,11 @@ relativos: funcionam no Obsidian, no GitHub e para os agentes. Como organizar: [
 
 - [Roteiro de teste à mão](teste-manual.md): o que uma pessoa confere no editor a cada versão.
 
+## Agentes
+
+- [Configurar o Claude Code](claude-code.md): os servidores `motor-hub` e `motor` pelo Hub, o token e os problemas
+  comuns.
+
 ## Scripts
 
 - [Guia de scripts](scripts.md): do primeiro script a um mini jogo.

@@ -1,0 +1,52 @@
+# Teste editor_mcp_ferramentas (Hub residente): roda MotorEditor --mcp-ferramentas (sem janela) e confere o JSON que
+# o motor_package grava no pacote da versão e o Hub lê (hub/src/HubCore.h, ReadEditorTools).
+# Variáveis (-D): EDITOR (o MotorEditor.exe) e OUT (pasta de trabalho).
+cmake_minimum_required(VERSION 3.24)
+
+file(REMOVE_RECURSE "${OUT}")
+file(MAKE_DIRECTORY "${OUT}")
+set(file "${OUT}/Pasta Ação/mcp-ferramentas.json")  # acento no caminho: o editor lê a linha de comando em UTF-8
+file(MAKE_DIRECTORY "${OUT}/Pasta Ação")
+execute_process(COMMAND "${EDITOR}" --mcp-ferramentas "${file}" RESULT_VARIABLE result ERROR_VARIABLE err
+                TIMEOUT 60)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "MotorEditor --mcp-ferramentas saiu com ${result}: ${err}")
+endif()
+if(NOT EXISTS "${file}")
+    message(FATAL_ERROR "o arquivo não foi gravado")
+endif()
+
+file(READ "${file}" text)
+string(JSON format GET "${text}" format)
+string(JSON version GET "${text}" version)
+string(JSON server GET "${text}" initialize serverInfo name)
+string(JSON instructions GET "${text}" initialize instructions)
+string(JSON count LENGTH "${text}" tools)
+if(NOT format STREQUAL "motor-mcp-tools" OR NOT version EQUAL 1 OR NOT server STREQUAL "motor-editor")
+    message(FATAL_ERROR "cabeçalho errado: format=${format} version=${version} server=${server}")
+endif()
+if(instructions STREQUAL "" OR count LESS 20)
+    message(FATAL_ERROR "lista curta demais: ${count} ferramentas")
+endif()
+
+# Nomes únicos, com descrição e schema; as ferramentas que o Hub e os agentes mais usam estão lá.
+set(names "")
+math(EXPR last "${count} - 1")
+foreach(i RANGE ${last})
+    string(JSON name GET "${text}" tools ${i} name)
+    string(JSON description GET "${text}" tools ${i} description)
+    string(JSON schema TYPE "${text}" tools ${i} inputSchema)
+    if(name IN_LIST names)
+        message(FATAL_ERROR "ferramenta repetida: ${name}")
+    endif()
+    if(description STREQUAL "" OR NOT schema STREQUAL "OBJECT")
+        message(FATAL_ERROR "ferramenta ${name} sem descrição ou sem inputSchema")
+    endif()
+    list(APPEND names "${name}")
+endforeach()
+foreach(wanted editor_status scene_tree play viewport_capture log_read)
+    if(NOT wanted IN_LIST names)
+        message(FATAL_ERROR "falta a ferramenta ${wanted}")
+    endif()
+endforeach()
+message(STATUS "${count} ferramentas do MCP do editor")

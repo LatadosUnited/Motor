@@ -14,6 +14,8 @@
 #include "ImageEncode.h"
 #include "McpSceneTools.h"
 
+#include <motor/mcp/HubLink.h>
+
 #include <motor/core/EngineAssets.h>
 #include <motor/core/FrameStats.h>
 #include <motor/core/Paths.h>
@@ -154,21 +156,48 @@ McpController::McpController(Host host)
 }
 
 McpController::~McpController() {
-    m_server.Stop();
+    Stop();
     log::RemoveSink(m_logSink);
+}
+
+void McpController::LinkHub(int hubPort, std::string token) {
+    m_hubPort = hubPort;
+    m_hubToken = std::move(token);
+    m_server.SetToken(m_hubToken);  // a porta interna só atende o Hub
 }
 
 void McpController::Start(int port) {
     std::string error;
     m_server.SetWake(&motor::Window::Wake);
+    m_server.SetLog([](const std::string& message) { log::Info("{}", message); });
     if (!m_server.Start(port, error)) {
         log::Error("Servidor MCP: {}", error);
         m_host.ctx.pendingError = "Servidor MCP: " + error;
+        return;
     }
+    if (HubLinked()) NotifyHub(mcp::hublink::kEventReady);
 }
 
 void McpController::Stop() {
+    if (m_hubAnnounced) NotifyHub(mcp::hublink::kEventClosing);  // antes de a porta fechar
     m_server.Stop();
+}
+
+std::string McpController::CurrentProjectUtf8() {
+    const Project* project = m_host.document.GetProject();
+    return project ? ToUtf8(project->RootDir()) : std::string();
+}
+
+void McpController::NotifyHub(const char* event) {
+    const std::string project = CurrentProjectUtf8();
+    const Json body = {{"event", event}, {"port", m_server.Port()}, {"project", project}};
+    std::string error;
+    // Loopback: responde em milissegundos; o tempo limite curto não deixa um Hub travado segurar o editor.
+    if (!mcp::hublink::PostJson(m_hubPort, mcp::hublink::kNotifyPath, m_hubToken, body, &error, 1000)) {
+        log::Warn("Hub do Motor não recebeu o aviso '{}': {}", event, error);
+    }
+    m_announcedProject = project;
+    m_hubAnnounced = std::string_view(event) != mcp::hublink::kEventClosing;
 }
 
 fs::path McpController::ProjectPath(const Json& value) const {
@@ -269,6 +298,8 @@ bool McpController::Pump() {
     const bool handled = m_server.Pump() > 0;
     UpdateUiClick();
     if (IsRunning()) DetectEvents();
+    // Arquivo > Abrir projeto no mesmo editor: o Hub passa a mandar /mcpengine/<outro projeto> para cá.
+    if (m_hubAnnounced && CurrentProjectUtf8() != m_announcedProject) NotifyHub(mcp::hublink::kEventProject);
     return handled;
 }
 
@@ -318,6 +349,15 @@ void McpController::DetectEvents() {
 }
 
 void McpController::DrawMenuItems(EditorSettings& settings) {
+    if (HubLinked()) {
+        // Aberto pelo Hub: o servidor é a ligação do Hub com este editor (/mcpengine/<Projeto>), sempre ligado.
+        ImGui::MenuItem("Servidor MCP (pelo Hub do Motor)", nullptr, IsRunning(), false);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Aberto pelo Hub do Motor: os agentes chegam a este editor pelo endereço do Hub\n"
+                              "(porta interna %d).", m_server.Port());
+        }
+        return;
+    }
     const std::string label = std::format("Servidor MCP (porta {})", settings.mcpPort);
     if (ImGui::MenuItem(label.c_str(), nullptr, IsRunning())) {
         if (IsRunning()) {

@@ -232,6 +232,7 @@ add_subdirectory(common)   # gravação segura, UTF-8, texto e leitura de arquiv
 add_subdirectory(engine)
 add_subdirectory(sandbox)
 add_subdirectory(player)  # Fase 10: executável do jogo exportado
+add_subdirectory(mcp)      # protocolo e servidor HTTP do MCP: editor e Hub (não liga na libMotor.dll)
 add_subdirectory(editor)
 add_subdirectory(hub)     # Fase 14: Hub de projetos e versões (não liga na libMotor.dll)
 add_subdirectory(distrib)  # Fase 15: núcleo da distribuição (manifesto, SHA-256, download, instalação)

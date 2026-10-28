@@ -65,9 +65,16 @@ ctest --test-dir build --output-on-failure
   (`EditorApp`, `EditorContext`, `EditorSettings`, `UndoHistory`, `FileDialog`). Peça grande se divide em
   `<Peça><Parte>.cpp` (ex.: `ProjectPanelDraw.cpp`, `SceneDocumentUi.cpp`), com o que as partes dividem num
   header interno (`ProjectPanelUtil.h`).
-  `mcp/`: servidor MCP do editor (`McpProtocol` JSON-RPC, `McpServer` HTTP com cpp-httplib, `McpSceneTools`
-  ferramentas de cena testáveis sem janela, `McpController` peça do editor com as demais ferramentas, divididas
-  por grupo em `McpFileTools.cpp` e `McpPlayTools.cpp`).
+  `mcp/`: servidor MCP do editor (`Mcp.h` traz o protocolo e o HTTP da `motor_mcp` para `editor::mcp`,
+  `McpSceneTools` ferramentas de cena testáveis sem janela, `McpController` peça do editor com as demais ferramentas, divididas
+  por grupo em `McpFileTools.cpp` e `McpPlayTools.cpp`; `McpToolList` monta as peças sem janela para o
+  `--mcp-ferramentas`, a lista que o `motor_package` grava no pacote e o Hub lê). Peça nova do editor que entra no
+  `McpController::Host` entra também no `McpToolList.cpp` (o teste `editor_mcp_ferramentas` pega se esquecer).
+  O combinado entre o Hub e os editores que ele abre (porta interna, token, avisos) fica em
+  `mcp/include/motor/mcp/HubLink.h`, usado pelos dois lados: mudou o combinado, suba `hublink::kVersion`. O
+  repasse de `/mcpengine/<Projeto>` fica em `hub/src/HubEngineProxy.cpp`; a autoatualização do Hub (baixar o
+  `MotorSetup.exe`, abri-lo com `--atualizar` e sair; `editores.json` para o Hub seguinte) em `hub/src/HubUpdate.cpp`,
+  sobre o `distrib::PlanUpdate`.
 - Scripts de jogo ficam na pasta `Scripts/` de cada projeto (`motor::Script` + `MOTOR_SCRIPT`, ver
   `motor/scene/ScriptModule.h`). O editor compila uma DLL por projeto (`ScriptProject`, `ScriptBuilder`) e
   recarrega sem fechar (`ScriptHost`). A engine é a `libMotor.dll`, compartilhada pelo editor e pela DLL de
@@ -90,6 +97,10 @@ ctest --test-dir build --output-on-failure
   (hub, distribuição, servidor, instalador): gravação segura (`FileWrite.h`), UTF-8 (`Utf8.h`, incluído pelo
   `motor/core/Paths.h`), `SetError`/`Lower`/`LowerExtension` (`Text.h`) e ler o arquivo inteiro (`FileRead.h`), em
   `motor/common/`. Precisou de uma dessas num `.cpp`? Use a daqui, não copie.
+- `mcp/` — `motor_mcp`, o MCP sem a engine, usado pelo editor e pelo Hub: protocolo JSON-RPC
+  (`motor/mcp/McpProtocol.h`) e transporte HTTP com cpp-httplib (`motor/mcp/McpServer.h`, log por `SetLog`;
+  caminho, token e sessão opcionais, que o Hub usa), no namespace `motor::mcp`. Testado em `tests/test_mcp.cpp` e
+  `tests/test_mcp_servidor.cpp`.
 - `sandbox/` — demo mínima da engine. `tests/` — testes `ctest` (ver abaixo).
 
 ## Convenções
@@ -132,7 +143,12 @@ ctest --test-dir build --output-on-failure
 
 - **Prefira o servidor MCP do editor** para ver e testar: abra `MotorEditor.exe "<projeto>" --mcp` (porta
   47800) e chame as ferramentas por HTTP (`POST http://127.0.0.1:47800/mcp`, JSON-RPC `tools/call`), ou pelo
-  Claude Code se o servidor `motor` estiver configurado. `viewport_capture` substitui o PrintWindow; `play`,
+  Claude Code se os servidores estiverem configurados (`docs/claude-code.md`): `motor-hub`
+  (`http://127.0.0.1:47600/mcphub`: projetos, versões, abrir e fechar o editor) e `motor`
+  (`http://127.0.0.1:47600/mcpengine`, ou `/mcpengine/<Projeto>`: as ferramentas do editor, repassadas pelo Hub do
+  usuário, que abre o editor se estiver fechado). Pelos servidores do Claude Code o projeto e os dados são os
+  **reais** do usuário: para testes, prefira um editor com `--mcp` e `--no-settings` num projeto da pasta
+  temporária, ou um Hub de teste (`--data`, `--mcp-porta`). `viewport_capture` substitui o PrintWindow; `play`,
   `game_key`, `game_mouse`, `game_text`, `game_gamepad`, `ui_click` e `log_read` testam o jogo sem entrada
   sintética global. Recurso novo do editor que um agente precise usar ganha ferramenta em `McpController` (ou
   `McpSceneTools`, se for só cena).
@@ -145,7 +161,12 @@ ctest --test-dir build --output-on-failure
 - Abrir o editor grava `%APPDATA%\Motor\editor.json` (último projeto, recentes). **Use `--no-settings`** (ou
   `--settings <arquivo>`) em testes automáticos e, mesmo assim, faça cópia antes e restaure depois — é a
   configuração real do usuário. Projeto de teste novo: `--create <pasta-pai> <nome>` ou a ferramenta MCP
-  `project_create`. O Hub (`MotorHub.exe`) tem `--data <pasta>` para não mexer no `%LOCALAPPDATA%\Motor`.
+  `project_create`. O Hub (`MotorHub.exe`) tem `--data <pasta>` para não mexer no `%LOCALAPPDATA%\Motor` (e abre
+  um Hub por pasta de dados: o de teste não esbarra no do usuário; dê também `--mcp-porta <outra>`, já que o do
+  usuário segura a 47600). O MCP do Hub é `POST http://127.0.0.1:47600/mcphub` com
+  `Authorization: Bearer <conteúdo de <dados>\mcp-token>` (ferramentas de projetos, versões e abrir/fechar o
+  editor; testadas sem janela no `test_hub_mcp`, com o próprio teste fazendo de editor). No `MotorSetup.exe` de teste, passe
+  `--sem-iniciar-com-windows` (ou `--chave-registro <nome>`): senão ele troca o Hub que inicia com o Windows.
 - O que o MCP não cobre (menus, arrastar, atalhos, gizmo) fica como "não testado" no relatório, com passos
   para o usuário conferir.
 
@@ -190,7 +211,7 @@ coordenação abaixo, do jeito descrito. Dúvida se algo é da sua área: pergun
 | Editor: arquivos | `editor/src/document/`, `editor/src/FileDialog.*`, `editor/src/EditorSettings.*` |
 | Editor: scripts | `editor/src/scripts/`, `editor/templates/` |
 | Editor: painéis | `editor/src/panels/`, `editor/src/drawers/` |
-| Editor: MCP | `editor/src/mcp/` |
+| Editor: MCP | `editor/src/mcp/`, `mcp/` (`motor_mcp`, também do Hub) |
 | Editor: exportação | `editor/src/export/`, `player/` |
 | Hub | `hub/` (`MotorHub.exe`, Fase 14: projetos e versões instaladas; não liga na `libMotor.dll`) |
 | Distribuição | `distrib/`, `server/`, `installer/` (Fase 15: servidor de versões, download, instalador) |
