@@ -65,10 +65,10 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 4 — Estilos
 
-- [ ] Tarefa 10: Formato `.mstyle` com seletores por tipo, classe e nome e estados `:hover`, `:active`, `:disabled`, `:focus`
-- [ ] Tarefa 11: Cascata (folhas do documento, estilo padrão da engine, valor no próprio elemento) e herança de cor e fonte
-- [ ] Tarefa 12: Propriedades visuais: fundo, borda, cantos arredondados, 9-slice, opacidade de grupo, contorno e sombra do texto
-- [ ] Tarefa 13: Transições simples de cor, opacidade e escala entre estados
+- [x] Tarefa 10: Formato `.mstyle` com seletores por tipo, classe e nome e estados `:hover`, `:active`, `:disabled`, `:focus`
+- [x] Tarefa 11: Cascata (folhas do documento, estilo padrão da engine, valor no próprio elemento) e herança de cor e fonte
+- [x] Tarefa 12: Propriedades visuais: fundo, borda, cantos arredondados, 9-slice, opacidade de grupo, contorno e sombra do texto
+- [x] Tarefa 13: Transições simples de cor, opacidade e escala entre estados
 
 ### Etapa 5 — Editor de UI
 
@@ -141,6 +141,35 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
   de altura 200): tudo no lugar na visão do jogo; `ui_click` em `jogar` contou o clique; `ui_scroll` de -2 mostrou
   as fases 3 a 5 recortadas na lista e de -20 parou na 6, sem passar do fim.
 
+- Tarefas 10 a 13: `engine/include/motor/ui/UiStyle.h`. O `.mstyle` (`AssetType::UiStyle`, GUID no `.meta`) é JSON
+  `{"format": "motor-style", "version": 1, "rules": [{"selector": "Button.menu:hover", "radius": 12, ...}]}`; o
+  seletor é composto (tipo ou `*`, `.classe`, `#nome`, `:hover`, `:active`, `:disabled`, `:focus`), com lista por
+  vírgula e especificidade como no CSS (nome, depois classes e estados, depois tipo; empate: a regra e a folha de
+  depois). Uma tabela só de propriedades de estilo (nome, leitura e gravação no JSON, herdada ou não) serve o `.mui`
+  e o `.mstyle`. O `.mui` passou para a versão 3 (`"styles"`: folhas por GUID ou caminho); cada elemento guarda o
+  conteúdo e as declarações escritas nele (`inlineStyle`), e os campos de estilo do `UiElement` viraram os valores
+  calculados por `ComputeUiStyles`: padrão do tipo, folha padrão da engine (no código, com o visual de sempre),
+  folhas do documento e o elemento; `textColor`, `font`, `fontSize` e `align` descem do pai. As versões 1 e 2 são
+  lidas com o mesmo resultado de antes (as chaves viram declarações; o que o pai declarava de texto não desce). O
+  gravador grava só o declarado; documento montado em código (sem `ComputeUiStyles`) continua usando os campos, e o
+  gravador grava os que diferem do padrão do tipo. `ResolveUiDocumentAssets`/**Recarregar** leem as folhas e as fontes
+  citadas nelas. A cascata roda só quando muda algo (estado de um elemento, `SetStyle`, folhas); o layout guarda o
+  resultado por documento (assinatura do que muda as caixas) e só refaz quando ela muda. Visual novo: `radius` (um
+  círculo de 128x128 feito na CPU, desenhado em 9 pedaços, sem mexer no shader), `borderWidth`/`borderColor`,
+  `slice` (9-slice da imagem), `opacity` (desce para os filhos), `textOutlineWidth`/`textOutlineColor` (8 cópias),
+  `textShadowOffset`/`textShadowColor`, `scale` (só no desenho, em volta do centro) e `transition` (fundo, cor do
+  texto, borda, opacidade e escala, com ease-out, andando no `UiSystem` durante o Play; fora dele pula). Scripts:
+  `UiElement::SetStyle`/`SetStyleValue`/`ClearStyle`. Teste novo: `test_ui_estilo` (também o menu de 50 elementos e
+  10 regras: quadros parados não refazem estilo, layout nem geometria, conferido pelo `UiCanvasStats` e pelos
+  contadores `styleRuns`/`layoutRuns` do documento).
+  Conferido pelo MCP no projeto de teste com um `Tema.mstyle` e um `.mui` versão 3 ligado por `component_add`: na
+  visão do jogo o painel e os botões aparecem arredondados e com borda, o título com contorno e sombra, o "Sair" (não
+  clicável) mais apagado pelo `:disabled` e o texto da dica com a cor herdada do painel; no Play, dois `ui_click` em
+  `jogar` deram dois `jogar clicado` no `log_read` e "Cliques: 2"; depois do Stop, mudar a cor dos botões no
+  `.mstyle` e religar o documento (`component_set`, o mesmo `ReloadUiDocument` do **Recarregar**) mostrou a cor nova.
+  O `:hover` e a transição não dão para ver pelo MCP (o `ui_click` só deixa o mouse no botão por dois quadros):
+  conferidos no `test_ui_estilo`.
+
 ## Limitações
 
 (Preencher ao terminar: o que ficou para trás e para onde foi.)
@@ -150,3 +179,16 @@ horizontal nem barra de rolagem desenhada; `grow` reparte a sobra além do taman
 `flex-basis: auto` do CSS: dois botões com `grow` 1 e rótulos diferentes ficam com larguras diferentes); palavra
 maior que a largura passa dela em vez de quebrar no meio; o `ui_click` mira o centro do elemento mesmo se ele
 estiver meio recortado numa lista.
+
+Da Etapa 4, por ora: seletores só compostos (sem descendente, filho nem irmão: `Panel .item` é recusado com aviso);
+`:hover` e `:active` só no botão clicável sob o mouse (os pais e os painéis não ficam com `:hover`); `:focus` existe
+no seletor, mas nada liga o foco ainda (Etapa 6); a opacidade é por elemento, multiplicada nos filhos, não uma camada
+de grupo de verdade (filhos que se sobrepõem aparecem um através do outro); a borda é a forma inteira na cor da borda
+por baixo do fundo encolhido, então um fundo translúcido deixa ver a cor da borda; cantos arredondados só no fundo de
+cor (a imagem com textura não é recortada nos cantos); cada elemento arredondado usa a textura do círculo e troca de
+textura no lote com o texto (mais chamadas de desenho num menu com muitos botões arredondados); `scale` não muda o
+clique nem o recorte dos filhos de uma lista; `SetStyle("font", ...)` só acha uma fonte que o documento já carregou
+(numa folha ou num elemento); o cache do layout guarda um tamanho de tela por documento (a cena com a UI ligada e a
+janela Jogo ao mesmo tempo refazem o layout a cada quadro); campo de estilo mudado direto num script volta ao da
+cascata no próximo cálculo (use `SetStyle`); a exportação do jogo ainda não segue as referências de dentro do `.mui`
+e do `.mstyle` (folhas, fontes e imagens citadas só neles).

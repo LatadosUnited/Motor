@@ -645,7 +645,7 @@ desfazer:
 | **UI: Texto** (`UiText`) | Texto (UTF-8, `\n` quebra a linha), Fonte, Tamanho da fonte, Cor, Alinhamento |
 | **UI: Imagem** (`UiImage`) | Textura (vazia = cor sólida), Cor |
 | **UI: Botão** (`UiButton`) | Cor normal, com o mouse em cima e pressionado; Clicável |
-| **UI: Documento** (`UiDocument`) | Documento (`.mui` do projeto, com **Recarregar**), Ordem, Visível |
+| **UI: Documento** (`UiDocument`) | Documento (`.mui` do projeto, com **Recarregar**, que relê também as folhas `.mstyle`), Ordem, Visível |
 
 - **Criar:** Entidade > Interface (UI) > Texto, Imagem, Botão, Painel ou Documento (também no "+ Criar" da
   Hierarquia).
@@ -655,7 +655,13 @@ desfazer:
   e `shrink`, `justify` e `alignItems`, tamanhos em pixels, porcentagem ou automáticos (o texto quebra na
   largura); `placement: Absolute` prende por âncora, como o UiRect; `overflow: Hidden` recorta os filhos e
   `Scroll` faz uma lista que rola com a roda do mouse. A Hierarquia fica com uma entidade só, e os scripts acham
-  os elementos pelo nome (`WasClicked("jogar")`). Formato e plano em
+  os elementos pelo nome (`WasClicked("jogar")`). **Folhas de estilo (`.mstyle`):** regras com seletor por tipo,
+  `.classe`, `#nome` e estados `:hover`, `:active`, `:disabled`, `:focus` (lista com vírgula), ligadas ao documento
+  por `"styles"`; a cascata vai do padrão da engine às folhas (por especificidade e ordem) e ao que está escrito no
+  elemento, e a cor e a fonte do texto descem do pai. Além das propriedades do layout e das cores: cantos
+  arredondados (`radius`), borda (`borderWidth`, `borderColor`), 9-slice da imagem (`slice`), `opacity` (vale para os
+  filhos), contorno e sombra do texto, `scale` (só no desenho) e `transition` (cor, opacidade e escala mudam aos
+  poucos entre os estados no Play). **Recarregar** lê de novo o `.mui` e as folhas. Formato e plano em
   [Interface em documentos](docs/roadmap/alpha-5/interface-em-documentos.md); por ora o arquivo se edita fora do
   editor. Pelo MCP: `ui_click` com `element` e `ui_scroll` rolam e clicam pelo nome.
 - **Unidades:** pixels de uma tela de 1080 de altura, escalados pela altura real (o HUD fica igual no

@@ -86,11 +86,12 @@ struct Layout {
     std::vector<UiNode>& out;
 
     // Nó do elemento e, depois, os filhos dentro do conteúdo dele.
-    void Place(UiElement& e, const UiBox& box, int depth, const UiBox* clip) {
+    void Place(UiElement& e, const UiBox& box, int depth, const UiBox* clip, int parent) {
         UiBox content{box.min + glm::vec2(e.padding.left, e.padding.top) * scale,
                       box.max - glm::vec2(e.padding.right, e.padding.bottom) * scale};
         content.max = glm::max(content.max, content.min);
-        out.push_back({owner, box, depth, &e, content, clip ? *clip : UiBox{}, clip != nullptr});
+        const int self = static_cast<int>(out.size());
+        out.push_back({owner, box, depth, &e, content, clip ? *clip : UiBox{}, clip != nullptr, parent});
         UiBox childClip;
         const UiBox* inner = clip;
         if (e.overflow != UiOverflow::Visible) {
@@ -98,11 +99,11 @@ struct Layout {
             inner = &childClip;
         }
         Children(e.children, ContainerOf(e), content, box, depth + 1, inner,
-                 e.overflow == UiOverflow::Scroll ? &e : nullptr);
+                 e.overflow == UiOverflow::Scroll ? &e : nullptr, self);
     }
 
     void Children(std::vector<UiElement>& children, const Container& c, const UiBox& content, const UiBox& outer,
-                  int depth, const UiBox* clip, UiElement* scroller) {
+                  int depth, const UiBox* clip, UiElement* scroller, int parent) {
         const bool row = c.direction == UiDirection::Row;
         const glm::vec2 size = content.Size();
         const float mainSize = row ? size.x : size.y;
@@ -239,17 +240,100 @@ struct Layout {
         }
 
         for (size_t i = 0; i < children.size(); ++i) {
-            if (children[i].visible) Place(children[i], boxes[i], depth, clip);
+            if (children[i].visible) Place(children[i], boxes[i], depth, clip, parent);
         }
     }
 };
 
+
+// Tudo o que muda as caixas, num número só: se igual ao do último layout, os nós são os mesmos. Entra o endereço de
+// cada elemento (os nós apontam para eles) e o que o layout lê; cor, texto que não mede e estado não entram.
+struct Hasher {
+    uint64_t h = 1469598103934665603ull;
+    void Bytes(const void* data, size_t size) {
+        const auto* p = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i) h = (h ^ p[i]) * 1099511628211ull;
+    }
+    void Float(float v) { Bytes(&v, sizeof v); }
+    void Int(int64_t v) { Bytes(&v, sizeof v); }
+    void Ptr(const void* v) { Bytes(&v, sizeof v); }
+    void Length(const UiLength& l) {
+        Float(l.value);
+        Int(static_cast<int>(l.unit));
+    }
+    void Edges(const UiEdges& e) {
+        Float(e.top);
+        Float(e.right);
+        Float(e.bottom);
+        Float(e.left);
+    }
+    void Elements(const std::vector<UiElement>& list) {
+        Int(static_cast<int64_t>(list.size()));
+        for (const UiElement& e : list) {
+            Ptr(&e);
+            Int(static_cast<int>(e.type) | (e.visible ? 16 : 0) | (e.wrap ? 32 : 0));
+            if (!e.visible) continue;
+            Int(static_cast<int>(e.placement) | static_cast<int>(e.anchor) << 2 | static_cast<int>(e.alignSelf) << 8 |
+                static_cast<int>(e.direction) << 12 | static_cast<int>(e.justify) << 14 |
+                static_cast<int>(e.alignItems) << 18 | static_cast<int>(e.overflow) << 22);
+            Float(e.position.x);
+            Float(e.position.y);
+            Length(e.width);
+            Length(e.height);
+            Edges(e.margin);
+            Edges(e.padding);
+            Float(e.grow);
+            Float(e.shrink);
+            Float(e.gap);
+            Float(e.scroll);
+            if (e.HasText()) {
+                Bytes(e.text.data(), e.text.size());
+                Int(static_cast<int64_t>(e.text.size()));
+                Ptr(e.Font());
+                Float(e.fontSize);
+            }
+            Elements(e.children);
+        }
+    }
+};
+
+uint64_t LayoutSignature(EntityId owner, const std::vector<UiElement>& elements, const UiBox& box, float scale, int depth) {
+    Hasher h;
+    h.Int(owner);
+    h.Float(box.min.x);
+    h.Float(box.min.y);
+    h.Float(box.max.x);
+    h.Float(box.max.y);
+    h.Float(scale);
+    h.Int(depth);
+    h.Elements(elements);
+    return h.h;
+}
+
 } // namespace
 
-void LayoutUiDocument(EntityId owner, std::vector<UiElement>& elements, const UiBox& box, float scale, int depth,
+void LayoutUiDocument(EntityId owner, UiDocumentData& document, const UiBox& box, float scale, int depth,
                       std::vector<UiNode>& out) {
+    UiLayoutCache& cache = document.layoutCache;
+    const uint64_t signature = LayoutSignature(owner, document.elements, box, scale, depth);
+    const int base = static_cast<int>(out.size());
+    if (cache.valid && cache.signature == signature) {
+        for (UiNode node : cache.nodes) {
+            if (node.parent >= 0) node.parent += base;
+            out.push_back(node);
+        }
+        return;
+    }
     Layout layout{owner, scale, out};
-    layout.Children(elements, Container{}, box, box, depth, nullptr, nullptr);
+    layout.Children(document.elements, Container{}, box, box, depth, nullptr, nullptr, -1);
+    ++document.layoutRuns;
+    cache.nodes.assign(out.begin() + base, out.end());
+    for (UiNode& node : cache.nodes) {
+        if (node.parent >= 0) node.parent -= base;
+    }
+    // O layout prende o scroll: a assinatura de depois é a que vale no próximo quadro.
+    cache.signature = LayoutSignature(owner, document.elements, box, scale, depth);
+    cache.valid = true;
 }
 
 } // namespace motor

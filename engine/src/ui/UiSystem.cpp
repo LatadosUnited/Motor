@@ -49,7 +49,7 @@ void UiSystem::OnStop(SceneRuntime&) {
     m_layout.clear();
 }
 
-void UiSystem::OnUpdate(SceneRuntime& runtime, float) {
+void UiSystem::OnUpdate(SceneRuntime& runtime, float dt) {
     Scene& scene = runtime.GetScene();
     m_layout = ComputeUiLayout(scene, m_pointer.screenSize);
 
@@ -91,6 +91,16 @@ void UiSystem::OnUpdate(SceneRuntime& runtime, float) {
     m_hovered = hovered;
     m_hoveredElement = hoveredElement;
     UpdateElementStates(scene, down, clickedElement);
+    // Estilos dos estados novos (:hover, :active) já neste passo, e as transições andam com o tempo do jogo.
+    for (EntityId id : scene.EntitiesWith<UiDocument>()) {
+        const Entity* e = scene.Find(id);
+        const UiDocument* document = e ? e->Get<UiDocument>() : nullptr;
+        if (UiDocumentData* tree = document ? document->Tree() : nullptr) {
+            tree->animate = true;
+            UpdateUiStyles(*tree);
+            AdvanceUiTransitions(*tree, dt);
+        }
+    }
 
     // Roda do mouse: rola a lista (overflow Scroll) de cima que está sob o mouse e ainda tem para onde ir.
     const float wheel = m_pointer.inside ? Input::ScrollDelta() : 0.0f;

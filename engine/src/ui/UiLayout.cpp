@@ -75,7 +75,10 @@ struct LayoutBuilder {
                 // O documento ocupa o pai (ou o próprio UiRect, se a entidade tiver um).
                 if (!document->visible) continue;
                 const UiBox box = rect ? ResolveUiRect(*rect, parentBox, scale) : parentBox;
-                if (UiDocumentData* tree = document->Tree()) LayoutUiDocument(e->id, tree->elements, box, scale, depth, nodes);
+                if (UiDocumentData* tree = document->Tree()) {
+                    UpdateUiStyles(*tree);  // estado de um botão mudou: a cascata roda antes do layout
+                    LayoutUiDocument(e->id, *tree, box, scale, depth, nodes);
+                }
                 Visit(e->id, box, depth + 1);
                 continue;
             }

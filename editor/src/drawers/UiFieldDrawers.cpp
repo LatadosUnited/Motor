@@ -97,5 +97,5 @@ MOTOR_FIELD_DRAWER(UiDocumentRef) {
     ImGui::BeginDisabled(ref.IsEmpty());
     if (ImGui::Button(reloadLabel)) motor::ReloadUiDocument(ref, ctx.assets);
     ImGui::EndDisabled();
-    ImGui::SetItemTooltip("Lê de novo o .mui (depois de mudá-lo fora do editor)");
+    ImGui::SetItemTooltip("Lê de novo o .mui e as folhas .mstyle dele (depois de mudá-los fora do editor)");
 }

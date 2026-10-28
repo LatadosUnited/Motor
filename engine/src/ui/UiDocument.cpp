@@ -1,5 +1,7 @@
 #include "motor/ui/UiDocument.h"
 
+#include "UiStyleJson.h"
+
 #include "motor/assets/AssetLibrary.h"
 #include "motor/common/FileRead.h"
 #include "motor/common/FileWrite.h"
@@ -7,216 +9,73 @@
 #include "motor/core/Paths.h"
 #include "motor/ui/Font.h"
 
-#include <nlohmann/json.hpp>
-
 #include <format>
 
 namespace motor {
 
 namespace {
-using Json = nlohmann::ordered_json;
+using Json = UiJson;
 
 constexpr UiElementType kTypes[] = {UiElementType::Panel, UiElementType::Text, UiElementType::Image,
                                     UiElementType::Button};
-constexpr UiAnchor kAnchors[] = {UiAnchor::TopLeft,    UiAnchor::Top,    UiAnchor::TopRight,
-                                 UiAnchor::Left,       UiAnchor::Center, UiAnchor::Right,
-                                 UiAnchor::BottomLeft, UiAnchor::Bottom, UiAnchor::BottomRight,
-                                 UiAnchor::Stretch};
-constexpr UiTextAlign kAligns[] = {UiTextAlign::Left, UiTextAlign::Center, UiTextAlign::Right};
-constexpr UiVerticalAlign kVerticalAligns[] = {UiVerticalAlign::Top, UiVerticalAlign::Middle, UiVerticalAlign::Bottom};
-constexpr UiPlacement kPlacements[] = {UiPlacement::Flow, UiPlacement::Absolute};
-constexpr UiDirection kDirections[] = {UiDirection::Column, UiDirection::Row};
-constexpr UiJustify kJustifies[] = {UiJustify::Start, UiJustify::Center, UiJustify::End, UiJustify::SpaceBetween,
-                                    UiJustify::SpaceAround};
-constexpr UiAlign kAlignments[] = {UiAlign::Auto, UiAlign::Start, UiAlign::Center, UiAlign::End, UiAlign::Stretch};
-constexpr UiOverflow kOverflows[] = {UiOverflow::Visible, UiOverflow::Hidden, UiOverflow::Scroll};
 
-const char* VerticalAlignName(UiVerticalAlign v) {
-    switch (v) {
-        case UiVerticalAlign::Top: return "Top";
-        case UiVerticalAlign::Middle: return "Middle";
-        case UiVerticalAlign::Bottom: return "Bottom";
-    }
-    return "Middle";
-}
-const char* PlacementName(UiPlacement p) { return p == UiPlacement::Absolute ? "Absolute" : "Flow"; }
-const char* DirectionName(UiDirection d) { return d == UiDirection::Row ? "Row" : "Column"; }
-const char* JustifyName(UiJustify j) {
-    switch (j) {
-        case UiJustify::Start: return "Start";
-        case UiJustify::Center: return "Center";
-        case UiJustify::End: return "End";
-        case UiJustify::SpaceBetween: return "SpaceBetween";
-        case UiJustify::SpaceAround: return "SpaceAround";
-    }
-    return "Start";
-}
-const char* AlignName(UiAlign a) {
-    switch (a) {
-        case UiAlign::Auto: return "Auto";
-        case UiAlign::Start: return "Start";
-        case UiAlign::Center: return "Center";
-        case UiAlign::End: return "End";
-        case UiAlign::Stretch: return "Stretch";
-    }
-    return "Auto";
-}
-const char* OverflowName(UiOverflow o) {
-    switch (o) {
-        case UiOverflow::Visible: return "Visible";
-        case UiOverflow::Hidden: return "Hidden";
-        case UiOverflow::Scroll: return "Scroll";
-    }
-    return "Visible";
-}
+int Prop(const char* name) { return FindUiStyleProperty(name); }
 
-// Tamanho: número = pixels, "50%" = porcentagem do pai, "auto".
-Json Length(const UiLength& l) {
-    switch (l.unit) {
-        case UiUnit::Auto: return "auto";
-        case UiUnit::Px: return l.value;
-        case UiUnit::Percent: return std::format("{}%", l.value);
-    }
-    return "auto";
-}
-
-void ReadLength(const Json& json, const char* key, UiLength& out) {
-    const auto it = json.find(key);
-    if (it == json.end()) return;
-    if (it->is_number()) {
-        out = UiLength::Px(it->get<float>());
-    } else if (it->is_string()) {
-        std::string text = it->get<std::string>();
-        if (text == "auto") {
-            out = {};
-            return;
-        }
-        UiUnit unit = UiUnit::Px;
-        if (text.ends_with('%')) {
-            unit = UiUnit::Percent;
-            text.pop_back();
-        } else if (text.ends_with("px")) {
-            text.resize(text.size() - 2);
-        }
-        try {
-            size_t used = 0;
-            const float v = std::stof(text, &used);
-            if (used == text.size()) out = {v, unit};
-        } catch (...) {
-        }
-    }
-}
-
-// Lados: um número, [vertical, horizontal] ou [cima, direita, baixo, esquerda].
-Json Edges(const UiEdges& e) {
-    if (e.top == e.right && e.top == e.bottom && e.top == e.left) return e.top;
-    return Json::array({e.top, e.right, e.bottom, e.left});
-}
-
-void ReadEdges(const Json& json, const char* key, UiEdges& out) {
-    const auto it = json.find(key);
-    if (it == json.end()) return;
-    if (it->is_number()) {
-        out = UiEdges::All(it->get<float>());
-        return;
-    }
-    if (!it->is_array()) return;
-    for (const Json& v : *it) {
-        if (!v.is_number()) return;
-    }
-    if (it->size() == 2) out = UiEdges::Symmetric((*it)[0].get<float>(), (*it)[1].get<float>());
-    if (it->size() == 4) out = {(*it)[0].get<float>(), (*it)[1].get<float>(), (*it)[2].get<float>(), (*it)[3].get<float>()};
-}
-
-void ReadFloat(const Json& json, const char* key, float& out) {
-    if (const auto it = json.find(key); it != json.end() && it->is_number()) out = it->get<float>();
-}
-
-Json Vec(const glm::vec2& v) { return Json::array({v.x, v.y}); }
-Json Vec(const glm::vec4& v) { return Json::array({v.x, v.y, v.z, v.w}); }
-
-template <class V> void ReadVec(const Json& json, const char* key, V& out) {
-    const auto it = json.find(key);
-    if (it == json.end() || !it->is_array() || it->size() != static_cast<size_t>(V::length())) return;
-    for (int i = 0; i < V::length(); ++i) {
-        if ((*it)[i].is_number()) out[i] = (*it)[i].template get<float>();
-    }
-}
-
-template <class E, size_t N> void ReadEnum(const Json& json, const char* key, const E (&values)[N],
-                                           const char* (*name)(E), E& out) {
-    const auto it = json.find(key);
-    if (it == json.end() || !it->is_string()) return;
-    for (E e : values) {
-        if (it->get<std::string>() == name(e)) out = e;
-    }
-}
-
-// Fonte ou imagem: {"guid": "...", "path": "Assets/..."} ou só o caminho (como escreve um agente pelo MCP).
+// Imagem ou folha: {"guid": "...", "path": "Assets/..."} ou só o caminho (como escreve um agente pelo MCP).
 Json FileRef(const UiFont& ref) { return Json{{"guid", ref.guid}, {"path", ref.path}}; }
 
-void ReadFileRef(const Json& json, const char* key, UiFont& out) {
-    const auto it = json.find(key);
-    if (it == json.end()) return;
+bool ReadFileRef(const Json& json, UiFont& out) {
     out = {};
-    if (it->is_string()) {
-        out.path = it->get<std::string>();
-    } else if (it->is_object()) {
-        out.guid = it->value("guid", std::string());
-        out.path = it->value("path", std::string());
+    if (json.is_string()) {
+        out.path = json.get<std::string>();
+        return true;
     }
+    if (json.is_object()) {
+        out.guid = json.value("guid", std::string());
+        out.path = json.value("path", std::string());
+        return true;
+    }
+    return false;
 }
 
-Json ElementToJson(const UiElement& e) {
+// As declarações que o arquivo guarda: as do elemento ou, num documento montado em código (não `styled`), os campos
+// diferentes do padrão do tipo (como o gravador fazia antes das folhas).
+UiStyleDeclarations DeclaredStyle(const UiElement& e, bool styled) {
+    if (styled) return e.inlineStyle;
+    const UiElement def = UiElement::Make(e.type);
+    UiStyleDeclarations out;
+    const int anchor = Prop("anchor"), position = Prop("position");
+    for (int p = 0; p < UiStylePropertyCount(); ++p) {
+        const UiStyleValue value = GetUiStyleValue(e, p);
+        const bool absoluteSpot = e.placement == UiPlacement::Absolute && (p == anchor || p == position);
+        if (absoluteSpot || !(value == GetUiStyleValue(def, p))) out.Set(p, value);
+    }
+    return out;
+}
+
+Json ElementToJson(const UiElement& e, bool styled) {
     const UiElement def = UiElement::Make(e.type);
     Json json{{"type", UiElementTypeName(e.type)}};
     if (!e.name.empty()) json["name"] = e.name;
     if (!e.classes.empty()) json["classes"] = e.classes;
-    if (e.placement != def.placement) json["placement"] = PlacementName(e.placement);
-    if (e.placement == UiPlacement::Absolute) {
-        json["anchor"] = UiAnchorName(e.anchor);
-        json["position"] = Vec(e.position);
-    }
-    if (e.width != def.width) json["width"] = Length(e.width);
-    if (e.height != def.height) json["height"] = Length(e.height);
-    if (e.margin != def.margin) json["margin"] = Edges(e.margin);
-    if (e.grow != def.grow) json["grow"] = e.grow;
-    if (e.shrink != def.shrink) json["shrink"] = e.shrink;
-    if (e.alignSelf != def.alignSelf) json["alignSelf"] = AlignName(e.alignSelf);
     if (e.visible != def.visible) json["visible"] = e.visible;
-    if (e.direction != def.direction) json["direction"] = DirectionName(e.direction);
-    if (e.justify != def.justify) json["justify"] = JustifyName(e.justify);
-    if (e.alignItems != def.alignItems) json["alignItems"] = AlignName(e.alignItems);
-    if (e.gap != def.gap) json["gap"] = e.gap;
-    if (e.padding != def.padding) json["padding"] = Edges(e.padding);
-    if (e.overflow != def.overflow) json["overflow"] = OverflowName(e.overflow);
-    if (e.color != def.color) json["color"] = Vec(e.color);
+    if (e.interactable != def.interactable) json["interactable"] = e.interactable;
     if (!e.image.IsDefault()) json["image"] = FileRef(e.image);
     if (e.text != def.text) json["text"] = e.text;
-    if (!e.font.IsDefault()) json["font"] = FileRef(e.font);
-    if (e.fontSize != def.fontSize) json["fontSize"] = e.fontSize;
-    if (e.textColor != def.textColor) json["textColor"] = Vec(e.textColor);
-    if (e.align != def.align) json["align"] = UiTextAlignName(e.align);
-    if (e.verticalAlign != def.verticalAlign) json["verticalAlign"] = VerticalAlignName(e.verticalAlign);
-    if (e.wrap != def.wrap) json["wrap"] = e.wrap;
-    if (e.type == UiElementType::Button) {
-        if (e.normalColor != def.normalColor) json["normalColor"] = Vec(e.normalColor);
-        if (e.hoverColor != def.hoverColor) json["hoverColor"] = Vec(e.hoverColor);
-        if (e.pressedColor != def.pressedColor) json["pressedColor"] = Vec(e.pressedColor);
-        if (e.interactable != def.interactable) json["interactable"] = e.interactable;
-    }
+    WriteUiStyleDeclarations(DeclaredStyle(e, styled), json);
     if (!e.children.empty()) {
         Json children = Json::array();
-        for (const UiElement& child : e.children) children.push_back(ElementToJson(child));
+        for (const UiElement& child : e.children) children.push_back(ElementToJson(child, styled));
         json["children"] = std::move(children);
     }
     return json;
 }
 
 void ElementsFromJson(const Json& list, int version, std::vector<UiElement>& out, std::vector<std::string>* warnings,
-                      const std::string& where);
+                      const std::string& where, const UiStyleDeclarations* parentStyle);
 
-UiElement ElementFromJson(const Json& json, int version, std::vector<std::string>* warnings, const std::string& where) {
+UiElement ElementFromJson(const Json& json, int version, std::vector<std::string>* warnings, const std::string& where,
+                          const UiStyleDeclarations* parentStyle) {
     UiElementType type = UiElementType::Panel;
     const std::string typeName = json.value("type", std::string("Panel"));
     bool known = false;
@@ -229,68 +88,48 @@ UiElement ElementFromJson(const Json& json, int version, std::vector<std::string
     if (!known && warnings) warnings->push_back(std::format("{}: tipo \"{}\" desconhecido, lido como Panel", where, typeName));
 
     UiElement e = UiElement::Make(type);
-    if (version < 2) {
-        // Antes do flex: tudo por âncora, 200x60 sem "size", texto sem quebra nem preenchimento.
-        e.placement = UiPlacement::Absolute;
-        e.width = UiLength::Px(200.0f);
-        e.height = UiLength::Px(60.0f);
-        e.wrap = false;
-        e.padding = {};
-    }
     e.name = json.value("name", std::string());
     if (const auto it = json.find("classes"); it != json.end() && it->is_array()) {
         for (const Json& c : *it) {
             if (c.is_string()) e.classes.push_back(c.get<std::string>());
         }
     }
-    ReadEnum(json, "placement", kPlacements, PlacementName, e.placement);
-    ReadEnum(json, "anchor", kAnchors, UiAnchorName, e.anchor);
-    ReadVec(json, "position", e.position);
-    glm::vec2 size{0.0f};
-    if (json.contains("size")) {  // atalho (e o da versão 1): largura e altura em pixels
-        size = {e.width.value, e.height.value};
-        ReadVec(json, "size", size);
-        e.width = UiLength::Px(size.x);
-        e.height = UiLength::Px(size.y);
-    }
-    ReadLength(json, "width", e.width);
-    ReadLength(json, "height", e.height);
-    ReadEdges(json, "margin", e.margin);
-    ReadFloat(json, "grow", e.grow);
-    ReadFloat(json, "shrink", e.shrink);
-    ReadEnum(json, "alignSelf", kAlignments, AlignName, e.alignSelf);
     e.visible = json.value("visible", e.visible);
-    ReadEnum(json, "direction", kDirections, DirectionName, e.direction);
-    ReadEnum(json, "justify", kJustifies, JustifyName, e.justify);
-    ReadEnum(json, "alignItems", kAlignments, AlignName, e.alignItems);
-    ReadFloat(json, "gap", e.gap);
-    ReadEdges(json, "padding", e.padding);
-    ReadEnum(json, "overflow", kOverflows, OverflowName, e.overflow);
-    ReadVec(json, "color", e.color);
-    ReadFileRef(json, "image", e.image);
+    if (const auto it = json.find("image"); it != json.end()) ReadFileRef(*it, e.image);
     if (const auto it = json.find("text"); it != json.end() && it->is_string()) e.text = it->get<std::string>();
-    ReadFileRef(json, "font", e.font);
-    if (const auto it = json.find("fontSize"); it != json.end() && it->is_number()) e.fontSize = it->get<float>();
-    ReadVec(json, "textColor", e.textColor);
-    ReadEnum(json, "align", kAligns, UiTextAlignName, e.align);
-    ReadEnum(json, "verticalAlign", kVerticalAligns, VerticalAlignName, e.verticalAlign);
-    e.wrap = json.value("wrap", e.wrap);
-    ReadVec(json, "normalColor", e.normalColor);
-    ReadVec(json, "hoverColor", e.hoverColor);
-    ReadVec(json, "pressedColor", e.pressedColor);
-    e.interactable = json.value("interactable", e.interactable);
+    if (const auto it = json.find("interactable"); it != json.end() && it->is_boolean()) e.interactable = it->get<bool>();
+
+    if (version < 2) {
+        // Antes do flex: tudo por âncora, 200x60 sem "size", texto sem quebra nem preenchimento.
+        e.inlineStyle.Set(Prop("placement"), static_cast<int>(UiPlacement::Absolute));
+        e.inlineStyle.Set(Prop("width"), UiLength::Px(200.0f));
+        e.inlineStyle.Set(Prop("height"), UiLength::Px(60.0f));
+        e.inlineStyle.Set(Prop("wrap"), false);
+        e.inlineStyle.Set(Prop("padding"), UiEdges{});
+    }
+    ReadUiStyleDeclarations(json, e.inlineStyle);  // valor da forma errada fica com o padrão, como antes
+    if (version < 3 && parentStyle) {
+        // Antes das folhas não havia herança: o que o pai escreveu de texto não descia para os filhos.
+        const UiElement def = UiElement::Make(type);
+        for (const UiStyleDeclaration& d : parentStyle->items) {
+            if (UiStylePropertyInherited(d.property) && !e.inlineStyle.Find(d.property)) {
+                e.inlineStyle.Set(d.property, GetUiStyleValue(def, d.property));
+            }
+        }
+    }
     if (const auto it = json.find("children"); it != json.end()) {
-        ElementsFromJson(*it, version, e.children, warnings, where + "/" + (e.name.empty() ? typeName : e.name));
+        ElementsFromJson(*it, version, e.children, warnings, where + "/" + (e.name.empty() ? typeName : e.name),
+                         &e.inlineStyle);
     }
     return e;
 }
 
 void ElementsFromJson(const Json& list, int version, std::vector<UiElement>& out, std::vector<std::string>* warnings,
-                      const std::string& where) {
+                      const std::string& where, const UiStyleDeclarations* parentStyle) {
     if (!list.is_array()) return;
     for (const Json& item : list) {
         if (item.is_object()) {
-            out.push_back(ElementFromJson(item, version, warnings, where));
+            out.push_back(ElementFromJson(item, version, warnings, where, parentStyle));
         } else if (warnings) {
             warnings->push_back(where + ": item que não é objeto ignorado");
         }
@@ -301,6 +140,23 @@ bool SameElements(const std::vector<UiElement>& a, const std::vector<UiElement>&
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); ++i) {
         if (!a[i].SameContent(b[i])) return false;
+    }
+    return true;
+}
+
+bool SameContentOnly(const UiElement& a, const UiElement& b) {
+    return a.type == b.type && a.name == b.name && a.classes == b.classes && a.visible == b.visible &&
+           a.image == b.image && a.text == b.text && a.interactable == b.interactable;
+}
+
+// Entre um documento lido e um montado em código: as declarações de cada lado, do jeito que iriam para o arquivo.
+bool SameDeclaredElements(const std::vector<UiElement>& a, bool aStyled, const std::vector<UiElement>& b, bool bStyled) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (!SameContentOnly(a[i], b[i]) || !(DeclaredStyle(a[i], aStyled) == DeclaredStyle(b[i], bStyled)) ||
+            !SameDeclaredElements(a[i].children, aStyled, b[i].children, bStyled)) {
+            return false;
+        }
     }
     return true;
 }
@@ -333,32 +189,91 @@ void ResolveRef(UiFont& ref, AssetLibrary& assets) {
     }
 }
 
-void ResolveElements(std::vector<UiElement>& list, AssetLibrary& assets) {
-    for (UiElement& e : list) {
-        ResolveRef(e.font, assets);
-        ResolveRef(e.image, assets);
-        e.fontData = nullptr;
-        if (!e.font.IsDefault()) {
-            std::filesystem::path file;
-            if (!e.font.guid.empty()) file = assets.Database().PathFor(e.font.guid);
-            if (file.empty() && !e.font.path.empty()) file = assets.FileForKey(e.font.path);
-            std::string error;
-            if (!file.empty()) e.fontData = LoadUiFont(file, &error);
-            if (!e.fontData) {
-                log::Warn("UI: fonte {} do elemento {}: {}; usando a padrão", e.font.path, e.name,
-                          error.empty() ? std::string("não encontrada") : error);
-            }
-        }
-        e.texture = nullptr;
-        if (!e.image.IsDefault()) {
-            std::string error;
-            if (!e.image.guid.empty()) e.texture = assets.GetTextureByGuid(e.image.guid, &error);
-            if (!e.texture && !e.image.path.empty()) e.texture = assets.GetTexture(e.image.path, &error);
-            if (!e.texture) log::Warn("UI: imagem {} do elemento {}: {}", e.image.path, e.name, error);
-        }
-        ResolveElements(e.children, assets);
-    }
+std::filesystem::path FileOf(const UiFont& ref, AssetLibrary& assets) {
+    std::filesystem::path file;
+    if (!ref.guid.empty()) file = assets.Database().PathFor(ref.guid);
+    if (file.empty() && !ref.path.empty()) file = assets.FileForKey(ref.path);
+    return file;
 }
+
+std::shared_ptr<const FontData> LoadFontRef(const UiFont& ref, AssetLibrary& assets, std::string_view who) {
+    const std::filesystem::path file = FileOf(ref, assets);
+    std::string error;
+    std::shared_ptr<const FontData> font = file.empty() ? nullptr : LoadUiFont(file, &error);
+    if (!font) {
+        log::Warn("UI: fonte {} de {}: {}; usando a padrão", ref.path.empty() ? ref.guid : ref.path, who,
+                  error.empty() ? std::string("não encontrada") : error);
+    }
+    return font;
+}
+
+struct AssetResolver {
+    UiDocumentData& doc;
+    AssetLibrary& assets;
+
+    // Fonte de uma declaração (do elemento ou de uma folha): carregada uma vez, achada pelo GUID e pelo caminho.
+    void AddFont(const UiFont& ref, std::string_view who) {
+        if (ref.IsDefault()) return;
+        if ((!ref.guid.empty() && doc.fonts.contains("g:" + ref.guid)) ||
+            (ref.guid.empty() && doc.fonts.contains("p:" + ref.path))) {
+            return;
+        }
+        auto font = LoadFontRef(ref, assets, who);
+        if (!ref.guid.empty()) doc.fonts["g:" + ref.guid] = font;
+        if (!ref.path.empty()) doc.fonts["p:" + ref.path] = font;
+    }
+
+    void Elements(std::vector<UiElement>& list) {
+        const int fontProp = Prop("font");
+        for (UiElement& e : list) {
+            ResolveRef(e.image, assets);
+            if (doc.styled) {
+                for (UiStyleDeclaration& d : e.inlineStyle.items) {
+                    if (d.property != fontProp) continue;
+                    if (UiFont* ref = std::get_if<UiFont>(&d.value)) {
+                        ResolveRef(*ref, assets);
+                        AddFont(*ref, "elemento " + e.name);
+                    }
+                }
+            } else {
+                // Montado em código: os campos valem (a fonte é a do campo).
+                ResolveRef(e.font, assets);
+                e.fontData = e.font.IsDefault() ? nullptr : LoadFontRef(e.font, assets, "elemento " + e.name);
+            }
+            e.texture = nullptr;
+            if (!e.image.IsDefault()) {
+                std::string error;
+                if (!e.image.guid.empty()) e.texture = assets.GetTextureByGuid(e.image.guid, &error);
+                if (!e.texture && !e.image.path.empty()) e.texture = assets.GetTexture(e.image.path, &error);
+                if (!e.texture) log::Warn("UI: imagem {} do elemento {}: {}", e.image.path, e.name, error);
+            }
+            Elements(e.children);
+        }
+    }
+
+    void Sheets() {
+        doc.sheets.clear();
+        for (UiFont& ref : doc.styles) {
+            ResolveRef(ref, assets);
+            const std::filesystem::path file = FileOf(ref, assets);
+            auto sheet = std::make_shared<UiStyleSheet>();
+            std::string error;
+            if (file.empty() || !LoadUiStyleSheet(file, *sheet, &error)) {
+                log::Warn("UI: folha de estilo {}: {}", ref.path.empty() ? ref.guid : ref.path,
+                          error.empty() ? std::string("arquivo não encontrado") : error);
+                doc.sheets.push_back(nullptr);
+                continue;
+            }
+            const int fontProp = Prop("font");
+            for (const UiStyleRule& rule : sheet->rules) {
+                if (const UiStyleValue* v = rule.declarations.Find(fontProp)) {
+                    if (const UiFont* font = std::get_if<UiFont>(v)) AddFont(*font, "regra " + rule.selector);
+                }
+            }
+            doc.sheets.push_back(std::move(sheet));
+        }
+    }
+};
 } // namespace
 
 const char* UiElementTypeName(UiElementType type) {
@@ -397,7 +312,7 @@ bool UiElement::HasBackground() const {
         case UiElementType::Text: return false;
         case UiElementType::Button: return true;
         case UiElementType::Panel:
-        case UiElementType::Image: return color.a > 0.0f || texture != nullptr;
+        case UiElementType::Image: return color.a > 0.0f || texture != nullptr || (borderWidth > 0.0f && borderColor.a > 0.0f);
     }
     return false;
 }
@@ -417,26 +332,28 @@ glm::vec4 UiElement::BackgroundColor() const {
 
 const FontData* UiElement::Font() const { return fontData ? fontData.get() : DefaultUiFont(); }
 
+UiVisual UiElement::Visual() const { return {BackgroundColor(), textColor, borderColor, opacity, scale}; }
+
 bool UiElement::SameContent(const UiElement& o) const {
-    return type == o.type && name == o.name && classes == o.classes && placement == o.placement &&
-           anchor == o.anchor && position == o.position && width == o.width && height == o.height &&
-           margin == o.margin && grow == o.grow && shrink == o.shrink && alignSelf == o.alignSelf &&
-           visible == o.visible && direction == o.direction && justify == o.justify && alignItems == o.alignItems &&
-           gap == o.gap && padding == o.padding && overflow == o.overflow && color == o.color && image == o.image &&
-           text == o.text && font == o.font && fontSize == o.fontSize && textColor == o.textColor &&
-           align == o.align && verticalAlign == o.verticalAlign && wrap == o.wrap &&
-           normalColor == o.normalColor && hoverColor == o.hoverColor && pressedColor == o.pressedColor &&
-           interactable == o.interactable && SameElements(children, o.children);
+    return SameContentOnly(*this, o) && inlineStyle == o.inlineStyle && SameElements(children, o.children);
 }
 
-bool UiDocumentData::SameContent(const UiDocumentData& other) const { return SameElements(elements, other.elements); }
+bool UiDocumentData::SameContent(const UiDocumentData& other) const {
+    return styles == other.styles && SameDeclaredElements(elements, styled, other.elements, other.styled);
+}
 UiElement* UiDocumentData::Find(std::string_view name) { return name.empty() ? nullptr : FindIn(elements, name); }
 const UiElement* UiDocumentData::Find(std::string_view name) const { return name.empty() ? nullptr : FindIn(elements, name); }
 
 std::string UiDocumentToJson(const UiDocumentData& document) {
+    Json json{{"format", kUiDocumentFormat}, {"version", kUiDocumentVersion}};
+    if (!document.styles.empty()) {
+        Json styles = Json::array();
+        for (const UiFont& ref : document.styles) styles.push_back(FileRef(ref));
+        json["styles"] = std::move(styles);
+    }
     Json elements = Json::array();
-    for (const UiElement& e : document.elements) elements.push_back(ElementToJson(e));
-    const Json json{{"format", kUiDocumentFormat}, {"version", kUiDocumentVersion}, {"elements", std::move(elements)}};
+    for (const UiElement& e : document.elements) elements.push_back(ElementToJson(e, document.styled));
+    json["elements"] = std::move(elements);
     return json.dump(2) + "\n";
 }
 
@@ -457,7 +374,17 @@ bool UiDocumentFromJson(std::string_view text, UiDocumentData& out, std::string*
         return false;
     }
     UiDocumentData document;
-    if (const auto it = json.find("elements"); it != json.end()) ElementsFromJson(*it, version, document.elements, warnings, "");
+    if (const auto it = json.find("styles"); it != json.end() && it->is_array()) {
+        for (const Json& item : *it) {
+            UiFont ref;
+            if (ReadFileRef(item, ref) && !ref.IsDefault()) document.styles.push_back(ref);
+            else if (warnings) warnings->push_back("styles: item que não é caminho nem {\"guid\", \"path\"} ignorado");
+        }
+    }
+    if (const auto it = json.find("elements"); it != json.end()) {
+        ElementsFromJson(*it, version, document.elements, warnings, "", nullptr);
+    }
+    ComputeUiStyles(document);  // sem as folhas ainda (ResolveUiDocumentAssets lê e calcula de novo)
     out = std::move(document);
     return true;
 }
@@ -479,7 +406,11 @@ bool LoadUiDocument(const std::filesystem::path& file, UiDocumentData& out, std:
 }
 
 void ResolveUiDocumentAssets(UiDocumentData& document, AssetLibrary& assets) {
-    ResolveElements(document.elements, assets);
+    AssetResolver resolver{document, assets};
+    document.fonts.clear();
+    resolver.Sheets();
+    resolver.Elements(document.elements);
+    if (document.styled) ComputeUiStyles(document);
 }
 
 void ReloadUiDocument(UiDocumentRef& ref, AssetLibrary& assets) {

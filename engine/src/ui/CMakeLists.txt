@@ -9,6 +9,7 @@ motor_add_layer(ui
         UiSystem.cpp
         UiDocument.cpp
         UiFlexLayout.cpp
+        UiStyle.cpp
         LoadingScreen.cpp
     DEPENDS scene
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

@@ -540,9 +540,22 @@ Um elemento de documento (`motor::UiElement`, `motor/ui/UiDocument.h`) tem `type
 e `position` no absoluto; `width` e `height` como `motor::UiLength` em pixels, porcentagem ou automático; `margin`,
 `grow`, `shrink`, `alignSelf`), `visible`, como arruma os filhos (`direction`, `justify`, `alignItems`, `gap`,
 `padding` como `motor::UiEdges`, `overflow`), `color`, `image`, `text`, `font`, `fontSize`, `textColor`, `align`,
-`verticalAlign`, `wrap`, as cores do botão e `interactable`, `children` e o estado do jogo (`hovered`, `pressed`,
-`clicked`, `scroll` e `scrollMax` numa lista com rolagem). Mudar a árvore viva vale só para este Play: o arquivo
-não muda. A roda do mouse rola `kUiScrollStep` pixels por entalhe.
+`verticalAlign`, `wrap`, as cores do botão e `interactable`, o visual (`radius`, `borderWidth`, `borderColor`,
+`slice` como `motor::UiEdges` em pixels da textura, `opacity`, `textOutlineWidth`, `textOutlineColor`,
+`textShadowOffset`, `textShadowColor`, `scale`, `transition` em segundos), `children` e o estado do jogo (`hovered`,
+`pressed`, `clicked`, `focused`, `scroll` e `scrollMax` numa lista com rolagem). Mudar a árvore viva vale só para
+este Play: o arquivo não muda. A roda do mouse rola `kUiScrollStep` pixels por entalhe.
+
+Os campos de estilo (lugar, tamanho, cores, fonte, visual) são o resultado da cascata das folhas `.mstyle` do
+documento (`motor/ui/UiStyle.h`): a cascata roda de novo quando o estado de um botão muda (`:hover`, `:active`) e
+sobrescreve o que um script escreveu direto no campo. Para uma mudança que fica, escreva a declaração no elemento:
+
+| Método de `motor::UiElement` | Efeito |
+|---|---|
+| `bool SetStyle(std::string_view property, std::string_view json)` | declara a propriedade no elemento como no arquivo (`SetStyle("color", "[1, 0, 0, 1]")`, `SetStyle("width", "\"50%\"")`) e já muda o campo; `false` se a propriedade não existe ou o valor tem a forma errada |
+| `bool SetStyleValue(std::string_view property, const UiStyleValue& value)` | o mesmo com o valor pronto (`glm::vec4`, `float`, `motor::UiLength`...) |
+| `bool ClearStyle(std::string_view property)` | tira a declaração do elemento (o valor volta ao das folhas no próximo cálculo) |
+| `UiVisual ShownVisual() const` | fundo, cor do texto, borda, opacidade e escala mostrados agora (no meio de uma transição, o valor da vez) |
 
 Na âncora, o ponto da tela e o ponto do elemento coincidem (`TopRight` prende o canto superior direito do
 elemento no canto superior direito do pai). Com `Stretch`, `position` são as margens esquerda e de cima e

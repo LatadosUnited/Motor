@@ -9,11 +9,12 @@
 
 namespace motor {
 
-struct UiElement;
+struct UiDocumentData;
 
 // Põe os elementos de um documento dentro de `box` (a raiz é uma coluna que estica os filhos) e acrescenta os nós em
-// `out`, na ordem de desenho. Escreve no elemento o scrollMax (e prende o scroll nele).
-void LayoutUiDocument(EntityId owner, std::vector<UiElement>& elements, const UiBox& box, float scale, int depth,
+// `out`, na ordem de desenho. Escreve no elemento o scrollMax (e prende o scroll nele). Nada mudou desde a última
+// vez (as caixas, o texto medido, o tamanho da tela): os nós vêm do cache do documento, sem refazer o layout.
+void LayoutUiDocument(EntityId owner, UiDocumentData& document, const UiBox& box, float scale, int depth,
                       std::vector<UiNode>& out);
 
 } // namespace motor

@@ -51,6 +51,7 @@ struct UiNode {
     UiBox content;         // dentro do padding (onde vai o texto); igual a `box` sem padding
     UiBox clip;            // recorte de um pai com overflow Hidden/Scroll, se `clipped`
     bool clipped = false;
+    int parent = -1;       // índice do nó do elemento pai do documento nesta lista (-1: nenhum)
 };
 
 // Elementos de UI visíveis (entidade ativa na hierarquia e UiRect::visible, também dos pais), na ordem de

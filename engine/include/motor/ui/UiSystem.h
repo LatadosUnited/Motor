@@ -15,6 +15,8 @@
 // Documentos de UI (UiDocument.h): os mesmos nomes valem para os elementos deles. Sem entidade com o nome, as
 // funções procuram um elemento com esse nome nos documentos da cena (WasClicked("jogar"), SetText("pontos", ...)).
 // A roda do mouse rola o elemento com overflow Scroll sob o mouse (UiElement::scroll; um script também pode mudar).
+// Estilos (UiStyle.h): o botão sob o mouse fica com :hover e o apertado com :active; a cascata roda de novo só quando um
+// estado muda, e as transições (`transition`) andam com o dt de cada passo.
 //
 // Clique da interface não vai para o jogo: antes dos scripts (UiPointerSystem), a UI diz ao runtime se o mouse
 // está sobre um botão ou imagem e se o clique começou num deles; até soltar, o botão esquerdo fica solto para

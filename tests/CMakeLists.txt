@@ -136,6 +136,10 @@ motor_add_test(test_ui_documento)
 # absoluto, texto com quebra, recorte e rolagem, em paisagem e retrato.
 motor_add_test(test_ui_flex)
 
+# Estilos da UI (.mstyle): seletores, cascata e herança, folhas pelo GUID, estados pelo UiSystem, transições, visual
+# (cantos, borda, 9-slice, contorno, sombra, opacidade, escala) e o menu de 50 elementos sem refazer nada parado.
+motor_add_test(test_ui_estilo)
+
 # Modelos glTF e animação esquelética (Fase 11): leitura, asset, importação como prefab, dados da malha na
 # CPU (raycast e collider exatos), amostragem dos clipes, skinning e Animator. Gera os próprios arquivos glTF.
 motor_add_test(test_gltf)
