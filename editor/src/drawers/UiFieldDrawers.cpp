@@ -1,9 +1,12 @@
 // Desenhadores do Inspector para os tipos de campo da UI do jogo (motor/ui/UiComponents.h): âncora,
-// alinhamento do texto e fonte (asset .ttf/.otf do projeto).
+// alinhamento do texto, fonte (asset .ttf/.otf do projeto) e documento de UI (.mui).
 #include "drawers/FieldDrawers.h"
+
+#include <motor/ui/UiDocument.h>
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <iterator>
 
 namespace {
@@ -75,4 +78,24 @@ MOTOR_FIELD_DRAWER(UiFont) {
     const std::filesystem::path file = ctx.assets.FileForKey(*chosen);
     font.guid = ctx.assets.Database().GuidFor(file);
     font.path = *chosen;
+}
+
+// Documento de UI (motor/ui/UiDocument.h): combo com os .mui do projeto e "Recarregar" (lê de novo o arquivo
+// mudado fora do editor).
+MOTOR_FIELD_DRAWER(UiDocumentRef) {
+    auto& ref = *static_cast<motor::UiDocumentRef*>(value);
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const char* reloadLabel = "Recarregar";
+    const float buttonWidth = ImGui::CalcTextSize(reloadLabel).x + style.FramePadding.x * 2.0f;
+    ImGui::SetNextItemWidth(std::max(1.0f, ImGui::GetContentRegionAvail().x - buttonWidth - style.ItemSpacing.x));
+    const std::string current = ref.path.empty() ? ref.guid : ref.path;
+    const auto chosen = editor::AssetCombo(ctx, "##v", motor::AssetType::UiDocument, ref.IsEmpty() ? nullptr : &current,
+                                           "(nenhum)");
+    if (!ref.IsEmpty() && !ref.data) ImGui::SetItemTooltip("Não abriu: %s (veja o Console)", current.c_str());
+    if (chosen) motor::SetUiDocumentFile(ref, *chosen, ctx.assets);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(ref.IsEmpty());
+    if (ImGui::Button(reloadLabel)) motor::ReloadUiDocument(ref, ctx.assets);
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Lê de novo o .mui e as folhas .mstyle dele (depois de mudá-los fora do editor)");
 }

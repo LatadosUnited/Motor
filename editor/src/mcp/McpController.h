@@ -23,6 +23,7 @@ class SceneDocument;
 class SceneViewport;
 class GameView;
 class ScriptController;
+class UiDocEditor;
 
 // Servidor MCP do editor (Fase 13): deixa um agente (Claude Code...) ver e mexer no editor pelas mesmas
 // operações da interface — cena, componentes, assets, Play, scripts, log e captura do viewport — sem simular
@@ -43,6 +44,7 @@ public:
         std::function<void(int)> requestHistory;  // -1 desfazer, +1 refazer (no início do próximo quadro)
         ExportController& exporter;               // game_export (Fase 10)
         std::function<motor::Renderer&()> renderer;  // viewport_capture desenha na hora (criado depois do editor)
+        UiDocEditor& uiEditor;                       // janela Editor de UI (ui_editor_*)
     };
 
     explicit McpController(Host host);
@@ -128,6 +130,7 @@ private:
     void AddPlayTools();
     void AddScriptTools();
     void AddViewTools();
+    void AddUiEditorTools();  // McpUiEditorTools.cpp
     static std::string PlayState(const PlayController& play);  // "editando", "jogando" ou "pausado"
     std::filesystem::path ProjectPath(const mcp::Json& value) const;  // relativo ao projeto; erro se não houver projeto
     void UpdateUiClick();
@@ -183,6 +186,7 @@ private:
     std::unique_ptr<motor::Framebuffer> m_capture;
     // Clique num botão da UI do jogo: posição na tela do jogo e etapa (1 = apertar, 2 = soltar, 0 = nada).
     int m_clickStage = 0;
+    int m_hoverFrames = 0;  // ui_scroll: quadros com o mouse parado no elemento (a roda entra num deles)
     glm::vec2 m_clickPos{0.0f};
     glm::vec2 m_clickScreen{0.0f};
 };

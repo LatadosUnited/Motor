@@ -6,6 +6,8 @@
 #include "motor/ui/Font.h"
 #include "motor/ui/LoadingScreen.h"
 #include "motor/ui/UiComponents.h"
+#include "motor/ui/UiConvert.h"
+#include "motor/ui/UiDocument.h"
 #include "motor/ui/UiLayout.h"
 #include "motor/ui/UiRenderer.h"
 #include "motor/ui/UiSystem.h"

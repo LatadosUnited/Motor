@@ -3,12 +3,12 @@ tipo: fase
 alpha: 4
 fase:
 titulo: Hub residente com MCP
-status: em andamento
+status: pronta
 prioridade: 1
 areas: [hub, distrib, editor-mcp]
 branch: hub-residente
 inicio: 2026-10-26
-fim:
+fim: 2026-10-28
 ---
 
 # Hub residente com MCP

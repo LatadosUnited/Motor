@@ -127,6 +127,24 @@ set_tests_properties(test_script_docs PROPERTIES TIMEOUT 600)
 motor_add_test(test_ui ${PROJECT_SOURCE_DIR}/editor/src/play/PlayMode.cpp)
 target_include_directories(test_ui PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
 
+# Documento de UI (.mui): formato, árvore no layout, hit test e lista de desenho, componente UiDocument na cena e
+# cliques e API dos scripts pelo nome do elemento.
+motor_add_test(test_ui_documento)
+
+# Layout dos documentos de UI: flex (coluna, linha, gap, grow, shrink, porcentagem, justify, align, margem, padding),
+# absoluto, texto com quebra, recorte e rolagem, em paisagem e retrato.
+motor_add_test(test_ui_flex)
+
+# Estilos da UI (.mstyle): seletores, cascata e herança, folhas pelo GUID, estados pelo UiSystem, transições, visual
+# (cantos, borda, 9-slice, contorno, sombra, opacidade, escala) e o menu de 50 elementos sem refazer nada parado.
+motor_add_test(test_ui_estilo)
+
+# Editor de UI (editor/src/uidoc): árvore (inserir, mover, duplicar), alças, regras, desfazer e recarga dos arquivos.
+motor_add_test(test_ui_editor
+    ${PROJECT_SOURCE_DIR}/editor/src/uidoc/UiDocEdit.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/uidoc/UiDocReload.cpp)
+target_include_directories(test_ui_editor PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
 # Modelos glTF e animação esquelética (Fase 11): leitura, asset, importação como prefab, dados da malha na
 # CPU (raycast e collider exatos), amostragem dos clipes, skinning e Animator. Gera os próprios arquivos glTF.
 motor_add_test(test_gltf)
@@ -319,3 +337,11 @@ motor_add_test(test_input)
 
 # Ações no tempo (InputActionTracker): segurar, toque, toque duplo, buffer, e o buffer de pulo nos scripts.
 motor_add_test(test_input_interactions)
+
+# Documentos de UI, Etapa 6 (interface em documentos): consultas, eventos, controles, foco, elemento que segue uma
+# entidade, conversão da UI por entidades e a edição de .mui/.mstyle por JSON das ferramentas MCP.
+motor_add_test(test_ui_controles
+    ${PROJECT_SOURCE_DIR}/editor/src/uidoc/UiDocEdit.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/uidoc/UiDocFileOps.cpp)
+target_include_directories(test_ui_controles PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_ui_controles PRIVATE nlohmann_json::nlohmann_json)

@@ -10,6 +10,7 @@
 #include "play/GameView.h"
 #include "play/PlayController.h"
 #include "scripts/ScriptController.h"
+#include "uidoc/UiDocEditor.h"
 #include "viewport/SceneViewport.h"
 
 #include <motor/common/FileWrite.h>
@@ -33,6 +34,7 @@ Json EditorToolList() {
     SceneDocument document(ctx, history, settings, projectPanel, {});
     ScriptController scripts(ctx, history, document, play);
     ExportController exporter({.ctx = ctx, .document = document, .scripts = scripts});
+    UiDocEditor uiEditor({.ctx = ctx, .filesSaved = {}});
     McpController controller({.ctx = ctx,
                               .document = document,
                               .play = play,
@@ -43,7 +45,8 @@ Json EditorToolList() {
                               .exporter = exporter,
                               .renderer = []() -> motor::Renderer& {
                                   throw std::logic_error("--mcp-ferramentas não desenha");
-                              }});
+                              },
+                              .uiEditor = uiEditor});
 
     Protocol& protocol = controller.GetProtocol();
     const Json init = *protocol.Handle(

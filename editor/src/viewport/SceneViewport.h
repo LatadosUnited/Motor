@@ -91,6 +91,9 @@ private:
     void UpdateBoxSelection(EditorContext& ctx, const ImVec2& origin, bool gameView);
     std::pair<glm::vec3, glm::vec3> Ray(const glm::vec2& uv) const;  // origem, direção (não normalizada)
     void HandleDrop(EditorContext& ctx, const ImVec2& origin);
+    // HUD do jogo neste quadro: sempre na visão do jogo; na cena, com o botão UI ligado ou um elemento de UI
+    // selecionado (quem acabou de criar ou escolheu um na Hierarquia vê e arrasta sem ligar o botão).
+    bool ShowsUi(const EditorContext& ctx, bool gameView) const;
 
     motor::Camera m_camera;
     motor::FlyCameraController m_cameraController{m_camera};
@@ -99,7 +102,7 @@ private:
     UiViewportTool m_uiTool;
     FrameStatsPanel m_statsPanel;  // contadores por quadro (Fase 22), com m_prefs.stats
     NavMeshOverlay m_navOverlay;   // navmesh e caminhos dos agentes (Fase 34), com m_prefs.navMesh
-    bool m_showUi = true;
+    bool m_uiDrawn = false;  // o último Render desenhou o HUD (contagem de draws das estatísticas)
 
     enum class GizmoTool { None, Translate, Rotate, Scale };
     GizmoTool m_gizmoTool = GizmoTool::Translate;

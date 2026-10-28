@@ -1,6 +1,7 @@
 #include "viewport/UiEditor.h"
 
 #include <motor/ui/UiComponents.h>
+#include <motor/ui/UiDocument.h>
 
 #include <cmath>
 
@@ -45,6 +46,13 @@ void DrawCreateUiMenuItems(EditorContext& ctx, EntityId parent) {
     if (ImGui::MenuItem("Imagem")) CreateUiElement(ctx, UiElementKind::Image, parent);
     if (ImGui::MenuItem("Botão")) CreateUiElement(ctx, UiElementKind::Button, parent);
     if (ImGui::MenuItem("Painel")) CreateUiElement(ctx, UiElementKind::Panel, parent);
+    ImGui::Separator();
+    if (ImGui::MenuItem("Documento")) {
+        // A tela inteira de um .mui: o arquivo se escolhe no Inspector.
+        Entity& e = ctx.scene.CreateEntity("Documento de UI", parent);
+        e.Add<UiDocument>();
+        ctx.selected = e.id;
+    }
 }
 
 void UiViewportTool::Draw(const EditorContext& ctx, ImDrawList* dl, const ImVec2& origin,
@@ -77,7 +85,8 @@ bool UiViewportTool::OnClick(EditorContext& ctx, const glm::vec2& mouse, const s
 void UiViewportTool::Update(EditorContext& ctx, const glm::vec2& viewportSize) {
     if (m_dragging == kNullEntity) return;
     Entity* e = ctx.scene.Find(m_dragging);
-    if (!e || !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    // Documento de UI: o clique seleciona a entidade, mas os elementos se mudam no .mui (não há UiRect a arrastar).
+    if (!e || !ImGui::IsMouseDown(ImGuiMouseButton_Left) || e->Has<motor::UiDocument>()) {
         m_dragging = kNullEntity;
         return;
     }

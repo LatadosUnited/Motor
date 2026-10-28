@@ -2,6 +2,7 @@
 
 #include "motor/assets/AssetLibrary.h"
 #include "motor/scene/Scene.h"
+#include "motor/ui/UiDocument.h"
 
 #include <nlohmann/json.hpp>
 
@@ -157,7 +158,8 @@ const glm::vec4& UiButton::CurrentColor() const {
 }
 
 bool IsUiEntity(const Entity& entity) {
-    return entity.Has<UiRect>() || entity.Has<UiImage>() || entity.Has<UiText>() || entity.Has<UiButton>();
+    return entity.Has<UiRect>() || entity.Has<UiImage>() || entity.Has<UiText>() || entity.Has<UiButton>() ||
+           entity.Has<UiDocument>();
 }
 
 // Nomes com o prefixo "Ui" seguidos do rótulo em português: no menu "Adicionar componente" ficam juntos.

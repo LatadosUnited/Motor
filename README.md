@@ -647,17 +647,58 @@ desfazer:
 | **UI: Texto** (`UiText`) | Texto (UTF-8, `\n` quebra a linha), Fonte, Tamanho da fonte, Cor, Alinhamento |
 | **UI: Imagem** (`UiImage`) | Textura (vazia = cor sólida), Cor |
 | **UI: Botão** (`UiButton`) | Cor normal, com o mouse em cima e pressionado; Clicável |
+| **UI: Documento** (`UiDocument`) | Documento (`.mui` do projeto, com **Recarregar**, que relê também as folhas `.mstyle`), Ordem, Visível |
 
-- **Criar:** Entidade > Interface (UI) > Texto, Imagem, Botão ou Painel (também no "+ Criar" da Hierarquia).
+- **Criar:** Entidade > Interface (UI) > Texto, Imagem, Botão, Painel ou Documento (também no "+ Criar" da
+  Hierarquia).
+- **Documento de UI (`.mui`, versão 4):** a tela inteira (menu, HUD) num arquivo JSON do projeto, com a árvore
+  de elementos (`Panel`, `Text`, `Image`, `Button` e os controles `ProgressBar`, `Slider`, `Toggle` e `TextField`,
+  com `value`, `min`, `max`, `step`, `checked`, `placeholder`, `maxLength`); a entidade com **UI: Documento** mostra o arquivo ocupando o
+  pai. Os elementos se arrumam por um **layout flex** próprio: coluna ou linha, `gap`, `padding`, `margin`, `grow`
+  e `shrink`, `justify` e `alignItems`, tamanhos em pixels, porcentagem ou automáticos (o texto quebra na
+  largura); `placement: Absolute` prende por âncora, como o UiRect; `overflow: Hidden` recorta os filhos e
+  `Scroll` faz uma lista que rola com a roda do mouse. A Hierarquia fica com uma entidade só, e os scripts acham
+  os elementos pelo nome (`WasClicked("jogar")`). **Folhas de estilo (`.mstyle`):** regras com seletor por tipo,
+  `.classe`, `#nome` e estados `:hover`, `:active`, `:disabled`, `:focus` (lista com vírgula), ligadas ao documento
+  por `"styles"`; a cascata vai do padrão da engine às folhas (por especificidade e ordem) e ao que está escrito no
+  elemento, e a cor e a fonte do texto descem do pai. Além das propriedades do layout e das cores: cantos
+  arredondados (`radius`), borda (`borderWidth`, `borderColor`), 9-slice da imagem (`slice`), `opacity` (vale para os
+  filhos), contorno e sombra do texto, `scale` (só no desenho) e `transition` (cor, opacidade e escala mudam aos
+  poucos entre os estados no Play). Formato e plano em
+  [Interface em documentos](docs/roadmap/alpha-5/interface-em-documentos.md). **Controles:** o slider anda com o
+  mouse arrastado, a caixa troca no clique e o campo de texto ganha o foco no clique e recebe o texto digitado.
+  **Foco:** no contexto de entrada `Menu`, setas/direcional/analógico movem o foco para o controle mais perto naquela
+  direção (Tab: o próximo), Enter/Espaço/A clicam e trocam, e o elemento em foco fica com `:focus`. **Seguir
+  entidade:** um elemento `Absolute` com `follow` (nome da entidade) e `followOffset` (metros) fica em cima dela na
+  tela, pela câmera do jogo. **Converter:** clique direito numa entidade com UI por entidades na Hierarquia >
+  **Converter UI em documento** grava um `.mui` em `Assets/UI` com as mesmas caixas e põe uma entidade com UI:
+  Documento no lugar (desfaz com Ctrl+Z). Pelo MCP: `ui_click` com `element` ou `query` (seletor) e `ui_scroll`
+  rolam e clicam; `ui_document_edit` e `ui_style_edit` criam e mudam `.mui` e `.mstyle` direto no arquivo (lista de
+  operações, tudo ou nada); `ui_convert_entities` faz a conversão.
+- **Editor de UI** (Ver > Editor de UI, ou duplo clique num `.mui` no painel Projeto): a árvore do documento, a
+  paleta (Painel, Texto, Imagem, Botão, Barra, Slider, Seleção, Campo: clique ou arraste para a árvore ou a prévia), a prévia desenhada como no jogo
+  numa resolução escolhida (16:9, 21:9, 4:3, 16:10, retrato ou personalizada; a UI escala pela altura, como no jogo) e
+  as propriedades do selecionado (nome, classes, texto, imagem e cada propriedade de estilo, com o valor calculado em
+  cinza). Clique na prévia seleciona; as alças redimensionam (grava `width`/`height` em pixels e, por âncora, a
+  posição); na árvore, arrastar reordena e muda de pai. A aba **Estilos** lista as folhas do documento e edita as
+  regras (seletor, propriedades, regra nova), com a prévia mudando na hora. Desfazer próprio (Ctrl+Z/Ctrl+Y com a
+  janela em foco), Ctrl+S grava o `.mui` e as folhas mudadas, Ctrl+D duplica, Del exclui; o título mostra `*` quando
+  há alterações e fechar pergunta se salva. `.mui` e `.mstyle` mudados fora do editor (ou gravados por ele) são
+  relidos sozinhos nas entidades que os usam, também no Play (o documento recomeça do arquivo); **Recarregar** no
+  Inspector força a leitura.
 - **Unidades:** pixels de uma tela de 1080 de altura, escalados pela altura real (o HUD fica igual no
   viewport do editor e em tela cheia). Filho de um elemento de UI se posiciona dentro do pai; esconder o pai
   esconde os filhos. Entre irmãos, maior **Ordem** desenha por cima e recebe o clique primeiro.
-- **No editor:** a UI aparece por cima do viewport (botão **UI** da barra liga/desliga). Fora da visão do
-  jogo, os elementos têm contorno; um clique seleciona e arrastar move (um arraste = um passo de desfazer).
+- **No editor:** na visão do jogo e na janela Jogo a UI aparece sempre. Na cena, só com o botão **UI** da
+  barra ligado (desligado por padrão, lembrado entre aberturas) ou com um elemento de UI selecionado; assim um
+  menu não esconde o cenário nem pega o clique da seleção 3D. Na cena, os elementos têm contorno; um clique seleciona e arrastar move (um arraste = um passo de desfazer).
   Na visão do jogo (Play), o mouse vai para os botões do jogo.
 - **Scripts:** `GetSystem<motor::UiSystem>()` com `SetText`, `SetVisible`, `IsVisible`, `WasClicked` (pelo
-  nome da entidade ou pelo id) e `Script::LoadScene("Fase1")` para trocar de cena. Ver a seção 13 do
-  [guia de scripts](docs/scripts.md) e os exemplos `docs/examples/Hud.cpp` e `MenuPrincipal.cpp`.
+  nome da entidade ou pelo id; sem entidade com o nome, o elemento de documento com esse nome), `FindElement` e
+  `Script::LoadScene("Fase1")` para trocar de cena; nos documentos, `Q("#jogar")`/`Query(".item")` por seletor,
+  `OnClick`, `OnChange`, `OnHover` (callbacks do script, soltos ao parar e na recarga da DLL) e `Focus`. Ver a seção
+  13 do [guia de scripts](docs/scripts.md) e os exemplos `docs/examples/Hud.cpp`, `MenuPrincipal.cpp` e
+  `MenuDocumento.cpp`.
 - **Fontes:** `.ttf` e `.otf` do projeto são assets (com GUID); o campo Fonte vazio usa a padrão, **Roboto
   Medium** (`engine/assets/fonts/`, Apache License 2.0, ver `LICENSE-Roboto.txt` na mesma pasta). Cada fonte
   vira um atlas **SDF** (campo de distância, gerado pelo `imstb_truetype.h` que vem com o Dear ImGui), nítido
@@ -856,6 +897,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Scripts | `scripts_build` (`wait` responde quando a compilação termina), `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD, desenhado na hora; vistas scene, game e editor), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |
+  | Editor de UI | `ui_editor_open`, `ui_editor_state` (árvore com as caixas na prévia, folhas e regras), `ui_editor_capture` (PNG da prévia numa resolução), `ui_editor_select` (por nome ou pelo ponto da prévia), `ui_editor_element` (add, move, delete, duplicate, resize pelas alças, set), `ui_editor_style` (regras das folhas), `ui_editor_history` (undo, redo, save) |
 
   As mudanças viram passos de **desfazer**, como as feitas na interface. Durante o Play, a cena é a do jogo:
   o que mudar é descartado ao parar. O servidor atende também com a janela do editor **minimizada** ou sem

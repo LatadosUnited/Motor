@@ -7,6 +7,7 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <utility>
 
 // stb_truetype 1.26, a cópia que vem com o ImGui (imstb_truetype.h). STBTT_STATIC: as funções ficam só neste
@@ -206,13 +207,29 @@ float FontData::Kerning(char32_t left, char32_t right) const {
 }
 
 namespace {
-// Chama fn(linha) para cada linha do texto ('\n'; '\r' é ignorado no fim).
+float LineWidth(const FontData& font, std::string_view line, float k);
+
+// Chama fn(linha) para cada linha do texto ('\n'; '\r' é ignorado no fim). Com maxWidth > 0, quebra também nos
+// espaços: a linha leva palavras enquanto couberem (os espaços da quebra somem).
 template <class Fn>
-void ForEachLine(std::string_view text, Fn fn) {
+void ForEachLine(const FontData& font, std::string_view text, float k, float maxWidth, Fn fn) {
     while (true) {
         const size_t eol = text.find('\n');
         std::string_view line = text.substr(0, eol);
         if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+        while (maxWidth > 0.0f && LineWidth(font, line, k) > maxWidth) {
+            // O maior pedaço até um espaço que cabe; nenhum cabe: a primeira palavra inteira.
+            size_t cut = std::string_view::npos;
+            for (size_t space = line.find(' '); space != std::string_view::npos; space = line.find(' ', space + 1)) {
+                if (LineWidth(font, line.substr(0, space), k) > maxWidth) break;
+                cut = space;
+            }
+            if (cut == std::string_view::npos) cut = line.find(' ');
+            if (cut == std::string_view::npos) break;  // uma palavra só: passa da largura
+            fn(line.substr(0, cut));
+            line.remove_prefix(cut);
+            while (!line.empty() && line.front() == ' ') line.remove_prefix(1);
+        }
         fn(line);
         if (eol == std::string_view::npos) break;
         text.remove_prefix(eol + 1);
@@ -230,30 +247,47 @@ float LineWidth(const FontData& font, std::string_view line, float k) {
     }
     return width;
 }
-
-int LineCount(std::string_view text) {
-    return static_cast<int>(std::count(text.begin(), text.end(), '\n')) + 1;
-}
 } // namespace
 
-glm::vec2 MeasureText(const FontData& font, std::string_view text, float pixelSize) {
+std::shared_ptr<const FontData> LoadUiFont(const std::filesystem::path& file, std::string* error) {
+    static std::map<std::filesystem::path, std::shared_ptr<const FontData>> cache;
+    if (const auto it = cache.find(file); it != cache.end()) return it->second;
+    auto font = std::make_shared<FontData>();
+    std::shared_ptr<const FontData> loaded;
+    if (font->LoadFile(file, error)) loaded = std::move(font);
+    cache[file] = loaded;
+    return loaded;
+}
+
+const FontData* DefaultUiFont() {
+    static const std::shared_ptr<const FontData> font = LoadUiFont(DefaultFontPath());
+    return font.get();
+}
+
+glm::vec2 MeasureText(const FontData& font, std::string_view text, float pixelSize, float wrapWidth) {
     const float k = pixelSize / FontData::kAtlasSize;
     float width = 0.0f;
-    ForEachLine(text, [&](std::string_view line) { width = std::max(width, LineWidth(font, line, k)); });
-    const int lines = LineCount(text);
+    int lines = 0;
+    ForEachLine(font, text, k, wrapWidth, [&](std::string_view line) {
+        width = std::max(width, LineWidth(font, line, k));
+        ++lines;
+    });
     const float height = (font.Ascent() - font.Descent()) * k + static_cast<float>(lines - 1) * font.LineHeight() * k;
     return {width, height};
 }
 
 void LayoutText(const FontData& font, std::string_view text, float pixelSize, UiTextAlign align, const UiBox& box,
-                std::vector<TextQuad>& out) {
+                std::vector<TextQuad>& out, float wrapWidth, UiVerticalAlign vertical) {
     out.clear();
     if (!font.IsLoaded() || pixelSize <= 0.0f) return;
     const float k = pixelSize / FontData::kAtlasSize;
-    const float blockHeight = MeasureText(font, text, pixelSize).y;
-    float baseline = box.Center().y - blockHeight * 0.5f + font.Ascent() * k;
+    const float blockHeight = MeasureText(font, text, pixelSize, wrapWidth).y;
+    float top = box.Center().y - blockHeight * 0.5f;
+    if (vertical == UiVerticalAlign::Top) top = box.min.y;
+    if (vertical == UiVerticalAlign::Bottom) top = box.max.y - blockHeight;
+    float baseline = top + font.Ascent() * k;
 
-    ForEachLine(text, [&](std::string_view line) {
+    ForEachLine(font, text, k, wrapWidth, [&](std::string_view line) {
         const float width = LineWidth(font, line, k);
         float pen = box.min.x;
         if (align == UiTextAlign::Center) pen = box.Center().x - width * 0.5f;

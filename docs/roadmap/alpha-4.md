@@ -24,7 +24,10 @@ ambiente de dentro e a câmera se adapta ao sair para o sol. Herdada da alpha 3:
 - **Recorte com estrutura espacial** (BVH ou grade para os estáticos), servindo também às sombras, ao raycast do
   editor e às consultas de área. Na alpha 3 não compensava: nas cenas do bench a câmera vê quase tudo e o recorte
   inteiro custa ~1,6 ms na referência; com terreno e mundo aberto a câmera vê uma parte pequena da cena.
-  *(origem: Fase 23, Tarefa 5, adiada em 21/10/2026)*
+  Preferir uma **grade de células**: cada célula vira depois a unidade do streaming
+  (Mundo grande, abaixo). *(origem: Fase 23, Tarefa 5, adiada em 21/10/2026)*
+- **Renderização relativa à câmera:** as posições vão para a GPU já relativas à câmera, para não perder precisão
+  longe da origem. Sempre ligada, sem opção para o usuário; é a base da origem flutuante. *(26/10/2026)*
 - **Desenho guiado pela GPU** (multi-draw indirect, buffers mapeados de forma persistente) e **objetos guardados
   entre quadros** no renderer (só reenviar o que mudou, como o GPU Resident Drawer da Unity): o que sobrou de CPU
   no fim da Fase 23 é percorrer a cena e montar a lista a cada quadro. *(origem: Fase 23, Tarefa 6 e estudo da 11)*
@@ -32,7 +35,8 @@ ambiente de dentro e a câmera se adapta ao sair para o sol. Herdada da alpha 3:
   cada objeto lê entidade, componente, material e malha espalhados no heap. Muda a API de `Entity::components`
   (scripts, Inspector, serializador, prefabs). *(origem: Fase 25, Tarefa 11, e medição da Fase 26, adiada em 25/10/2026)*
 - **Terreno:** mapa de altura editável (subir, baixar, suavizar), pintura de até 4 camadas de textura, collider da
-  física, LOD por blocos.
+  física, LOD por blocos. Cada bloco num arquivo próprio (altura e pintura), alinhado às células da grade, para
+  poder carregar por partes sem mudar o formato depois.
 - **Água:** ondas, reflexo do céu, refração e cor pela profundidade (transparência da Fase 18, `SceneDepthTexture`
   e `SceneColorTexture` da Fase 7).
 
@@ -54,6 +58,22 @@ ambiente de dentro e a câmera se adapta ao sair para o sol. Herdada da alpha 3:
   biblioteca nova). Sobras da Fase 24.
 - Medir o renderer numa máquina com GPU dedicada (Fase 24 não tinha uma).
 
+## Mundo grande (sem número ainda)
+
+**Planejada (26/10/2026), a pedido do usuário.** Mapas maiores que a ilha da alpha 4 sem o usuário montar nada à
+mão, como o World Partition da Unreal: o editor divide o mundo em células sozinho e um mapa pequeno nem percebe.
+Vem depois da Fase 28, em cima da grade de células, da renderização relativa à câmera e dos blocos do terreno.
+
+- **Streaming de células:** carregar e descarregar as células perto do jogador (raio configurável), nas tarefas
+  da Fase 26. A cena passa a aceitar subcenas por célula (`SceneSerializer`, prefabs, referências entre células):
+  formato novo, com a versão subindo e as cenas antigas lidas como uma célula só.
+- **Origem flutuante completa:** recentrar o mundo quando o jogador se afasta, levando junto física (Jolt), áudio,
+  navmesh e partículas. Só faz falta acima de alguns km.
+- **Impostores:** árvores e objetos distantes trocados por imagem plana gerada no editor.
+- **Oclusão:** não desenhar o que está atrás de morros e prédios (consulta de oclusão ou buffer de profundidade
+  reduzido).
+- **Editor:** ver as células na viewport, carregar só a região em edição e gerar navmesh e LOD por célula.
+
 ## Entrada v2 (sem número ainda)
 
 Em cima do `motor::Input` e do mapa de ações da Fase 21, não do zero. Andar pela ilha em primeira pessoa é o que
@@ -70,7 +90,7 @@ o número da fase sai quando a alpha 4 for numerada de novo.
 
 ## Hub residente com MCP (sem número ainda)
 
-**Planejada (26/10/2026), a pedido do usuário, para antes da 0.4:** [nota da fase](alpha-4/hub-residente.md). O Hub
+**Pronta (28/10/2026); planejada em 26/10/2026, a pedido do usuário, para antes da 0.4:** [nota da fase](alpha-4/hub-residente.md). O Hub
 inicia com o Windows na bandeja, é dono da porta 47600 (`/mcphub` e `/mcpengine/<Projeto>`, repassado ao editor) e
 o Claude Code não precisa reconectar quando o editor fecha ou reabre; o Hub se atualiza sozinho pelo instalador
 silencioso. A autoatualização veio da [Fase 32](alpha-5.md). Branch `hub-residente`.

@@ -78,3 +78,9 @@ Fase 27; o jogo de exemplo da Fase 18, para a Fase 33.
 - 2026-10-26 — Claude (Hub residente) — Hub: um editor aberto direto pelo `MotorEditor.exe` não é visto pelo Hub, e
   uma ferramenta do `/mcpengine/<Projeto>` abre outro editor no mesmo projeto; o editor poderia avisar o Hub ao abrir
   sozinho (ou o Hub achar o editor pela pasta do projeto) — `hub/src/HubEngineProxy.cpp`, `mcp/include/motor/mcp/HubLink.h`
+- 2026-10-28 — Claude (Interface em documentos) — a exportação do jogo não segue as referências de dentro dos
+  `.mui` e `.mstyle` (folhas, fontes e imagens citadas pelo documento não vão para a pasta exportada) —
+  `editor/src/export/GameExport.cpp` (`WalkRefs`)
+- 2026-10-28 — Claude (Interface em documentos) — a DLL de scripts não recompila o `MotorScriptEntry.cpp` quando o
+  `kScriptApiVersion` sobe (os headers da engine entram com `-isystem` e não contam como dependência), então a
+  DLL segue dizendo a versão antiga até o arquivo ser tocado — `editor/src/scripts/ScriptBuilder`

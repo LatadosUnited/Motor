@@ -41,14 +41,22 @@ glm::vec2 UiAnchorPoint(UiAnchor anchor);
 // Retângulo de um elemento dentro do pai, com a escala da tela.
 UiBox ResolveUiRect(const UiRect& rect, const UiBox& parent, float scale);
 
+struct UiElement;
+
 struct UiNode {
-    EntityId entity = 0;
+    EntityId entity = 0;  // a entidade de UI, ou a do UiDocument quando é um elemento dele
     UiBox box;
     int depth = 0;  // 0 = elemento de UI sem pai de UI
+    UiElement* element = nullptr;  // elemento da árvore viva do documento (UiDocument::Tree), ou nulo
+    UiBox content;         // dentro do padding (onde vai o texto); igual a `box` sem padding
+    UiBox clip;            // recorte de um pai com overflow Hidden/Scroll, se `clipped`
+    bool clipped = false;
+    int parent = -1;       // índice do nó do elemento pai do documento nesta lista (-1: nenhum)
 };
 
 // Elementos de UI visíveis (entidade ativa na hierarquia e UiRect::visible, também dos pais), na ordem de
 // desenho: pai antes dos filhos, irmãos por UiRect::order (empate: ordem da cena). O último é o de cima.
+// Uma entidade com UiDocument não gera nó: os elementos do documento entram no lugar dela, ocupando o pai.
 std::vector<UiNode> ComputeUiLayout(const Scene& scene, const glm::vec2& screenSize);
 
 enum class UiHitFilter {
@@ -56,8 +64,11 @@ enum class UiHitFilter {
     Blocking,   // o de cima que tem imagem ou botão (texto sozinho não bloqueia o clique)
 };
 
-// Elemento sob o ponto (pixels da tela), o de cima primeiro. 0 se nenhum.
+// Elemento sob o ponto (pixels da tela), o de cima primeiro. 0 se nenhum (num documento, a entidade dele).
 EntityId UiHitTest(const Scene& scene, const std::vector<UiNode>& layout, const glm::vec2& point,
                    UiHitFilter filter = UiHitFilter::Blocking);
+// O mesmo, devolvendo o nó (com o elemento do documento). nullptr se nenhum.
+const UiNode* UiHitTestNode(const Scene& scene, const std::vector<UiNode>& layout, const glm::vec2& point,
+                            UiHitFilter filter = UiHitFilter::Blocking);
 
 } // namespace motor

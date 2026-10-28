@@ -374,9 +374,10 @@ void SceneViewport::DrawToolbar(const ImVec2& position) {
                           "gerado pelo botão Gerar; no Play, o que o jogo está usando, com os caminhos dos agentes (amarelo).\n"
                           "Também o cone de visão de cada Percepção e, no Play, quem cada agente vê (vermelho) e ouve (azul).");
     ImGui::SameLine();
-    if (toggleButton("UI", m_showUi)) m_showUi = !m_showUi;
+    if (toggleButton("UI", m_prefs.ui)) m_prefs.ui = !m_prefs.ui;
     ImGui::SetItemTooltip("Mostrar a interface do jogo (HUD) por cima da cena. Com ela ligada, um clique na UI a\n"
-                          "seleciona e arrastar move o elemento; desligue para clicar nos objetos 3D por trás dela.");
+                          "seleciona e arrastar move o elemento; desligue para clicar nos objetos 3D por trás dela.\n"
+                          "Desligada, a UI aparece só com um elemento dela selecionado. A visão do jogo sempre mostra.");
     ImGui::SameLine(0.0f, 14.0f);
     if (toggleButton("Estatísticas", m_prefs.stats)) m_prefs.stats = !m_prefs.stats;
     ImGui::SetItemTooltip("Contadores do quadro no canto do viewport: ms de CPU por parte (loop, sistemas, scripts),\n"
