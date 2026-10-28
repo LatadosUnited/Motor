@@ -47,7 +47,7 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 1 — UI fora do caminho na cena
 
-- [x] Tarefa 1: Viewport da cena com a UI desligada por padrão (preferência salva), a Game View sempre com UI
+- [x] Tarefa 1: Viewport da cena com a UI desligada por padrão (preferência salva), a Game View sempre com UI — 7047d57
 
 ### Etapa 2 — Documento e componente
 
