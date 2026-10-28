@@ -490,7 +490,9 @@ void McpController::AddViewTools() {
     m_protocol.AddTool({
         .name = "viewport_capture",
         .description = "Imagem (PNG) da cena desenhada na hora, mesmo com o editor sem foco, minimizado ou com a "
-                       "janela escondida: a cena com o HUD do jogo, sem os botões e gizmos do editor. view = scene "
+                       "janela escondida, sem os botões e gizmos do editor. O HUD do jogo aparece sempre pela câmera "
+                       "do jogo; pela do editor, só com o botão UI do Viewport ligado ou um elemento de UI selecionado. "
+                       "view = scene "
                        "(padrão): como o Viewport mostra (câmera do editor; no Play, a do jogo). view = game: pela "
                        "câmera principal da cena, como o jogo vê (no Play ou fora dele; não precisa da janela Jogo). "
                        "view = editor: sempre pela câmera do editor (no Play também).",

@@ -650,8 +650,9 @@ desfazer:
 - **Unidades:** pixels de uma tela de 1080 de altura, escalados pela altura real (o HUD fica igual no
   viewport do editor e em tela cheia). Filho de um elemento de UI se posiciona dentro do pai; esconder o pai
   esconde os filhos. Entre irmãos, maior **Ordem** desenha por cima e recebe o clique primeiro.
-- **No editor:** a UI aparece por cima do viewport (botão **UI** da barra liga/desliga). Fora da visão do
-  jogo, os elementos têm contorno; um clique seleciona e arrastar move (um arraste = um passo de desfazer).
+- **No editor:** na visão do jogo e na janela Jogo a UI aparece sempre. Na cena, só com o botão **UI** da
+  barra ligado (desligado por padrão, lembrado entre aberturas) ou com um elemento de UI selecionado; assim um
+  menu não esconde o cenário nem pega o clique da seleção 3D. Na cena, os elementos têm contorno; um clique seleciona e arrastar move (um arraste = um passo de desfazer).
   Na visão do jogo (Play), o mouse vai para os botões do jogo.
 - **Scripts:** `GetSystem<motor::UiSystem>()` com `SetText`, `SetVisible`, `IsVisible`, `WasClicked` (pelo
   nome da entidade ou pelo id) e `Script::LoadScene("Fase1")` para trocar de cena. Ver a seção 13 do

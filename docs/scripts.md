@@ -928,8 +928,9 @@ Texto, imagens e botões na tela são **componentes de UI** em entidades comuns,
 Crie com **Entidade > Interface (UI)** (Texto, Imagem, Botão, Painel). As medidas são pixels de uma tela de
 **1080 de altura**: numa janela menor (o viewport do editor) tudo encolhe junto, então o HUD fica no mesmo
 lugar em qualquer tamanho. Um elemento filho de outro se posiciona dentro do retângulo do pai (um painel com
-botões); esconder o pai esconde os filhos. No viewport, com o botão **UI** da barra ligado, um clique seleciona
-o elemento e arrastar o move; os campos também ficam no Inspector, com desfazer, como qualquer componente.
+botões); esconder o pai esconde os filhos. Na cena, a UI aparece com o botão **UI** da barra ligado (vem
+desligado) ou com um elemento dela selecionado; aí um clique seleciona o elemento e arrastar o move; os
+campos também ficam no Inspector, com desfazer, como qualquer componente.
 
 Os scripts falam com a UI pelo sistema `motor::UiSystem` (`#include <motor/ui/UiSystem.h>`), achando os
 elementos pelo **nome da entidade**. O HUD do mini jogo mostra a vida e os pontos

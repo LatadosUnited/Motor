@@ -66,18 +66,21 @@ int main(int argc, char** argv) {
         settings.viewport.grid = false;
         settings.viewport.gridHeight = 2.0f;
         settings.viewport.gridFine = true;
+        settings.viewport.ui = true;
         settings.playSideBySide = true;
         settings.Save();
         CHECK(EditorSettings::Load().playSideBySide);  // Cena e Jogo lado a lado
         const ViewportPrefs v = EditorSettings::Load().viewport;
         CHECK(v.snap && v.snapMove == 0.25f && v.snapRotate == 45.0f && v.snapScale == 0.5f);
         CHECK(!v.grid && v.gridHeight == 2.0f && v.gridFine);
+        CHECK(v.ui);  // botão UI da cena
     }
     std::ofstream(file, std::ios::binary | std::ios::trunc) << R"({"snapMove": -3, "snapRotate": 9999})";
     {
         const ViewportPrefs v = EditorSettings::Load().viewport;
         CHECK(v.snapMove == 0.01f && v.snapRotate == 180.0f);
         CHECK(!v.grid && !v.snap && !v.gridFine);  // campos ausentes: padrão (grade desligada)
+        CHECK(!v.ui);  // editor.json de antes do botão UI lembrado: a cena começa sem o HUD
     }
 
     SECTION("Mover com encaixe vai para a grade só nos eixos mexidos");

@@ -106,6 +106,13 @@ void SceneViewport::Render(Renderer& renderer, const EditorContext& ctx, bool ga
     m_framebuffer->Resize(static_cast<int>(m_size.x), static_cast<int>(m_size.y));
     m_camera.aspect = m_framebuffer->AspectRatio();
     m_missingGameCamera = !RenderTo(renderer, ctx, gameView, *m_framebuffer);
+    m_uiDrawn = ShowsUi(ctx, gameView);
+}
+
+bool SceneViewport::ShowsUi(const EditorContext& ctx, bool gameView) const {
+    if (gameView || m_prefs.ui) return true;
+    const Entity* selected = ctx.scene.Find(ctx.selected);
+    return selected && IsUiEntity(*selected);
 }
 
 bool SceneViewport::RenderTo(Renderer& renderer, const EditorContext& ctx, bool gameView, const Framebuffer& target) {
@@ -133,8 +140,9 @@ bool SceneViewport::RenderTo(Renderer& renderer, const EditorContext& ctx, bool 
     if (!gameView && m_prefs.navMesh) m_navOverlay.Submit(renderer);
     renderer.EndScene();
 
-    // UI do jogo por cima, no mesmo framebuffer (no Play e na edição, para ver o HUD no lugar).
-    if (m_showUi) m_ui->Render(scene, ctx.assets, target.Width(), target.Height(), &target);
+    // UI do jogo por cima, no mesmo framebuffer. Na cena só quando pedida: um menu no meio da tela esconde o
+    // cenário e pegaria o clique da seleção 3D.
+    if (ShowsUi(ctx, gameView)) m_ui->Render(scene, ctx.assets, target.Width(), target.Height(), &target);
     return !missingGameCamera;
 }
 
@@ -166,7 +174,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
     if (!gameView) {
         CollectIcons(ctx);
         ImDrawList* overlay = ImGui::GetWindowDrawList();
-        if (m_showUi) m_uiTool.Draw(ctx, overlay, origin, m_ui->Canvas().Layout());
+        if (m_uiDrawn) m_uiTool.Draw(ctx, overlay, origin, m_ui->Canvas().Layout());
         DrawColliders(ctx, overlay, origin);
         if (m_prefs.navMesh) {
             m_navOverlay.DrawPaths(ctx, play.Runtime(), overlay, origin, [this](const glm::vec3& p) { return Project(p); });
@@ -185,7 +193,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
         if (UiSystem* ui = runtime->GetSystem<UiSystem>()) {
             const ImVec2 mouse = ImGui::GetMousePos();
             ui->SetPointer({m_size, {mouse.x - origin.x, mouse.y - origin.y},
-                            gameView && m_showUi && imageHovered && !ImGui::IsAnyItemHovered(),
+                            gameView && imageHovered && !ImGui::IsAnyItemHovered(),
                             ImGui::IsMouseDown(ImGuiMouseButton_Left)});
         }
     }
@@ -206,7 +214,7 @@ void SceneViewport::Draw(EditorContext& ctx, PlayController& play, const RenderS
                 const float dx = icon.center.x - local.x, dy = icon.center.y - local.y;
                 return dx * dx + dy * dy <= kIconPickRadius * kIconPickRadius;
             });
-            if (onIcon || !m_showUi || !m_uiTool.OnClick(ctx, local, m_ui->Canvas().Layout())) {
+            if (onIcon || !m_uiDrawn ||!m_uiTool.OnClick(ctx, local, m_ui->Canvas().Layout())) {
                 // Seleciona ao soltar: sem arrastar é um clique; arrastando, um retângulo.
                 m_boxPending = true;
                 m_boxStart = ImVec2(local.x, local.y);
@@ -236,7 +244,7 @@ void SceneViewport::DrawStatsOverlay(ImDrawList* dl, const ImVec2& origin, float
         if (detail == 0) {
             std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws (sombras: %u em %u passes)  |  %u tris  |  UI: %u draws  |  %dx%d",
                           fps, stats.drawCalls, stats.shadowDrawCalls, stats.shadowPasses, stats.triangles,
-                          m_showUi ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(), m_framebuffer->Height());
+                          m_uiDrawn ? m_ui->LastDrawCalls() : 0u, m_framebuffer->Width(), m_framebuffer->Height());
         } else if (detail == 1) {
             std::snprintf(text, sizeof(text), "%.0f FPS  |  %u draws  |  %u tris", fps, stats.drawCalls, stats.triangles);
         } else {
