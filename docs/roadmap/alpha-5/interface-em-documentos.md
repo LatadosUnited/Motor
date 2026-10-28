@@ -72,11 +72,11 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 5 — Editor de UI
 
-- [x] Tarefa 14: Janela Editor de UI: árvore do documento, prévia e propriedades do elemento selecionado
-- [x] Tarefa 15: Prévia por resolução (16:9, 21:9, 4:3, retrato) e escala da tela
-- [x] Tarefa 16: Arrastar da paleta, reordenar na árvore, redimensionar na prévia, com desfazer
-- [x] Tarefa 17: Edição de classes e regras do `.mstyle` na janela, vendo o resultado na hora
-- [x] Tarefa 18: Recarregar `.mui` e `.mstyle` alterados fora do editor, também no Play
+- [x] Tarefa 14: Janela Editor de UI: árvore do documento, prévia e propriedades do elemento selecionado — cb6e16d
+- [x] Tarefa 15: Prévia por resolução (16:9, 21:9, 4:3, retrato) e escala da tela — cb6e16d
+- [x] Tarefa 16: Arrastar da paleta, reordenar na árvore, redimensionar na prévia, com desfazer — cb6e16d
+- [x] Tarefa 17: Edição de classes e regras do `.mstyle` na janela, vendo o resultado na hora — cb6e16d
+- [x] Tarefa 18: Recarregar `.mui` e `.mstyle` alterados fora do editor, também no Play — cb6e16d
 
 ### Etapa 6 — Scripts, controles e MCP
 
