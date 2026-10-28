@@ -150,6 +150,7 @@ McpController::McpController(Host host)
     AddPlayTools();
     AddScriptTools();
     AddViewTools();
+    AddUiEditorTools();
 }
 
 McpController::~McpController() {

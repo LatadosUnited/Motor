@@ -11,6 +11,8 @@
 #include "viewport/SceneViewport.h"
 #include "scripts/ScriptController.h"
 #include "UndoHistory.h"
+#include "uidoc/UiDocEditor.h"
+#include "uidoc/UiDocReload.h"
 #include "mcp/McpController.h"
 
 #include <motor/core/FrameStats.h>
@@ -62,6 +64,7 @@ private:
     void OnPlayStopped();
     void DrawProjectPanel();
     void DrawAboutPopup();  // Ajuda > Sobre
+    void ReloadUiDocuments();  // .mui e .mstyle mudados: as entidades que os usam releem (também no Play)
 
     EditorContext m_ctx;
     EditorSettings m_settings;
@@ -73,6 +76,7 @@ private:
     SceneDocument m_document;  // depois dos membros que ele referencia
     ScriptController m_scripts;  // depois do documento e do Play, que ele referencia
     ExportController m_export;   // Arquivo > Exportar jogo; depois do documento e dos scripts
+    UiDocEditor m_uiEditor;      // janela Editor de UI (Ver > Editor de UI, duplo clique num .mui)
     McpController m_mcp;         // depois de todas as peças que as ferramentas usam
 
     std::filesystem::path m_startupProject;
@@ -85,6 +89,8 @@ private:
     int m_historyRequest = 0;  // -1 desfazer, +1 refazer (executado no início do próximo frame)
     float m_assetRefreshTimer = 0.0f;
     FolderWatcher m_assetWatcher;  // a pasta do projeto: varre os arquivos só quando algo mudou
+    UiDocReloader m_uiReloader;   // datas dos .mui e .mstyle usados na cena
+    bool m_uiReloadNow = false;   // o Editor de UI gravou: confere já, sem esperar a varredura
     bool m_assetsChanged = true;   // mudança ainda não vista inteira (a importação de modelos espera o fim do Play)
     bool m_resetLayout = true;  // constrói o layout padrão se não houver um salvo
     bool m_showDemo = false;

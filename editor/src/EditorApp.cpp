@@ -37,11 +37,17 @@ EditorApp::EditorApp(Options options)
                   .quit = [this] { Quit(); },
                   .requestClose = [this] { GetWindow().RequestClose(); },
                   .setWindowTitle = [this](const std::string& title) { SetWindowTitle(title); },
-                  .projectClosing = [this] { m_scripts.CloseProject(); },
+                  .projectClosing =
+                      [this] {
+                          m_scripts.CloseProject();
+                          m_uiEditor.Close();
+                          m_uiReloader.Clear();
+                      },
                   .projectOpened = [this] { m_scripts.OpenProject(); },
                   .exportGame = [this] { m_export.Open(); }}),
       m_scripts(m_ctx, m_history, m_document, m_play),
       m_export({.ctx = m_ctx, .document = m_document, .scripts = m_scripts}),
+      m_uiEditor({.ctx = m_ctx, .filesSaved = [this] { m_uiReloadNow = true; }}),
       m_mcp({.ctx = m_ctx,
              .document = m_document,
              .play = m_play,
@@ -50,7 +56,8 @@ EditorApp::EditorApp(Options options)
              .gameView = m_gameView,
              .requestHistory = [this](int direction) { m_historyRequest = direction; },
              .exporter = m_export,
-             .renderer = [this]() -> motor::Renderer& { return GetRenderer(); }}),
+             .renderer = [this]() -> motor::Renderer& { return GetRenderer(); },
+             .uiEditor = m_uiEditor}),
       m_startupProject(std::move(options.project)),
       m_createParent(std::move(options.createParent)),
       m_createName(std::move(options.createName)),
@@ -217,8 +224,13 @@ void EditorApp::OnUpdate(float dt) {
             MOTOR_PROFILE_STAT("Update: assets (prefabs)");
             m_ctx.prefabs.ReloadChanged(m_ctx.assets);
         }
+        {
+            MOTOR_PROFILE_STAT("Update: assets (UI)");
+            ReloadUiDocuments();
+        }
         m_history.NoteActivity();  // instâncias de um prefab alterado mudam no UpdatePrefabs
     }
+    if (std::exchange(m_uiReloadNow, false)) ReloadUiDocuments();
 
     m_viewport.UpdateCamera(dt, GetWindow());
     if (GetWindow().IsMinimized()) UpdateMinimized();
@@ -331,6 +343,10 @@ void EditorApp::OnImGui() {
         MOTOR_PROFILE_STAT("ImGui: Scripts");
         m_scripts.DrawPanel();
     }
+    {
+        MOTOR_PROFILE_STAT("ImGui: Editor de UI");
+        m_uiEditor.Draw();
+    }
     if (m_showDemo) ImGui::ShowDemoWindow(&m_showDemo);
 
     // Atalhos antes dos popups: o Esc que fecha um popup não deve também limpar a seleção.
@@ -360,6 +376,8 @@ void EditorApp::OnImGui() {
 }
 
 bool EditorApp::OnCloseRequested() {
+    // Documento de UI não salvo: pergunta e, depois de salvar ou descartar, pede para fechar de novo.
+    if (!m_uiEditor.ConfirmQuit([this] { GetWindow().RequestClose(); })) return false;
     StopPlay();  // o que importa é a cena de antes do Play
     if (!m_document.HasUnsavedChanges()) {
         m_document.ClearRecovery();
@@ -480,6 +498,7 @@ void EditorApp::DrawMenuBar() {
             m_resetLayout = true;
         }
         ImGui::MenuItem("Demo do ImGui", nullptr, &m_showDemo);
+        if (ImGui::MenuItem("Editor de UI", nullptr, m_uiEditor.IsVisible())) m_uiEditor.Show();
         ImGui::Separator();
         m_mcp.DrawMenuItems(m_settings);
         ImGui::EndMenu();
@@ -514,6 +533,7 @@ void EditorApp::HandleShortcuts() {
 
     const ImGuiIO& io = ImGui::GetIO();
     if (m_viewport.IsLooking() || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)) return;
+    if (m_uiEditor.IsFocused()) return;  // a janela Editor de UI tem os atalhos dela (Ctrl+Z, Ctrl+S, Del...)
 
     // Atalhos de arquivo e de Play valem mesmo editando texto.
     if (io.KeyCtrl) {
@@ -602,6 +622,15 @@ void EditorApp::DrawAboutPopup() {
     ImGui::EndPopup();
 }
 
+void EditorApp::ReloadUiDocuments() {
+    // A cena aberta, a de antes do Play e as fotos do desfazer: parar o Play ou desfazer não volta ao arquivo velho.
+    m_uiReloader.Update(m_ctx.scene, m_ctx.assets, [this](const std::function<void(Scene&)>& fn) {
+        fn(m_ctx.scene);
+        m_play.ForEachPlayScene(fn);
+        m_history.ForEachScene(fn);
+    });
+}
+
 void EditorApp::DrawProjectPanel() {
     using FileAction = SceneDocument::FileAction;
 
@@ -645,6 +674,7 @@ void EditorApp::DrawProjectPanel() {
     };
     callbacks.createScript = [this] { m_scripts.OpenNewScriptPopup(); };
     callbacks.openScript = [this](const fs::path& p) { m_scripts.OpenScript(p); };
+    callbacks.openUiDocument = [this](const fs::path& p) { m_uiEditor.RequestOpen(p); };
 
     // Arquivos arrastados do Explorer para a janela são importados pelo painel.
     if (auto dropped = GetWindow().TakeDroppedFiles(); !dropped.empty()) m_projectPanel.QueueImport(std::move(dropped));

@@ -51,6 +51,8 @@ void ProjectPanel::Activate(const Entry& entry, const Callbacks& callbacks) {
         callbacks.openScene(entry.path);
     } else if ((entry.type == AssetType::Material || entry.type == AssetType::Prefab) && callbacks.selectAsset) {
         callbacks.selectAsset(entry.path);
+    } else if (entry.type == AssetType::UiDocument && callbacks.openUiDocument) {
+        callbacks.openUiDocument(entry.path);
     } else if (IsCodeFile(entry.path) && callbacks.openScript) {
         callbacks.openScript(entry.path);
     } else {

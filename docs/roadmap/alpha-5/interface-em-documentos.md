@@ -72,11 +72,11 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 5 — Editor de UI
 
-- [ ] Tarefa 14: Janela Editor de UI: árvore do documento, prévia e propriedades do elemento selecionado
-- [ ] Tarefa 15: Prévia por resolução (16:9, 21:9, 4:3, retrato) e escala da tela
-- [ ] Tarefa 16: Arrastar da paleta, reordenar na árvore, redimensionar na prévia, com desfazer
-- [ ] Tarefa 17: Edição de classes e regras do `.mstyle` na janela, vendo o resultado na hora
-- [ ] Tarefa 18: Recarregar `.mui` e `.mstyle` alterados fora do editor, também no Play
+- [x] Tarefa 14: Janela Editor de UI: árvore do documento, prévia e propriedades do elemento selecionado
+- [x] Tarefa 15: Prévia por resolução (16:9, 21:9, 4:3, retrato) e escala da tela
+- [x] Tarefa 16: Arrastar da paleta, reordenar na árvore, redimensionar na prévia, com desfazer
+- [x] Tarefa 17: Edição de classes e regras do `.mstyle` na janela, vendo o resultado na hora
+- [x] Tarefa 18: Recarregar `.mui` e `.mstyle` alterados fora do editor, também no Play
 
 ### Etapa 6 — Scripts, controles e MCP
 
@@ -170,6 +170,40 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
   O `:hover` e a transição não dão para ver pelo MCP (o `ui_click` só deixa o mouse no botão por dois quadros):
   conferidos no `test_ui_estilo`.
 
+- Tarefas 14 a 18: janela **Editor de UI** (`editor/src/uidoc/`), aberta por Ver > Editor de UI ou com duplo clique
+  (ou "Abrir no Editor de UI") num `.mui` no painel Projeto. À esquerda a paleta (Painel, Texto, Imagem, Botão: clique
+  põe no selecionado, arrastar põe na árvore ou na prévia) e a árvore (tipo, nome e classes; arrastar reordena e muda de
+  pai, com faixa de antes/depois/dentro; menu com adicionar dentro, duplicar e excluir). No meio a prévia: uma cena só
+  com um fundo e uma entidade com o documento, desenhada pelo mesmo `UiRenderer` do jogo num framebuffer na resolução
+  escolhida (16:9, 16:9 HD, 21:9, 4:3, 16:10, retrato 1080x1920 ou personalizada; zoom "Ajustar" ou 25 a 150%; a UI
+  escala pela altura, como no jogo). O clique seleciona pelo `UiHitTestNode` (o caminho do elemento na árvore viva vale
+  no documento editado) e as 8 alças redimensionam: grava `width`/`height` em pixels da referência e, por âncora, a
+  posição que mantém o lado parado (com `Stretch`, as margens). À direita as propriedades (tipo, nome, classes digitadas,
+  texto, visível, interativo, imagem e as 36 propriedades de estilo por grupo, com o valor calculado em cinza; mudar
+  declara no elemento, "x" tira) e a aba **Estilos** (folhas do documento, acrescentar e tirar folha; regras com seletor
+  validado, propriedades com o mesmo editor, regra nova, "*" nas regras que valem para o selecionado), com a prévia
+  mudando na hora. Desfazer próprio (`UiEditHistory`: fotos do documento, das folhas e da seleção; Ctrl+Z/Ctrl+Y com a
+  janela em foco, que também tem Ctrl+S, Ctrl+D e Del), título com `*`, e fechar a janela, abrir outro documento ou sair
+  do editor pergunta Salvar/Descartar/Cancelar. Gravar escreve o `.mui` (`SaveUiDocument`) e só as folhas mudadas.
+  Recarga (Tarefa 18): `UiDocReloader` confere a data dos `.mui` usados na cena e das folhas deles na mesma varredura dos
+  materiais (pasta mudada, a cada 2 s; no Play, sempre), e logo depois de o Editor de UI gravar; o documento mudado é
+  relido uma vez e posto em todos os `UiDocument` da cena aberta, da cena de antes do Play e das fotos do desfazer (a
+  árvore viva é refeita, também no Play). A janela relê sozinha o arquivo mudado fora se não tiver alterações; senão
+  avisa e oferece reler. Engine: `UiStylePropertyEnumNames` (nomes dos valores de uma propriedade enum, para os combos).
+  MCP: `ui_editor_open`, `ui_editor_state`, `ui_editor_capture`, `ui_editor_select` (por nome ou pelo ponto da prévia),
+  `ui_editor_element` (add, move, delete, duplicate, resize pelas alças, set), `ui_editor_style` e `ui_editor_history`.
+  Teste novo: `test_ui_editor` (caminhos, inserir/mover/duplicar com nomes únicos, classes, alças no fluxo, por âncora e
+  esticado, seletor, desfazer com a versão de "não salvo" e a recarga dos arquivos mudados em duas cenas).
+  Conferido pelo MCP no projeto de teste com o `Menu estilo.mui` e o `Tema.mstyle`: a prévia igual à visão do jogo em
+  1920x1080, 2560x1080, 1440x1080 e 1080x1920; um botão da paleta no menu (classes, texto "Opções", movido para o
+  terceiro lugar), uma imagem presa no canto de baixo à direita e redimensionada pelas alças de cima e da esquerda (a
+  posição ficou, o tamanho foi para 200x150), o "Continuar" redimensionado no fluxo (400x94), a regra `Button` com fundo
+  azul e uma regra `.destaque` nova; dois desfazer voltaram as duas regras (verde de novo), refazer trouxe o azul, e
+  gravar escreveu o `.mui` e o `.mstyle` com isso. No Play, com o documento numa entidade com o script `MenuDoc`, mudar
+  o título no `.mui` e a cor dos botões no `.mstyle` direto no disco apareceu na visão do jogo em menos de 4 s (log "UI:
+  documento relido"), o `ui_click` continuou contando, e depois do Stop a cena ficou com o arquivo novo. A janela,
+  capturada com o `PrintWindow`, mostra a árvore, a prévia com as alças no selecionado, as propriedades e o `*` no título.
+
 ## Limitações
 
 (Preencher ao terminar: o que ficou para trás e para onde foi.)
@@ -192,3 +226,14 @@ clique nem o recorte dos filhos de uma lista; `SetStyle("font", ...)` só acha u
 janela Jogo ao mesmo tempo refazem o layout a cada quadro); campo de estilo mudado direto num script volta ao da
 cascata no próximo cálculo (use `SetStyle`); a exportação do jogo ainda não segue as referências de dentro do `.mui`
 e do `.mstyle` (folhas, fontes e imagens citadas só neles).
+
+Da Etapa 5, por ora: o desfazer da janela é por fotos inteiras do documento (até 200 passos; documentos grandes gastam
+memória) e recomeça quando o arquivo é relido do disco; a prévia não tem `:hover` nem transições (sem `UiSystem` nela) e
+não mostra a cena do jogo atrás; fonte nova declarada numa regra só aparece na prévia depois de gravar (as fontes das
+folhas são carregadas a partir do disco); as alças gravam pixels mesmo num tamanho em porcentagem; não dá para
+arrastar um elemento na prévia para mudar de lugar (só pelas alças e pela árvore), nem criar uma folha `.mstyle` nova
+pela janela (só acrescentar uma que existe); a recarga no Play refaz a árvore viva do arquivo, então o que os scripts
+mudaram nela (`SetText`, `SetVisible`, estilo) volta ao do arquivo, sem avisar o script (o "Cliques" voltou a 0 no
+teste); as fotos antigas do desfazer da cena ganham o documento novo, então desfazer não traz o conteúdo velho do
+arquivo; arrastar na árvore e na paleta, as alças com o mouse, os atalhos, a aba Estilos e o popup de salvar foram
+conferidos só pela lógica e pelo MCP, não com o mouse.

@@ -69,6 +69,11 @@ add_executable(MotorEditor
     src/mcp/McpNavTools.cpp
     src/viewport/PerceptionOverlay.cpp
     src/FolderWatcher.cpp
+    src/uidoc/UiDocEdit.cpp
+    src/uidoc/UiDocReload.cpp
+    src/uidoc/UiDocEditor.cpp
+    src/uidoc/UiDocEditorDraw.cpp
+    src/mcp/McpUiEditorTools.cpp
 )
 target_link_libraries(MotorEditor PRIVATE Motor imguizmo nlohmann_json::nlohmann_json)
 # Includes do editor a partir de src/ ("scripts/ScriptHost.h"); as peças comuns ficam na raiz de src/.

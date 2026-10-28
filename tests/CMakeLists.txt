@@ -140,6 +140,12 @@ motor_add_test(test_ui_flex)
 # (cantos, borda, 9-slice, contorno, sombra, opacidade, escala) e o menu de 50 elementos sem refazer nada parado.
 motor_add_test(test_ui_estilo)
 
+# Editor de UI (editor/src/uidoc): árvore (inserir, mover, duplicar), alças, regras, desfazer e recarga dos arquivos.
+motor_add_test(test_ui_editor
+    ${PROJECT_SOURCE_DIR}/editor/src/uidoc/UiDocEdit.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/uidoc/UiDocReload.cpp)
+target_include_directories(test_ui_editor PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+
 # Modelos glTF e animação esquelética (Fase 11): leitura, asset, importação como prefab, dados da malha na
 # CPU (raycast e collider exatos), amostragem dos clipes, skinning e Animator. Gera os próprios arquivos glTF.
 motor_add_test(test_gltf)

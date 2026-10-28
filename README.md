@@ -661,9 +661,20 @@ desfazer:
   elemento, e a cor e a fonte do texto descem do pai. Além das propriedades do layout e das cores: cantos
   arredondados (`radius`), borda (`borderWidth`, `borderColor`), 9-slice da imagem (`slice`), `opacity` (vale para os
   filhos), contorno e sombra do texto, `scale` (só no desenho) e `transition` (cor, opacidade e escala mudam aos
-  poucos entre os estados no Play). **Recarregar** lê de novo o `.mui` e as folhas. Formato e plano em
-  [Interface em documentos](docs/roadmap/alpha-5/interface-em-documentos.md); por ora o arquivo se edita fora do
-  editor. Pelo MCP: `ui_click` com `element` e `ui_scroll` rolam e clicam pelo nome.
+  poucos entre os estados no Play). Formato e plano em
+  [Interface em documentos](docs/roadmap/alpha-5/interface-em-documentos.md). Pelo MCP: `ui_click` com `element` e
+  `ui_scroll` rolam e clicam pelo nome.
+- **Editor de UI** (Ver > Editor de UI, ou duplo clique num `.mui` no painel Projeto): a árvore do documento, a
+  paleta (Painel, Texto, Imagem, Botão: clique ou arraste para a árvore ou a prévia), a prévia desenhada como no jogo
+  numa resolução escolhida (16:9, 21:9, 4:3, 16:10, retrato ou personalizada; a UI escala pela altura, como no jogo) e
+  as propriedades do selecionado (nome, classes, texto, imagem e cada propriedade de estilo, com o valor calculado em
+  cinza). Clique na prévia seleciona; as alças redimensionam (grava `width`/`height` em pixels e, por âncora, a
+  posição); na árvore, arrastar reordena e muda de pai. A aba **Estilos** lista as folhas do documento e edita as
+  regras (seletor, propriedades, regra nova), com a prévia mudando na hora. Desfazer próprio (Ctrl+Z/Ctrl+Y com a
+  janela em foco), Ctrl+S grava o `.mui` e as folhas mudadas, Ctrl+D duplica, Del exclui; o título mostra `*` quando
+  há alterações e fechar pergunta se salva. `.mui` e `.mstyle` mudados fora do editor (ou gravados por ele) são
+  relidos sozinhos nas entidades que os usam, também no Play (o documento recomeça do arquivo); **Recarregar** no
+  Inspector força a leitura.
 - **Unidades:** pixels de uma tela de 1080 de altura, escalados pela altura real (o HUD fica igual no
   viewport do editor e em tela cheia). Filho de um elemento de UI se posiciona dentro do pai; esconder o pai
   esconde os filhos. Entre irmãos, maior **Ordem** desenha por cima e recebe o clique primeiro.
@@ -866,6 +877,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Scripts | `scripts_build` (`wait` responde quando a compilação termina), `scripts_status` (erros com arquivo e linha) |
   | Exportar | `game_export` (pasta com o .exe do jogo, ver "Exportar o jogo") |
   | Ver | `viewport_capture` (PNG da cena e do HUD, desenhado na hora; vistas scene, game e editor), `view_focus`, `view_camera` (mover e virar a câmera do editor), `view_side_by_side` |
+  | Editor de UI | `ui_editor_open`, `ui_editor_state` (árvore com as caixas na prévia, folhas e regras), `ui_editor_capture` (PNG da prévia numa resolução), `ui_editor_select` (por nome ou pelo ponto da prévia), `ui_editor_element` (add, move, delete, duplicate, resize pelas alças, set), `ui_editor_style` (regras das folhas), `ui_editor_history` (undo, redo, save) |
 
   As mudanças viram passos de **desfazer**, como as feitas na interface. Durante o Play, a cena é a do jogo:
   o que mudar é descartado ao parar. O servidor atende também com a janela do editor **minimizada** ou sem

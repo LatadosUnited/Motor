@@ -80,6 +80,8 @@ int UiStylePropertyCount();
 int FindUiStyleProperty(std::string_view name);
 const char* UiStylePropertyName(int property);  // "color"; "" fora da tabela
 bool UiStylePropertyInherited(int property);    // vem do pai quando nada a define (textColor, font, fontSize, align)
+// Nomes dos valores de uma propriedade enum, na ordem dos valores ("Flow", "Absolute"); vazio se não for enum.
+std::vector<std::string_view> UiStylePropertyEnumNames(int property);
 
 // Valor <-> texto JSON ("[1, 0, 0, 1]", "\"50%\"", "12"). Leitura falha com valor da forma errada.
 bool ParseUiStyleValue(int property, std::string_view json, UiStyleValue& out);

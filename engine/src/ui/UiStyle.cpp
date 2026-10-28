@@ -408,6 +408,14 @@ bool UiStylePropertyInherited(int property) {
     return p && p->inherited;
 }
 
+std::vector<std::string_view> UiStylePropertyEnumNames(int property) {
+    std::vector<std::string_view> out;
+    if (const Property* p = PropertyAt(property); p && p->kind == Kind::Enum) {
+        out.assign(p->names.begin(), p->names.end());
+    }
+    return out;
+}
+
 bool ReadUiStyleJson(int property, const UiJson& json, UiStyleValue& out) {
     const Property* p = PropertyAt(property);
     if (!p) return false;
