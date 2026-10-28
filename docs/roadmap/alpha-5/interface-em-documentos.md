@@ -58,10 +58,10 @@ continua funcionando durante a fase (as cenas e os exemplos do guia usam), e uma
 
 ### Etapa 3 — Layout flex
 
-- [x] Tarefa 6: Layout flex próprio (direção, gap, grow e shrink, align e justify, margem, padding, porcentagem)
-- [x] Tarefa 7: Posição absoluta dentro do pai, para o que hoje usa âncora (HUD nos cantos)
-- [x] Tarefa 8: Texto com quebra de linha, corte e alinhamento vertical, medido pelo layout
-- [x] Tarefa 9: Recorte dos filhos (`overflow: hidden`) e lista com rolagem
+- [x] Tarefa 6: Layout flex próprio (direção, gap, grow e shrink, align e justify, margem, padding, porcentagem) — b0a7068
+- [x] Tarefa 7: Posição absoluta dentro do pai, para o que hoje usa âncora (HUD nos cantos) — b0a7068
+- [x] Tarefa 8: Texto com quebra de linha, corte e alinhamento vertical, medido pelo layout — b0a7068
+- [x] Tarefa 9: Recorte dos filhos (`overflow: hidden`) e lista com rolagem — b0a7068
 
 ### Etapa 4 — Estilos
 
