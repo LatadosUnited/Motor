@@ -40,6 +40,7 @@ public:
         std::function<void(uint32_t entity, const std::filesystem::path& folder)> createPrefabFromEntity;
         std::function<void()> createScript;                                   // Criar > Novo script (pasta Scripts/)
         std::function<void(const std::filesystem::path&)> openScript;         // duplo clique em .cpp/.h: editor de código
+        std::function<void(const std::filesystem::path&)> openUiDocument;     // duplo clique em .mui: Editor de UI
     };
 
     struct ViewOptions {

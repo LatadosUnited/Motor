@@ -80,6 +80,11 @@ private:
 // Caminho da fonte padrão da engine (Roboto Medium, engine/assets/fonts).
 std::filesystem::path DefaultFontPath();
 
+// Fontes carregadas, compartilhadas por quem mede (layout) e quem desenha (UiCanvas): a mesma FontData para o mesmo
+// arquivo. Falha fica guardada (nullptr, `error` só na primeira vez). Só na thread principal.
+std::shared_ptr<const FontData> LoadUiFont(const std::filesystem::path& file, std::string* error = nullptr);
+const FontData* DefaultUiFont();  // a padrão; nullptr só se nem ela abrir
+
 // Próximo caractere de um texto UTF-8 (sequência inválida vira U+FFFD). Avança `text`.
 char32_t NextCodepoint(std::string_view& text);
 
@@ -90,12 +95,15 @@ struct TextQuad {
     glm::vec2 uvMax{0.0f};
 };
 
-// Largura e altura do texto em pixels, com `pixelSize` de altura de fonte. Linhas separadas por '\n'.
-glm::vec2 MeasureText(const FontData& font, std::string_view text, float pixelSize);
+// Largura e altura do texto em pixels, com `pixelSize` de altura de fonte. Linhas separadas por '\n'; com
+// `wrapWidth` > 0, a linha também quebra nos espaços para caber nessa largura (palavra maior que ela fica sozinha
+// na linha, passando da largura).
+glm::vec2 MeasureText(const FontData& font, std::string_view text, float pixelSize, float wrapWidth = 0.0f);
 
-// Quadrados dos glifos do texto dentro de `box`: cada linha alinhada na horizontal por `align` e o bloco
-// centrado na vertical. O texto pode passar da caixa (não corta).
+// Quadrados dos glifos do texto dentro de `box`: cada linha alinhada na horizontal por `align` e o bloco na
+// vertical por `vertical` (centrado por padrão). Quebra como MeasureText. O texto pode passar da caixa (quem
+// corta é o recorte do UiCanvas).
 void LayoutText(const FontData& font, std::string_view text, float pixelSize, UiTextAlign align, const UiBox& box,
-                std::vector<TextQuad>& out);
+                std::vector<TextQuad>& out, float wrapWidth = 0.0f, UiVerticalAlign vertical = UiVerticalAlign::Middle);
 
 } // namespace motor

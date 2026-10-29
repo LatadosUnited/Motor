@@ -11,6 +11,7 @@
 #       MotorSDK.json, MotorSDK.cmake   toolchain (o mesmo do build: MSYS2 UCRT64) e alvo importado Motor::Motor
 #       include/, lib/libMotor.dll.a    headers da engine, GLM e ImGui; biblioteca de importação
 #     motor-version.json              {version, scriptApiVersion}: o que o Hub lê para saber qual versão é
+#     mcp-ferramentas.json            ferramentas do MCP do editor (MotorEditor --mcp-ferramentas), lidas pelo Hub
 #     release/                        Player, libMotor.dll e SDK em Release para exportar jogos (versão de Debug)
 #
 # A pasta de saída é apagada antes, mas só se for uma montagem anterior (tem motor-version.json) ou estiver vazia.
@@ -165,6 +166,15 @@ endif()
                         "saem em ${BUILD_TYPE}. Compile antes: cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release "
                         "e cmake --build build-release")
     endif()
+endif()
+
+# --- Ferramentas do MCP do editor (Hub residente) ---
+# O Hub responde o tools/list de /mcpengine/<Projeto> com o editor fechado lendo esta lista. Gerada pelo editor
+# copiado (já com as DLLs ao lado), sem janela: é a mesma lista do editor aberto.
+execute_process(COMMAND "${OUT}/MotorEditor.exe" --mcp-ferramentas "${OUT}/mcp-ferramentas.json"
+                RESULT_VARIABLE tools_result ERROR_VARIABLE tools_error)
+if(NOT tools_result EQUAL 0 OR NOT EXISTS "${OUT}/mcp-ferramentas.json")
+    message(FATAL_ERROR "MotorEditor --mcp-ferramentas falhou (${tools_result}): ${tools_error}")
 endif()
 
 # --- Marca da versão (lida pelo Hub) ---

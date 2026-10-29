@@ -1,0 +1,474 @@
+// Ferramentas do /mcphub e o repasse do /mcpengine (Hub residente): o HubApp de verdade, sem janela, chamado pelo
+// Protocol e pelo HTTP do hub. O editor da versão instalada é uma cópia deste teste: com --project ou --create ele
+// faz de editor (MCP falso na porta interna, avisos ao hub) até ser fechado.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <httplib.h>  // antes de qualquer windows.h (winsock2)
+
+#include "TestUtil.h"
+
+#include <HubApp.h>
+#include <HubMcp.h>
+
+#include <motor/mcp/HubLink.h>
+
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <optional>
+#include <string>
+#include <thread>
+
+namespace fs = std::filesystem;
+namespace link = motor::mcp::hublink;
+using motor::mcp::Json;
+
+namespace {
+
+struct Call {
+    bool ok = false;
+    std::string text;
+    Json data;  // o texto lido como JSON, quando é (ToolResult::Data)
+};
+
+Call Read(const Json& response) {
+    Call c;
+    const Json& result = response["result"];
+    c.ok = !result.value("isError", false);
+    c.text = result["content"][0].value("text", std::string());
+    c.data = Json::parse(c.text, nullptr, false);
+    return c;
+}
+
+Json Request(const char* tool, Json args) {
+    return {{"jsonrpc", "2.0"},
+            {"id", 1},
+            {"method", "tools/call"},
+            {"params", {{"name", tool}, {"arguments", std::move(args)}}}};
+}
+
+// Resposta imediata (sem esperar o `later`).
+Call Now(hub::HubMcp& mcp, const char* tool, Json args = Json::object()) {
+    return Read(*mcp.GetProtocol().Handle(Request(tool, std::move(args))));
+}
+
+// Como o servidor HTTP: espera o `later` (no máximo `seconds`).
+Call Wait(hub::HubMcp& mcp, const char* tool, Json args, double seconds = 20.0) {
+    std::optional<motor::mcp::Deferred> deferred;
+    const std::string text = mcp.GetProtocol().HandleText(Request(tool, std::move(args)).dump(), &deferred);
+    if (!deferred) return Read(Json::parse(text));
+    const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int>(seconds * 1000));
+    while (std::chrono::steady_clock::now() < end) {
+        mcp.Pump();  // os avisos dos editores (rota do servidor) chegam por aqui
+        if (auto done = deferred->Poll()) return Read(Json::parse(*done));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return {false, "o teste cansou de esperar", nullptr};
+}
+
+void WriteText(const fs::path& file, const std::string& text) {
+    std::ofstream out(file, std::ios::binary);
+    out << text;
+}
+
+std::string Environment(const char* name) {
+#ifdef _WIN32
+    const std::wstring wide(name, name + std::strlen(name));
+    const wchar_t* value = _wgetenv(wide.c_str());
+    return value ? hub::ToUtf8(fs::path(value)) : std::string();
+#else
+    const char* value = std::getenv(name);
+    return value ? value : "";
+#endif
+}
+
+void SetEnvironment(const char* name, const std::string& value) {
+#ifdef _WIN32
+    const std::wstring wide(name, name + std::strlen(name));
+    _wputenv_s(wide.c_str(), hub::PathFromUtf8(value).wstring().c_str());  // vazio apaga
+#else
+    setenv(name, value.c_str(), 1);
+#endif
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    // Papel de editor falso: o hub abriu esta cópia com --project/--create. Com --hub, avisa o hub como o editor
+    // (HubLink.h); depois espera ser fechado (no máximo 60 s).
+    bool fake = false;
+    int mcpPort = 0, hubPort = 0;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--project") == 0 || std::strcmp(argv[i], "--create") == 0) fake = true;
+        if (std::strncmp(argv[i], "--mcp=", 6) == 0) mcpPort = std::atoi(argv[i] + 6);
+        if (std::strcmp(argv[i], link::kArgument) == 0 && i + 1 < argc) hubPort = std::atoi(argv[i + 1]);
+    }
+    if (fake) {
+        // O MCP do editor falso: uma ferramenta "eco", na porta interna e com o token, como o editor aberto pelo Hub.
+        motor::mcp::Protocol protocol("motor-editor", "falso");
+        protocol.AddTool({.name = "eco",
+                          .description = "eco",
+                          .inputSchema = motor::mcp::Schema(),
+                          .run = [](const Json& args) {
+                              return motor::mcp::ToolResult::Text("eco do editor falso: " +
+                                                                  args.value("texto", std::string()));
+                          }});
+        motor::mcp::Server server(protocol);
+        if (hubPort > 0) {
+            const std::string token = Environment(link::kTokenEnv);
+            server.SetToken(token);
+            std::string error;
+            if (!server.Start(mcpPort, error)) return 3;
+            // Projeto vazio: o argv do MinGW vem em ANSI e estragaria "Ação" (o hub ignora o vazio).
+            link::PostJson(hubPort, link::kNotifyPath, token, {{"event", link::kEventReady}, {"port", mcpPort}});
+            const std::string other = Environment("MOTOR_TESTE_OUTRO_PROJETO");
+            if (!other.empty()) {
+                link::PostJson(hubPort, link::kNotifyPath, token,
+                               {{"event", link::kEventProject}, {"port", mcpPort}, {"project", other}});
+            }
+        }
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (std::chrono::steady_clock::now() < end) {
+            server.Pump();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return 0;
+    }
+
+    const fs::path dir = TestDir(argc, argv, "test_hub_mcp_tmp");
+    const fs::path dataDir = dir / hub::PathFromUtf8("Dados do Hub");
+    const fs::path versionDir = dataDir / hub::PathFromUtf8("Versões") / "0.9.0";
+    fs::create_directories(versionDir);
+    fs::copy_file(fs::absolute(argv[0]).replace_extension(".exe"), versionDir / "editor-falso.exe");
+    WriteText(versionDir / "motor-version.json",
+              R"({"format": "motor-version", "version": "0.9.0", "scriptApiVersion": 7, "buildType": "Debug",
+                  "editor": "editor-falso.exe"})");
+    const fs::path project = dir / hub::PathFromUtf8("Jogo Ação");
+    fs::create_directories(project);
+    WriteText(project / "Jogo.mproject",
+              R"({"format": "motor-project", "name": "Jogo Ação", "engineVersion": "0.9.0"})");
+    const std::string projectUtf8 = hub::ToUtf8(project);
+
+    hub::HubApp app(hub::platform::DefaultPaths(dataDir), {}, dataDir);
+    hub::HubMcp mcp(app);
+
+    SECTION("lista de ferramentas");
+    {
+        const Json list = *mcp.GetProtocol().Handle({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "tools/list"}});
+        std::vector<std::string> names;
+        for (const Json& t : list["result"]["tools"]) names.push_back(t["name"]);
+        for (const char* wanted : {"hub_status", "projects_list", "project_open", "project_create", "project_add",
+                                   "project_remove", "editor_close", "versions_list", "version_set_default",
+                                   "version_remove", "versions_available", "version_download", "hub_update_check", "hub_update"}) {
+            CHECK(std::find(names.begin(), names.end(), wanted) != names.end());
+        }
+    }
+
+    SECTION("hub_status e versions_list");
+    {
+        const Call status = Now(mcp, "hub_status");
+        CHECK(status.ok);
+        CHECK(status.data["versions"] == Json::array({"0.9.0"}));
+        CHECK(status.data["defaultVersion"] == "0.9.0");
+        CHECK(status.data["projects"] == 0);
+        CHECK(status.data["editors"].empty());
+        CHECK(status.data["download"].is_null());
+
+        const Call versions = Now(mcp, "versions_list");
+        CHECK(versions.ok && versions.data.size() == 1);
+        CHECK(versions.data[0]["version"] == "0.9.0");
+        CHECK(versions.data[0]["scriptApiVersion"] == 7);
+        CHECK(versions.data[0]["default"] == true);
+        CHECK(versions.data[0]["editorTools"].is_null());  // sem mcp-ferramentas.json (como as versões antigas)
+        WriteText(versionDir / hub::kMcpToolsFile, R"({"format": "motor-mcp-tools", "version": 1, "tools": [{}, {}]})");
+        CHECK(Now(mcp, "versions_list").data[0]["editorTools"] == 2);
+
+        CHECK(Now(mcp, "version_set_default", {{"version", "0.9.0"}}).ok);
+        CHECK(!Now(mcp, "version_set_default", {{"version", "5.0.0"}}).ok);
+        CHECK(!Now(mcp, "version_set_default").ok);  // falta o argumento
+    }
+
+    SECTION("project_add, projects_list e project_remove");
+    {
+        CHECK(Now(mcp, "project_add", {{"path", projectUtf8}}).ok);
+        CHECK(!Now(mcp, "project_add", {{"path", projectUtf8}}).ok);  // já na lista
+        CHECK(!Now(mcp, "project_add", {{"path", hub::ToUtf8(dir / "nada")}}).ok);
+
+        const Call list = Now(mcp, "projects_list");
+        CHECK(list.ok && list.data.size() == 1);
+        CHECK(list.data[0]["name"] == "Jogo Ação");
+        CHECK(list.data[0]["engineVersion"] == "0.9.0");
+        CHECK(list.data[0]["found"] == true);
+        CHECK(list.data[0]["editorOpen"] == false);
+        CHECK(Now(mcp, "projects_list", {{"query", "ação"}}).data.size() == 1);
+        CHECK(Now(mcp, "projects_list", {{"query", "outro"}}).data.empty());
+
+        CHECK(Now(mcp, "project_remove", {{"path", projectUtf8}}).ok);
+        CHECK(Now(mcp, "projects_list").data.empty());
+        CHECK(fs::exists(project / "Jogo.mproject"));  // só sai da lista
+    }
+
+    SECTION("project_open e editor_close");
+    {
+        const Call open = Now(mcp, "project_open", {{"path", projectUtf8}});
+        CHECK(open.ok);
+        CHECK(open.data.value("pid", 0) > 0);
+        CHECK(!Now(mcp, "project_open", {{"path", projectUtf8}}).ok);  // já aberto
+        CHECK(!Now(mcp, "project_open", {{"path", projectUtf8}, {"engine", "5.0.0"}}).ok);
+
+        const Call list = Now(mcp, "projects_list");
+        CHECK(list.data.size() == 1);  // abrir põe na lista
+        CHECK(list.data[0]["editorOpen"] == true);
+        CHECK(list.data[0]["editorPid"] == open.data["pid"]);
+        const Call status = Now(mcp, "hub_status");
+        CHECK(status.data["editors"].size() == 1);
+        CHECK(status.data["editors"][0]["version"] == "0.9.0");
+
+        // Com um editor da versão aberto, ela não vai para a Lixeira.
+        const Call remove = Now(mcp, "version_remove", {{"version", "0.9.0"}});
+        CHECK(!remove.ok);
+        CHECK(fs::exists(versionDir / "motor-version.json"));
+
+        // O editor falso não tem janela: o pedido de fechar sem force não tem a quem ir.
+        CHECK(!Now(mcp, "editor_close", {{"path", projectUtf8}}).ok);
+        const Call closed = Wait(mcp, "editor_close", {{"path", projectUtf8}, {"force", true}});
+        CHECK(closed.ok);
+        CHECK(closed.text.find("fechado") != std::string::npos);
+        CHECK(Now(mcp, "projects_list").data[0]["editorOpen"] == false);
+        CHECK(!Now(mcp, "editor_close", {{"path", projectUtf8}}).ok);  // nada aberto
+    }
+
+    SECTION("project_create");
+    {
+        CHECK(!Now(mcp, "project_create").ok);  // falta o nome
+        CHECK(!Now(mcp, "project_create", {{"name", "Outro"}, {"engine", "5.0.0"}}).ok);
+        CHECK(!Now(mcp, "project_create", {{"name", "Jogo Ação"}, {"parent", hub::ToUtf8(dir)}}).ok);  // já existe
+        const Call created = Now(mcp, "project_create", {{"name", "Novo Jogo"}, {"parent", hub::ToUtf8(dir)}});
+        CHECK(created.ok);
+        CHECK(created.data["path"] == hub::ToUtf8((dir / "Novo Jogo").lexically_normal()));
+        CHECK(Now(mcp, "hub_status").data["editors"].size() == 1);
+        CHECK(Wait(mcp, "editor_close", {{"path", hub::ToUtf8(dir / "Novo Jogo")}, {"force", true}}).ok);
+    }
+
+    SECTION("servidores fora do ar");
+    {
+        // Porta 1 em loopback: recusa na hora. O erro vem por servidor, sem travar.
+        const Call available = Wait(mcp, "versions_available", {{"server", "http://127.0.0.1:1"}});
+        CHECK(available.ok);
+        CHECK(available.data.size() == 1 && available.data[0].contains("error"));
+        const Call download = Wait(mcp, "version_download", {{"version", "1.0.0"}, {"server", "http://127.0.0.1:1"}});
+        CHECK(!download.ok);
+        CHECK(Now(mcp, "hub_status").data["download"].is_null());
+    }
+
+    SECTION("Autoatualização do Hub: o mais novo com instalador, e só o Hub instalado se atualiza");
+    {
+        const auto server = [](std::string url, std::string hubVersion, bool setup) {
+            hub::HubApp::RemoteServer s;
+            s.url = std::move(url);
+            s.manifest = distrib::Manifest{};
+            distrib::HubRelease h;
+            h.version = std::move(hubVersion);
+            h.files.push_back({distrib::kHubExe, 10, std::string(64, 'a')});
+            if (setup) h.files.push_back({distrib::kSetupExe, 20, std::string(64, 'b')});
+            s.manifest->hub = h;
+            return s;
+        };
+        hub::HubApp::RemoteServer down;
+        down.url = "http://fora";
+        down.error = "fora do ar";
+        const auto newest = hub::HubApp::NewestHub({server("http://a", "99.0.0", false), server("http://b", "98.1.0", true),
+                                                    server("http://c", "98.0.0", true), down,
+                                                    server("http://d", "0.0.1", true)});
+        // Sem o MotorSetup.exe publicado não dá para atualizar sozinho: vale o segundo mais novo.
+        CHECK(newest && newest->version == "98.1.0" && newest->server == "http://b" && newest->setup.size == 20);
+        CHECK(!hub::HubApp::NewestHub({server("http://d", "0.0.1", true), down}));
+
+        // O exe do teste não tem instalacao.json ao lado: recusa dizendo por quê.
+        std::string why;
+        CHECK(!app.CanSelfUpdate(&why) && why.find("instalacao.json") != std::string::npos);
+        const Call check = Wait(mcp, "hub_update_check", {{"server", "http://127.0.0.1:1"}});
+        CHECK(check.ok && check.data["newer"].is_null() && !check.data["canSelfUpdate"].get<bool>());
+        CHECK(check.ok && check.data["errors"].size() == 1);
+        const Call update = Wait(mcp, "hub_update", {{"server", "http://127.0.0.1:1"}});
+        CHECK(!update.ok && !app.HubUpdateRunning());
+    }
+
+    SECTION("Hub residente: porta interna, token do editor e avisos");
+    {
+        // MCP do hub ligado de verdade (HTTP) e uma versão que entende o --hub.
+        WriteText(versionDir / hub::kMcpToolsFile,
+                  R"({"format": "motor-mcp-tools", "version": 1, "hubLink": 1, "tools": []})");
+        std::string error;
+        int hubPort = 0;
+        for (int port = 47660; port < 47670 && !hubPort; ++port) {
+            if (mcp.Start(port, [] {}, error)) hubPort = port;
+        }
+        CHECK(hubPort > 0);
+
+        const Call open = Wait(mcp, "project_open", {{"path", projectUtf8}, {"wait", true}, {"timeout", 15}});
+        CHECK(open.ok);
+        CHECK(open.data["ready"] == true);
+        const Call status = Now(mcp, "hub_status");
+        const Json& editor = status.data["editors"][0];
+        CHECK(editor["linked"] == true && editor["ready"] == true);
+        const int port = editor.value("mcpPort", 0);
+        CHECK(port >= link::kEditorPortFirst && port <= link::kEditorPortLast);
+        CHECK(Now(mcp, "projects_list").data[0]["editorReady"] == true);
+
+        // Token errado: o hub recusa (só os editores que ele abriu avisam).
+        // O aviso é atendido no Pump: manda de outra thread enquanto esta faz o papel do loop do hub.
+        std::string refused;
+        bool posted = true;
+        std::atomic<bool> done = false;
+        std::thread client([&] {
+            posted = link::PostJson(hubPort, link::kNotifyPath, "token-inventado", {{"event", link::kEventClosing}},
+                                    &refused);
+            done = true;
+        });
+        while (!done) {
+            mcp.Pump();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        client.join();
+        CHECK(!posted && refused.find("401") != std::string::npos);
+        CHECK(Now(mcp, "hub_status").data["editors"][0]["ready"] == true);  // continua pronto
+        CHECK(Wait(mcp, "editor_close", {{"path", projectUtf8}, {"force", true}}).ok);
+
+        // O editor abre outro projeto (Arquivo > Abrir projeto): o hub segue e o põe na lista.
+        const fs::path other = dir / hub::PathFromUtf8("Outro Jogo Ação");
+        fs::create_directories(other);
+        WriteText(other / "Outro.mproject",
+                  R"({"format": "motor-project", "name": "Outro Jogo Ação", "engineVersion": "0.9.0"})");
+        SetEnvironment("MOTOR_TESTE_OUTRO_PROJETO", hub::ToUtf8(other));
+        CHECK(Wait(mcp, "project_open", {{"path", projectUtf8}, {"wait", true}, {"timeout", 15}}).ok);
+        SetEnvironment("MOTOR_TESTE_OUTRO_PROJETO", "");
+        bool followed = false;
+        for (int i = 0; i < 200 && !followed; ++i) {  // o "projeto" chega logo depois do "pronto"
+            mcp.Pump();
+            followed = app.FindEditor(other) != nullptr;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        CHECK(followed);
+        CHECK(!app.FindEditor(project));
+        const Call list = Now(mcp, "projects_list", {{"query", "outro"}});
+        CHECK(list.data.size() == 1 && list.data[0]["editorOpen"] == true);
+        CHECK(Wait(mcp, "editor_close", {{"path", hub::ToUtf8(other)}, {"force", true}}).ok);
+
+        // Versão sem "hubLink" (anterior ao Hub residente): abre como antes, sem a ligação, e wait explica.
+        WriteText(versionDir / hub::kMcpToolsFile, R"({"format": "motor-mcp-tools", "version": 1, "tools": []})");
+        const Call old = Now(mcp, "project_open", {{"path", projectUtf8}, {"wait", true}});
+        CHECK(!old.ok && old.text.find("não avisa o Hub") != std::string::npos);
+        CHECK(Now(mcp, "hub_status").data["editors"][0]["linked"] == false);
+        CHECK(Wait(mcp, "editor_close", {{"path", projectUtf8}, {"force", true}}).ok);
+    }
+
+    SECTION("Hub residente: /mcpengine/<Projeto> repassado ao editor, que abre se estiver fechado");
+    {
+        // A lista da versão: o Hub responde initialize e tools/list com ela, mesmo com o editor fechado.
+        WriteText(versionDir / hub::kMcpToolsFile,
+                  R"({"format": "motor-mcp-tools", "version": 1, "hubLink": 1,
+                      "initialize": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}},
+                                     "serverInfo": {"name": "motor-editor", "version": "falso"},
+                                     "instructions": "Editor falso."},
+                      "tools": [{"name": "eco", "description": "eco", "inputSchema": {"type": "object"}}]})");
+        const int hubPort = mcp.Port();
+        const std::string token = mcp.Token();
+        CHECK(Now(mcp, "projects_list", {{"query", "outro"}}).data[0]["mcpUrl"] ==
+              mcp.EngineUrl("Outro Jogo Ação"));
+        CHECK(mcp.EngineUrl("Jogo Ação").ends_with("/mcpengine/Jogo%20A%C3%A7%C3%A3o"));
+
+        struct Answer {
+            int status = 0;
+            std::string session;
+            Json body;
+        };
+        // Faz o papel do Claude Code (outra thread) enquanto esta faz o do loop do hub.
+        const auto post = [&](const std::string& path, Json message, const std::string& bearer) {
+            Answer answer;
+            std::atomic<bool> done = false;
+            std::thread client([&] {
+                httplib::Client http("127.0.0.1", hubPort);
+                http.set_read_timeout(30, 0);
+                httplib::Headers headers{{"Accept", "application/json, text/event-stream"}};
+                if (!bearer.empty()) headers.emplace("Authorization", "Bearer " + bearer);
+                if (auto r = http.Post(path, headers, message.dump(), "application/json")) {
+                    answer.status = r->status;
+                    answer.session = r->get_header_value("Mcp-Session-Id");
+                    answer.body = Json::parse(r->body, nullptr, false);
+                }
+                done = true;
+            });
+            while (!done) {
+                mcp.Pump();
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            client.join();
+            return answer;
+        };
+        const auto rpc = [](int id, const char* method, Json params = Json::object()) {
+            return Json{{"jsonrpc", "2.0"}, {"id", id}, {"method", method}, {"params", std::move(params)}};
+        };
+        const std::string jogo = "/mcpengine/Jogo%20A%C3%A7%C3%A3o";  // como o Claude manda a URL
+
+        CHECK(post(jogo, rpc(1, "ping"), "").status == 401);           // sem token
+        CHECK(post(jogo, rpc(1, "ping"), "token-errado").status == 401);
+        CHECK(!app.FindEditor(project));                                  // continua fechado
+
+        const Answer init = post(jogo, rpc(1, "initialize", {{"protocolVersion", "2025-03-26"}}), token);
+        CHECK(init.status == 200 && !init.session.empty());
+        CHECK(init.body["result"]["serverInfo"]["name"] == "motor-editor");
+        CHECK(init.body["result"]["protocolVersion"] == "2025-03-26");
+        CHECK(post(jogo, {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}}, token).status == 202);
+        const Answer list = post(jogo, rpc(2, "tools/list"), token);
+        CHECK(list.body["result"]["tools"].size() == 1 && list.body["result"]["tools"][0]["name"] == "eco");
+        CHECK(!app.FindEditor(project));  // nada disso abre o editor
+
+        // A primeira ferramenta abre o editor, espera ficar pronto e repassa.
+        const Answer first = post(jogo, rpc(3, "tools/call", {{"name", "eco"}, {"arguments", {{"texto", "oi"}}}}), token);
+        CHECK(first.status == 200);
+        CHECK(first.body["result"]["content"][0]["text"] == "eco do editor falso: oi");
+        const hub::HubApp::OpenEditor* editor = app.FindEditor(project);
+        CHECK(editor && editor->ready);
+        const uint32_t pid = editor ? editor->process.Pid() : 0;
+        const Answer second = post("/mcpengine/JOGO%20A%C3%87%C3%83O", rpc(4, "tools/call", {{"name", "eco"}}), token);
+        CHECK(second.body["result"]["content"][0]["text"] == "eco do editor falso: ");  // maiúsculas valem
+        CHECK(app.FindEditor(project) && app.FindEditor(project)->process.Pid() == pid);  // o mesmo editor
+        const Answer last = post("/mcpengine", rpc(5, "tools/call", {{"name", "eco"}, {"arguments", {{"texto", "x"}}}}),
+                                 token);
+        CHECK(last.body["result"]["content"][0]["text"] == "eco do editor falso: x");  // o aberto por último
+
+        // Nome desconhecido: erro claro, sem abrir nada.
+        const Answer unknown = post("/mcpengine/Nada", rpc(6, "tools/call", {{"name", "eco"}}), token);
+        CHECK(unknown.body["error"]["message"].get<std::string>().find("nenhum projeto 'Nada'") != std::string::npos);
+
+        // Fechado de novo: a sessão continua (sem novo initialize), o tools/list responde, a ferramenta reabre.
+        CHECK(Wait(mcp, "editor_close", {{"path", projectUtf8}, {"force", true}}).ok);
+        CHECK(post(jogo, rpc(7, "tools/list"), token).body["result"]["tools"].size() == 1);
+        const Answer reopened = post(jogo, rpc(8, "tools/call", {{"name", "eco"}, {"arguments", {{"texto", "de novo"}}}}),
+                                     token);
+        CHECK(reopened.body["result"]["content"][0]["text"] == "eco do editor falso: de novo");
+        CHECK(app.FindEditor(project) && app.FindEditor(project)->process.Pid() != pid);
+        CHECK(Wait(mcp, "editor_close", {{"path", projectUtf8}, {"force", true}}).ok);
+
+        // /mcpengine sem editor aberto: conecta (initialize da versão padrão), mas a ferramenta explica o que fazer.
+        CHECK(post("/mcpengine", rpc(9, "initialize"), token).body["result"]["serverInfo"]["name"] == "motor-editor");
+        const Answer none = post("/mcpengine", rpc(10, "tools/call", {{"name", "eco"}}), token);
+        CHECK(none.body["error"]["message"].get<std::string>().find("nenhum editor aberto") != std::string::npos);
+        mcp.Stop();
+    }
+
+    SECTION("version_remove");
+    {
+        CHECK(!Now(mcp, "version_remove", {{"version", "5.0.0"}}).ok);
+        // Remover de verdade manda para a Lixeira do usuário: fica fora do teste automático.
+    }
+
+    return TestResult();
+}

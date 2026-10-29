@@ -69,7 +69,9 @@ namespace motor {
 //     RaycastWater, PhysicsStats::terrainBlocksBuilt, SaveTerrains com descarte, Renderer::SetWaterTime.
 // 29: Fase 28: os blocos de terreno dos estáticos guardam a versão e o terreno de onde vieram (a pincelada troca só
 //     os mudados), mudando o tamanho de Scene.
-inline constexpr int kScriptApiVersion = 29;
+// 30: Interface em documentos: UiElement mudou (estilo, controles, follow, eventos) e o UiSystem ganhou Q, Query,
+//     OnClick, OnChange, OnHover e foco; RuntimeSystem::OnScriptsForgotten e SceneRuntime::RunningScript.
+inline constexpr int kScriptApiVersion = 30;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

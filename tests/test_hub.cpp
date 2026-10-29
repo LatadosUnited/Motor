@@ -6,6 +6,7 @@
 #include <HubCore.h>
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <fstream>
 #include <string>
@@ -263,6 +264,106 @@ int main(int argc, char** argv) {
         CHECK(same);
     }
 #endif
+
+    SECTION("Hub residente: chave da instância e linha do iniciar com o Windows");
+    {
+        const fs::path data = base / PathFromUtf8("Dados Ação");
+        const std::string key = InstanceKey(data);
+        CHECK(key.size() == 16 && key.find_first_not_of("0123456789abcdef") == std::string::npos);
+        CHECK(InstanceKey(data) == key);                           // estável
+        CHECK(InstanceKey(base / "Outra") != key);                 // outra pasta, outro hub
+        CHECK(InstanceKey(data / "sub" / "..") == key);            // normalizada
+        CHECK(InstanceKey(PathFromUtf8(ToUtf8(data) + "\\")) == key);  // barra no fim não conta
+#ifdef _WIN32
+        std::string upper = ToUtf8(data);
+        for (char& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        CHECK(InstanceKey(PathFromUtf8(upper)) == key);  // o Windows não diferencia maiúsculas
+        CHECK(SameStartupCommand(R"("C:\Hub\MotorHub.exe" --bandeja)", R"("c:/hub/motorhub.exe" --bandeja)"));
+#endif
+        CHECK(SameStartupCommand(R"("C:\Hub\MotorHub.exe" --bandeja)", R"("C:\Hub\MotorHub.exe" --bandeja)"));
+        CHECK(!SameStartupCommand(R"("C:\Hub\MotorHub.exe" --bandeja)",
+                                  R"("C:\Hub\MotorHub.exe" --bandeja --data "C:\Dados")"));
+    }
+
+    SECTION("Token do MCP do Hub: cria uma vez e depois só lê");
+    {
+        const fs::path file = base / PathFromUtf8("Dados Ação") / "mcp-token";
+        std::error_code ec;
+        fs::remove(file, ec);
+        const std::string token = LoadOrCreateMcpToken(file);
+        CHECK(token.size() == 64 && token.find_first_not_of("0123456789abcdef") == std::string::npos);
+        CHECK(fs::exists(file));
+        CHECK(LoadOrCreateMcpToken(file) == token);  // o mesmo depois de reabrir
+        {
+            std::ofstream out(file, std::ios::binary);
+            out << "  meu-token  \r\n";  // editado à mão: espaços e quebra de linha não contam
+        }
+        CHECK(LoadOrCreateMcpToken(file) == "meu-token");
+        {
+            std::ofstream out(file, std::ios::binary);  // vazio: cria outro
+        }
+        const std::string other = LoadOrCreateMcpToken(file);
+        CHECK(other.size() == 64 && other != token);
+    }
+
+    SECTION("Ferramentas do MCP do editor no pacote da versão (mcp-ferramentas.json)");
+    {
+        const fs::path dir = MakeInstall(base / PathFromUtf8("Ferramentas Ação"), "0.4.0");
+        std::string error;
+        CHECK(!ReadEditorTools(dir, &error));  // versão antiga: sem o arquivo
+        CHECK(error.find(kMcpToolsFile) != std::string::npos);
+
+        WriteText(dir / kMcpToolsFile, R"({"format": "outro", "tools": []})");
+        CHECK(!ReadEditorTools(dir));
+        WriteText(dir / kMcpToolsFile, "{quebrado");
+        CHECK(!ReadEditorTools(dir));
+
+        WriteText(dir / kMcpToolsFile,
+                  R"({"format": "motor-mcp-tools", "version": 1, "engineVersion": "0.4.0",
+                      "initialize": {"serverInfo": {"name": "motor-editor"}, "instructions": "Cena e Play."},
+                      "tools": [{"name": "scene_tree", "description": "Árvore da cena", "inputSchema": {}},
+                                {"name": "play", "description": "Joga", "inputSchema": {}}]})");
+        const auto tools = ReadEditorTools(dir);
+        CHECK(tools.has_value());
+        CHECK(tools && tools->engineVersion == "0.4.0");
+        CHECK(tools && tools->tools.size() == 2 && tools->tools[0]["name"] == "scene_tree");
+        CHECK(tools && tools->tools[0]["description"] == "Árvore da cena");
+        CHECK(tools && tools->initialize["instructions"] == "Cena e Play.");
+
+        // Formato mais novo: o que este Hub conhece continua sendo lido.
+        WriteText(dir / kMcpToolsFile,
+                  R"({"format": "motor-mcp-tools", "version": 2, "novidade": true, "tools": [{"name": "x"}]})");
+        const auto newer = ReadEditorTools(dir);
+        CHECK(newer && newer->tools.size() == 1 && newer->initialize.is_object());
+    }
+
+    SECTION("Autoatualização: editores abertos ao sair e linha do instalador");
+    {
+        const fs::path file = base / PathFromUtf8("Atualização") / kEditorsFile;
+        SavedEditors saved;
+        saved.editors.push_back({1234, base / PathFromUtf8("Jogo Ação"), "0.4.0",
+                                 base / "Versoes" / "0.4.0" / "MotorEditor.exe", 47801, "abc", true});
+        saved.editors.push_back({0, base / "sem-pid", "0.4.0", base / "MotorEditor.exe", 0, {}, false});
+        CHECK(saved.Save(file));
+        const auto loaded = SavedEditors::Load(file);
+        CHECK(loaded && loaded->editors.size() == 1);  // sem pid não dá para acompanhar
+        CHECK(loaded && loaded->editors[0].root == base / PathFromUtf8("Jogo Ação"));
+        CHECK(loaded && loaded->editors[0].mcpPort == 47801 && loaded->editors[0].token == "abc" &&
+              loaded->editors[0].ready && loaded->editors[0].pid == 1234);
+        CHECK(!SavedEditors::Load(base / "nao-existe.json"));
+        WriteText(base / "outro.json", R"({"format": "outra-coisa", "editors": []})");
+        CHECK(!SavedEditors::Load(base / "outro.json"));
+
+        const fs::path dir = base / "Motor Hub";
+        const auto args = UpdateInstallerArgs(dir, 99, {"--data", "D:\\Dados", "--", "--no-settings"}, base / "a.log");
+        const std::vector<std::string> expected = {
+            "--silencioso", "--atualizar", "--pasta", ToUtf8(dir), "--esperar", "99", "--log", ToUtf8(base / "a.log"),
+            "--abrir-hub",  "--",          "--data",  "D:\\Dados", "--bandeja", "--", "--no-settings"};
+        CHECK(args == expected);
+        // Já na bandeja: não repete.
+        const auto tray = UpdateInstallerArgs(dir, 1, {"--bandeja"}, base / "a.log");
+        CHECK(tray.size() == 11 && tray.back() == "--bandeja");
+    }
 
     return TestResult();
 }

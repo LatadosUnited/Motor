@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../EditorContext.h"
-#include "McpProtocol.h"
+#include "Mcp.h"
 
 #include <functional>
 

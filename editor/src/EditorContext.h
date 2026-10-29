@@ -42,6 +42,8 @@ struct EditorContext {
     EntityId selected = kNullEntity;
     std::vector<EntityId> selection;
     EntityId pendingDelete = kNullEntity;  // processado no fim do frame, fora da iteração dos painéis
+    // "Converter UI em documento" (Hierarquia): feito no começo do próximo desenho da Hierarquia, fora das linhas.
+    EntityId pendingUiConversion = kNullEntity;
 
     bool IsSelected(EntityId id) const;
     size_t SelectionCount() const { return selection.size(); }

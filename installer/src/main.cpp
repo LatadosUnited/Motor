@@ -42,21 +42,38 @@ constexpr const char* kUsage =
     "  --sem-atalhos              não cria atalhos\n"
     "  --area-de-trabalho         cria também o atalho na área de trabalho\n"
     "  --sem-registro             não registra a desinstalação em Aplicativos instalados\n"
-    "  --abrir-hub                abre o Hub no fim\n"
+    "  --sem-iniciar-com-windows  o Hub não abre na bandeja ao entrar no Windows\n"
+    "  --abrir-hub [-- <args>]    abre o Hub no fim (com os argumentos depois de \"--\", se houver)\n"
+    "  --atualizar                atualiza o Hub instalado na --pasta com as mesmas escolhas da instalação (é o que\n"
+    "                             o Hub faz sozinho: espera ele fechar com --esperar <pid> e o abre de novo)\n"
+    "  --log <arquivo>            escreve também neste arquivo o que fez (o Hub mostra se a atualização falhou)\n"
     "  --desinstalar [--apagar-dados]\n"
     "                             desinstala (pasta do Hub, atalhos e registro para a Lixeira; com --apagar-dados,\n"
     "                             também as versões do Motor e o hub.json)\n"
-    "Para testes: --atalhos-em <dir> (atalhos nesta pasta), --chave-registro <nome> (outra chave de desinstalação)\n"
+    "Para testes: --atalhos-em <dir> (atalhos nesta pasta), --chave-registro <nome> (outra chave de desinstalação e\n"
+    "  outro valor do Run)\n"
     "  --version                  mostra a versão e sai\n";
+
+fs::path g_logFile;  // --log: aberto pelo Hub, sem console para escrever
+
+void AppendLog(const std::string& text) {
+    if (g_logFile.empty()) return;
+    if (FILE* f = _wfopen(g_logFile.c_str(), L"ab")) {
+        std::fputs((text + "\n").c_str(), f);
+        std::fclose(f);
+    }
+}
 
 void Print(const std::string& text) {
     std::fputs((text + "\n").c_str(), stdout);
     std::fflush(stdout);
+    AppendLog(text);
 }
 
 int Fail(const std::string& message) {
     std::fputs((message + "\n").c_str(), stderr);
     std::fflush(stderr);
+    AppendLog("Erro: " + message);
     return 1;
 }
 
@@ -133,7 +150,9 @@ int SetupMain() {
     const std::vector<std::string> args = distrib::platform::CommandLineArgs();
     setup::Options o;
     o.install.installDir = setup::DefaultInstallDir();
-    bool silent = false, uninstall = false, removeData = false, openHub = false, tempCopy = false;
+    bool silent = false, uninstall = false, removeData = false, openHub = false, tempCopy = false, update = false;
+    std::vector<std::string> hubArgs;  // depois de "--": a linha do Hub aberto no fim
+    bool hubArgsGiven = false;
     bool explicitDir = false;
     DWORD waitPid = 0;
     std::vector<std::string> passThrough;  // para a cópia temporária da desinstalação
@@ -146,7 +165,11 @@ int SetupMain() {
             value = args[++i];
             return true;
         };
-        if (arg == "--help" || arg == "-h") {
+        if (arg == "--") {
+            hubArgs.assign(args.begin() + static_cast<std::ptrdiff_t>(i) + 1, args.end());
+            hubArgsGiven = true;
+            break;
+        } else if (arg == "--help" || arg == "-h") {
             distrib::platform::AttachParentConsole();
             Print(kUsage);
             return 0;
@@ -156,6 +179,14 @@ int SetupMain() {
             return 0;
         } else if (arg == "--silencioso") {
             silent = true;
+        } else if (arg == "--atualizar") {
+            update = true;
+        } else if (arg == "--log" && next()) {
+            g_logFile = PathFromUtf8(value);
+            std::error_code logEc;
+            fs::create_directories(g_logFile.parent_path(), logEc);
+            if (FILE* f = _wfopen(g_logFile.c_str(), L"wb")) std::fclose(f);  // só o desta execução
+            continue;
         } else if (arg == "--desinstalar") {
             uninstall = true;
         } else if (arg == "--apagar-dados") {
@@ -166,6 +197,8 @@ int SetupMain() {
             o.install.desktopShortcut = true;
         } else if (arg == "--sem-registro") {
             o.install.registerUninstall = false;
+        } else if (arg == "--sem-iniciar-com-windows") {
+            o.install.startWithWindows = false;
         } else if (arg == "--abrir-hub") {
             openHub = true;
         } else if (arg == "--copia-temporaria") {
@@ -187,6 +220,7 @@ int SetupMain() {
             o.shortcutsDir = PathFromUtf8(value);
         } else if (arg == "--chave-registro" && next()) {
             o.install.registryKey = value;
+            o.install.startupValue = value;  // testes: nem o Run do usuário é tocado
         } else if (arg == "--esperar" && next()) {
             waitPid = static_cast<DWORD>(std::stoul(value));
             continue;
@@ -204,7 +238,7 @@ int SetupMain() {
     if (waitPid != 0) {
         // Cópia temporária: espera o desinstalador original fechar (ele está dentro da pasta a remover).
         if (HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, waitPid)) {
-            WaitForSingleObject(parent, 30000);
+            WaitForSingleObject(parent, 60000);
             CloseHandle(parent);
         }
     }
@@ -231,6 +265,23 @@ int SetupMain() {
         return result;
     }
 
+    const auto launchHub = [&] {
+        std::vector<std::string> line = hubArgs;
+        if (!hubArgsGiven && !o.install.dataDir.empty()) line = {"--data", ToUtf8(o.install.dataDir)};
+        std::string error;
+        if (!hub::platform::LaunchProcess(o.install.installDir / distrib::kHubExe, line, &error)) Fail(error);
+    };
+
+    if (update) {
+        // Aberto pelo próprio Hub (já esperou ele fechar): atualiza e o abre de novo, mesmo se falhar (o antigo
+        // continua inteiro: o MotorHub.exe só é trocado pronto).
+        std::string error;
+        const bool ok = setup::Update(o.install.installDir, Print, error);
+        if (!ok) Fail(error);
+        if (openHub) launchHub();
+        return ok ? 0 : 1;
+    }
+
     if (!silent) return setup::SetupApp(o, false).Run();
 
     std::string error;
@@ -242,11 +293,7 @@ int SetupMain() {
         }
     }, nullptr, error);
     if (!ok) return Fail(error);
-    if (openHub) {
-        std::vector<std::string> hubArgs;
-        if (!o.install.dataDir.empty()) hubArgs = {"--data", ToUtf8(o.install.dataDir)};
-        hub::platform::LaunchProcess(o.install.installDir / distrib::kHubExe, hubArgs, &error);
-    }
+    if (openHub) launchHub();
     return 0;
 }
 

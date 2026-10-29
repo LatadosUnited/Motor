@@ -22,6 +22,7 @@ struct ViewportPrefs {
     float gridHeight = 0.0f;    // altura (Y) do plano da grade
     bool stats = false;         // painel dos contadores por quadro (botão Estatísticas)
     bool navMesh = true;        // navmesh e caminhos dos agentes (botão Navmesh; só aparece se a cena tiver um)
+    bool ui = false;            // HUD do jogo por cima da cena (botão UI); a visão do jogo mostra sempre
 
     // Valores fora da faixa (editor.json editado à mão) voltam para dentro dela.
     void Clamp();

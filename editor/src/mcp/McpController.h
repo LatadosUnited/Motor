@@ -2,8 +2,7 @@
 
 #include "../EditorContext.h"
 #include "../EditorSettings.h"
-#include "McpProtocol.h"
-#include "McpServer.h"
+#include "Mcp.h"
 
 #include <motor/core/Input.h>
 
@@ -24,6 +23,7 @@ class SceneDocument;
 class SceneViewport;
 class GameView;
 class ScriptController;
+class UiDocEditor;
 
 // Servidor MCP do editor (Fase 13): deixa um agente (Claude Code...) ver e mexer no editor pelas mesmas
 // operações da interface — cena, componentes, assets, Play, scripts, log e captura do viewport — sem simular
@@ -44,6 +44,7 @@ public:
         std::function<void(int)> requestHistory;  // -1 desfazer, +1 refazer (no início do próximo quadro)
         ExportController& exporter;               // game_export (Fase 10)
         std::function<motor::Renderer&()> renderer;  // viewport_capture desenha na hora (criado depois do editor)
+        UiDocEditor& uiEditor;                       // janela Editor de UI (ui_editor_*)
     };
 
     explicit McpController(Host host);
@@ -51,6 +52,11 @@ public:
 
     McpController(const McpController&) = delete;
     McpController& operator=(const McpController&) = delete;
+
+    // Aberto pelo Hub residente (--hub, motor/mcp/HubLink.h): antes do Start. O servidor passa a exigir o token, o
+    // Hub é avisado quando ele liga, quando o projeto muda e quando desliga, e o menu Ver não o desliga.
+    void LinkHub(int hubPort, std::string token);
+    bool HubLinked() const { return m_hubPort > 0; }
 
     void Start(int port);  // erro vai para o log e para o popup do editor
     void Stop();
@@ -63,6 +69,8 @@ public:
 
     void DrawMenuItems(EditorSettings& settings);  // no menu Ver
     void DrawStatus();                             // "MCP" na barra de menus enquanto ligado
+
+    mcp::Protocol& GetProtocol() { return m_protocol; }  // --mcp-ferramentas (McpToolList) e testes
 
 private:
     struct LogLine {
@@ -122,6 +130,7 @@ private:
     void AddPlayTools();
     void AddScriptTools();
     void AddViewTools();
+    void AddUiEditorTools();  // McpUiEditorTools.cpp
     static std::string PlayState(const PlayController& play);  // "editando", "jogando" ou "pausado"
     std::filesystem::path ProjectPath(const mcp::Json& value) const;  // relativo ao projeto; erro se não houver projeto
     void UpdateUiClick();
@@ -131,6 +140,14 @@ private:
     Host m_host;
     mcp::Protocol m_protocol;
     mcp::Server m_server;
+
+    // Hub residente (LinkHub)
+    void NotifyHub(const char* event);
+    std::string CurrentProjectUtf8();
+    int m_hubPort = 0;
+    std::string m_hubToken;
+    bool m_hubAnnounced = false;     // "pronto" enviado (o "fechando" só vai depois dele)
+    std::string m_announcedProject;  // o projeto do último aviso
 
     // Últimas linhas do log (para log_read), preenchidas por um ouvinte do log de qualquer thread.
     int m_logSink = 0;
@@ -169,6 +186,7 @@ private:
     std::unique_ptr<motor::Framebuffer> m_capture;
     // Clique num botão da UI do jogo: posição na tela do jogo e etapa (1 = apertar, 2 = soltar, 0 = nada).
     int m_clickStage = 0;
+    int m_hoverFrames = 0;  // ui_scroll: quadros com o mouse parado no elemento (a roda entra num deles)
     glm::vec2 m_clickPos{0.0f};
     glm::vec2 m_clickScreen{0.0f};
 };

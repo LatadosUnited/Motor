@@ -69,6 +69,9 @@ public:
     virtual void OnFixedUpdate(SceneRuntime& /*runtime*/, float /*dt*/) {}
     virtual void OnUpdate(SceneRuntime& /*runtime*/, float /*dt*/) {}
     virtual void OnStop(SceneRuntime& /*runtime*/) {}
+    // A DLL de scripts vai ser recarregada no meio do Play (SceneRuntime::ForgetScripts): solte tudo o que guarda do
+    // código dos scripts (callbacks, std::function criados neles), antes que a DLL antiga seja descarregada.
+    virtual void OnScriptsForgotten(SceneRuntime& /*runtime*/) {}
 };
 
 using RuntimeSystemFactory = std::unique_ptr<RuntimeSystem> (*)();

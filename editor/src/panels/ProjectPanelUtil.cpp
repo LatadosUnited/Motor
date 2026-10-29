@@ -28,6 +28,8 @@ Icon IconFor(bool isDirectory, AssetType type) {
         case AssetType::Audio: break;  // clipes de som: ícone de arquivo
         case AssetType::NavMesh: break;  // navmesh gerado: ícone de arquivo
         case AssetType::Terrain: return Icon::Mesh;
+        case AssetType::UiDocument: break;  // documento de UI: ícone de arquivo
+        case AssetType::UiStyle: break;     // folha de estilo da UI: ícone de arquivo
         case AssetType::Unknown: break;
     }
     return Icon::File;

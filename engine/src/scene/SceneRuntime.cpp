@@ -82,6 +82,9 @@ void SceneRuntime::ReportSystemError(std::string_view systemName, std::string_vi
 void SceneRuntime::InvokeScript(Script& script, EntityId id, std::string_view scriptName,
                                 std::string_view callback, const std::function<void()>& fn) {
     MOTOR_PROFILE_SCOPE_NAMED(scriptName);  // no Tracy, cada script com o nome dele (Fase 26)
+    // O dono do código que roda (aninhado: um Send dentro de um OnUpdate), para quem guarda callbacks.
+    Script* const outerScript = std::exchange(m_runningScript, &script);
+    const EntityId outerEntity = std::exchange(m_runningEntity, id);
     try {
         fn();
     } catch (const std::exception& ex) {
@@ -91,6 +94,18 @@ void SceneRuntime::InvokeScript(Script& script, EntityId id, std::string_view sc
         m_faultedScripts.insert(&script);
         ReportScriptError(id, scriptName, callback, "exceção desconhecida");
     }
+    m_runningScript = outerScript;
+    m_runningEntity = outerEntity;
+}
+
+bool SceneRuntime::CallScriptCallback(Script* owner, EntityId entity, std::string_view callback,
+                                      const std::function<void()>& fn) {
+    const ComponentType* type = owner ? ScriptTypeOf(entity, owner) : nullptr;
+    if (!type) return false;  // a entidade ou o script sumiram
+    if (!owner->m_started || m_faultedScripts.contains(owner) || !m_scene.IsActiveInHierarchy(entity)) return true;
+    Bind(*owner, entity);
+    InvokeScript(*owner, entity, type->name, callback, fn);
+    return true;
 }
 
 void SceneRuntime::InvokeSystem(SystemSlot& slot, std::string_view callback,
@@ -462,6 +477,9 @@ int SceneRuntime::RandomInt(int min, int max) {
 void SceneRuntime::ForgetScripts() {
     m_timers.clear();
     m_faultedScripts.clear();
+    for (SystemSlot& slot : m_systems) {
+        if (!slot.faulted) InvokeSystem(slot, "OnScriptsForgotten", [&]() { slot.system->OnScriptsForgotten(*this); });
+    }
 }
 
 void SceneRuntime::ForEachPrefabScene(const std::function<void(Scene&)>& fn) {

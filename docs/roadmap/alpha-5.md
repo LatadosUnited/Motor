@@ -52,3 +52,11 @@ Hoje o editor depende do MSYS2 (GCC 15.2 UCRT64) e do CMake instalados nos camin
 - **Jogo de exemplo do guia** que junta as funcionalidades da Fase 18 (câmera orbital que não atravessa paredes,
   coleta por área, passos, música com volume separado, cursor preso, vidro e cerca recortada), rodado pelo
   `test_script_docs`. *(origem: entrada de 19/10, fecho da Fase 18)*
+
+## Interface em documentos (sem número ainda)
+
+**Pronta (28/10/2026), planejada em 27/10 a pedido do usuário:** [nota da fase](alpha-5/interface-em-documentos.md). A UI do jogo
+sai das entidades e vira um documento `.mui` com folha de estilo `.mstyle`, ligados por um componente `UiDocument`,
+no estilo do UI Toolkit da Unity: layout flex próprio, editor de UI em janela separada com prévia de resoluções,
+consultas e eventos nos scripts, navegação por foco e ferramentas MCP. O viewport da cena deixa de mostrar o HUD por
+padrão. Branch `interface-documentos`.

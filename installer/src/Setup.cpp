@@ -89,6 +89,48 @@ bool InstallMotor(const Options& o, const fs::path& versionsDir, const LogFn& lo
                          ToUtf8(outcome.dir)));
     return true;
 }
+// Etapas comuns à instalação e à atualização: arquivos, atalhos, registro e o instalacao.json.
+bool ApplyPlan(const distrib::InstallPlan& plan, const std::string& hubBytes, const LogFn& log, std::string& error) {
+    std::error_code ec;
+    const fs::path dir = plan.hubExe.parent_path();
+    const fs::path self = distrib::platform::ExecutablePath();
+
+    // 1. Arquivos: o hub (do recurso) e uma cópia deste instalador, para desinstalar depois.
+    fs::create_directories(dir, ec);
+    if (ec) {
+        error = std::format("Não foi possível criar '{}': {}", ToUtf8(dir), ec.message());
+        return false;
+    }
+    if (!WriteAtomic(plan.hubExe, hubBytes, error)) return false;
+    if (!hub::SamePath(self, plan.setupExe)) {
+        fs::path tmp = plan.setupExe;
+        tmp += ".tmp";
+        fs::copy_file(self, tmp, fs::copy_options::overwrite_existing, ec);
+        if (!ec) motor::ReplaceFileAtomic(tmp, plan.setupExe, ec);
+        if (ec) {
+            error = std::format("Não foi possível copiar o instalador para '{}': {}", ToUtf8(plan.setupExe), ec.message());
+            return false;
+        }
+    }
+
+    // 2. Atalhos e desinstalação no Painel de Controle (Aplicativos instalados).
+    for (const distrib::Shortcut& s : plan.shortcuts) {
+        if (!distrib::platform::CreateShortcut(s, &error)) return false;
+        Say(log, "Atalho: " + ToUtf8(s.link));
+    }
+    if (!plan.registryKey.empty()) {
+        if (!distrib::platform::WriteUninstallKey(plan.registryKey, plan.registryValues, &error)) return false;
+        Say(log, "Desinstalação registrada em Aplicativos instalados (HKCU\\...\\Uninstall\\" + plan.registryKey + ").");
+    }
+    if (!plan.startupValue.empty()) {
+        if (!distrib::platform::WriteStartupValue(plan.startupValue, plan.startupCommand, &error)) return false;
+        Say(log, "O Hub inicia com o Windows, na bandeja (HKCU\\...\\Run\\" + plan.startupValue + ").");
+    }
+
+    // 3. Registro da instalação: a desinstalação desfaz exatamente isso. Gravado antes do download: se ele falhar,
+    // o hub já está instalado e desinstalável.
+    return plan.record.Save(plan.recordFile, &error);
+}
 } // namespace
 
 fs::path DefaultInstallDir() { return KnownFolder(Folder::LocalAppData) / "Programs" / "Motor Hub"; }
@@ -139,38 +181,8 @@ bool Install(const Options& options, const LogFn& log, const ProgressFn& progres
     distrib::InstallPlan plan = distrib::PlanInstall(o.install, startMenu, desktop);
     plan.record.installed = NowIso();
 
-    // 1. Arquivos: o hub (do recurso) e uma cópia deste instalador, para desinstalar depois.
     Say(log, std::format("Instalando o Hub {} em '{}'...", o.install.hubVersion, ToUtf8(o.install.installDir)));
-    fs::create_directories(o.install.installDir, ec);
-    if (ec) {
-        error = std::format("Não foi possível criar '{}': {}", ToUtf8(o.install.installDir), ec.message());
-        return false;
-    }
-    if (!WriteAtomic(plan.hubExe, *hubBytes, error)) return false;
-    if (!hub::SamePath(self, plan.setupExe)) {
-        fs::path tmp = plan.setupExe;
-        tmp += ".tmp";
-        fs::copy_file(self, tmp, fs::copy_options::overwrite_existing, ec);
-        if (!ec) motor::ReplaceFileAtomic(tmp, plan.setupExe, ec);
-        if (ec) {
-            error = std::format("Não foi possível copiar o instalador para '{}': {}", ToUtf8(plan.setupExe), ec.message());
-            return false;
-        }
-    }
-
-    // 2. Atalhos e desinstalação no Painel de Controle (Aplicativos instalados).
-    for (const distrib::Shortcut& s : plan.shortcuts) {
-        if (!distrib::platform::CreateShortcut(s, &error)) return false;
-        Say(log, "Atalho: " + ToUtf8(s.link));
-    }
-    if (!plan.registryKey.empty()) {
-        if (!distrib::platform::WriteUninstallKey(plan.registryKey, plan.registryValues, &error)) return false;
-        Say(log, "Desinstalação registrada em Aplicativos instalados (HKCU\\...\\Uninstall\\" + plan.registryKey + ").");
-    }
-
-    // 3. Registro da instalação: a desinstalação desfaz exatamente isso. Gravado antes do download: se ele falhar,
-    // o hub já está instalado e desinstalável.
-    if (!plan.record.Save(plan.recordFile, &error)) return false;
+    if (!ApplyPlan(plan, *hubBytes, log, error)) return false;
 
     // 4. hub.json: o servidor escolhido entra na lista do hub.
     const fs::path dataDir = o.install.dataDir.empty() ? DefaultDataDir() : o.install.dataDir;
@@ -206,6 +218,33 @@ bool Install(const Options& options, const LogFn& log, const ProgressFn& progres
     return true;
 }
 
+bool Update(const fs::path& installDir, const LogFn& log, std::string& error) {
+    const auto record = ExistingInstall(installDir);
+    if (!record) {
+        error = std::format("Não há uma instalação do Hub em '{}' para atualizar (falta {}).", ToUtf8(installDir),
+                            distrib::kInstallRecordFile);
+        return false;
+    }
+    const auto hubBytes = EmbeddedHub(&error);
+    if (!hubBytes) return false;
+    const fs::path hubExe = installDir / distrib::kHubExe;
+    // Iniciar com o Windows como está agora (o hub liga e desliga isso depois de instalado).
+    const std::string startupValue = distrib::UpdateStartupValue(*record);
+    const auto current = distrib::platform::ReadStartupValue(startupValue);
+    const bool startsWithWindows =
+        current && hub::SameStartupCommand(*current, distrib::StartupCommand(hubExe, record->dataDir));
+    distrib::InstallRecord previous = *record;
+    previous.installDir = installDir;  // a pasta onde está agora, mesmo que tenha sido movida
+    const distrib::InstallPlan plan =
+        distrib::PlanUpdate(previous, MOTOR_HUB_VERSION, hubBytes->size() + FileSize(distrib::platform::ExecutablePath()),
+                            KnownFolder(Folder::Desktop), startsWithWindows);
+    Say(log, std::format("Atualizando o Hub {} para {} em '{}'...", record->hubVersion, MOTOR_HUB_VERSION,
+                         ToUtf8(installDir)));
+    if (!ApplyPlan(plan, *hubBytes, log, error)) return false;
+    Say(log, std::format("Hub atualizado para {}.", MOTOR_HUB_VERSION));
+    return true;
+}
+
 bool Uninstall(const fs::path& installDir, bool removeData, const LogFn& log, std::string& error) {
     const auto record = ExistingInstall(installDir);
     if (!record) {
@@ -224,6 +263,9 @@ bool Uninstall(const fs::path& installDir, bool removeData, const LogFn& log, st
         if (distrib::platform::DeleteUninstallKey(plan.registryKey)) {
             Say(log, "Desinstalação tirada de Aplicativos instalados.");
         }
+    }
+    if (!plan.startupValue.empty() && distrib::platform::ReadStartupValue(plan.startupValue)) {
+        if (distrib::platform::DeleteStartupValue(plan.startupValue)) Say(log, "O Hub não inicia mais com o Windows.");
     }
     for (const fs::path& path : plan.toTrash) {
         if (!distrib::platform::MoveToTrash(path, &error)) {

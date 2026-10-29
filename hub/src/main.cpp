@@ -5,6 +5,7 @@
 #include <InstallPlan.h>
 #include <Platform.h>
 
+#include <charconv>
 #include <cstdio>
 #include <exception>
 #include <functional>
@@ -23,7 +24,9 @@ constexpr const char* kUsage =
     "Opções:\n"
     "  --data <pasta>             pasta de dados do hub (padrão %LOCALAPPDATA%\\Motor: hub.json e Versões\\;\n"
     "                             o hub instalado usa a do instalacao.json ao lado do MotorHub.exe)\n"
-    "  --aba <projetos|versões>   abre a janela nesta aba\n"
+    "  --aba <projetos|versões|mcp>  abre a janela nesta aba\n"
+    "  --bandeja                  abre escondido, só com o ícone na bandeja (é assim que inicia com o Windows)\n"
+    "  --mcp-porta <porta>        porta do MCP do hub (padrão 47600; 0 desliga): testes ao lado do hub do usuário\n"
     "  --version                  mostra a versão do hub e sai\n"
     "Ações (feitas na ordem; para na primeira que falhar):\n"
     "  --list                     lista as versões instaladas e os projetos\n"
@@ -57,17 +60,6 @@ int Fail(const std::string& message) {
     std::fputs((message + "\n").c_str(), stderr);
     std::fflush(stderr);
     return 1;
-}
-
-const hub::InstalledVersion* PickVersion(hub::HubApp& app, const std::string& wanted, std::string& error) {
-    if (!wanted.empty()) {
-        const hub::InstalledVersion* v = hub::FindVersion(app.Versions(), wanted);
-        if (!v) error = "O Motor " + wanted + " não está instalado.";
-        return v;
-    }
-    const hub::InstalledVersion* v = hub::DefaultVersion(app.Versions(), app.Config().defaultVersion);
-    if (!v) error = "Nenhuma versão do Motor instalada (use --add-version).";
-    return v;
 }
 
 int RunAction(hub::HubApp& app, const Action& a) {
@@ -140,29 +132,11 @@ int RunAction(hub::HubApp& app, const Action& a) {
     } else if (a.name == "--remove-project") {
         ok = app.RemoveProject(hub::PathFromUtf8(a.args[0]), message);
     } else if (a.name == "--create") {
-        if (const hub::InstalledVersion* v = PickVersion(app, a.engine, message)) {
+        if (const hub::InstalledVersion* v = app.PickVersion(a.engine, message)) {
             ok = app.CreateProject(hub::PathFromUtf8(a.args[0]), a.args[1], *v, message);
         }
     } else if (a.name == "--open") {
-        const hub::ProjectInfo info = hub::ReadProject(hub::PathFromUtf8(a.args[0]));
-        const hub::VersionChoice choice =
-            hub::ChooseVersion(info.engineVersion, app.Versions(), app.Config().defaultVersion);
-        if (!info.found) {
-            message = "Projeto não encontrado em '" + a.args[0] + "': " + info.error;
-        } else if (!a.engine.empty()) {
-            if (const hub::InstalledVersion* v = PickVersion(app, a.engine, message)) {
-                ok = app.OpenProject(info.root, *v, message);
-            }
-        } else if (choice.match == hub::VersionMatch::Exact) {
-            ok = app.OpenProject(info.root, *choice.version, message);
-        } else if (choice.match == hub::VersionMatch::NoVersions) {
-            message = "Nenhuma versão do Motor instalada (use --add-version).";
-        } else {
-            message = (info.engineVersion.empty() ? std::string("O projeto não diz a versão do Motor")
-                                                  : "O Motor " + info.engineVersion + " não está instalado") +
-                      ": use --engine <versão> (sugerida: " + choice.version->version +
-                      "). O editor vai atualizar o engineVersion do projeto; faça uma cópia de segurança antes.";
-        }
+        ok = app.OpenProjectAuto(hub::PathFromUtf8(a.args[0]), a.engine, message);
     }
     if (!ok) return Fail(message);
     Print(message);
@@ -175,7 +149,7 @@ int HubMain() {
     std::filesystem::path dataDir;
     std::vector<Action> actions;
     std::vector<std::string> editorArgs;
-    int initialTab = 0;
+    hub::HubApp::WindowOptions window;
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string& arg = args[i];
         const size_t remaining = args.size() - i - 1;
@@ -200,7 +174,19 @@ int HubMain() {
         } else if (arg == "--aba") {
             if (!needs(1)) return 2;
             const std::string tab = args[++i];
-            initialTab = tab == "versões" || tab == "versoes" ? 1 : 0;
+            window.initialTab = tab == "versões" || tab == "versoes" ? 1 : tab == "mcp" ? 2 : 0;
+        } else if (arg == distrib::kTrayArgument) {
+            window.tray = true;
+        } else if (arg == "--mcp-porta") {
+            if (!needs(1)) return 2;
+            const std::string& value = args[++i];
+            int port = -1;
+            std::from_chars(value.data(), value.data() + value.size(), port);
+            if (port < 0 || port > 65535) {
+                hub::platform::AttachParentConsole();
+                return Fail("Porta inválida em --mcp-porta: " + value);
+            }
+            window.mcpPort = port;
         } else if (arg == "--servidor") {
             if (!needs(1)) return 2;
             if (actions.empty() || (actions.back().name != "--baixar" && actions.back().name != "--disponiveis")) {
@@ -233,6 +219,7 @@ int HubMain() {
         }
     }
     const bool console = !actions.empty();
+    window.relaunchArgs = args;  // depois de se atualizar, o hub novo abre com a mesma linha
 
     // Hub instalado pelo MotorSetup com outra pasta de dados: ela fica no instalacao.json ao lado do .exe.
     if (dataDir.empty()) {
@@ -242,8 +229,8 @@ int HubMain() {
     }
 
     try {
-        hub::HubApp app(hub::platform::DefaultPaths(dataDir), std::move(editorArgs));
-        if (!console) return app.RunWindow(initialTab);
+        hub::HubApp app(hub::platform::DefaultPaths(dataDir), std::move(editorArgs), dataDir);
+        if (!console) return app.RunWindow(window);
 
         hub::platform::AttachParentConsole();
         for (const Action& action : actions) {

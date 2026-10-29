@@ -4,7 +4,7 @@
 #include "TestUtil.h"
 
 #include <EditorContext.h>
-#include <mcp/McpProtocol.h>
+#include <mcp/Mcp.h>
 #include <mcp/McpSceneTools.h>
 
 #include <motor/ai/NavSystem.h>

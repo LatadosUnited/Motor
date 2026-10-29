@@ -3,12 +3,12 @@ tipo: fase
 alpha: 4
 fase: 28
 titulo: Terreno e água
-status: em andamento
+status: pronta
 prioridade: 2
 areas: [renderer, scene, physics, editor-viewport, editor-mcp]
 branch: fase-28-terreno
 inicio: 2026-10-26
-fim:
+fim: 2026-10-28
 ---
 
 # Fase 28 — Terreno e água

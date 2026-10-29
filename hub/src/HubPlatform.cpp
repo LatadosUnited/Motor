@@ -2,8 +2,10 @@
 
 #include "HubCore.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cwchar>
 #include <format>
 
 #ifdef _WIN32
@@ -36,7 +38,7 @@ Paths DefaultPaths(const fs::path& dataOverride) {
     Paths p;
     if (!dataOverride.empty()) {
         std::error_code ec;
-        p.dataDir = fs::absolute(dataOverride, ec);
+        p.dataDir = fs::absolute(dataOverride, ec).lexically_normal();  // "C:/x" vira "C:\x" (mensagens e MCP)
     } else {
         fs::path local = KnownFolder(FOLDERID_LocalAppData);
         if (local.empty()) {
@@ -46,6 +48,7 @@ Paths DefaultPaths(const fs::path& dataOverride) {
     }
     p.configFile = p.dataDir / "hub.json";
     p.versionsDir = p.dataDir / PathFromUtf8("Versões");
+    p.mcpTokenFile = p.dataDir / kHubMcpTokenFile;
     fs::path documents = KnownFolder(FOLDERID_Documents);
     if (documents.empty()) documents = p.dataDir.parent_path();
     p.defaultProjectsDir = documents / "Motor";
@@ -66,6 +69,120 @@ bool LaunchProcess(const fs::path& exe, const std::vector<std::string>& args, st
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     return true;
+}
+
+ChildProcess::~ChildProcess() {
+    if (m_handle) CloseHandle(static_cast<HANDLE>(m_handle));  // o processo continua: só deixamos de acompanhar
+}
+
+ChildProcess::ChildProcess(ChildProcess&& other) noexcept : m_handle(other.m_handle), m_pid(other.m_pid) {
+    other.m_handle = nullptr;
+    other.m_pid = 0;
+}
+
+ChildProcess& ChildProcess::operator=(ChildProcess&& other) noexcept {
+    if (this != &other) {
+        if (m_handle) CloseHandle(static_cast<HANDLE>(m_handle));
+        m_handle = other.m_handle;
+        m_pid = other.m_pid;
+        other.m_handle = nullptr;
+        other.m_pid = 0;
+    }
+    return *this;
+}
+
+namespace {
+// Bloco de ambiente do processo novo: o deste (sem as variáveis que `extra` troca) e as de `extra`.
+std::wstring EnvironmentBlock(const ChildProcess::Environment& extra) {
+    std::wstring block;
+    std::vector<std::wstring> names;
+    for (const auto& [name, value] : extra) names.push_back(PathFromUtf8(name).wstring() + L"=");
+    if (wchar_t* current = GetEnvironmentStringsW()) {
+        for (const wchar_t* entry = current; *entry; entry += wcslen(entry) + 1) {
+            const std::wstring_view text(entry);
+            const bool replaced = std::any_of(names.begin(), names.end(), [&](const std::wstring& prefix) {
+                return text.size() >= prefix.size() && _wcsnicmp(text.data(), prefix.data(), prefix.size()) == 0;
+            });
+            if (!replaced) block.append(text).push_back(L'\0');
+        }
+        FreeEnvironmentStringsW(current);
+    }
+    for (size_t i = 0; i < extra.size(); ++i) {
+        block.append(names[i]).append(PathFromUtf8(extra[i].second).wstring()).push_back(L'\0');
+    }
+    block.push_back(L'\0');
+    return block;
+}
+} // namespace
+
+std::optional<ChildProcess> ChildProcess::Launch(const fs::path& exe, const std::vector<std::string>& args,
+                                                 std::string* error, const Environment& env) {
+    std::wstring commandLine = BuildCommandLine(exe, args);
+    const std::wstring workDir = exe.parent_path().wstring();
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    std::wstring block = env.empty() ? std::wstring() : EnvironmentBlock(env);
+    if (!CreateProcessW(exe.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT,
+                        block.empty() ? nullptr : block.data(), workDir.c_str(), &si, &pi)) {
+        if (error) *error = std::format("Não foi possível abrir '{}' (erro {}).", ToUtf8(exe), GetLastError());
+        return std::nullopt;
+    }
+    CloseHandle(pi.hThread);
+    ChildProcess process;
+    process.m_handle = pi.hProcess;
+    process.m_pid = pi.dwProcessId;
+    return process;
+}
+
+std::optional<ChildProcess> ChildProcess::Adopt(uint32_t pid, const fs::path& expectedExe) {
+    HANDLE handle = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE, FALSE, pid);
+    if (!handle) return std::nullopt;
+    wchar_t name[MAX_PATH * 4];
+    DWORD size = static_cast<DWORD>(std::size(name));
+    const bool same = QueryFullProcessImageNameW(handle, 0, name, &size) && SamePath(fs::path(name), expectedExe);
+    if (!same || WaitForSingleObject(handle, 0) != WAIT_TIMEOUT) {
+        CloseHandle(handle);
+        return std::nullopt;
+    }
+    ChildProcess process;
+    process.m_handle = handle;
+    process.m_pid = pid;
+    return process;
+}
+
+uint32_t CurrentProcessId() {
+    return GetCurrentProcessId();
+}
+
+bool ChildProcess::Running() const {
+    return m_handle && WaitForSingleObject(static_cast<HANDLE>(m_handle), 0) == WAIT_TIMEOUT;
+}
+
+bool ChildProcess::RequestClose() const {
+    struct Search {
+        DWORD pid;
+        bool posted = false;
+    } search{m_pid};
+    EnumWindows(
+        [](HWND hwnd, LPARAM param) -> BOOL {
+            auto* s = reinterpret_cast<Search*>(param);
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hwnd, &pid);
+            // Só as janelas visíveis sem dono: a principal (não as auxiliares do GLFW e do IME).
+            if (pid == s->pid && IsWindowVisible(hwnd) && !GetWindow(hwnd, GW_OWNER)) {
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                s->posted = true;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&search));
+    return search.posted;
+}
+
+bool ChildProcess::Terminate() const {
+    return m_handle && TerminateProcess(static_cast<HANDLE>(m_handle), 1);
 }
 
 void RevealInExplorer(const fs::path& path) {
@@ -160,6 +277,7 @@ Paths DefaultPaths(const fs::path& dataOverride) {
     p.dataDir = !dataOverride.empty() ? dataOverride : fs::path(home ? home : ".") / ".local" / "share" / "motor";
     p.configFile = p.dataDir / "hub.json";
     p.versionsDir = p.dataDir / PathFromUtf8("Versões");
+    p.mcpTokenFile = p.dataDir / kHubMcpTokenFile;
     p.defaultProjectsDir = fs::path(home ? home : ".") / "Motor";
     return p;
 }
@@ -167,6 +285,19 @@ bool LaunchProcess(const fs::path&, const std::vector<std::string>&, std::string
     if (error) *error = "Abrir o editor só é suportado no Windows.";
     return false;
 }
+ChildProcess::~ChildProcess() = default;
+ChildProcess::ChildProcess(ChildProcess&&) noexcept = default;
+ChildProcess& ChildProcess::operator=(ChildProcess&&) noexcept = default;
+std::optional<ChildProcess> ChildProcess::Launch(const fs::path&, const std::vector<std::string>&, std::string* error,
+                                                 const Environment&) {
+    if (error) *error = "Abrir o editor só é suportado no Windows.";
+    return std::nullopt;
+}
+std::optional<ChildProcess> ChildProcess::Adopt(uint32_t, const fs::path&) { return std::nullopt; }
+uint32_t CurrentProcessId() { return 0; }
+bool ChildProcess::Running() const { return false; }
+bool ChildProcess::RequestClose() const { return false; }
+bool ChildProcess::Terminate() const { return false; }
 void RevealInExplorer(const fs::path&) {}
 bool MoveToTrash(const fs::path&, std::string* error) {
     if (error) *error = "Lixeira só no Windows.";

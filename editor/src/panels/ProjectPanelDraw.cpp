@@ -369,6 +369,7 @@ void ProjectPanel::DrawItemContextMenu(const Entry& e, const Callbacks& callback
     if (single) {
         if (e.isDirectory && ImGui::MenuItem("Abrir pasta", "Enter")) Activate(e, callbacks);
         if (e.type == AssetType::Scene && ImGui::MenuItem("Abrir cena", "Enter")) Activate(e, callbacks);
+        if (e.type == AssetType::UiDocument && ImGui::MenuItem("Abrir no Editor de UI", "Enter")) Activate(e, callbacks);
         if (e.type == AssetType::Mesh && callbacks.addMeshToScene && ImGui::MenuItem("Adicionar à cena")) {
             callbacks.addMeshToScene(e.path);
         }

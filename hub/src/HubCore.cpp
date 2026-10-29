@@ -6,12 +6,14 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cwctype>
 #include <ctime>
 #include <format>
 #include <fstream>
+#include <random>
 #include <sstream>
 
 namespace hub {
@@ -98,6 +100,25 @@ bool MatchesSearch(std::string_view text, std::string_view query) {
     return FoldCase(text).find(FoldCase(query)) != std::string::npos;
 }
 
+bool SameProjectName(std::string_view a, std::string_view b) {
+    return FoldCase(a) == FoldCase(b);
+}
+
+std::string UrlEncodePathSegment(std::string_view text) {
+    std::string out;
+    for (const char c : text) {
+        const auto byte = static_cast<unsigned char>(c);
+        if (std::isalnum(byte) && byte < 0x80) {
+            out += c;
+        } else if (c == '-' || c == '.' || c == '_' || c == '~') {
+            out += c;
+        } else {
+            out += std::format("%{:02X}", byte);
+        }
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Versões
 // ---------------------------------------------------------------------------
@@ -172,6 +193,29 @@ std::optional<InstalledVersion> ReadInstalledVersion(const fs::path& dir, std::s
         SetError(error, std::format("'{}' inválido: {}", ToUtf8(file), e.what()));
         return std::nullopt;
     }
+}
+
+std::optional<EditorTools> ReadEditorTools(const fs::path& versionDir, std::string* error) {
+    const fs::path file = versionDir / kMcpToolsFile;
+    const auto text = ReadTextFile(file);
+    if (!text) {
+        SetError(error, std::format("'{}' não tem a lista de ferramentas do MCP ({}): versão anterior ao Hub "
+                                    "residente.", ToUtf8(versionDir), kMcpToolsFile));
+        return std::nullopt;
+    }
+    // Versão mais nova do formato: lê o que conhece (os campos de agora continuam lá).
+    const json root = json::parse(*text, nullptr, false);
+    if (!root.is_object() || root.value("format", std::string()) != "motor-mcp-tools" || !root.contains("tools") ||
+        !root["tools"].is_array()) {
+        SetError(error, std::format("'{}' não é uma lista de ferramentas do MCP do Motor.", ToUtf8(file)));
+        return std::nullopt;
+    }
+    EditorTools tools;
+    tools.engineVersion = root.value("engineVersion", std::string());
+    tools.hubLink = root.value("hubLink", 0);
+    tools.initialize = root.value("initialize", json::object());
+    tools.tools = root["tools"];
+    return tools;
 }
 
 std::vector<InstalledVersion> ScanVersions(const fs::path& versionsRoot) {
@@ -498,6 +542,134 @@ std::wstring BuildCommandLine(const fs::path& exe, const std::vector<std::string
         line += QuoteArgument(PathFromUtf8(arg).wstring());
     }
     return line;
+}
+
+// ---------------------------------------------------------------------------
+// Hub residente
+// ---------------------------------------------------------------------------
+
+namespace {
+std::wstring FoldPathText(std::wstring s) {
+#ifdef _WIN32
+    std::transform(s.begin(), s.end(), s.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+    std::replace(s.begin(), s.end(), L'/', L'\\');
+#endif
+    return s;
+}
+} // namespace
+
+std::string InstanceKey(const fs::path& dataDir) {
+    std::error_code ec;
+    std::wstring text = fs::absolute(dataDir, ec).lexically_normal().wstring();
+    while (text.size() > 1 && (text.back() == L'\\' || text.back() == L'/')) text.pop_back();
+    text = FoldPathText(std::move(text));
+    // FNV-1a de 64 bits: estável entre execuções e versões (o std::hash não promete isso).
+    uint64_t hash = 14695981039346656037ull;
+    for (wchar_t c : text) {
+        hash ^= static_cast<uint64_t>(c);
+        hash *= 1099511628211ull;
+    }
+    return std::format("{:016x}", hash);
+}
+
+bool SameStartupCommand(std::string_view a, std::string_view b) {
+    return FoldPathText(PathFromUtf8(std::string(a)).wstring()) == FoldPathText(PathFromUtf8(std::string(b)).wstring());
+}
+
+// ---------------------------------------------------------------------------
+// MCP do Hub
+// ---------------------------------------------------------------------------
+
+std::string NewToken() {
+    // O random_device do MinGW e do MSVC usa o gerador do sistema (rand_s), não uma semente fixa.
+    std::random_device random;
+    std::string token;
+    for (int i = 0; i < 8; ++i) token += std::format("{:08x}", static_cast<uint32_t>(random()));
+    return token;
+}
+
+std::string LoadOrCreateMcpToken(const fs::path& file, std::string* error) {
+    if (const auto text = ReadTextFile(file)) {
+        std::string token = *text;
+        while (!token.empty() && std::isspace(static_cast<unsigned char>(token.back()))) token.pop_back();
+        while (!token.empty() && std::isspace(static_cast<unsigned char>(token.front()))) token.erase(0, 1);
+        if (!token.empty()) return token;
+    }
+    const std::string token = NewToken();
+    std::error_code ec;
+    fs::create_directories(file.parent_path(), ec);
+    if (!motor::WriteFileAtomic(file, token + "\n", error)) return {};
+    return token;
+}
+
+// ---------------------------------------------------------------------------
+// Autoatualização do Hub
+// ---------------------------------------------------------------------------
+
+std::optional<SavedEditors> SavedEditors::Load(const fs::path& file, std::string* error) {
+    const auto text = ReadTextFile(file);
+    if (!text) {
+        SetError(error, std::format("Não foi possível ler '{}'.", ToUtf8(file)));
+        return std::nullopt;
+    }
+    const json root = json::parse(*text, nullptr, false);
+    if (!root.is_object() || root.value("format", "") != kFormat) {
+        SetError(error, std::format("'{}' não é uma lista de editores do hub.", ToUtf8(file)));
+        return std::nullopt;
+    }
+    SavedEditors out;
+    const json list = root.value("editors", json::array());
+    if (!list.is_array()) return out;
+    for (const json& e : list) {
+        if (!e.is_object()) continue;
+        SavedEditor s;
+        s.pid = e.value("pid", 0u);
+        s.root = PathFromUtf8(e.value("root", ""));
+        s.version = e.value("version", "");
+        s.editor = PathFromUtf8(e.value("editor", ""));
+        s.mcpPort = e.value("mcpPort", 0);
+        s.token = e.value("token", "");
+        s.ready = e.value("ready", false);
+        if (s.pid != 0 && !s.root.empty() && !s.editor.empty()) out.editors.push_back(std::move(s));
+    }
+    return out;
+}
+
+bool SavedEditors::Save(const fs::path& file, std::string* error) const {
+    json list = json::array();
+    for (const SavedEditor& s : editors) {
+        list.push_back({{"pid", s.pid},
+                        {"root", ToUtf8(s.root)},
+                        {"version", s.version},
+                        {"editor", ToUtf8(s.editor)},
+                        {"mcpPort", s.mcpPort},
+                        {"token", s.token},
+                        {"ready", s.ready}});
+    }
+    const json root = {{"format", kFormat}, {"version", kVersion}, {"editors", std::move(list)}};
+    std::error_code ec;
+    fs::create_directories(file.parent_path(), ec);
+    return motor::WriteFileAtomic(file, root.dump(2, ' ', false, json::error_handler_t::replace) + '\n', error);
+}
+
+std::vector<std::string> UpdateInstallerArgs(const fs::path& installDir, uint32_t pid,
+                                             const std::vector<std::string>& hubArgs, const fs::path& logFile) {
+    std::vector<std::string> args = {"--silencioso", "--atualizar", "--pasta", ToUtf8(installDir), "--esperar",
+                                     std::to_string(pid), "--log", ToUtf8(logFile), "--abrir-hub", "--"};
+    // O hub volta para a bandeja: --bandeja antes dos argumentos do editor (depois do "--" do hub).
+    bool tray = false;
+    size_t editorStart = hubArgs.size();
+    for (size_t i = 0; i < hubArgs.size(); ++i) {
+        if (hubArgs[i] == "--") {
+            editorStart = i;
+            break;
+        }
+        tray |= hubArgs[i] == "--bandeja";
+    }
+    args.insert(args.end(), hubArgs.begin(), hubArgs.begin() + static_cast<std::ptrdiff_t>(editorStart));
+    if (!tray) args.push_back("--bandeja");
+    args.insert(args.end(), hubArgs.begin() + static_cast<std::ptrdiff_t>(editorStart), hubArgs.end());
+    return args;
 }
 
 } // namespace hub
