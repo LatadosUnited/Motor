@@ -7,6 +7,7 @@
 #include "motor/renderer/Material.h"
 #include "motor/renderer/Mesh.h"
 #include "motor/renderer/Shader.h"
+#include "motor/renderer/Water.h"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -23,6 +25,7 @@ namespace motor {
 
 class Framebuffer;
 class GpuTimers;
+class RenderWorld;
 class InstanceBuffers;
 class PostProcess;
 class ShadowRenderer;
@@ -71,6 +74,9 @@ public:
     // Multiplica o tamanho na tela usado para escolher o nível de LOD (Mesh::Lods): acima de 1 o detalhe dura mais
     // longe, abaixo de 1 os níveis simples entram mais perto (qualidade baixa). Vale a partir do próximo BeginScene.
     void SetLodBias(float bias) { m_lodBias = std::max(bias, 0.01f); }
+    // Relógio das ondas da água, em segundos: o tempo do jogo (para com a pausa). nullopt: o relógio do GLFW, que
+    // anda sempre (no editor fora do Play, como o céu).
+    void SetWaterTime(std::optional<double> seconds) { m_waterTime = seconds; }
 
     // target == nullptr desenha na janela. Até kMaxLights luzes (as demais são ignoradas, com aviso no log);
     // nenhuma = só a luz do céu e a ambiente.
@@ -98,6 +104,13 @@ public:
     };
     using SubmitFill = std::function<bool(size_t index, SubmitRequest& request)>;
     void SubmitMany(size_t count, const SubmitFill& fill);
+    // Os objetos guardados de `world` (Fase 28), sem refazer caixa, matriz da normal e material de cada um. No
+    // EndScene, só entram os que a câmera ou alguma sombra vê (pela grade do mundo). O mundo precisa continuar vivo e
+    // sem mudar até o EndScene.
+    void SubmitWorld(const RenderWorld& world);
+    // Água (Fase 28): a grade `mesh` (CreateWaterGrid) com as ondas e a cor de `water`. Desenhada depois dos opacos e
+    // do céu, lendo uma cópia deles (refração e profundidade); a malha precisa continuar viva até o EndScene.
+    void SubmitWater(const Mesh& mesh, const WaterSurface& water, const glm::mat4& model);
     void EndScene();
 
     const RenderStats& GetStats() const { return m_stats; }
@@ -117,9 +130,18 @@ private:
         glm::mat4 model;
         glm::vec4 color;
     };
+    struct WaterItem {
+        const Mesh* mesh;
+        WaterSurface surface;
+        glm::mat4 model;
+    };
+    struct WaterUniforms {
+        int model = -1, wave = -1, time = -1, shallow = -1, deep = -1, water = -1;
+    };
     // Posições dos uniforms por desenho do lit.frag, resolvidas uma vez por shader (lit e com pele).
     struct LitUniforms {
-        int alphaMode = -1, drawBase = -1, color = -1, pbr = -1, emissive = -1;
+        int alphaMode = -1, color = -1, pbr = -1, emissive = -1;
+        int layerColors = -1, layerTiling = -1, terrainGrid = -1;  // só na variante TERRAIN
     };
 
     void LoadLitShaders(ShadowQuality cascadeFilter);
@@ -129,21 +151,31 @@ private:
     void SortDrawOrder(const Frustum& frustum);
     void UploadFrameData(const glm::mat4& view, const glm::mat4& projection);
     size_t CollectSceneBatches(std::vector<uint32_t>& indices, std::vector<DrawBatch>& batches);  // devolve os opacos
-    void DrawSceneBatches(std::span<const DrawBatch> batches);
+    // Lotes da cena a partir do lote `first` da passada gravada (InstanceBuffers::UploadPass).
+    void DrawSceneBatches(std::span<const DrawBatch> batches, size_t first);
     void DrawWireframes();
+    // RendererWater.cpp. `depthAfter`: alguém lê ou testa a profundidade depois (transparentes, contornos).
+    void DrawWater(const Frustum& view, bool depthAfter);
     void BindTarget() const;
     void UploadJoints(const DrawItem& item);
     DrawItem& AddItem(const Mesh& mesh, const Material& material, const glm::mat4& model, ShadowCasting shadows);
     void PrepareItems(const Frustum& view);
+    void AppendWorlds(const Frustum& view);  // os objetos dos RenderWorld que a câmera ou as sombras veem
 
     std::unique_ptr<Shader> m_litShader;
     std::unique_ptr<Shader> m_skinnedShader;  // skinned.vert + lit.frag
     std::unique_ptr<Shader> m_litPlainShader; // lit.frag com NO_MAPS: materiais sem nenhum mapa
+    std::unique_ptr<Shader> m_terrainShader;  // lit.frag com TERRAIN: blocos do terreno com camadas (Fase 28)
     std::unique_ptr<Shader> m_unlitShader;
-    LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms;
+    // water.vert + water.frag (Fase 28): [0] sem MSAA, [1] com (SCENE_MSAA: a profundidade da cena com amostras); e a
+    // passada só de profundidade (water_depth.frag).
+    std::unique_ptr<Shader> m_waterShaders[2], m_waterDepthShader;
+    WaterUniforms m_waterUniforms[2], m_waterDepthUniforms;
+    LitUniforms m_litUniforms, m_skinnedUniforms, m_litPlainUniforms, m_terrainUniforms;
     ShadowQuality m_litShadowFilter = ShadowQuality::High;  // SHADOW_FILTER dos shaders acima
     int m_unlitModel = -1, m_unlitColor = -1;
     std::shared_ptr<Texture2D> m_whiteTexture;
+    std::unique_ptr<TerrainWeights> m_noTerrainWeights;  // terreno sem pesos: camada 1 em tudo
     std::unique_ptr<PostProcess> m_post;
     std::unique_ptr<ShadowRenderer> m_shadows;
     std::unique_ptr<SkyRenderer> m_sky;
@@ -163,6 +195,8 @@ private:
     std::vector<DrawItem> m_items;
     std::vector<glm::mat4> m_joints;
     std::vector<WireItem> m_wires;
+    std::vector<WaterItem> m_waters;
+    std::optional<double> m_waterTime;  // SetWaterTime
 
     // Ordem de desenho do quadro (Fase 23): número de material de cada item e as ordens da cena e das sombras.
     MaterialIds m_materialIds;
@@ -187,6 +221,12 @@ private:
         bool ok = false;
     };
     std::vector<PendingSubmit> m_pending;
+    // SubmitWorld (Fase 28): os mundos do quadro e, no AppendWorlds, os números de material de cada um (do mundo ->
+    // do quadro), o que a câmera e as passadas de sombra veem por entrada e as entradas escolhidas.
+    std::vector<const RenderWorld*> m_worlds;
+    std::vector<uint32_t> m_worldMaterials, m_worldShadows;
+    std::vector<uint8_t> m_worldCamera;
+    std::vector<uint32_t> m_worldMasks, m_worldHits;
 
     glm::vec4 m_clearColor{0.08f, 0.09f, 0.10f, 1.0f};
     int m_windowWidth = 0;

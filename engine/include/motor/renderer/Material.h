@@ -1,5 +1,6 @@
 #pragma once
 
+#include "motor/renderer/TerrainWeights.h"
 #include "motor/renderer/Texture.h"
 
 #include <glm/vec3.hpp>
@@ -60,6 +61,19 @@ inline const char* ShadowCastingLabel(ShadowCasting mode) {  // no editor
     return "?";
 }
 
+// Pintura do terreno (Fase 28): até 4 camadas misturadas pelos pesos dos blocos. Com isto no material, o renderer
+// usa a variante TERRAIN do lit.frag: a cor vem das camadas (textura x cor, repetida a cada `tiling` metros) em vez
+// de color x albedo. As coordenadas de textura da malha são os metros do terreno (TerrainData::BlockMesh). Um
+// material serve a todos os blocos de um terreno: o shader acha o bloco pelo canto que vem nos vértices e os pesos
+// dele no array (TerrainWeights).
+struct TerrainLayers {
+    std::shared_ptr<TerrainWeights> weights;  // RGBA = peso das camadas 1 a 4, uma amostra por vértice de cada bloco
+    std::shared_ptr<Texture2D> albedo[4];     // nulo => branco
+    glm::vec4 color[4]{glm::vec4(1.0f), glm::vec4(1.0f), glm::vec4(1.0f), glm::vec4(1.0f)};  // sRGB
+    glm::vec4 tiling{4.0f};                   // metros por repetição da textura de cada camada
+    float blockSize = 32.0f;                  // metros por bloco
+};
+
 // Material PBR de metal/rugosidade (o mesmo modelo do glTF). Mapas nulos = valor constante do campo.
 struct Material {
     glm::vec4 color{1.0f};                // multiplicado pelo albedo (espaço sRGB)
@@ -78,6 +92,7 @@ struct Material {
     BlendMode blend = BlendMode::Opaque;
     float alphaCutoff = 0.5f;  // Cutout: alfa abaixo disso some
     bool doubleSided = false;  // as duas faces aparecem (planos de folha, grade, vidro fino)
+    std::shared_ptr<const TerrainLayers> terrain;  // só nos blocos do terreno (Fase 28)
 };
 
 // Materiais antigos (Blinn-Phong, até a Fase 6) tinham "brilho" (expoente de 1 a 256) no lugar da rugosidade.

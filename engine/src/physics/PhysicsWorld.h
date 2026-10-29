@@ -1,8 +1,8 @@
 #pragma once
 
 // Mundo do Jolt de um PhysicsSystem (só dentro da camada física): corpos e personagens criados a partir dos
-// componentes, o passo e os eventos de contato. Métodos em PhysicsWorld.cpp (formas e corpos) e
-// PhysicsWorldEvents.cpp (personagens, volta para os Transforms e eventos).
+// componentes, o passo e os eventos de contato. Métodos em PhysicsWorld.cpp (formas e corpos),
+// PhysicsWorldEvents.cpp (personagens, volta para os Transforms e eventos) e PhysicsTerrain.cpp (terrenos).
 
 #include "motor/assets/AssetLoaders.h"
 #include "motor/physics/PhysicsSystem.h"
@@ -16,6 +16,7 @@
 #include <Jolt/Physics/Collision/Shape/Shape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -59,6 +60,22 @@ struct PhysicsSystem::World {
         const RigidbodyComponent* rigidbody = nullptr;
         const MeshRenderer* renderer = nullptr;  // só com forma Malha
         BodyRecord* record = nullptr;
+    };
+
+    // Terreno com colisão (Fase 28): um corpo estático por bloco, todos com a entidade como dono. Alturas mudadas
+    // refazem só os blocos delas (TerrainData::BlockVersion); a matriz de mundo e os campos de física, todos.
+    struct TerrainBody {
+        JPH::BodyID id;
+        uint64_t version = 0;  // TerrainData::BlockVersion de quando foi feito
+    };
+    struct TerrainRecord {
+        std::map<TerrainBlockKey, TerrainBody> blocks;
+        const TerrainData* data = nullptr;
+        uint64_t version = 0;
+        glm::mat4 world{1.0f};
+        float friction = 0.0f;
+        CollisionLayer layer;
+        uint32_t seen = 0;
     };
 
     struct PairState {
@@ -112,6 +129,13 @@ struct PhysicsSystem::World {
                            const Mesh* mesh, const physics_jolt::Pose& pose, std::vector<JPH::BodyID>& addStatic,
                            std::vector<JPH::BodyID>& addMoving);
 
+    // Terrenos -> corpos (PhysicsTerrain.cpp), no mesmo lote de estáticos do SyncBodies.
+    void SyncTerrains(Scene& scene, std::vector<JPH::BodyID>& addStatic);
+    void RemoveTerrain(TerrainRecord& r);
+    void RemoveTerrainBodies(std::vector<JPH::BodyID>& ids);
+    // Height field de um bloco, com a escala do mundo e o canto do bloco já aplicados (relativo à entidade).
+    JPH::ShapeRefC BuildTerrainBlock(const TerrainData& data, TerrainBlockKey key, const glm::vec3& worldScale);
+
     // Personagens: criados/removidos como os corpos; andam antes do passo do mundo.
     void SyncCharacters(Scene& scene, float dt);
 
@@ -164,6 +188,8 @@ struct PhysicsSystem::World {
     uint64_t slotsVersion = ~uint64_t{0};
     JPH::BodyIDVector activeBodies;  // WriteBack: os corpos acordados do passo
     std::unordered_map<EntityId, CharacterRecord> characters;  // depois de physics: sai antes dele
+    std::unordered_map<EntityId, TerrainRecord> terrains;
+    int terrainBlocksBuilt = 0;  // no último SyncTerrains (PhysicsStats)
     std::unordered_map<const Mesh*, std::shared_ptr<MeshData>> meshData;
     std::unordered_map<uint64_t, PairState> pairs;
     std::vector<Exit> pendingExits;

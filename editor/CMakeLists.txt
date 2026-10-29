@@ -61,12 +61,15 @@ add_executable(MotorEditor
     src/drawers/ShadowCastingDrawer.cpp
     src/viewport/FrameStatsPanel.cpp
     src/drawers/NavMeshDataDrawer.cpp
+    src/drawers/TerrainRefDrawer.cpp
     src/drawers/NavAreaMaskDrawer.cpp
     src/viewport/NavMeshOverlay.cpp
     src/nav/NavMeshBake.cpp
     src/mcp/McpNavTools.cpp
     src/viewport/PerceptionOverlay.cpp
     src/FolderWatcher.cpp
+    src/viewport/TerrainBrushTool.cpp
+    src/mcp/McpTerrainTools.cpp
     src/mcp/McpToolList.cpp
     src/uidoc/UiDocEdit.cpp
     src/uidoc/UiDocReload.cpp

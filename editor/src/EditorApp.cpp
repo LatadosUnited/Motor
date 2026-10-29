@@ -73,6 +73,11 @@ void EditorApp::OnInit() {
             m_history.PushAction(m_ctx.scene, m_ctx.selected, &m_ctx.selection, std::move(undo), std::move(redo));
         }
     };
+    m_ctx.pushSceneUndo = [this](std::function<void()> undo, std::function<void()> redo) {
+        if (!m_play.IsActive()) {
+            m_history.PushAction(m_ctx.scene, m_ctx.selected, &m_ctx.selection, std::move(undo), std::move(redo), true);
+        }
+    };
     m_history.SetLazyCompare(true);  // compara a cena só depois de entrada ou pedido do MCP (Fase 27)
     log::Info("Motor Editor {} (API de scripts {})", kVersion, kScriptApiVersion);
     if (EditorSettings::IsDisabled()) log::Info("Configuração do editor desligada (--no-settings)");
@@ -230,7 +235,7 @@ void EditorApp::OnUpdate(float dt) {
             MOTOR_PROFILE_STAT("Update: assets (UI)");
             ReloadUiDocuments();
         }
-        m_history.NoteActivity();  // instâncias de um prefab alterado mudam no UpdatePrefabs
+        NoteSceneActivity();  // instâncias de um prefab alterado mudam no UpdatePrefabs
     }
     if (std::exchange(m_uiReloadNow, false)) ReloadUiDocuments();
 
@@ -275,12 +280,17 @@ void EditorApp::ApplyPendingChanges(bool interactionFinished) {
     if (!m_play.IsActive()) m_history.Track(m_ctx.scene, m_ctx.selected, interactionFinished, &m_ctx.selection);
 }
 
+void EditorApp::NoteSceneActivity() {
+    m_history.NoteActivity();
+    m_ctx.scene.MarkRenderDirty();
+}
+
 void EditorApp::UpdateMinimized() {
     // Minimizado o OnImGui não roda: o que não é interface roda aqui, para o servidor MCP continuar atendendo
     // (antes os pedidos esperavam até a janela voltar, e o agente via o editor como travado).
     ApplyRequests();
     if (m_mcp.Pump()) {
-        m_history.NoteActivity();
+        NoteSceneActivity();
         NoteActivity();  // a resposta pode precisar dos próximos quadros (captura de tela, Play)
     }
     ApplyPendingChanges(true);  // ninguém está arrastando nada com a janela minimizada
@@ -293,10 +303,13 @@ void EditorApp::OnImGui() {
     // nada, e com milhares de entidades a comparação custa milissegundos (Fase 27).
     for (const ImGuiInputEvent& event : ImGui::GetCurrentContext()->InputEventsTrail) {
         if (event.Type != ImGuiInputEventType_MousePos && event.Type != ImGuiInputEventType_MouseViewport) {
-            m_history.NoteActivity();
+            NoteSceneActivity();
             break;
         }
     }
+    // Arrastar (gizmo, valores do Inspector) muda a cena só com o mouse andando: os estáticos acompanham. O botão
+    // direito (voar com a câmera) não conta, nem a pincelada no terreno (a cena troca só os blocos mudados).
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && !m_ctx.terrainBrush.stroking) m_ctx.scene.MarkRenderDirty();
     m_ctx.playing = m_play.IsActive();
     m_ctx.SyncSelection();  // seleção trocada por fora (criar, MCP, desfazer) antes dos painéis
 
@@ -361,7 +374,7 @@ void EditorApp::OnImGui() {
     {
         MOTOR_PROFILE_STAT("ImGui: MCP");
         if (m_mcp.Pump()) {  // as ferramentas mexem na cena
-            m_history.NoteActivity();
+            NoteSceneActivity();
             NoteActivity();  // a resposta pode precisar dos próximos quadros (captura de tela, Play)
         }
     }

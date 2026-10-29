@@ -48,7 +48,8 @@ public:
     int DeletePlaySaves();
     const std::filesystem::path& PlaySavesFolder() const { return m_gameInfo.savesFolder; }
     motor::SaveStore* PlaySaves() { return m_mode.IsActive() ? &m_host.Saves() : nullptr; }
-    // MSAA e sombras: as do jogo no Play (Script::ApplyOptions), as do editor fora dele. Antes de desenhar.
+    // MSAA e sombras: as do jogo no Play (Script::ApplyOptions), as do editor fora dele; e o relógio das ondas da
+    // água (o tempo do jogo no Play: param com a pausa). Antes de desenhar.
     void ApplyQuality(motor::Renderer& renderer) const;
 
     // `viewportFocused` e `gameWindowFocused`: o jogo só lê teclado/mouse com a janela que o mostra em foco (o

@@ -1,0 +1,667 @@
+#include "motor/assets/TerrainData.h"
+
+#include "motor/common/FileRead.h"
+#include "motor/common/FileWrite.h"
+#include "motor/common/Text.h"
+#include "motor/core/Log.h"
+#include "motor/core/Paths.h"
+#include "motor/renderer/Mesh.h"
+#include "motor/renderer/TerrainWeights.h"
+
+#include <nlohmann/json.hpp>
+
+#include <glm/common.hpp>
+#include <glm/geometric.hpp>
+
+#include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <cstring>
+#include <format>
+#include <mutex>
+
+namespace motor {
+
+namespace fs = std::filesystem;
+
+namespace {
+constexpr char kBlockMagic[4] = {'M', 'T', 'B', 'L'};
+// 1: só as alturas; 2: depois delas, os pesos das 4 camadas (um byte cada).
+constexpr uint32_t kBlockVersion = 2;
+
+// LOD (Tarefa 12): níveis com passo de 2, 4, 8 e 16 amostras, valendo abaixo destes tamanhos na tela (Mesh::Lods; com
+// blocos de 32 m e 60° de visão, a partir de ~80, 160, 320 e 640 m).
+constexpr int kLodSteps[] = {2, 4, 8, 16};
+constexpr float kLodScreenSizes[] = {0.5f, 0.25f, 0.125f, 0.0625f};
+
+// Triângulos de um nível com passo `step` (par, divide resolution - 1), em índices da grade cheia (j * res + i). O
+// miolo é uma grade de células step x step; as células encostadas na borda do bloco usam todas as amostras do lado da
+// borda e só os cantos nos lados de dentro, num leque a partir da amostra do meio da célula. Assim a borda de todo
+// nível é a mesma do bloco cheio: vizinhos em níveis diferentes dividem os vértices, sem fresta nem vértice em T.
+std::vector<uint32_t> LodIndices(int res, int step) {
+    const int n = res - 1, cells = n / step;
+    auto at = [res](int i, int j) { return static_cast<uint32_t>(j * res + i); };
+    std::vector<uint32_t> indices;
+    std::vector<uint32_t> ring;
+    for (int cj = 0; cj < cells; ++cj) {
+        for (int ci = 0; ci < cells; ++ci) {
+            const int i0 = ci * step, j0 = cj * step, i1 = i0 + step, j1 = j0 + step;
+            const bool west = ci == 0, east = ci == cells - 1, south = cj == 0, north = cj == cells - 1;
+            if (!west && !east && !south && !north) {
+                // Mesma diagonal da malha cheia (v00 a v11), anti-horário visto de cima.
+                indices.insert(indices.end(), {at(i0, j0), at(i0, j1), at(i1, j1), at(i0, j0), at(i1, j1), at(i1, j0)});
+                continue;
+            }
+            // Contorno da célula no sentido de v00 -> v01 -> v11 -> v10, com as amostras do meio só nos lados de borda.
+            ring.clear();
+            for (int j = j0; j < j1; j += west ? 1 : step) ring.push_back(at(i0, j));
+            for (int i = i0; i < i1; i += north ? 1 : step) ring.push_back(at(i, j1));
+            for (int j = j1; j > j0; j -= east ? 1 : step) ring.push_back(at(i1, j));
+            for (int i = i1; i > i0; i -= south ? 1 : step) ring.push_back(at(i, j0));
+            const uint32_t center = at(i0 + step / 2, j0 + step / 2);
+            for (size_t k = 0; k < ring.size(); ++k) {
+                indices.insert(indices.end(), {center, ring[k], ring[(k + 1) % ring.size()]});
+            }
+        }
+    }
+    return indices;
+}
+
+// Divisão arredondada para baixo (negativos: -1 / 32 = -1, não 0).
+int FloorDiv(int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
+
+template <class T> void Put(std::string& out, T value) {
+    char bytes[sizeof(T)];
+    std::memcpy(bytes, &value, sizeof(T));
+    out.append(bytes, sizeof(T));
+}
+
+template <class T> bool Take(std::string_view& in, T& value) {
+    if (in.size() < sizeof(T)) return false;
+    std::memcpy(&value, in.data(), sizeof(T));
+    in.remove_prefix(sizeof(T));
+    return true;
+}
+} // namespace
+
+TerrainData::TerrainData(float blockSize, int resolution)
+    : m_blockSize(std::max(blockSize, 0.01f)), m_resolution(std::clamp(resolution, 2, 1025)) {}
+
+bool TerrainData::AddBlock(TerrainBlockKey key, float height) {
+    if (m_blocks.contains(key)) return false;
+    Block& block = m_blocks[key];
+    block.heights.assign(static_cast<size_t>(m_resolution) * m_resolution, height);
+    block.weights.assign(block.heights.size(), glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+    // A borda dividida com os vizinhos vem deles; e eles refazem a malha (as normais da borda passam a ver este bloco).
+    const int n = m_resolution - 1;
+    for (int dz = -1; dz <= 1; ++dz) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            Block* other = (dx || dz) ? Find({key.x + dx, key.z + dz}) : nullptr;
+            if (!other) continue;
+            ++other->version;
+            // Amostras do bloco novo que também são do vizinho: a coluna/linha da borda (ou o canto) do lado dele.
+            const int i0 = dx < 0 ? 0 : dx > 0 ? n : 0, i1 = dx < 0 ? 0 : dx > 0 ? n : n;
+            const int j0 = dz < 0 ? 0 : dz > 0 ? n : 0, j1 = dz < 0 ? 0 : dz > 0 ? n : n;
+            for (int j = j0; j <= j1; ++j) {
+                for (int i = i0; i <= i1; ++i) {
+                    const size_t mine = static_cast<size_t>(j * m_resolution + i);
+                    const size_t theirs = static_cast<size_t>((j - dz * n) * m_resolution + (i - dx * n));
+                    block.heights[mine] = other->heights[theirs];
+                    block.weights[mine] = other->weights[theirs];
+                }
+            }
+        }
+    }
+    m_blocksChanged = true;
+    ++m_version;
+    return true;
+}
+
+bool TerrainData::RemoveBlock(TerrainBlockKey key) {
+    if (m_blocks.erase(key) == 0) return false;
+    for (int dz = -1; dz <= 1; ++dz) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (Block* n = Find({key.x + dx, key.z + dz})) ++n->version;
+        }
+    }
+    m_blocksChanged = true;
+    ++m_version;
+    return true;
+}
+
+std::vector<TerrainBlockKey> TerrainData::Blocks() const {
+    std::vector<TerrainBlockKey> keys;
+    keys.reserve(m_blocks.size());
+    for (const auto& [key, block] : m_blocks) keys.push_back(key);
+    std::sort(keys.begin(), keys.end(), [](TerrainBlockKey a, TerrainBlockKey b) {
+        return a.z != b.z ? a.z < b.z : a.x < b.x;
+    });
+    return keys;
+}
+
+TerrainData::Block* TerrainData::Find(TerrainBlockKey key) {
+    auto it = m_blocks.find(key);
+    return it == m_blocks.end() ? nullptr : &it->second;
+}
+
+const TerrainData::Block* TerrainData::Find(TerrainBlockKey key) const {
+    auto it = m_blocks.find(key);
+    return it == m_blocks.end() ? nullptr : &it->second;
+}
+
+const std::vector<float>* TerrainData::BlockHeights(TerrainBlockKey key) const {
+    const Block* block = Find(key);
+    return block ? &block->heights : nullptr;
+}
+
+uint64_t TerrainData::BlockVersion(TerrainBlockKey key) const {
+    const Block* block = Find(key);
+    return block ? block->version : 0;
+}
+
+std::optional<float> TerrainData::Sample(int gx, int gz) const {
+    const int n = m_resolution - 1;
+    const int bx = FloorDiv(gx, n), bz = FloorDiv(gz, n);
+    const int i = gx - bx * n, j = gz - bz * n;
+    // Na borda (i ou j = 0) a amostra também é do bloco de antes, na última linha dele.
+    for (int ox = 0; ox <= (i == 0 ? 1 : 0); ++ox) {
+        for (int oz = 0; oz <= (j == 0 ? 1 : 0); ++oz) {
+            if (const Block* block = Find({bx - ox, bz - oz})) {
+                return block->heights[static_cast<size_t>((oz ? n : j) * m_resolution + (ox ? n : i))];
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+void TerrainData::SetSample(int gx, int gz, float height) {
+    const int n = m_resolution - 1;
+    const int bx = FloorDiv(gx, n), bz = FloorDiv(gz, n);
+    const int i = gx - bx * n, j = gz - bz * n;
+    bool changed = false;
+    for (int ox = 0; ox <= (i == 0 ? 1 : 0); ++ox) {
+        for (int oz = 0; oz <= (j == 0 ? 1 : 0); ++oz) {
+            Block* block = Find({bx - ox, bz - oz});
+            if (!block) continue;
+            float& h = block->heights[static_cast<size_t>((oz ? n : j) * m_resolution + (ox ? n : i))];
+            if (h == height) continue;
+            h = height;
+            block->dirty = true;
+            changed = true;
+        }
+    }
+    if (changed) Touch(gx, gz);
+}
+
+std::optional<glm::vec4> TerrainData::Weights(int gx, int gz) const {
+    const int n = m_resolution - 1;
+    const int bx = FloorDiv(gx, n), bz = FloorDiv(gz, n);
+    const int i = gx - bx * n, j = gz - bz * n;
+    for (int ox = 0; ox <= (i == 0 ? 1 : 0); ++ox) {
+        for (int oz = 0; oz <= (j == 0 ? 1 : 0); ++oz) {
+            if (const Block* block = Find({bx - ox, bz - oz})) {
+                return block->weights[static_cast<size_t>((oz ? n : j) * m_resolution + (ox ? n : i))];
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+void TerrainData::SetWeights(int gx, int gz, const glm::vec4& weights) {
+    glm::vec4 w = glm::max(weights, glm::vec4(0.0f));
+    const float sum = w.x + w.y + w.z + w.w;
+    w = sum > 1e-6f ? w / sum : glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+    const int n = m_resolution - 1;
+    const int bx = FloorDiv(gx, n), bz = FloorDiv(gz, n);
+    const int i = gx - bx * n, j = gz - bz * n;
+    bool changed = false;
+    for (int ox = 0; ox <= (i == 0 ? 1 : 0); ++ox) {
+        for (int oz = 0; oz <= (j == 0 ? 1 : 0); ++oz) {
+            Block* block = Find({bx - ox, bz - oz});
+            if (!block) continue;
+            glm::vec4& current = block->weights[static_cast<size_t>((oz ? n : j) * m_resolution + (ox ? n : i))];
+            if (current == w) continue;
+            current = w;
+            block->dirty = true;
+            ++block->weightsVersion;
+            changed = true;
+        }
+    }
+    if (changed) ++m_version;
+}
+
+std::shared_ptr<TerrainWeights> TerrainData::WeightsTexture() const {
+    if (!m_weightsTexture) m_weightsTexture = std::make_shared<TerrainWeights>(m_resolution);
+    TerrainWeights& texture = *m_weightsTexture;
+    // Blocos que saíram e os que mudaram (ou entraram) desde a última vez.
+    if (texture.BlockCount() > m_blocks.size() || m_blocksChanged) {
+        for (const auto& [x, z] : texture.BlockKeys()) {
+            if (!m_blocks.contains({x, z})) texture.RemoveBlock(x, z);
+        }
+    }
+    std::vector<uint8_t> pixels;
+    for (const auto& [key, block] : m_blocks) {
+        if (block.weightsUploaded == block.weightsVersion && texture.HasBlock(key.x, key.z)) continue;
+        pixels.resize(block.weights.size() * 4);
+        for (size_t k = 0; k < block.weights.size(); ++k) {
+            for (int c = 0; c < 4; ++c) {
+                pixels[k * 4 + static_cast<size_t>(c)] =
+                    static_cast<uint8_t>(std::lround(std::clamp(block.weights[k][c], 0.0f, 1.0f) * 255.0f));
+            }
+        }
+        texture.SetBlock(key.x, key.z, pixels);
+        block.weightsUploaded = block.weightsVersion;
+    }
+    return m_weightsTexture;
+}
+
+void TerrainData::Touch(int gx, int gz) {
+    // A amostra entra na normal das 8 em volta: todo bloco que tem alguma delas refaz a malha.
+    const int n = m_resolution - 1;
+    const int bx0 = FloorDiv(gx - 1, n), bx1 = FloorDiv(gx + 1, n);
+    const int bz0 = FloorDiv(gz - 1, n), bz1 = FloorDiv(gz + 1, n);
+    for (int bz = bz0 - 1; bz <= bz1; ++bz) {
+        for (int bx = bx0 - 1; bx <= bx1; ++bx) {
+            if (Block* block = Find({bx, bz})) ++block->version;
+        }
+    }
+    ++m_version;
+}
+
+std::optional<float> TerrainData::HeightAt(float x, float z) const {
+    const float spacing = Spacing();
+    const float fx = x / spacing, fz = z / spacing;
+    const int gx = static_cast<int>(std::floor(fx)), gz = static_cast<int>(std::floor(fz));
+    const float tx = fx - static_cast<float>(gx), tz = fz - static_cast<float>(gz);
+    const auto h00 = Sample(gx, gz), h10 = Sample(gx + 1, gz), h01 = Sample(gx, gz + 1), h11 = Sample(gx + 1, gz + 1);
+    if (!h00 || !h10 || !h01 || !h11) return std::nullopt;
+    // Os mesmos dois triângulos da malha e do height field da física (diagonal de (0, 0) a (1, 1), como na Jolt): a
+    // altura bate com o que aparece na tela e com onde o personagem pisa.
+    if (tz >= tx) return *h00 + tx * (*h11 - *h01) + tz * (*h01 - *h00);
+    return *h00 + tx * (*h10 - *h00) + tz * (*h11 - *h10);
+}
+
+glm::vec3 TerrainData::NormalAt(int gx, int gz) const {
+    const float h = Sample(gx, gz).value_or(0.0f);
+    // Na borda do terreno a amostra que falta é a própria: a diferença usa só um lado (metade do declive).
+    const float left = Sample(gx - 1, gz).value_or(h), right = Sample(gx + 1, gz).value_or(h);
+    const float back = Sample(gx, gz - 1).value_or(h), front = Sample(gx, gz + 1).value_or(h);
+    return glm::normalize(glm::vec3(left - right, 2.0f * Spacing(), back - front));
+}
+
+std::optional<glm::vec3> TerrainData::Raycast(const glm::vec3& origin, const glm::vec3& direction,
+                                              float maxDistance) const {
+    if (m_blocks.empty() || glm::length(direction) <= 0.0f) return std::nullopt;
+    const glm::vec3 dir = glm::normalize(direction);
+    // Só o trecho do raio sobre a área dos blocos (em XZ): longe da câmera não se anda à toa.
+    int minX = m_blocks.begin()->first.x, maxX = minX, minZ = m_blocks.begin()->first.z, maxZ = minZ;
+    for (const auto& [key, block] : m_blocks) {
+        minX = std::min(minX, key.x);
+        maxX = std::max(maxX, key.x);
+        minZ = std::min(minZ, key.z);
+        maxZ = std::max(maxZ, key.z);
+    }
+    float t0 = 0.0f, t1 = maxDistance;
+    const float lo[2] = {static_cast<float>(minX) * m_blockSize, static_cast<float>(minZ) * m_blockSize};
+    const float hi[2] = {static_cast<float>(maxX + 1) * m_blockSize, static_cast<float>(maxZ + 1) * m_blockSize};
+    const float o[2] = {origin.x, origin.z}, d[2] = {dir.x, dir.z};
+    for (int axis = 0; axis < 2; ++axis) {
+        if (std::abs(d[axis]) < 1e-8f) {
+            if (o[axis] < lo[axis] || o[axis] > hi[axis]) return std::nullopt;
+            continue;
+        }
+        float a = (lo[axis] - o[axis]) / d[axis], b = (hi[axis] - o[axis]) / d[axis];
+        if (a > b) std::swap(a, b);
+        t0 = std::max(t0, a);
+        t1 = std::min(t1, b);
+    }
+    if (t0 > t1) return std::nullopt;
+
+    // Acima da superfície = positivo. Fora dos blocos (buraco na grade) não há superfície: recomeça depois.
+    const auto above = [&](float t) -> std::optional<float> {
+        const glm::vec3 p = origin + dir * t;
+        const auto h = HeightAt(p.x, p.z);
+        if (!h) return std::nullopt;
+        return p.y - *h;
+    };
+    const float step = Spacing() * 0.5f;
+    std::optional<float> previous = above(t0);
+    float previousT = t0;
+    for (float t = std::min(t0 + step, t1);; t = std::min(t + step, t1)) {
+        const auto current = above(t);
+        if (previous && current && *previous > 0.0f && *current <= 0.0f) {
+            float a = previousT, b = t;
+            for (int i = 0; i < 20; ++i) {
+                const float mid = 0.5f * (a + b);
+                const auto m = above(mid);
+                if (m && *m > 0.0f) a = mid; else b = mid;
+            }
+            return origin + dir * b;
+        }
+        previous = current;
+        previousT = t;
+        if (t >= t1) break;
+    }
+    return std::nullopt;
+}
+
+std::pair<float, float> TerrainData::BlockHeightRange(TerrainBlockKey key) const {
+    const Block* block = Find(key);
+    if (!block || block->heights.empty()) return {0.0f, 0.0f};
+    const auto [lo, hi] = std::minmax_element(block->heights.begin(), block->heights.end());
+    return {*lo, *hi};
+}
+
+std::shared_ptr<Mesh> TerrainData::BlockMesh(TerrainBlockKey key) const {
+    const Block* block = Find(key);
+    if (!block) return nullptr;
+    if (block->mesh && block->meshVersion == block->version) return block->mesh;
+    const int res = m_resolution, n = res - 1;
+    const float spacing = Spacing();
+    std::vector<Vertex> vertices(static_cast<size_t>(res) * res);
+    for (int j = 0; j < res; ++j) {
+        for (int i = 0; i < res; ++i) {
+            const float h = block->heights[static_cast<size_t>(j * res + i)];
+            const int gx = key.x * n + i, gz = key.z * n + j;
+            Vertex& v = vertices[static_cast<size_t>(j * res + i)];
+            v.position = {static_cast<float>(i) * spacing, h, static_cast<float>(j) * spacing};
+            v.normal = NormalAt(gx, gz);
+            v.uv = {static_cast<float>(gx) * spacing, static_cast<float>(gz) * spacing};  // metros do terreno (camadas, TerrainLayers)
+        }
+    }
+    std::vector<uint32_t> indices;
+    indices.reserve(static_cast<size_t>(n) * n * 6);
+    for (int j = 0; j < n; ++j) {
+        for (int i = 0; i < n; ++i) {
+            const uint32_t v00 = static_cast<uint32_t>(j * res + i), v10 = v00 + 1;
+            const uint32_t v01 = v00 + static_cast<uint32_t>(res), v11 = v01 + 1;
+            // Anti-horário visto de cima, com a diagonal de v00 a v11 (a do HeightFieldShape da Jolt).
+            indices.insert(indices.end(), {v00, v01, v11, v00, v11, v10});
+        }
+    }
+    block->mesh = std::make_shared<Mesh>(vertices, indices);
+    // Níveis de detalhe: só com os vértices que cada um usa (o mais simples tem ~10% dos do bloco).
+    std::vector<Mesh::Lod> lods;
+    std::vector<uint32_t> remap(vertices.size());
+    std::vector<Vertex> lodVertices;
+    for (size_t l = 0; l < std::size(kLodSteps); ++l) {
+        const int step = kLodSteps[l];
+        if (n % step != 0 || n / step < 2) continue;
+        std::vector<uint32_t> lodIndices = LodIndices(res, step);
+        std::fill(remap.begin(), remap.end(), ~0u);
+        lodVertices.clear();
+        for (uint32_t& index : lodIndices) {
+            if (remap[index] == ~0u) {
+                remap[index] = static_cast<uint32_t>(lodVertices.size());
+                lodVertices.push_back(vertices[index]);
+            }
+            index = remap[index];
+        }
+        lods.push_back({std::make_shared<Mesh>(lodVertices, lodIndices), kLodScreenSizes[l]});
+    }
+    block->mesh->SetLods(std::move(lods));
+    block->meshVersion = block->version;
+    return block->mesh;
+}
+
+bool TerrainData::IsDirty() const {
+    return m_blocksChanged || std::any_of(m_blocks.begin(), m_blocks.end(), [](const auto& b) { return b.second.dirty; });
+}
+
+fs::path TerrainData::BlocksFolder(const fs::path& file) {
+    return file.parent_path() / (file.stem().native() + PathFromUtf8(kTerrainBlocksFolderSuffix).native());
+}
+
+std::string TerrainData::BlockFileName(TerrainBlockKey key) {
+    return std::format("{}_{}{}", key.x, key.z, kTerrainBlockExtension);
+}
+
+std::vector<fs::path> TerrainData::UnusedBlockFiles(const fs::path& file) const {
+    std::vector<fs::path> unused;
+    std::error_code ec;
+    for (const fs::directory_entry& entry : fs::directory_iterator(BlocksFolder(file), ec)) {
+        if (!entry.is_regular_file(ec) || LowerExtension(entry.path()) != kTerrainBlockExtension) continue;
+        // Só os de nome de bloco ("x_z"): outro arquivo que alguém pôs na pasta fica.
+        const std::string stem = ToUtf8(entry.path().stem());
+        TerrainBlockKey key;
+        const char* end = stem.data() + stem.size();
+        const auto [afterX, errX] = std::from_chars(stem.data(), end, key.x);
+        if (errX != std::errc() || afterX == end || *afterX != '_') continue;
+        const auto [afterZ, errZ] = std::from_chars(afterX + 1, end, key.z);
+        if (errZ != std::errc() || afterZ != end) continue;
+        if (!m_blocks.contains(key)) unused.push_back(entry.path());
+    }
+    std::sort(unused.begin(), unused.end());
+    return unused;
+}
+
+bool TerrainData::Save(const fs::path& file, std::string* error) {
+    const bool sameFile = !m_savedFile.empty() && m_savedFile == file;
+    const fs::path folder = BlocksFolder(file);
+    std::error_code ec;
+    fs::create_directories(folder, ec);
+    if (ec) {
+        SetError(error, std::format("Não foi possível criar a pasta {}: {}", ToUtf8(folder), ec.message()));
+        return false;
+    }
+    for (auto& [key, block] : m_blocks) {
+        const fs::path blockFile = folder / PathFromUtf8(BlockFileName(key));
+        if (sameFile && !block.dirty && fs::is_regular_file(blockFile, ec)) continue;
+        if (!WriteFileAtomic(blockFile, EncodeBlock(key, block), error)) return false;
+    }
+    nlohmann::ordered_json blocks = nlohmann::ordered_json::array();
+    for (TerrainBlockKey key : Blocks()) blocks.push_back({key.x, key.z});
+    const nlohmann::ordered_json header = {
+        {"format", "motor-terrain"},
+        {"version", kFormatVersion},
+        {"blockSize", m_blockSize},
+        {"resolution", m_resolution},
+        {"blocks", std::move(blocks)},
+    };
+    if (!WriteFileAtomic(file, header.dump(1) + "\n", error)) return false;
+    for (auto& [key, block] : m_blocks) block.dirty = false;
+    m_blocksChanged = false;
+    m_savedFile = file;
+    return true;
+}
+
+std::string TerrainData::EncodeBlock(TerrainBlockKey key, const Block& block) const {
+    std::string bytes;
+    bytes.reserve(20 + block.heights.size() * (sizeof(float) + 4));
+    bytes.append(kBlockMagic, sizeof(kBlockMagic));
+    Put(bytes, kBlockVersion);
+    Put(bytes, static_cast<int32_t>(key.x));
+    Put(bytes, static_cast<int32_t>(key.z));
+    Put(bytes, static_cast<uint32_t>(m_resolution));
+    for (float h : block.heights) Put(bytes, h);
+    for (const glm::vec4& w : block.weights) {
+        for (int c = 0; c < 4; ++c) {
+            Put(bytes, static_cast<uint8_t>(std::lround(std::clamp(w[c], 0.0f, 1.0f) * 255.0f)));
+        }
+    }
+    return bytes;
+}
+
+TerrainData::BlockRead TerrainData::DecodeBlock(std::string_view in, TerrainBlockKey key, Block& block) const {
+    char magic[4] = {};
+    uint32_t version = 0, resolution = 0;
+    int32_t x = 0, z = 0;
+    const bool headerOk = in.size() >= 4 && (std::memcpy(magic, in.data(), 4), in.remove_prefix(4), true) &&
+                          std::memcmp(magic, kBlockMagic, 4) == 0 && Take(in, version) && Take(in, x) && Take(in, z) &&
+                          Take(in, resolution);
+    if (!headerOk || version > kBlockVersion || x != key.x || z != key.z ||
+        resolution != static_cast<uint32_t>(m_resolution) || in.size() < block.heights.size() * sizeof(float)) {
+        return BlockRead::Unreadable;
+    }
+    std::memcpy(block.heights.data(), in.data(), block.heights.size() * sizeof(float));
+    in.remove_prefix(block.heights.size() * sizeof(float));
+    // Versão 1 (antes da pintura): fica tudo na camada 1. Pesos cortados: o que faltar também.
+    if (version < 2) return BlockRead::Ok;
+    if (in.size() < block.weights.size() * 4) return BlockRead::WeightsCut;
+    for (size_t k = 0; k < block.weights.size(); ++k) {
+        glm::vec4 w;
+        for (int c = 0; c < 4; ++c) {
+            w[c] = static_cast<float>(static_cast<uint8_t>(in[k * 4 + static_cast<size_t>(c)])) / 255.0f;
+        }
+        const float sum = w.x + w.y + w.z + w.w;
+        block.weights[k] = sum > 0.0f ? w / sum : glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+    }
+    return BlockRead::Ok;
+}
+
+bool TerrainData::SaveChanges(const fs::path& folder, std::string* error) const {
+    std::error_code ec;
+    fs::create_directories(folder, ec);
+    if (ec) {
+        SetError(error, std::format("Não foi possível criar a pasta {}: {}", ToUtf8(folder), ec.message()));
+        return false;
+    }
+    nlohmann::ordered_json blocks = nlohmann::ordered_json::array(), changed = nlohmann::ordered_json::array();
+    for (const auto& [key, block] : m_blocks) {
+        blocks.push_back({key.x, key.z});
+        if (!block.dirty) continue;
+        changed.push_back({key.x, key.z});
+        if (!WriteFileAtomic(folder / PathFromUtf8(BlockFileName(key)), EncodeBlock(key, block), error)) return false;
+    }
+    // A lista por último: um autossalvamento interrompido no meio fica com a lista anterior, que só cita arquivos já
+    // gravados (um bloco mudado só volta a ficar limpo no Save, que também apaga a recuperação).
+    const nlohmann::ordered_json header = {
+        {"format", "motor-terrain-changes"},
+        {"version", 1},
+        {"blockSize", m_blockSize},
+        {"resolution", m_resolution},
+        {"blocks", std::move(blocks)},
+        {"changed", std::move(changed)},
+    };
+    return WriteFileAtomic(folder / "alteracoes.json", header.dump(1) + "\n", error);
+}
+
+bool TerrainData::ApplyChanges(const fs::path& folder, std::string* error) {
+    const auto text = ReadTextFile(folder / "alteracoes.json");
+    const auto header = text ? nlohmann::json::parse(*text, nullptr, false) : nlohmann::json();
+    if (!header.is_object() || header.value("format", std::string()) != "motor-terrain-changes") {
+        SetError(error, std::format("Alterações do terreno ilegíveis em {}", ToUtf8(folder)));
+        return false;
+    }
+    if (header.value("resolution", 0) != m_resolution || header.value("blockSize", 0.0f) != m_blockSize) {
+        SetError(error, "As alterações guardadas são de um terreno com outro tamanho de bloco ou resolução");
+        return false;
+    }
+    const auto keysOf = [&](const char* name) {
+        std::vector<TerrainBlockKey> keys;
+        if (const auto it = header.find(name); it != header.end() && it->is_array()) {
+            for (const auto& entry : *it) {
+                if (entry.is_array() && entry.size() == 2 && entry[0].is_number_integer() &&
+                    entry[1].is_number_integer()) {
+                    keys.push_back({entry[0].get<int>(), entry[1].get<int>()});
+                }
+            }
+        }
+        return keys;
+    };
+    const std::vector<TerrainBlockKey> blocks = keysOf("blocks");
+    for (const TerrainBlockKey key : Blocks()) {
+        if (std::find(blocks.begin(), blocks.end(), key) == blocks.end()) RemoveBlock(key);
+    }
+    for (const TerrainBlockKey key : blocks) AddBlock(key);
+    std::vector<std::string> problems;
+    for (const TerrainBlockKey key : keysOf("changed")) {
+        Block* block = Find(key);
+        if (!block) continue;
+        const std::string name = BlockFileName(key);
+        const auto bytes = ReadTextFile(folder / PathFromUtf8(name));
+        if (!bytes || DecodeBlock(*bytes, key, *block) == BlockRead::Unreadable) {
+            problems.push_back(name);
+            continue;
+        }
+        block->dirty = true;
+        ++block->weightsVersion;
+        // As normais da borda dos vizinhos também mudam (como no Touch).
+        for (int dz = -1; dz <= 1; ++dz) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (Block* n = Find({key.x + dx, key.z + dz})) ++n->version;
+            }
+        }
+    }
+    ++m_version;
+    if (!problems.empty()) {
+        SetError(error, std::format("{} bloco(s) ilegível(is) nas alterações guardadas (o primeiro: {})",
+                                    problems.size(), problems.front()));
+        return false;
+    }
+    return true;
+}
+
+std::shared_ptr<TerrainData> TerrainData::Load(const fs::path& file, std::string* error) {
+    const auto text = ReadTextFile(file);
+    if (!text) {
+        SetError(error, std::format("Não foi possível abrir {}", ToUtf8(file)));
+        return nullptr;
+    }
+    const auto header = nlohmann::json::parse(*text, nullptr, false);
+    if (!header.is_object() || header.value("format", std::string()) != "motor-terrain") {
+        SetError(error, std::format("{} não é um terreno do Motor", ToUtf8(file)));
+        return nullptr;
+    }
+    if (header.value("version", 0) > kFormatVersion) {
+        SetError(error, std::format("{} é de uma versão mais nova do Motor", ToUtf8(file)));
+        return nullptr;
+    }
+    auto data = std::make_shared<TerrainData>(header.value("blockSize", kDefaultBlockSize),
+                                              header.value("resolution", kDefaultResolution));
+    const fs::path folder = BlocksFolder(file);
+    std::vector<std::string> problems;
+    if (const auto it = header.find("blocks"); it != header.end() && it->is_array()) {
+        for (const auto& entry : *it) {
+            if (!entry.is_array() || entry.size() != 2 || !entry[0].is_number_integer() || !entry[1].is_number_integer()) {
+                continue;
+            }
+            const TerrainBlockKey key{entry[0].get<int>(), entry[1].get<int>()};
+            data->AddBlock(key);
+            Block& block = data->m_blocks[key];
+            block.dirty = false;
+            const std::string name = BlockFileName(key);
+            const auto bytes = ReadTextFile(folder / PathFromUtf8(name));
+            const BlockRead read = bytes ? data->DecodeBlock(*bytes, key, block) : BlockRead::Unreadable;
+            if (!bytes) {
+                problems.push_back(std::format("bloco {} não encontrado", name));
+            } else if (read == BlockRead::Unreadable) {
+                problems.push_back(std::format("bloco {} ilegível", name));
+            } else {
+                if (read == BlockRead::WeightsCut) {
+                    log::Warn("Terreno {}: pesos do bloco {} cortados; o bloco ficou só na camada 1",
+                              ToUtf8(file.filename()), name);
+                }
+                continue;
+            }
+            block.dirty = true;  // plano: gravar de novo quando salvar
+        }
+    }
+    data->m_savedFile = file;
+    data->m_blocksChanged = false;  // os blocos são os do cabeçalho
+    data->m_version = 1;
+    if (!problems.empty()) {
+        std::string message = std::format("Terreno {}: ", ToUtf8(file.filename()));
+        for (size_t i = 0; i < problems.size() && i < 5; ++i) message += (i ? "; " : "") + problems[i];
+        if (problems.size() > 5) message += std::format(" (e mais {})", problems.size() - 5);
+        message += ". Ficaram planos.";
+        log::Warn("{}", message);
+        SetError(error, std::move(message));
+    }
+    return data;
+}
+
+std::shared_ptr<TerrainData> TerrainData::Open(const fs::path& file, std::string* error) {
+    static std::mutex mutex;
+    static std::map<fs::path, std::weak_ptr<TerrainData>> open;
+    const fs::path key = file.lexically_normal();
+    std::lock_guard lock(mutex);
+    if (auto it = open.find(key); it != open.end()) {
+        if (auto data = it->second.lock()) return data;
+    }
+    auto data = Load(file, error);
+    if (data) open[key] = data;
+    return data;
+}
+
+} // namespace motor

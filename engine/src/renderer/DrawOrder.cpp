@@ -25,6 +25,7 @@ ShadowParams ShadowParamsOf(const Material& m) {
     if (cutout && !m.albedo) p.cutoff = m.color.a < m.alphaCutoff ? 2.0f : -1.0f;  // sem textura: tudo ou nada
     p.alpha = m.color.a;
     p.albedo = cutout ? m.albedo.get() : nullptr;
+    p.backFacesOnly = m.terrain != nullptr;
     return p;
 }
 
@@ -38,6 +39,7 @@ size_t MaterialKeyHash::operator()(const MaterialKey& key) const {
     for (const Texture2D* t : {p.albedo, p.normalMap, p.metallicRoughnessMap, p.occlusionMap, p.emissiveMap}) {
         Combine(seed, std::hash<const void*>{}(t));
     }
+    Combine(seed, std::hash<const void*>{}(p.terrain));
     return seed;
 }
 
@@ -45,6 +47,7 @@ size_t ShadowParamsHash::operator()(const ShadowParams& p) const {
     size_t seed = std::bit_cast<uint32_t>(p.cutoff);
     Combine(seed, std::bit_cast<uint32_t>(p.alpha));
     Combine(seed, std::hash<const void*>{}(p.albedo));
+    Combine(seed, p.backFacesOnly ? 1 : 0);
     return seed;
 }
 

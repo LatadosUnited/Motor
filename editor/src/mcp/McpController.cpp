@@ -146,6 +146,7 @@ McpController::McpController(Host host)
     });
     mcp::AddSceneTools(m_protocol, m_host.ctx, [this] { return m_host.play.Runtime(); });
     mcp::AddNavTools(m_protocol, m_host.ctx, [this] { return m_host.play.Runtime(); });
+    mcp::AddTerrainTools(m_protocol, m_host.ctx);
     AddEditorTools();
     AddSceneFileTools();
     AddAssetTools();

@@ -20,5 +20,13 @@ motor_add_layer(renderer
         Sky.cpp
         GpuTimers.cpp
         GpuMemory.cpp
+        SpatialGrid.cpp
+        RenderWorld.cpp
+        Water.cpp
+        RendererWater.cpp
+        GpuAllocators.cpp
+        MeshPool.cpp
+        StreamBuffer.cpp
+        TerrainWeights.cpp
     DEPENDS core
     PRIVATE_LIBS glfw)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "motor/renderer/Environment.h"
+#include "motor/renderer/RenderWorld.h"
 #include "motor/scene/Component.h"
 #include "motor/scene/Components.h"
 #include "motor/scene/Transform.h"
@@ -79,6 +80,10 @@ struct Entity {
     void Remove(const ComponentType& type);
 
     mutable EntityCache cache;  // interno da Scene (WorldMatrix, IsActiveInHierarchy)
+
+    // As entidades ficam em blocos contínuos (BlockPool, Fase 28), na ordem de criação, como os componentes.
+    static void* operator new(size_t size);
+    static void operator delete(void* p, size_t size);
 
 private:
     template <class T>
@@ -174,10 +179,19 @@ public:
     // Render = BeginScene + SubmitTo + EndScene. SubmitTo serve para quem quer desenhar algo a mais na mesma passada.
     void Render(Renderer& renderer, const Camera& camera, const Framebuffer* target = nullptr) const;
     void SubmitTo(Renderer& renderer) const;
+    // Os Mesh Renderer estáticos (Fase 28) vão para o renderer guardados (RenderWorld), refeitos só quando a estrutura
+    // da cena muda ou depois desta chamada: quem muda um estático (posição, malha, material) avisa aqui. O editor
+    // avisa a cada edição; no jogo, os scripts.
+    void MarkRenderDirty() { m_static.dirty = true; }
+    // Quantos objetos estáticos estão guardados para o renderer (depois do último SubmitTo).
+    size_t StaticRenderCount() const { return m_static.world.Count(); }
 
     // Raio contra os triângulos das malhas visíveis (cópia na CPU da Mesh; malhas com pele, na pose de repouso).
     // direction não precisa ser normalizada; `distance` é medida em unidades de direction.
     std::optional<RaycastHit> Raycast(const glm::vec3& origin, const glm::vec3& direction) const;
+    // Raio contra as águas ativas (o retângulo de cada uma na altura de repouso, sem as ondas, dos dois lados). À parte
+    // do Raycast: quem procura o chão ou o fundo (water_info, soltar textura) não deve parar na superfície.
+    std::optional<RaycastHit> RaycastWater(const glm::vec3& origin, const glm::vec3& direction) const;
 
     // Céu, neblina e luz ambiente. As luzes com direção são entidades com o componente Luz.
     Environment environment;
@@ -187,6 +201,11 @@ private:
 
     const Entity* ParentOf(const Entity& e) const;  // Find(e.parent) sem a busca, se a estrutura não mudou
     const glm::mat4& CachedWorld(const Entity& e) const;
+    // m_meshList e os estáticos (m_static) em dia com a cena; false se não há Mesh Renderer nem terreno.
+    bool SyncRenderLists() const;
+    // Só os blocos de terreno mudados (pincel): troca no RenderWorld os de outra versão, tira os que saíram e põe os
+    // novos. false se não dá (a textura dos pesos foi trocada): então refaz tudo.
+    bool UpdateTerrainBlocks() const;
 
     // Mudança guardada para o índice, aplicada na próxima consulta (UpdateIndex). As listas ficam ordenadas por id,
     // que é a ordem da cena: as entidades só entram no fim e os ids só crescem (a cópia preserva os dois).
@@ -233,6 +252,49 @@ private:
         }
     };
     mutable MeshList m_meshList;
+
+    // SubmitTo (Fase 28): os estáticos guardados para o renderer. Aponta para os componentes desta cena: cópia e
+    // movimento começam vazios (e sujos).
+    struct StaticRender {
+        RenderWorld world;
+        // id no world -> de onde veio (Raycast): a entidade, a malha (do MeshRenderer ou de um bloco do terreno) e a
+        // matriz de mundo usada.
+        struct Source {
+            EntityId entity = kNullEntity;
+            const Mesh* mesh = nullptr;
+            glm::mat4 model{1.0f};
+            const TerrainData* terrain = nullptr;  // bloco de terreno: o raio anda pela grade de alturas dele
+            TerrainBlockKey key;
+            uint64_t blockVersion = 0;  // TerrainData::BlockVersion da malha registrada
+        };
+        std::vector<Source> sources;
+        // Cada terreno registrado: a versão vista e o objeto base dos blocos (material de todos, matriz do terreno).
+        struct TerrainSource {
+            EntityId entity = kNullEntity;
+            const TerrainData* data = nullptr;
+            uint64_t version = 0;
+            RenderObject object;
+        };
+        std::vector<TerrainSource> terrainSources;
+        uint64_t terrains = 0;  // soma das versões dos terrenos (TerrainData::Version): mudou, refaz
+        std::vector<float> enter;        // Raycast: entrada do raio na caixa de cada acerto da grade
+        std::vector<uint32_t> dynamic;  // posições em m_meshList.items dos que não são estáticos
+        uint64_t version = UINT64_MAX;
+        bool dirty = true;
+        StaticRender() = default;
+        StaticRender(const StaticRender&) {}
+        StaticRender& operator=(const StaticRender&) {
+            world.Clear();
+            sources.clear();
+            terrainSources.clear();
+            dynamic.clear();
+            version = UINT64_MAX;
+            dirty = true;
+            return *this;
+        }
+    };
+    mutable StaticRender m_static;
+    static void AddTerrainBlock(StaticRender& statics, const StaticRender::TerrainSource& terrain, TerrainBlockKey key);
 };
 
 } // namespace motor

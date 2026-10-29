@@ -272,6 +272,7 @@ void PhysicsSystem::World::SyncBodies(Scene& scene, float dt) {
     }
 
     if (sweep) RemoveUnseenBodies();
+    SyncTerrains(scene, addStatic);
 
     auto addBatch = [&](std::vector<JPH::BodyID>& ids, JPH::EActivation activation) {
         if (ids.empty()) return;

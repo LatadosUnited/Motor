@@ -1,6 +1,7 @@
 #include "motor/scene/Component.h"
 
 #include "motor/assets/AssetLibrary.h"
+#include "motor/scene/BlockPool.h"
 #include "motor/scene/Components.h"
 
 #include <algorithm>
@@ -60,15 +61,40 @@ ComponentRegistry& ComponentRegistry::Instance() {
 }
 
 ComponentType& ComponentRegistry::AddType(std::string_view name, std::string_view label, const std::type_info* cppType,
-                                          void* (*create)(), void* (*clone)(const void*), void (*destroy)(void*),
+                                          size_t size, size_t alignment, void (*construct)(void*),
+                                          void (*copy)(void*, const void*), void (*destruct)(void*),
                                           Script* (*asScript)(void*)) {
     auto type = std::make_unique<ComponentType>();
     type->name = std::string(name);
     type->label = std::string(label);
     type->cppType = cppType;
-    type->create = create;
-    type->clone = clone;
-    type->destroy = destroy;
+    // Os componentes de um tipo ficam em blocos contínuos (Fase 28): criados em sequência (carregar a cena), lado a
+    // lado. O pool é do nome e do tamanho: um script recarregado com a mesma forma volta para o mesmo.
+    BlockPool* pool = &BlockPool::For(name, size, alignment);
+    type->create = [pool, construct]() -> void* {
+        void* p = pool->Allocate();
+        try {
+            construct(p);
+        } catch (...) {
+            pool->Free(p);
+            throw;
+        }
+        return p;
+    };
+    type->clone = [pool, copy](const void* source) -> void* {
+        void* p = pool->Allocate();
+        try {
+            copy(p, source);
+        } catch (...) {
+            pool->Free(p);
+            throw;
+        }
+        return p;
+    };
+    type->destroy = [pool, destruct](void* p) {
+        destruct(p);
+        pool->Free(p);
+    };
     if (asScript) type->asScript = asScript;
     ComponentType& ref = *type;
     m_types.push_back(std::move(type));

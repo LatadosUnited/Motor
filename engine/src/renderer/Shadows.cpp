@@ -57,7 +57,7 @@ ShadowRenderer::Variant ShadowRenderer::MakeVariant(const std::filesystem::path&
     Shader& s = *v.shader;
     const bool point = defines.find("POINT") != std::string_view::npos;
     v.uniforms = {s.Uniform("uLightViewProjection"), point ? s.Uniform("uLightPositionRange") : -1,
-                  s.Uniform("uDrawBase"), s.Uniform("uAlphaCutoff"), s.Uniform("uColorAlpha")};
+                  s.Uniform("uAlphaCutoff"), s.Uniform("uColorAlpha")};
     return v;
 }
 
@@ -108,10 +108,14 @@ void ShadowRenderer::BuildPasses(std::span<const DrawItem> items, const ShadowOr
         for (size_t i = begin; i < end; ++i) {
             const DrawItem& item = items[i];
             uint32_t mask = 0;
-            // Vidro e água não fazem sombra.
+            // Vidro e água não fazem sombra. Do RenderWorld, as passadas já saíram da grade (Fase 28).
             if (!item.transparent && item.shadows != ShadowCasting::Off) {
-                for (size_t p = 0; p < m_passCount; ++p) {
-                    if (!m_passes[p].skip && m_passes[p].frustum.Intersects(item.bounds)) mask |= 1u << p;
+                if (item.retained) {
+                    mask = item.shadowMask;
+                } else {
+                    for (size_t p = 0; p < m_passCount; ++p) {
+                        if (!m_passes[p].skip && m_passes[p].frustum.Intersects(item.bounds)) mask |= 1u << p;
+                    }
                 }
             }
             m_masks[i] = mask;
@@ -140,8 +144,8 @@ void ShadowRenderer::BuildPasses(std::span<const DrawItem> items, const ShadowOr
     });
 }
 
-void ShadowRenderer::DrawPass(const Pass& pass, InstanceBuffers& instances, const ShadowOrder& order,
-                              const JointUploader& uploadJoints, RenderStats& stats) {
+void ShadowRenderer::DrawPass(const Pass& pass, const glm::vec3& origin, InstanceBuffers& instances,
+                              const ShadowOrder& order, const JointUploader& uploadJoints, RenderStats& stats) {
     const float clearDepth = 1.0f;
     glViewport(0, 0, pass.resolution, pass.resolution);
     glNamedFramebufferTextureLayer(m_fbo, GL_DEPTH_ATTACHMENT, pass.texture, 0, pass.layer);
@@ -149,22 +153,38 @@ void ShadowRenderer::DrawPass(const Pass& pass, InstanceBuffers& instances, cons
     if (pass.skip) return;
     ++stats.shadowPasses;
     if (pass.batches.empty()) return;
-    instances.UploadIndices(pass.indices);
+    instances.UploadPass(pass.indices, pass.batches);
 
     Variant& base = pass.point ? m_point : m_directional;
     Variant& skinned = pass.point ? m_pointSkinned : m_directionalSkinned;
     for (Variant* v : {&base, &skinned}) {
-        v->shader->SetMat4(v->uniforms.lightViewProjection, pass.viewProjection);
-        if (pass.point) v->shader->SetVec4(v->uniforms.lightPositionRange, pass.positionRange);
+        // As passadas ficam no mundo (recorte e cache das cascatas); o buffer de objetos é relativo à câmera.
+        v->shader->SetMat4(v->uniforms.lightViewProjection, RelativeToOrigin(pass.viewProjection, origin));
+        if (pass.point) {
+            v->shader->SetVec4(v->uniforms.lightPositionRange, pass.positionRange - glm::vec4(origin, 0.0f));
+        }
     }
     const Variant* bound = nullptr;
     // Recorte e alfa do lote anterior (por shader): o mesmo valor seguido não reenvia nada.
     const Variant* paramsVariant = nullptr;
     const ShadowParams* lastParams = nullptr;
     GLuint lastAlbedo = 0;
-    for (const DrawBatch& batch : pass.batches) {
+    // Lotes seguidos com o mesmo recorte e alfa, sem pele e na mesma malha-VAO (todas sem pele dividem um) saem num
+    // draw indireto só (Fase 28): numa passada sem recorte, em geral um draw para tudo.
+    const std::vector<DrawBatch>& batches = pass.batches;
+    auto vao = [](const DrawBatch& b) { return b.first->mesh->Gpu().vao; };
+    for (size_t i = 0; i < batches.size();) {
+        const DrawBatch& batch = batches[i];
         const DrawItem& item = *batch.first;
-        const ShadowParams& params = (*order.params)[order.keys[batch.firstIndex].material];
+        const uint32_t paramsId = order.keys[batch.firstIndex].material;
+        size_t end = i + 1;
+        if (!item.skinned) {
+            while (end < batches.size() && !batches[end].first->skinned &&
+                   order.keys[batches[end].firstIndex].material == paramsId && vao(batches[end]) == vao(batch)) {
+                ++end;
+            }
+        }
+        const ShadowParams& params = (*order.params)[paramsId];
         Variant& variant = item.skinned ? skinned : base;
         Shader& shader = *variant.shader;
         if (bound != &variant) {
@@ -175,6 +195,13 @@ void ShadowRenderer::DrawPass(const Pass& pass, InstanceBuffers& instances, cons
         if (paramsVariant != &variant || !lastParams || !(params == *lastParams)) {
             shader.SetFloat(variant.uniforms.alphaCutoff, params.cutoff);
             shader.SetFloat(variant.uniforms.colorAlpha, params.alpha);
+            // Só nas cascatas: as faces dos cubos têm a imagem espelhada (a ordem dos vértices vira).
+            if (params.backFacesOnly && !pass.point) {
+                glEnable(GL_CULL_FACE);
+                glCullFace(GL_FRONT);
+            } else {
+                glDisable(GL_CULL_FACE);
+            }
             paramsVariant = &variant;
             lastParams = &params;
         }
@@ -182,27 +209,31 @@ void ShadowRenderer::DrawPass(const Pass& pass, InstanceBuffers& instances, cons
             lastAlbedo = params.albedo->NativeHandle();
             params.albedo->Bind(0);
         }
-        shader.SetInt(variant.uniforms.drawBase, static_cast<int>(batch.start));
-        item.mesh->DrawInstanced(batch.count);
+        instances.Draw(i, end - i);
         ++stats.drawCalls;
         ++stats.shadowDrawCalls;
+        i = end;
     }
 }
 
-ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<const Light> lights, const Environment& env,
-                                              std::span<const DrawItem> items, InstanceBuffers& instances,
-                                              const ShadowOrder& order, const JointUploader& uploadJoints,
-                                              RenderStats& stats) {
-    Result result;
-    result.cubeLayer.assign(lights.size(), -1);
+void ShadowRenderer::Plan(const Camera& camera, std::span<const Light> lights, const Environment& env) {
+    m_planned = Result{};
+    m_planned.cubeLayer.assign(lights.size(), -1);
     const float distance = std::clamp(env.shadowDistance, 1.0f, std::max(camera.farPlane, 1.0f));
-    // Primeiro as passadas do quadro (cascatas e faces de cubo), depois as listas de todas em paralelo, por fim o
-    // desenho. Até 4 cascatas e 6 faces por luz pontual: um bit de m_masks por passada.
+    // Primeiro as passadas do quadro (cascatas e faces de cubo); no Render, as listas de todas em paralelo e o
+    // desenho. Até 4 cascatas e 6 faces por luz pontual: um bit de m_masks (e do shadowMask dos itens) por passada.
     static_assert(kCascades + 6 * kMaxPointShadows <= 32);
     m_passes.resize(kCascades + 6 * kMaxPointShadows);
     m_passCount = 0;
-    const size_t cascadePasses = AddCascadePasses(camera, lights, distance, result);
-    AddCubePasses(camera, lights, distance, result);
+    m_cascadePasses = AddCascadePasses(camera, lights, distance, m_planned);
+    AddCubePasses(camera, lights, distance, m_planned);
+}
+
+ShadowRenderer::Result ShadowRenderer::Render(const glm::vec3& origin, std::span<const DrawItem> items,
+                                              InstanceBuffers& instances, const ShadowOrder& order,
+                                              const JointUploader& uploadJoints, RenderStats& stats) {
+    Result result = std::move(m_planned);
+    const size_t cascadePasses = m_cascadePasses;
     if (m_passCount > 0) BuildPasses(items, order);
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
@@ -217,10 +248,12 @@ ShadowRenderer::Result ShadowRenderer::Render(const Camera& camera, std::span<co
     glPolygonOffset(1.5f, 2.0f);
     for (size_t p = 0; p < m_passCount; ++p) {
         if (p == cascadePasses) glDisable(GL_POLYGON_OFFSET_FILL);
-        DrawPass(m_passes[p], instances, order, uploadJoints, stats);
+        DrawPass(m_passes[p], origin, instances, order, uploadJoints, stats);
     }
     glDisable(GL_POLYGON_OFFSET_FILL);
     glNamedFramebufferTexture(m_fbo, GL_DEPTH_ATTACHMENT, 0, 0);
+    // O lit.frag lê as cascatas com a posição relativa à câmera.
+    for (glm::mat4& matrix : result.data.cascadeMatrices) matrix = RelativeToOrigin(matrix, origin);
     return result;
 }
 

@@ -26,6 +26,15 @@ Aabb TransformAabb(const Aabb& box, const glm::mat4& m);
 // mesmo em todos os vértices do objeto, então a interpolação não muda).
 glm::mat3 NormalMatrix(const glm::mat4& model);
 
+// Renderização relativa à câmera (Fase 28): a GPU recebe as posições já menos `origin` (a câmera), então as contas
+// dos shaders ficam com números pequenos perto da câmera e não tremem longe da origem do mundo. A CPU continua no
+// mundo (recorte, LOD, cascatas); só o que vai para a GPU passa por estas.
+// A vista da câmera para pontos relativos a ela é Camera::ViewRotation.
+// Uma matriz do mundo (projeção*vista da luz) aplicada a pontos relativos: m * translate(origin), contada em double.
+glm::mat4 RelativeToOrigin(const glm::mat4& m, const glm::vec3& origin);
+// Matriz de mundo de um objeto com a translação menos `origin`.
+glm::mat4 ModelRelativeToOrigin(const glm::mat4& model, const glm::vec3& origin);
+
 // Os seis planos de uma matriz de projeção*vista (normais para dentro).
 struct Frustum {
     std::array<glm::vec4, 6> planes{};  // esquerda, direita, baixo, cima, perto, longe

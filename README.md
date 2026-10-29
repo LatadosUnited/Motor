@@ -428,7 +428,8 @@ entity.Remove<Girar>();
   estado interno).
 - No Inspector, o X do cabeçalho remove o componente; clique direito no cabeçalho tem "Redefinir valores".
 - Componentes da engine hoje: **Mesh Renderer** (malha e material: textura, cor, metal, rugosidade,
-  reflexo, mapas e emissão) e **Câmera**
+  reflexo, mapas e emissão; **Estático** para cenário que não se mexe no jogo: o renderer o guarda entre quadros, e
+  um script que mexer nele chama `GetScene().MarkRenderDirty()`) e **Câmera**
   (campo de visão, planos perto/longe, principal). A câmera olha para o -Z local da entidade; no Play vale
   a primeira câmera ativa marcada como principal (senão, a primeira ativa). Entidade > Câmera cria uma.
 - **Luz**: tipo (direcional, pontual ou spot), cor, intensidade, alcance (pontual e spot) e ângulos interno/
@@ -440,12 +441,56 @@ entity.Remove<Girar>();
   que o cone alcança), até 4 ao mesmo tempo (as mais perto da câmera que iluminam algo visível). Funciona com
   malhas animadas.
   Entidade > Luz direcional / pontual / spot cria uma. Céu, neblina e **luz ambiente** ficam no painel Cena.
+- **Terreno** (Fase 28): mapa de altura em blocos de 32 m (33 x 33 alturas, 1 m entre elas), num asset
+  `.mterrain` (cabeçalho) com a pasta `.blocos` ao lado (um arquivo `x_z.mtbloco` por bloco: o mundo grande carrega
+  um bloco sem os outros). O painel Projeto move, copia e manda para a Lixeira a pasta junto com o `.mterrain`, e a
+  exportação a leva. Campos: Terreno (o arquivo), Material, as 4 camadas (textura, cor e escala: metros por
+  repetição; a camada 1 é a textura e a cor do material), Rugosidade, Sombra, e os da física: Colisão (ligada por
+  padrão), Atrito e Camada (de colisão).
+  **Física:** com Colisão, cada bloco vira um corpo estático da Jolt (height field) com as mesmas alturas e
+  triângulos que o desenho, sem precisar de Collider: o personagem anda no terreno, corpos caem e rolam nele, e o
+  `Raycast` da física e os eventos de contato devolvem a entidade do terreno. Posição, rotação e escala da entidade
+  valem; mudar as alturas em Play refaz só os corpos dos blocos mudados (pintar não refaz nenhum).
+  **LOD:** cada bloco tem 4 níveis mais simples (uma amostra a cada 2, 4, 8 e 16 no miolo, a partir de ~80, 160, 320
+  e 640 m com blocos de 32 m; `Renderer::SetLodBias` estica ou encurta essas distâncias), todos com a borda inteira
+  do bloco: vizinhos em níveis diferentes não abrem frestas. O nível mais simples tem 136 triângulos (o bloco
+  cheio, 2048). A física, o raio e os pincéis usam sempre o bloco cheio.
+  Os blocos são desenhados como estáticos, na posição da entidade, e o clique no viewport os acerta; a pincelada
+  troca só os blocos mudados, sem remontar os estáticos da cena. Todos usam o
+  mesmo material: os pesos da pintura de todos os blocos ficam numa textura só (`TerrainWeights`, uma camada de
+  array por bloco e um índice de onde cada bloco está), e os blocos vão juntos no mesmo lote de desenho pela GPU, do mais
+  perto ao mais longe. O pixel do terreno só tem luz difusa do sol e das luzes (o reflexo do céu continua), e a
+  sombra que o terreno faz vem das faces de costas para o sol. Entidade >
+  Terreno (ou `entity_create` com `kind: "terrain"` no MCP) cria um plano de 128 x 128 m em `Assets/Terrenos`.
+  **Pincéis:** no Inspector do Terreno, escolha Subir, Baixar, Suavizar, Nivelar (na altura de onde a pincelada
+  começou) ou Pintar (a camada 1 a 4; sem textura, as camadas 2 a 4 já vêm com cores de terra, rocha e areia), o raio
+  e a força; no Viewport, o círculo segue o mouse sobre o terreno selecionado e arrastar com o botão
+  esquerdo pinta (Selecionar ou Esc no Viewport volta ao clique que seleciona; o gizmo some enquanto o pincel está
+  ligado). Cada pincelada é um passo de desfazer e marca a cena como não salva; salvar a cena grava só os blocos
+  mudados e manda para a Lixeira o arquivo dos blocos tirados. O autossalvamento de recuperação guarda também os
+  blocos mudados (só eles), que voltam por cima do terreno do disco ao recuperar a cena. Pelo MCP: `terrain_brush` (pincelada), `terrain_info` (blocos, caixa e, sob pontos, altura, inclinação e
+  pesos), `terrain_heights` (ler ou gravar um retângulo de até 257 x 257 alturas: um número ou as linhas, `set` ou
+  `add`) e `terrain_blocks` (pôr ou tirar blocos, por lista ou retângulo); todos com desfazer. Bloco novo começa com
+  a borda dos vizinhos que já existem (sem degrau). Dados e arquivos em `motor/assets/TerrainData.h`, pincéis em
+  `motor/assets/TerrainBrush.h`, corpos em `engine/src/physics/PhysicsTerrain.cpp`.
+- **Água** (Fase 28): componente Água, um retângulo de água do Tamanho dado centrado na entidade (Entidade > Água,
+  ou `entity_create` com `kind: "water"`: 100 x 100 m). Ondas de Gerstner (altura, comprimento, velocidade e direção;
+  4 ondas em volta da direção, mais ondulações pequenas na luz), reflexo do céu com Fresnel, refração do que está
+  por baixo (distorcida pelas ondas), cor rasa e funda pela espessura da água até o fundo (Transparência = metros até
+  o fundo sumir) e espuma onde a água encontra o chão ou objetos. A água é desenhada depois dos opacos e do céu,
+  lendo uma cópia da cor da cena (só do retângulo da tela que a água cobre) e a profundidade direto (com MSAA, a
+  amostra 0), sem gravar profundidade (uma passada só de profundidade vem depois se algo ainda for desenhado por cima)
+  (`Renderer::SubmitWater`, `motor/renderer/Water.h`); `WaterSurface::WaveOffset` dá na CPU a mesma altura das ondas
+  do shader. As ondas andam com o tempo do jogo no Play e no jogo exportado (param com a pausa) e com o relógio no
+  editor fora do Play. Sem física (não segura nada nem entra nos raios da física); o clique no viewport seleciona a
+  água (`Scene::RaycastWater`). Pelo MCP, `water_info`: os cantos e, sob pontos, se estão dentro, a altura da
+  superfície com as ondas num tempo dado, o fundo, a profundidade e se o ponto está seco (chão acima da água).
 
 ### Renderização (Fase 7)
 
 O renderer desenha em passadas no `EndScene` (os `Submit*` só guardam o pedido):
 mapas de sombra → cena em **HDR** (RGBA16F, MSAA 4x) com o céu ao fundo → **bloom** → **tone mapping**
-(ACES, Reinhard ou nenhum) e gama → **FXAA** → contornos do editor por cima.
+(ACES, Reinhard ou nenhum) e gama → **FXAA** (só sem MSAA) → contornos do editor por cima.
 
 - **PBR** de metal/rugosidade (Cook-Torrance com GGX), mapas de normal sem tangentes nos vértices (base pelas
   derivadas da tela, vale também com pele), oclusão e emissão (que o bloom faz brilhar).
@@ -453,8 +498,9 @@ mapas de sombra → cena em **HDR** (RGBA16F, MSAA 4x) com o céu ao fundo → *
   equirretangular** (`.hdr` do projeto, asset "Céu HDR"), com brilho e rotação. O céu também **ilumina a
   cena**: luz difusa em harmônicos esféricos e reflexos de um cubemap pré-filtrado por rugosidade, com a
   tabela da BRDF; "Luz do céu" ajusta quanto. A neblina usa a cor do horizonte.
-- **Pós-processamento** (painel Cena): exposição, tone mapping, bloom (intensidade e limiar) e FXAA. A
-  distância das sombras da luz direcional também fica lá. Tudo entra no desfazer e na cena (versão 6).
+- **Pós-processamento** (painel Cena): exposição, tone mapping, bloom (intensidade e limiar) e FXAA (ignorado
+  com MSAA, que já suaviza as bordas). A distância das sombras da luz direcional também fica lá. Tudo entra no
+  desfazer e na cena (versão 6).
 - O viewport mostra os contadores: FPS, draws (e quantos foram para as sombras, em quantos passes), triângulos.
 - Base para efeitos de ambiente (água, partículas): `Renderer::SceneDepthTexture()` (profundidade da cena),
   `SceneColorTexture()` (luz HDR antes do pós), `SkyCubemap()` e `ReflectionCubemap()` (céu e reflexo).
@@ -890,7 +936,7 @@ Claude Code vê e mexe no editor pelas mesmas operações da interface, sem simu
   | Grupo | Ferramentas |
   |---|---|
   | Situação | `editor_status`, `scene_tree`, `entity_get` (no Play, também o estado do jogo: clipe do Animator, no chão, velocidade), `component_types`, `log_read`, `events_read` (o que mudou no editor: seleção, cena, Play, scripts), `docs_read` (documentação de scripts desta versão; o `editor_status` mostra em `script_reference` as pastas da documentação e dos headers do SDK) |
-  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `undo`, `redo` |
+  | Cena | `entity_create`, `entity_update`, `entity_delete`, `entity_duplicate`, `entity_copy`, `entity_cut`, `entity_paste`, `select`, `scene_search`, `component_add`, `component_remove`, `component_set`, `scene_environment`, `terrain_brush` (uma pincelada no terreno por uma lista de pontos: relevo ou pintura de uma camada), `terrain_info`, `terrain_heights`, `terrain_blocks`, `water_info`, `undo`, `redo` |
   | Arquivos | `project_create`, `scene_save`, `scene_open`, `scene_new`, `assets_list`, `prefab_instantiate`, `prefab_create`, `asset_apply` |
   | Jogo | `play` (play/pause/resume/step/stop; `wait` responde quando valeu), `game_key` (teclas só para o jogo), `game_mouse` (movimento, botões e roda), `game_text` (texto digitado), `game_gamepad` (até 4 controles), `ui_click` (botões do HUD), `audio_status` (sons tocando, ouvinte, nível da saída) |
 | Navegação | `nav_bake` (gera e grava o navmesh, como o botão Gerar), `nav_path` (caminho entre dois pontos: cantos, comprimento, se chega), `nav_agents` (agentes e raio; no Play, caminho, velocidade, chegada, ligação e vizinhos de quem desvia), `ai_perception` (olhos, cone e alcances de cada Percepção e os alvos; no Play, quem vê, o que ouviu e o que lembra) |

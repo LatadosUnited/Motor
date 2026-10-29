@@ -1,6 +1,6 @@
 ---
 tipo: guia
-atualizado: 2026-10-18
+atualizado: 2026-10-27
 ---
 
 # Referência da API dos scripts
@@ -17,7 +17,7 @@ O teste `test_script_docs` confere que esta página cita todos os métodos públ
 estão aqui. Mudou um desses
 headers? Atualize aqui.
 
-Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 22 (`ScriptModule.h`). Ela sobe
+Versão da interface entre o editor e a DLL de scripts: `kScriptApiVersion` = 30 (`ScriptModule.h`). Ela sobe
 quando a interface muda de forma incompatível; o editor recusa uma DLL compilada com outra versão (basta
 recompilar os scripts).
 
@@ -383,6 +383,7 @@ O que é útil num script (pelo `GetScene()`):
 | `std::vector<EntityId> Children(EntityId parent)` | os filhos (`kNullEntity` = as raízes) |
 | `glm::mat4 WorldMatrix(EntityId id)` | matriz no mundo; posição = `glm::vec3(m[3])`, frente = `-glm::normalize(glm::vec3(m[2]))` |
 | `void SetWorldMatrix(EntityId id, const glm::mat4& world)` | põe a entidade nessa matriz do mundo |
+| `void MarkRenderDirty()` | depois de mexer num Mesh Renderer estático (posição, malha, material): o renderer refaz os estáticos no próximo quadro |
 | `bool SetParent(EntityId id, EntityId parent, bool keepWorld = true)` | muda o pai (falso se criar um ciclo) |
 | `bool IsActiveInHierarchy(EntityId id)` | ativa e com todos os pais ativos |
 | `EntityId FindMainCamera()` | a câmera do jogo |
@@ -412,7 +413,7 @@ Todos em `ScriptModule.h` (via `motor/scene/Components.h`).
 
 | Tipo | No editor | Campos |
 |---|---|---|
-| `motor::MeshRenderer` | Mesh Renderer | `std::shared_ptr<Mesh> mesh`; `std::shared_ptr<Material> sharedMaterial` (asset `.mmat`, compartilhado; nulo = sem asset); `Material material` (o próprio, usado só sem asset) com `glm::vec4 color`, `std::shared_ptr<Texture2D> albedo`, `float metallic`, `float roughness`, `float specular` (reflexo dos não metais, 0.5 = 4%), mapas `normalMap`, `metallicRoughnessMap`, `occlusionMap`, `emissiveMap`, `glm::vec3 emissive` com `emissiveIntensity`, `BlendMode blend` (`Opaque`, `Cutout`, `Transparent`), `float alphaCutoff` e `bool doubleSided`; `ShadowCasting shadows` (`On`, `Off` = não faz sombra, `ShadowsOnly` = some da imagem e só faz sombra); `Resolved()` devolve o material que está valendo |
+| `motor::MeshRenderer` | Mesh Renderer | `std::shared_ptr<Mesh> mesh`; `std::shared_ptr<Material> sharedMaterial` (asset `.mmat`, compartilhado; nulo = sem asset); `Material material` (o próprio, usado só sem asset) com `glm::vec4 color`, `std::shared_ptr<Texture2D> albedo`, `float metallic`, `float roughness`, `float specular` (reflexo dos não metais, 0.5 = 4%), mapas `normalMap`, `metallicRoughnessMap`, `occlusionMap`, `emissiveMap`, `glm::vec3 emissive` com `emissiveIntensity`, `BlendMode blend` (`Opaque`, `Cutout`, `Transparent`), `float alphaCutoff` e `bool doubleSided`; `ShadowCasting shadows` (`On`, `Off` = não faz sombra, `ShadowsOnly` = some da imagem e só faz sombra); `bool isStatic` (estático: guardado pelo renderer entre quadros; mexer nele por script pede `GetScene().MarkRenderDirty()`); `Resolved()` devolve o material que está valendo |
 | `motor::PrefabInstance` | Prefab | `PrefabLink link` (`guid` do `.mprefab`, `source`, `overrides`); posto pelo editor em cada entidade de uma instância de prefab, não precisa mexer |
 | `motor::CameraComponent` | Câmera | `fov` (graus, vertical), `nearPlane`, `farPlane`, `bool main` |
 | `motor::LightComponent` | Luz | `LightType type` (`Directional`, `Point`, `Spot`), `color`, `intensity`, `range`, `innerAngle`, `outerAngle`, `bool castShadows`, `ShadowQuality shadowQuality` (`Low`, `Medium`, `High`) |
@@ -491,7 +492,7 @@ passo fixo) devolvem `false`/zero.
 | `std::vector<EntityId> OverlapBox(center, halfExtents, rotation = identidade, layerMask = kAll, includeTriggers = true) const` | entidades dentro da caixa (`halfExtents` = metade do tamanho) |
 | `std::optional<PhysicsRaycastHit> SphereCast(origin, radius, direction, maxDistance = 1000, ignore = kNullEntity, layerMask = kAll) const` | raio com espessura: primeiro corpo que a esfera toca (`distance` = quanto andou); triggers não contam |
 | `bool HasBody(EntityId id) const` | a entidade já tem corpo ou personagem |
-| `const PhysicsStats& Stats() const` | números do último passo (corpos, tempos em ms) |
+| `const PhysicsStats& Stats() const` | números do último passo (corpos, tempos em ms, `terrainBlocksBuilt`: blocos de terreno refeitos) |
 | `OnStart`, `OnFixedUpdate`, `OnStop` | ganchos do sistema, chamados pela engine; não chame de um script |
 
 `motor::PhysicsRaycastHit`: `entity`, `point`, `normal` (da superfície atingida) e `distance`.

@@ -54,6 +54,12 @@ target_include_directories(test_mcp_nav PRIVATE ${PROJECT_SOURCE_DIR}/editor/src
 target_link_libraries(test_mcp_nav PRIVATE motor_mcp)
 motor_add_test(test_world_cache)  # Fase 25: cache da matriz de mundo
 motor_add_test(test_perception)  # Fase 37: percepção dos agentes (visão, audição, memória)
+motor_add_test(test_spatial_grid)  # Fase 28: grade de células (recorte, raio, área)
+motor_add_test(test_render_world)  # Fase 28: objetos guardados entre quadros
+motor_add_test(test_scene_raycast)  # Fase 28: raycast do editor pela grade
+motor_add_test(test_gpu_allocators)  # Fase 28: buffer de malhas e anel de dados por quadro
+motor_add_test(test_block_pool)  # Fase 28: componentes e entidades em blocos por tipo
+motor_add_test(test_terrain)  # Fase 28: terreno em blocos, um arquivo por bloco
 
 # Fase 22: teste de desempenho na cena de referência (bench/referencia). Só mede em Release; em Debug sai com 77 e o
 # ctest mostra "pulado". Rodar só ele: ctest --test-dir build-release -L desempenho
@@ -92,6 +98,18 @@ motor_add_test(test_lights)
 
 # Física (Jolt): componentes, passo dentro do SceneRuntime, eventos, raios, personagem e contorno do editor.
 motor_add_test(test_physics)
+motor_add_test(test_terrain_physics)  # Fase 28: o terreno na física (height field da Jolt)
+motor_add_test(test_water)  # Fase 28: água (ondas, grade e componente)
+# Fase 28: ferramentas MCP do terreno e da água (terrain_info, terrain_heights, terrain_blocks, water_info), sem janela.
+motor_add_test(test_mcp_terrain
+    ${PROJECT_SOURCE_DIR}/editor/src/EditorContext.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/EntityClipboard.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/viewport/UiEditor.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpSceneTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/mcp/McpTerrainTools.cpp
+    ${PROJECT_SOURCE_DIR}/editor/src/panels/HierarchyFilter.cpp)
+target_include_directories(test_mcp_terrain PRIVATE ${PROJECT_SOURCE_DIR}/editor/src)
+target_link_libraries(test_mcp_terrain PRIVATE motor_mcp)
 
 # Desempenho da física: caixas caindo e empilhando (pequeno no ctest; números do relatório em Release).
 motor_add_test(test_physics_bench)

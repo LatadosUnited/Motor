@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -28,14 +29,18 @@ struct DrawItem {
     uint32_t shadowId = 0;    // em Renderer::m_shadowIds
     bool transparent = false;  // material->blend == Transparent, guardado no Submit (o material está longe na memória)
     ShadowCasting shadows = ShadowCasting::On;  // Off: fora dos mapas de sombra; ShadowsOnly: só neles
+    bool retained = false;    // de um RenderWorld (Fase 28): caixa e matriz da normal já vieram prontas,
+    bool cameraVisible = false;  // e o recorte saiu da grade: na câmera
+    uint32_t shadowMask = 0;     // e nas passadas de sombra (um bit por passada do ShadowRenderer::Plan)
 };
 
 // Envia as juntas de um item com pele para o bloco Joints (binding 2) antes de desenhar.
 using JointUploader = std::function<void(const DrawItem& item)>;
 
-// Desenho em lote (instancing, Fase 23). Os itens do quadro vão uma vez para o buffer de objetos (Objects, binding
-// 4: matriz de mundo e da normal, na posição do item em m_items); cada passada grava a sua lista de índices
-// (DrawIndices, binding 5) e desenha cada lote com um draw instanciado a partir de `start` (uDrawBase, object.glsl).
+// Desenho em lote (instancing, Fase 23; pela GPU, Fase 28). Os itens do quadro vão uma vez para o buffer de objetos
+// (Objects, binding 4: matriz de mundo e da normal, na posição do item em m_items). Cada passada grava a sua lista de
+// índices de objetos (atributo 5 por instância, object.glsl) e um comando de desenho indireto por lote; lotes seguidos
+// com o mesmo estado (shader, material, VAO) saem num glMultiDrawElementsIndirect só, mesmo com malhas diferentes.
 struct DrawBatch {
     const DrawItem* first = nullptr;  // malha, material e pele do lote (todos iguais)
     uint32_t start = 0;               // na lista de índices da passada
@@ -50,6 +55,8 @@ struct ShadowOrder {
     const ShadowParamsIds* params = nullptr;
 };
 
+class StreamBuffer;
+
 class InstanceBuffers {
 public:
     InstanceBuffers();
@@ -59,14 +66,18 @@ public:
 
     // Grava os objetos (2 matrizes por item: mundo e normal, montadas no Submit) e deixa o buffer no binding 4.
     void UploadObjects(std::span<const glm::mat4> objects);
-    // Grava a lista de índices de uma passada e deixa o buffer no binding 5.
-    void UploadIndices(std::span<const uint32_t> indices);
+    // Grava a lista de índices de uma passada e um comando por lote (a malha do primeiro item, `count` instâncias).
+    void UploadPass(std::span<const uint32_t> indices, std::span<const DrawBatch> batches);
+    // Os lotes [first, first + count) da última passada num draw só. Precisam ter o mesmo VAO (Mesh::Gpu).
+    void Draw(size_t first, size_t count);
+    // Fim da cena: o que foi gravado até aqui volta a ser usado quando a GPU passar (anel, StreamBuffer).
+    void Fence();
 
 private:
-    unsigned int m_objects = 0;
-    unsigned int m_indices = 0;
-    size_t m_objectBytes = 0;
-    size_t m_indexBytes = 0;
+    std::unique_ptr<StreamBuffer> m_stream;
+    uint64_t m_commands = 0;          // deslocamento dos comandos da última passada no buffer
+    std::vector<unsigned> m_vaos;     // de cada lote da última passada
+    uint64_t m_objectAlignment = 256; // GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT
 };
 
 } // namespace motor

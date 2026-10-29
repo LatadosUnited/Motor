@@ -1,7 +1,10 @@
 #include "motor/scene/Scene.h"
 
 #include "motor/core/FrameStats.h"
+#include "motor/scene/BlockPool.h"
 #include "motor/scene/EntityRef.h"
+#include "motor/scene/Terrain.h"
+#include "motor/scene/Water.h"
 
 #include "motor/renderer/Camera.h"
 #include "motor/renderer/Mesh.h"
@@ -76,6 +79,23 @@ void MarkSceneStructureChanged() {
 
 // --- Entity -----------------------------------------------------------------------
 
+namespace {
+BlockPool& EntityPool() {
+    static BlockPool& pool = BlockPool::For("Entity", sizeof(Entity), alignof(Entity));
+    return pool;
+}
+} // namespace
+
+void* Entity::operator new(size_t size) {
+    // Uma classe derivada maior não cabe no pedaço: vai para o heap.
+    return size == sizeof(Entity) ? EntityPool().Allocate() : ::operator new(size);
+}
+
+void Entity::operator delete(void* p, size_t size) {
+    if (size == sizeof(Entity)) EntityPool().Free(p);
+    else ::operator delete(p);
+}
+
 void* Entity::Get(const ComponentType& type) {
     for (ComponentPtr& c : components) {
         if (&c.Type() == &type) return c.Data();
@@ -139,6 +159,7 @@ Scene::Scene(Scene&& other) noexcept
       m_pending(std::move(other.m_pending)), m_indexVersion(other.m_indexVersion) {
     for (const auto& e : m_entities) e->cache.owner = this;
     other.m_indexVersion = UINT64_MAX;
+    other.m_static = StaticRender();  // apontava para os componentes que vieram para cá
 }
 
 Scene& Scene::operator=(Scene&& other) noexcept {
@@ -153,6 +174,8 @@ Scene& Scene::operator=(Scene&& other) noexcept {
     m_pending = std::move(other.m_pending);
     m_indexVersion = other.m_indexVersion;
     m_meshList = MeshList();
+    m_static = StaticRender();
+    other.m_static = StaticRender();
     for (const auto& e : m_entities) e->cache.owner = this;
     other.m_indexVersion = UINT64_MAX;
     return *this;
@@ -525,17 +548,36 @@ void Scene::Render(Renderer& renderer, const Camera& camera, const Framebuffer* 
     renderer.EndScene();
 }
 
-void Scene::SubmitTo(Renderer& renderer) const {
-    MOTOR_PROFILE_STAT("Render: enviar a cena");
-    // Entidades na raiz da hierarquia vão em paralelo (Fase 26): a matriz de mundo delas só depende do próprio
-    // transform, e cada uma só escreve no próprio cache. Filhos (o cache confere e pode recalcular o do pai, que
-    // outra thread estaria lendo) e malhas com pele (procuram o Animator acima) ficam para depois, nesta thread.
-    // O tipo e a lista saem aqui antes: as duas consultas guardam cache na primeira chamada.
+// Um bloco de terreno no RenderWorld, com a origem guardada para o Raycast e a atualização por bloco.
+void Scene::AddTerrainBlock(StaticRender& statics, const StaticRender::TerrainSource& terrain, TerrainBlockKey key) {
+    const TerrainData& data = *terrain.data;
+    const float size = data.BlockSize();
+    RenderObject object = terrain.object;
+    object.mesh = data.BlockMesh(key);
+    // Os vértices do bloco partem do canto dele: a matriz leva o canto ao lugar no terreno.
+    object.model = glm::translate(object.model,
+                                  glm::vec3(static_cast<float>(key.x) * size, 0.0f, static_cast<float>(key.z) * size));
+    const RenderWorld::Id id = statics.world.Add(object);
+    if (id == RenderWorld::kInvalid) return;
+    if (statics.sources.size() <= id) statics.sources.resize(id + 1);
+    statics.sources[id] = {terrain.entity, object.mesh.get(), object.model, &data, key, data.BlockVersion(key)};
+}
+
+bool Scene::SyncRenderLists() const {
+    // O tipo e a lista saem aqui: as duas consultas guardam cache na primeira chamada.
     const ComponentType* meshType = ComponentRegistry::TypeOf<MeshRenderer>();
-    const std::vector<EntityId>& ids = EntitiesWith<MeshRenderer>();
-    if (!meshType || ids.empty()) return;
+    static const std::vector<EntityId> kNone;
+    const std::vector<EntityId>& ids = meshType ? EntitiesWith<MeshRenderer>() : kNone;
+    const std::vector<EntityId>& terrainIds = EntitiesWith<Terrain>();
+    if (ids.empty() && terrainIds.empty()) {
+        if (m_static.world.Count() > 0 || !m_static.dynamic.empty()) m_static = StaticRender();
+        m_meshList.items.clear();
+        return false;
+    }
     MeshList& list = m_meshList;
+    bool listChanged = false;
     if (list.version != SceneStructureVersion() || list.items.size() != ids.size()) {
+        listChanged = true;
         list.items.resize(ids.size());
         for (size_t i = 0; i < ids.size(); ++i) {
             const Entity* e = Find(ids[i]);
@@ -543,10 +585,88 @@ void Scene::SubmitTo(Renderer& renderer) const {
         }
         list.version = SceneStructureVersion();
     }
-    std::vector<uint8_t> later(ids.size(), 0);
-    renderer.SubmitMany(ids.size(), [&](size_t i, Renderer::SubmitRequest& request) {
-        const auto [e, mr] = list.items[i];
-        if (!mr || !mr->mesh) return false;
+    // Estáticos (Fase 28): guardados no RenderWorld, refeitos só quando a estrutura muda ou alguém avisa
+    // (MarkRenderDirty); fora disso não são lidos. Com pele, nunca: as juntas mudam a cada quadro. Junto sai a lista
+    // dos outros, os únicos percorridos a cada quadro. Os blocos de terreno entram sempre como estáticos; os
+    // terrenos são poucos e conferidos a cada quadro: alturas mudadas (pincel) refazem os estáticos.
+    uint64_t terrains = 0;
+    for (const EntityId id : terrainIds) {
+        const Entity* e = Find(id);
+        const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
+        if (const TerrainData* data = terrain ? terrain->terrain.Data() : nullptr) terrains += data->Version() + 1;
+    }
+    const bool same = !listChanged && !m_static.dirty && m_static.version == SceneStructureVersion();
+    if (same && m_static.terrains != terrains && UpdateTerrainBlocks()) {
+        m_static.terrains = terrains;
+    } else if (!same || m_static.terrains != terrains) {
+        MOTOR_PROFILE_STAT("Render: refazer os estáticos");
+        m_static.world.Clear();
+        m_static.dynamic.clear();
+        m_static.sources.clear();
+        m_static.terrainSources.clear();
+        auto add = [&](EntityId entity, const RenderObject& object) {
+            const RenderWorld::Id id = m_static.world.Add(object);
+            if (m_static.sources.size() <= id) m_static.sources.resize(id + 1);
+            m_static.sources[id] = {entity, object.mesh.get(), object.model, nullptr, {}, 0};
+        };
+        for (uint32_t i = 0; i < list.items.size(); ++i) {
+            const auto [e, mr] = list.items[i];
+            if (!mr) continue;
+            if (!mr->mesh || !mr->isStatic || mr->mesh->IsSkinned()) {
+                m_static.dynamic.push_back(i);
+                continue;
+            }
+            if (!IsActiveInHierarchy(*e)) continue;
+            // O material próprio do componente vai sem dono: vive enquanto a estrutura não mudar (refeito antes).
+            std::shared_ptr<const Material> material =
+                mr->sharedMaterial ? std::shared_ptr<const Material>(mr->sharedMaterial)
+                                   : std::shared_ptr<const Material>(std::shared_ptr<const void>(), &mr->material);
+            add(e->id, {mr->mesh, std::move(material), CachedWorld(*e), mr->shadows});
+        }
+        for (const EntityId id : terrainIds) {
+            const Entity* e = Find(id);
+            const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
+            const TerrainData* data = terrain ? terrain->terrain.Data() : nullptr;
+            if (!data || !IsActiveInHierarchy(*e)) continue;
+            // Um material para todos os blocos: as camadas do componente com os pesos do terreno inteiro (o lit.frag
+            // com TERRAIN acha o bloco de cada triângulo e o peso de cada ponto). Os blocos saem num draw só.
+            const float size = data->BlockSize();
+            auto layers = std::make_shared<TerrainLayers>(terrain->Layers());
+            layers->weights = data->WeightsTexture();
+            layers->blockSize = size;
+            auto material = std::make_shared<Material>(terrain->Resolved());
+            material->terrain = std::move(layers);
+            StaticRender::TerrainSource& source = m_static.terrainSources.emplace_back();
+            source = {e->id, data, data->Version(), {nullptr, std::move(material), CachedWorld(*e), terrain->shadows}};
+            for (const TerrainBlockKey key : data->Blocks()) AddTerrainBlock(m_static, source, key);
+        }
+        m_static.terrains = terrains;
+        m_static.version = SceneStructureVersion();
+        m_static.dirty = false;
+    }
+    return true;
+}
+
+void Scene::SubmitTo(Renderer& renderer) const {
+    MOTOR_PROFILE_STAT("Render: enviar a cena");
+    // Água (Fase 28): poucas, enviadas a cada quadro com a grade do tamanho de cada uma.
+    for (const EntityId id : EntitiesWith<Water>()) {
+        const Entity* e = Find(id);
+        const Water* water = e ? e->Get<Water>() : nullptr;
+        if (water && IsActiveInHierarchy(*e)) renderer.SubmitWater(water->GridMesh(), water->surface, CachedWorld(*e));
+    }
+    // Entidades na raiz da hierarquia vão em paralelo (Fase 26): a matriz de mundo delas só depende do próprio
+    // transform, e cada uma só escreve no próprio cache. Filhos (o cache confere e pode recalcular o do pai, que
+    // outra thread estaria lendo) e malhas com pele (procuram o Animator acima) ficam para depois, nesta thread.
+    if (!SyncRenderLists()) return;
+    const MeshList& list = m_meshList;
+    renderer.SubmitWorld(m_static.world);
+
+    const std::vector<uint32_t>& dynamic = m_static.dynamic;
+    std::vector<uint8_t> later(dynamic.size(), 0);
+    renderer.SubmitMany(dynamic.size(), [&](size_t i, Renderer::SubmitRequest& request) {
+        const auto [e, mr] = list.items[dynamic[i]];
+        if (!mr->mesh) return false;
         if (e->parent != kNullEntity || mr->mesh->IsSkinned()) {
             later[i] = 1;
             return false;
@@ -560,9 +680,9 @@ void Scene::SubmitTo(Renderer& renderer) const {
     });
 
     std::vector<glm::mat4> joints;
-    for (size_t i = 0; i < ids.size(); ++i) {
+    for (size_t i = 0; i < dynamic.size(); ++i) {
         if (!later[i]) continue;
-        const auto [e, mr] = list.items[i];
+        const auto [e, mr] = list.items[dynamic[i]];
         if (!IsActiveInHierarchy(*e)) continue;
         if (mr->mesh->IsSkinned()) {
             // Pose do Animator mais próximo (a própria entidade ou acima) que anima o esqueleto desta pele;
@@ -605,9 +725,10 @@ std::optional<float> RayAabb(const glm::vec3& o, const glm::vec3& d, const glm::
     return tmin;
 }
 
-// Raio contra triângulo (Möller-Trumbore), dos dois lados. Retorna o t, se houver.
+// Raio contra triângulo (Möller-Trumbore), dos dois lados. Retorna o t, se houver. A folga nas coordenadas do triângulo
+// fecha as frestas entre vizinhos (o raio que passa bem num vértice ou aresta da grade do terreno).
 std::optional<float> RayTriangle(const glm::vec3& o, const glm::vec3& d, const glm::vec3& a, const glm::vec3& b,
-                                 const glm::vec3& c) {
+                                 const glm::vec3& c, float slack = 0.0f) {
     const glm::vec3 e1 = b - a, e2 = c - a;
     const glm::vec3 p = glm::cross(d, e2);
     const float det = glm::dot(e1, p);
@@ -615,12 +736,65 @@ std::optional<float> RayTriangle(const glm::vec3& o, const glm::vec3& d, const g
     const float inv = 1.0f / det;
     const glm::vec3 s = o - a;
     const float u = glm::dot(s, p) * inv;
-    if (u < 0.0f || u > 1.0f) return std::nullopt;
+    if (u < -slack || u > 1.0f + slack) return std::nullopt;
     const glm::vec3 q = glm::cross(s, e1);
     const float v = glm::dot(d, q) * inv;
-    if (v < 0.0f || u + v > 1.0f) return std::nullopt;
+    if (v < -slack || u + v > 1.0f + slack) return std::nullopt;
     const float t = glm::dot(e2, q) * inv;
     return t >= 0.0f ? std::optional<float>(t) : std::nullopt;
+}
+
+// Primeiro triângulo de um bloco de terreno atingido (espaço do bloco: o canto na origem). Anda pelas células da grade
+// que o raio cruza em XZ, da mais perto à mais longe (Amanatides-Woo), testando os 2 triângulos de cada uma (os da
+// malha, com a diagonal de (0, 0) a (1, 1)): poucas dezenas de testes em vez dos 2048 triângulos do bloco.
+std::optional<float> RayTerrainBlock(const glm::vec3& o, const glm::vec3& d, const std::vector<float>& heights,
+                                     int resolution, float spacing, const glm::vec3& bmin, const glm::vec3& bmax) {
+    const int n = resolution - 1;
+    if (n < 1 || heights.size() < static_cast<size_t>(resolution) * resolution) return std::nullopt;
+    // Trecho do raio dentro da caixa do bloco.
+    float t0 = 0.0f, t1 = std::numeric_limits<float>::max();
+    for (int i = 0; i < 3; ++i) {
+        if (std::abs(d[i]) < 1e-12f) {
+            if (o[i] < bmin[i] || o[i] > bmax[i]) return std::nullopt;
+            continue;
+        }
+        float a = (bmin[i] - o[i]) / d[i], b = (bmax[i] - o[i]) / d[i];
+        if (a > b) std::swap(a, b);
+        t0 = std::max(t0, a);
+        t1 = std::min(t1, b);
+        if (t0 > t1) return std::nullopt;
+    }
+    const auto vertex = [&](int i, int j) {
+        return glm::vec3(static_cast<float>(i) * spacing, heights[static_cast<size_t>(j * resolution + i)],
+                         static_cast<float>(j) * spacing);
+    };
+    const glm::vec3 start = o + d * t0;
+    int i = std::clamp(static_cast<int>(std::floor(start.x / spacing)), 0, n - 1);
+    int j = std::clamp(static_cast<int>(std::floor(start.z / spacing)), 0, n - 1);
+    const int stepI = d.x > 0.0f ? 1 : -1, stepJ = d.z > 0.0f ? 1 : -1;
+    // t em que o raio cruza a próxima linha da grade em x e em z, e quanto t anda por célula.
+    const float inf = std::numeric_limits<float>::max();
+    const float deltaI = std::abs(d.x) > 1e-12f ? spacing / std::abs(d.x) : inf;
+    const float deltaJ = std::abs(d.z) > 1e-12f ? spacing / std::abs(d.z) : inf;
+    float nextI = std::abs(d.x) > 1e-12f ? (static_cast<float>(i + (stepI > 0 ? 1 : 0)) * spacing - o.x) / d.x : inf;
+    float nextJ = std::abs(d.z) > 1e-12f ? (static_cast<float>(j + (stepJ > 0 ? 1 : 0)) * spacing - o.z) / d.z : inf;
+    for (int guard = 0; guard < 2 * n + 2; ++guard) {
+        const glm::vec3 v00 = vertex(i, j), v10 = vertex(i + 1, j), v01 = vertex(i, j + 1), v11 = vertex(i + 1, j + 1);
+        constexpr float kSlack = 1e-4f;
+        std::optional<float> best = RayTriangle(o, d, v00, v01, v11, kSlack);
+        if (const auto t = RayTriangle(o, d, v00, v11, v10, kSlack); t && (!best || *t < *best)) best = t;
+        if (best) return best;  // as células vêm em ordem: o primeiro acerto é o mais perto
+        if (std::min(nextI, nextJ) > t1) break;
+        if (nextI < nextJ) {
+            i += stepI;
+            nextI += deltaI;
+        } else {
+            j += stepJ;
+            nextJ += deltaJ;
+        }
+        if (i < 0 || i >= n || j < 0 || j >= n) break;
+    }
+    return std::nullopt;
 }
 
 // Primeiro triângulo da malha atingido (espaço local). Sem a cópia na CPU, a caixa dos limites.
@@ -642,19 +816,95 @@ std::optional<float> RayMesh(const glm::vec3& o, const glm::vec3& d, const Mesh&
 }
 } // namespace
 
-std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec3& direction) const {
-    std::optional<RaycastHit> best;
-    for (const auto& e : m_entities) {
-        const MeshRenderer* mr = e->Get<MeshRenderer>();
-        if (!mr || !mr->mesh || !IsActiveInHierarchy(*e)) continue;
+bool Scene::UpdateTerrainBlocks() const {
+    MOTOR_PROFILE_STAT("Render: blocos do terreno");
+    for (StaticRender::TerrainSource& terrain : m_static.terrainSources) {
+        const TerrainData& data = *terrain.data;
+        if (data.Version() == terrain.version) continue;
+        // Os pesos pintados vão para a textura aqui (a mesma do material, posta no lugar).
+        if (data.WeightsTexture() != terrain.object.material->terrain->weights) return false;
+        std::vector<TerrainBlockKey> present;
+        for (RenderWorld::Id id = 0; id < m_static.sources.size(); ++id) {
+            StaticRender::Source& source = m_static.sources[id];
+            if (source.terrain != &data || source.entity != terrain.entity) continue;
+            if (!data.HasBlock(source.key)) {
+                m_static.world.Remove(id);
+                source = {};
+                continue;
+            }
+            present.push_back(source.key);
+            const uint64_t version = data.BlockVersion(source.key);
+            if (version == source.blockVersion) continue;
+            RenderObject object = terrain.object;
+            object.mesh = data.BlockMesh(source.key);
+            object.model = source.model;
+            if (!object.mesh || !m_static.world.Update(id, object)) return false;
+            source.mesh = object.mesh.get();
+            source.blockVersion = version;
+        }
+        std::sort(present.begin(), present.end());
+        for (const TerrainBlockKey key : data.Blocks()) {
+            if (!std::binary_search(present.begin(), present.end(), key)) AddTerrainBlock(m_static, terrain, key);
+        }
+        terrain.version = data.Version();
+    }
+    return true;
+}
 
-        // Leva o raio para o espaço local; como a transformação é linear, o t vale nos dois espaços.
-        const glm::mat4 inv = glm::inverse(WorldMatrix(e->id));
+std::optional<RaycastHit> Scene::RaycastWater(const glm::vec3& origin, const glm::vec3& direction) const {
+    std::optional<RaycastHit> best;
+    for (const EntityId id : EntitiesWith<Water>()) {
+        const Entity* e = Find(id);
+        const Water* water = e ? e->Get<Water>() : nullptr;
+        if (!water || !IsActiveInHierarchy(*e)) continue;
+        // No espaço da entidade a água é o plano y = 0, de -size/2 a size/2 em x e z.
+        const glm::mat4 inv = glm::inverse(CachedWorld(*e));
         const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
         const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
+        if (std::abs(d.y) < 1e-12f) continue;
+        const float t = -o.y / d.y;
+        if (t < 0.0f || (best && t >= best->distance)) continue;
+        const glm::vec3 p = o + d * t;
+        if (std::abs(p.x) <= water->size.x * 0.5f && std::abs(p.z) <= water->size.y * 0.5f) best = RaycastHit{id, t};
+    }
+    return best;
+}
 
-        if (auto t = RayMesh(o, d, *mr->mesh)) {
-            if (!best || *t < best->distance) best = RaycastHit{e->id, *t};
+std::optional<RaycastHit> Scene::Raycast(const glm::vec3& origin, const glm::vec3& direction) const {
+    std::optional<RaycastHit> best;
+    if (!SyncRenderLists()) return best;
+    // Leva o raio para o espaço local; como a transformação é linear, o t vale nos dois espaços.
+    auto test = [&](EntityId entity, const glm::mat4& model, const Mesh& mesh) {
+        const glm::mat4 inv = glm::inverse(model);
+        const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
+        const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
+        if (auto t = RayMesh(o, d, mesh)) {
+            if (!best || *t < best->distance) best = RaycastHit{entity, *t};
+        }
+    };
+    for (const uint32_t i : m_static.dynamic) {
+        const auto [e, mr] = m_meshList.items[i];
+        if (mr->mesh && IsActiveInHierarchy(*e)) test(e->id, CachedWorld(*e), *mr->mesh);
+    }
+    // Estáticos pela grade (Fase 28), do mais perto ao mais longe pela caixa, depois dos outros: os triângulos de um só
+    // são testados se a caixa dele começa antes do melhor acerto até aqui.
+    std::vector<RenderWorld::Id> hits;
+    m_static.world.QueryRay(origin, direction, std::numeric_limits<float>::max(), hits, &m_static.enter);
+    for (size_t i = 0; i < hits.size(); ++i) {
+        if (best && m_static.enter[i] > best->distance) break;
+        // A malha e a matriz guardadas ao montar: a cena não mudou desde então (SyncRenderLists acima).
+        const StaticRender::Source& source = m_static.sources[hits[i]];
+        if (source.terrain && source.mesh) {
+            const std::vector<float>* heights = source.terrain->BlockHeights(source.key);
+            if (!heights) continue;
+            const glm::mat4 inv = glm::inverse(source.model);
+            const glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
+            const glm::vec3 d = glm::vec3(inv * glm::vec4(direction, 0.0f));
+            const auto t = RayTerrainBlock(o, d, *heights, source.terrain->Resolution(), source.terrain->Spacing(),
+                                           source.mesh->BoundsMin(), source.mesh->BoundsMax());
+            if (t && (!best || *t < best->distance)) best = RaycastHit{source.entity, *t};
+        } else if (source.mesh) {
+            test(source.entity, source.model, *source.mesh);
         }
     }
     return best;

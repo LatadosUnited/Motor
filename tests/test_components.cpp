@@ -49,7 +49,7 @@ int main() {
     const auto& registry = ComponentRegistry::Instance();
     CHECK(registry.Find("MeshRenderer") != nullptr);
     CHECK(ComponentRegistry::TypeOf<MeshRenderer>() == registry.Find("MeshRenderer"));
-    CHECK(registry.Find("MeshRenderer")->fields.size() == 19);  // malha, material (asset), os 16 do material próprio (PBR; alfa, Fase 18) e a sombra
+    CHECK(registry.Find("MeshRenderer")->fields.size() == 20);  // malha, material (asset), os 16 do material próprio (PBR; alfa, Fase 18), a sombra e o estático (Fase 28)
     RegisterTestComponents();
     const ComponentType* tudo = registry.Find("Tudo");
     CHECK(tudo && tudo->fields.size() == 9);

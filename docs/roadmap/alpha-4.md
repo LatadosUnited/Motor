@@ -21,6 +21,9 @@ ambiente de dentro e a câmera se adapta ao sair para o sol. Herdada da alpha 3:
 
 ## Fase 28 — Terreno e água
 
+**Pronta (28/10/2026):** [nota da fase](alpha-4/fase-28-terreno.md). Branch `fase-28-terreno`. A ilha de 1 km com
+água passa dos 60 FPS no Player sem MSAA (~69 FPS); com MSAA 4x fica em ~53 FPS, o que sobra para a Fase 30.
+
 - **Recorte com estrutura espacial** (BVH ou grade para os estáticos), servindo também às sombras, ao raycast do
   editor e às consultas de área. Na alpha 3 não compensava: nas cenas do bench a câmera vê quase tudo e o recorte
   inteiro custa ~1,6 ms na referência; com terreno e mundo aberto a câmera vê uma parte pequena da cena.

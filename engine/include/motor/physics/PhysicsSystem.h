@@ -87,6 +87,7 @@ struct PhysicsStats {
     int activeBodies = 0;  // acordados (corpos parados "dormem" e quase não custam)
     int characters = 0;
     int threads = 0;       // threads do job system
+    int terrainBlocksBuilt = 0;  // blocos de terreno refeitos neste passo (alturas mudadas: só os delas)
     double syncMs = 0.0;   // componentes -> corpos e personagens
     double stepMs = 0.0;   // passo do Jolt
     double writeMs = 0.0;  // corpos -> Transforms e eventos

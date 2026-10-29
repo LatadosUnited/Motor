@@ -207,6 +207,7 @@ MaterialParams MaterialParamsOf(const Material& m) {
     p.metallicRoughnessMap = m.metallicRoughnessMap.get();
     p.occlusionMap = m.occlusionMap.get();
     p.emissiveMap = m.emissiveMap.get();
+    p.terrain = m.terrain.get();
     return p;
 }
 

@@ -3,6 +3,7 @@
 #include "EditorContext.h"
 #include "viewport/FrameStatsPanel.h"
 #include "viewport/NavMeshOverlay.h"
+#include "viewport/TerrainBrushTool.h"
 #include "viewport/ViewportPrefs.h"
 #include "viewport/UiEditor.h"
 
@@ -102,6 +103,7 @@ private:
     UiViewportTool m_uiTool;
     FrameStatsPanel m_statsPanel;  // contadores por quadro (Fase 22), com m_prefs.stats
     NavMeshOverlay m_navOverlay;   // navmesh e caminhos dos agentes (Fase 34), com m_prefs.navMesh
+    TerrainBrushTool m_terrainBrush;  // pincéis do terreno (Fase 28): o clique esquerdo pinta em vez de selecionar
     bool m_uiDrawn = false;  // o último Render desenhou o HUD (contagem de draws das estatísticas)
 
     enum class GizmoTool { None, Translate, Rotate, Scale };

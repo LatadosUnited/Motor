@@ -4,6 +4,7 @@ motor_add_layer(scene
         Transform.cpp
         FlyCameraController.cpp
         Component.cpp
+        BlockPool.cpp
         CameraComponent.cpp
         LightComponent.cpp
         MeshRenderer.cpp
@@ -31,6 +32,8 @@ motor_add_layer(scene
         NavMeshAgentAnimation.cpp
         Perception.cpp
         PerceptionTarget.cpp
+        Terrain.cpp
+        Water.cpp
         SceneJsonWriter.cpp
     DEPENDS assets
     PRIVATE_LIBS nlohmann_json::nlohmann_json)

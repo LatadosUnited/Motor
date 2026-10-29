@@ -82,6 +82,7 @@ struct MaterialParams {
     const Texture2D* metallicRoughnessMap = nullptr;
     const Texture2D* occlusionMap = nullptr;
     const Texture2D* emissiveMap = nullptr;
+    const TerrainLayers* terrain = nullptr;  // variante TERRAIN do lit.frag
 
     bool operator==(const MaterialParams&) const = default;
 };

@@ -35,6 +35,18 @@ fs::path DefaultProjectsDir() {
     return fs::current_path(ec);
 }
 
+namespace {
+// Arquivo de um bloco tirado do terreno, depois de gravar a cena (SaveTerrains): para a Lixeira, recuperável.
+void TrashUnusedBlock(const fs::path& file) {
+    std::string error;
+    if (Shell::MoveToTrash(file, &error)) {
+        log::Info("Terreno: bloco tirado enviado para a Lixeira: {}", ToUtf8(file));
+    } else {
+        log::Warn("Terreno: {}", error);
+    }
+}
+} // namespace
+
 SceneDocument::SceneDocument(EditorContext& ctx, UndoHistory& history, EditorSettings& settings,
                              ProjectPanel& projectPanel, Host host)
     : m_ctx(ctx), m_history(history), m_settings(settings), m_projectPanel(projectPanel), m_host(std::move(host)) {}
@@ -118,7 +130,9 @@ bool SceneDocument::SaveScene(bool saveAs) {
     }
 
     std::string error;
-    if (!SceneSerializer::Save(path, m_ctx.scene, m_ctx.assets, &error)) {
+    // As alturas mudadas pelos pincéis vão com a cena (cada terreno no seu arquivo, um por bloco).
+    if (!SaveTerrains(m_ctx.scene, &error, TrashUnusedBlock) ||
+        !SceneSerializer::Save(path, m_ctx.scene, m_ctx.assets, &error)) {
         ShowError(error);
         return false;
     }
@@ -178,7 +192,10 @@ bool SceneDocument::SaveSceneTo(const fs::path& path, std::string& error) {
     }
     std::error_code ec;
     fs::create_directories(target.parent_path(), ec);  // ex.: Assets/Cenas ainda não existe no projeto
-    if (!SceneSerializer::Save(target, m_ctx.scene, m_ctx.assets, &error)) return false;
+    if (!SaveTerrains(m_ctx.scene, &error, TrashUnusedBlock) ||
+        !SceneSerializer::Save(target, m_ctx.scene, m_ctx.assets, &error)) {
+        return false;
+    }
     m_scenePath = target;
     MarkSaved();
     ClearRecovery();

@@ -1,4 +1,5 @@
 #include "motor/assets/AssetLoaders.h"
+#include "motor/assets/TerrainData.h"
 
 #include "motor/common/FileRead.h"
 #include "motor/common/Text.h"
@@ -120,6 +121,7 @@ AssetType AssetTypeFromPath(const fs::path& path) {
     if (ext == ".hdr") return AssetType::EnvironmentMap;  // céu equirretangular (Fase 7)
     if (ext == ".wav" || ext == ".ogg" || ext == ".mp3") return AssetType::Audio;  // clipes de som (Fase 8)
     if (ext == kNavMeshFileExtension) return AssetType::NavMesh;  // navmesh gerado no editor (Fase 34)
+    if (ext == kTerrainFileExtension) return AssetType::Terrain;  // terreno em blocos (Fase 28)
     if (ext == kUiDocumentFileExtension) return AssetType::UiDocument;  // árvore da UI do jogo (motor/ui/UiDocument.h)
     if (ext == kUiStyleFileExtension) return AssetType::UiStyle;  // folha de estilo da UI (motor/ui/UiStyle.h)
     return AssetType::Unknown;
@@ -137,11 +139,22 @@ const char* AssetTypeName(AssetType type) {
         case AssetType::EnvironmentMap: return "Céu HDR";
         case AssetType::Audio: return "Som";
         case AssetType::NavMesh: return "Navmesh";
+        case AssetType::Terrain: return "Terreno";
         case AssetType::UiDocument: return "Documento de UI";
         case AssetType::UiStyle: return "Folha de estilo";
         case AssetType::Unknown: break;
     }
     return "Arquivo";
+}
+
+std::vector<fs::path> AssetCompanions(const fs::path& path) {
+    std::vector<fs::path> out;
+    std::error_code ec;
+    if (AssetTypeFromPath(path) == AssetType::Terrain) {
+        const fs::path folder = TerrainData::BlocksFolder(path);
+        if (fs::is_directory(folder, ec)) out.push_back(folder);
+    }
+    return out;
 }
 
 bool ParseObj(std::string_view text, MeshData& out, std::string* error) {

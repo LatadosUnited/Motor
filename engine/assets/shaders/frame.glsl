@@ -1,4 +1,5 @@
 // Bloco "Frame" (std140), igual ao FrameData do Renderer.cpp: muda um, muda o outro.
+// Fase 28: as posições chegam relativas à câmera (objetos, luzes, sombras); uView é só a rotação e uCameraPosition, 0.
 layout(std140, binding = 0) uniform Frame {
     mat4 uView;
     mat4 uProjection;

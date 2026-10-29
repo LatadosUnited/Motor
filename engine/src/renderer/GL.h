@@ -110,7 +110,7 @@
     X(PFNGLGETERRORPROC, glGetError)                                  \
     X(PFNGLGETSTRINGIPROC, glGetStringi)                              \
     /* Draw com o intervalo de vértices: o driver da Intel não varre os índices na CPU (Mesh::Draw) */ \
-    X(PFNGLDRAWRANGEELEMENTSPROC, glDrawRangeElements)
+    X(PFNGLDRAWRANGEELEMENTSPROC, glDrawRangeElements)                    /* Fase 28: desenho guiado pela GPU (multi-draw indirect, buffers mapeados, malhas num buffer só) */     X(PFNGLFENCESYNCPROC, glFenceSync)                                    X(PFNGLCLIENTWAITSYNCPROC, glClientWaitSync)                          X(PFNGLDELETESYNCPROC, glDeleteSync)                                  X(PFNGLMAPNAMEDBUFFERRANGEPROC, glMapNamedBufferRange)                X(PFNGLUNMAPNAMEDBUFFERPROC, glUnmapNamedBuffer)                      X(PFNGLBINDBUFFERPROC, glBindBuffer)                                  X(PFNGLBINDBUFFERRANGEPROC, glBindBufferRange)                        X(PFNGLCOPYNAMEDBUFFERSUBDATAPROC, glCopyNamedBufferSubData)          X(PFNGLMULTIDRAWELEMENTSINDIRECTPROC, glMultiDrawElementsIndirect)     X(PFNGLDRAWRANGEELEMENTSBASEVERTEXPROC, glDrawRangeElementsBaseVertex)     X(PFNGLVERTEXARRAYBINDINGDIVISORPROC, glVertexArrayBindingDivisor)     X(PFNGLVERTEXARRAYATTRIBIFORMATPROC, glVertexArrayAttribIFormat)     /* Fase 28: pesos do terreno num array e a profundidade da cena com MSAA lida pela água */     X(PFNGLTEXTURESUBIMAGE3DPROC, glTextureSubImage3D)     X(PFNGLTEXTURESTORAGE2DMULTISAMPLEPROC, glTextureStorage2DMultisample)
 
 // Os ponteiros vivem num namespace próprio para não colidir com os símbolos
 // exportados pela opengl32.dll; o using-directive abaixo permite chamá-los como glXxx().

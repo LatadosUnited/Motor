@@ -51,8 +51,16 @@ PhysicsSettings& PhysicsSettings::Global() {
 namespace {
 
 bool SceneHasPhysics(const Scene& scene) {
-    return !scene.EntitiesWith<ColliderComponent>().empty() ||
-           !scene.EntitiesWith<CharacterControllerComponent>().empty();
+    if (!scene.EntitiesWith<ColliderComponent>().empty() || !scene.EntitiesWith<CharacterControllerComponent>().empty()) {
+        return true;
+    }
+    // Terreno com colisão também é física (o personagem pode vir depois, criado por script).
+    for (const EntityId id : scene.EntitiesWith<Terrain>()) {
+        const Entity* e = scene.Find(id);
+        const Terrain* terrain = e ? e->Get<Terrain>() : nullptr;
+        if (terrain && terrain->collision) return true;
+    }
+    return false;
 }
 
 double MillisecondsSince(std::chrono::steady_clock::time_point start) {
@@ -112,6 +120,7 @@ void PhysicsSystem::OnFixedUpdate(SceneRuntime& runtime, float dt) {
     m_stats.activeBodies = static_cast<int>(w.physics.GetNumActiveBodies(JPH::EBodyType::RigidBody));
     m_stats.characters = static_cast<int>(w.characters.size());
     m_stats.threads = w.threads;
+    m_stats.terrainBlocksBuilt = w.terrainBlocksBuilt;
 
     // Partes do sistema "Fisica" nos contadores do quadro (--perf, MCP): somam nos vários passos fixos do quadro.
     FrameStats& frameStats = FrameStats::Instance();

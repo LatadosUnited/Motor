@@ -2,6 +2,7 @@
 
 #include "motor/renderer/GpuMemory.h"
 #include "renderer/GL.h"
+#include "renderer/MeshPool.h"
 
 #include <glm/common.hpp>
 #include <glm/gtc/constants.hpp>
@@ -33,8 +34,12 @@ Mesh::Mesh(std::span<const Vertex> vertices, std::span<const uint32_t> indices, 
 }
 
 Mesh::~Mesh() {
-    if (m_vao == 0) return;  // nunca foi desenhada: não há nada na GPU
-    glDeleteVertexArrays(1, &m_vao);
+    if (!m_uploaded) return;  // nunca foi desenhada: não há nada na GPU
+    if (m_vbo == 0) {
+        MeshPool::Remove({static_cast<uint32_t>(m_gpu.baseVertex), m_gpu.vertexCount, m_gpu.firstIndex, m_gpu.indexCount});
+        return;
+    }
+    glDeleteVertexArrays(1, &m_gpu.vao);
     UntrackGpuMemory(GpuObject::Buffer, m_vbo);
     UntrackGpuMemory(GpuObject::Buffer, m_ibo);
     UntrackGpuMemory(GpuObject::Buffer, m_skinVbo);
@@ -44,6 +49,21 @@ Mesh::~Mesh() {
 }
 
 void Mesh::Upload() const {
+    m_uploaded = true;
+    if (m_indices.empty() || m_pendingVertices.empty()) return;
+    // Sem pele: no buffer de todas as malhas (Fase 28), para o multi-draw indirect juntar malhas diferentes.
+    if (m_weights.empty()) {
+        const MeshPool::Slot slot = MeshPool::Add(m_pendingVertices, m_indices);
+        if (slot.indexCount > 0) {
+            m_gpu = {MeshPool::VertexArray(), slot.indexCount, slot.firstIndex, static_cast<int32_t>(slot.firstVertex),
+                     slot.vertexCount};
+        }
+        m_pendingVertices = {};
+        return;
+    }
+
+    // Com pele: VAO próprio, com os pesos num segundo buffer (binding 1): só o shader de malhas animadas lê as
+    // posições 3 e 4.
     glCreateBuffers(1, &m_vbo);
     glNamedBufferStorage(m_vbo, static_cast<GLsizeiptr>(m_pendingVertices.size() * sizeof(Vertex)),
                          m_pendingVertices.data(), 0);
@@ -53,51 +73,49 @@ void Mesh::Upload() const {
     glNamedBufferStorage(m_ibo, static_cast<GLsizeiptr>(m_indices.size() * sizeof(uint32_t)), m_indices.data(), 0);
     TrackGpuMemory(GpuObject::Buffer, m_ibo, GpuMemoryKind::Meshes, m_indices.size() * sizeof(uint32_t));
 
-    glCreateVertexArrays(1, &m_vao);
-    glVertexArrayVertexBuffer(m_vao, 0, m_vbo, 0, sizeof(Vertex));
-    glVertexArrayElementBuffer(m_vao, m_ibo);
+    glCreateBuffers(1, &m_skinVbo);
+    glNamedBufferStorage(m_skinVbo, static_cast<GLsizeiptr>(m_weights.size() * sizeof(SkinWeights)), m_weights.data(), 0);
+    TrackGpuMemory(GpuObject::Buffer, m_skinVbo, GpuMemoryKind::Meshes, m_weights.size() * sizeof(SkinWeights));
+
+    unsigned int vao = 0;
+    glCreateVertexArrays(1, &vao);
+    glVertexArrayVertexBuffer(vao, 0, m_vbo, 0, sizeof(Vertex));
+    glVertexArrayVertexBuffer(vao, 1, m_skinVbo, 0, sizeof(SkinWeights));
+    glVertexArrayElementBuffer(vao, m_ibo);
 
     struct Attr { GLuint location; GLint size; GLuint offset; GLuint binding; };
-    std::vector<Attr> attrs = {
+    const Attr attrs[] = {
         {0, 3, offsetof(Vertex, position), 0},
         {1, 3, offsetof(Vertex, normal), 0},
         {2, 2, offsetof(Vertex, uv), 0},
+        {3, 4, offsetof(SkinWeights, joints), 1},
+        {4, 4, offsetof(SkinWeights, weights), 1},
     };
-    // Pele num segundo buffer (binding 1): só o shader de malhas animadas lê as posições 3 e 4.
-    if (!m_weights.empty()) {
-        glCreateBuffers(1, &m_skinVbo);
-        glNamedBufferStorage(m_skinVbo, static_cast<GLsizeiptr>(m_weights.size() * sizeof(SkinWeights)),
-                             m_weights.data(), 0);
-        TrackGpuMemory(GpuObject::Buffer, m_skinVbo, GpuMemoryKind::Meshes, m_weights.size() * sizeof(SkinWeights));
-        glVertexArrayVertexBuffer(m_vao, 1, m_skinVbo, 0, sizeof(SkinWeights));
-        attrs.push_back({3, 4, offsetof(SkinWeights, joints), 1});
-        attrs.push_back({4, 4, offsetof(SkinWeights, weights), 1});
-    }
     for (const auto& a : attrs) {
-        glEnableVertexArrayAttrib(m_vao, a.location);
-        glVertexArrayAttribFormat(m_vao, a.location, a.size, GL_FLOAT, GL_FALSE, a.offset);
-        glVertexArrayAttribBinding(m_vao, a.location, a.binding);
+        glEnableVertexArrayAttrib(vao, a.location);
+        glVertexArrayAttribFormat(vao, a.location, a.size, GL_FLOAT, GL_FALSE, a.offset);
+        glVertexArrayAttribBinding(vao, a.location, a.binding);
     }
+    MeshPool::AddInstanceAttribute(vao, m_vbo);
+    m_gpu = {vao, static_cast<uint32_t>(m_indices.size()), 0, 0, static_cast<uint32_t>(m_pendingVertices.size())};
     m_pendingVertices = {};  // a GPU já tem; na CPU ficam só posições e índices
 }
 
-void Mesh::Draw() const {
-    if (m_indices.empty() || m_positions.empty()) return;
-    if (m_vao == 0) Upload();
-    glBindVertexArray(m_vao);
-    // Com o intervalo de vértices: sem ele, o driver da Intel (HD 530) varre os índices na CPU a cada draw, lendo
-    // a memória de vídeo (~300 µs para uma esfera de 2300 triângulos; medido com o Tracy na Fase 22).
-    glDrawRangeElements(GL_TRIANGLES, 0, static_cast<GLuint>(m_positions.size() - 1),
-                        static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr);
+const Mesh::GpuDraw& Mesh::Gpu() const {
+    if (!m_uploaded) Upload();
+    return m_gpu;
 }
 
-void Mesh::DrawInstanced(uint32_t count) const {
-    if (count == 1) return Draw();  // o caminho com o intervalo de vértices (driver da Intel, acima)
-    if (count == 0 || m_indices.empty() || m_positions.empty()) return;
-    if (m_vao == 0) Upload();
-    glBindVertexArray(m_vao);
-    glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, nullptr,
-                            static_cast<GLsizei>(count));
+void Mesh::Draw() const {
+    const GpuDraw& gpu = Gpu();
+    if (gpu.vao == 0) return;
+    glBindVertexArray(gpu.vao);
+    // Com o intervalo de vértices: sem ele, o driver da Intel (HD 530) varre os índices na CPU a cada draw, lendo
+    // a memória de vídeo (~300 µs para uma esfera de 2300 triângulos; medido com o Tracy na Fase 22).
+    glDrawRangeElementsBaseVertex(GL_TRIANGLES, 0, gpu.vertexCount - 1, static_cast<GLsizei>(gpu.indexCount),
+                                  GL_UNSIGNED_INT,
+                                  reinterpret_cast<const void*>(static_cast<uintptr_t>(gpu.firstIndex) * sizeof(uint32_t)),
+                                  gpu.baseVertex);
 }
 
 std::shared_ptr<Mesh> Mesh::CreateCube() {

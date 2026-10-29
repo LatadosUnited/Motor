@@ -21,6 +21,10 @@ struct MeshRenderer {
     // Sombra: Com sombra (padrão), Sem sombra, ou Só sombra (some da imagem e continua fazendo sombra: o corpo
     // em primeira pessoa; o Animator e os scripts seguem rodando, ao contrário de desativar a entidade).
     ShadowCasting shadows = ShadowCasting::On;
+    // Estático (Fase 28): o objeto não se mexe no jogo. O renderer o guarda entre quadros (Scene::SubmitTo) em vez
+    // de recebê-lo de novo a cada um. No jogo, mudar um estático por script (posição, malha, material) só aparece
+    // depois de Scene::MarkRenderDirty; no editor, as edições aparecem sozinhas.
+    bool isStatic = false;
 
     const Material& Resolved() const { return sharedMaterial ? *sharedMaterial : material; }
 };

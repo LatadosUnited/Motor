@@ -17,6 +17,9 @@ out VS_OUT {
     vec3 worldPos;
     vec3 normal;
     vec2 uv;
+#ifdef TERRAIN
+    flat vec2 corner;  // canto do bloco, em metros do terreno (os vértices partem dele; uv são os metros)
+#endif
 } vs;
 
 void main() {
@@ -32,5 +35,8 @@ void main() {
     vs.worldPos = world.xyz;
     vs.normal = normalMatrix * aNormal;
     vs.uv = aUV;
+#ifdef TERRAIN
+    vs.corner = aUV - aPosition.xz;
+#endif
     gl_Position = uProjection * uView * world;
 }

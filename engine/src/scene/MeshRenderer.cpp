@@ -152,6 +152,9 @@ MOTOR_COMPONENT_MODULE(MeshRenderer) {
         .Field("shadows", "Sombra", &MeshRenderer::shadows,
                {.tooltip = "Com sombra; Sem sombra; Só sombra (o objeto some da imagem e continua fazendo sombra, "
                            "com a animação rodando: o corpo do personagem em primeira pessoa)"})
+        .Field("static", "Estático", &MeshRenderer::isStatic,
+               {.tooltip = "Não se mexe no jogo (cenário): o renderer guarda o objeto e não o recebe de novo a cada "
+                           "quadro. Um script que mexer nele precisa chamar MarkRenderDirty na cena."})
         .OnAdd([](MeshRenderer& m, AssetLibrary& assets) { m.mesh = assets.FindMesh("Cubo"); });
 }
 

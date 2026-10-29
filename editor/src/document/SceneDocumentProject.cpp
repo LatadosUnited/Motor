@@ -189,12 +189,19 @@ void SceneDocument::ApplyRecovery(const SceneSerializer::RecoveryInfo& recovery)
         }
     }
 
+    // As alturas dos terrenos não vão no arquivo da cena: os blocos mudados guardados à parte entram agora.
+    std::string terrainError;
+    const int terrains =
+        m_project ? SceneSerializer::ApplyRecoveryTerrains(m_project->RootDir(), recovered, &terrainError) : 0;
+    if (!terrainError.empty()) log::Warn("Recuperação: {}", terrainError);
+
     m_ctx.scene = std::move(recovered);
     m_ctx.ResetSceneState();
     m_scenePath = targetPath;
     m_history.Reset(m_ctx.scene, kNullEntity);
     m_savedVersion = m_history.Version();
     m_savedValid = diskSnapshot && SceneSerializer::ToJson(m_ctx.scene, m_ctx.assets, {.pathHints = false}) == *diskSnapshot;
+    if (terrains > 0) m_savedValid = false;  // as alturas recuperadas ainda não estão no disco
     m_dirty = !m_savedValid;
     m_autoSaveTimer = 0.0f;
     ClearRecovery();

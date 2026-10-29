@@ -3,6 +3,7 @@
 #include "EntityClipboard.h"
 
 #include <motor/Motor.h>
+#include <motor/assets/TerrainBrush.h>
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -18,7 +19,8 @@ using motor::EntityId;
 using motor::kNullEntity;
 
 // Formas (Cubo a Cone) vêm com o Collider que bate com elas: corpo parado; com Rigidbody, cai.
-enum class Primitive { Empty, Cube, Sphere, Plane, Camera, DirectionalLight, PointLight, SpotLight, Cylinder, Capsule, Cone };
+enum class Primitive { Empty, Cube, Sphere, Plane, Camera, DirectionalLight, PointLight, SpotLight, Cylinder, Capsule, Cone,
+                       Terrain, Water };
 
 // Arquivos arrastados do painel Projeto (payload do ImGui): caminhos UTF-8 um por linha.
 inline constexpr const char* kPathPayload = "MOTOR_PATH";
@@ -60,7 +62,21 @@ struct EditorContext {
     // Material ou prefab editado no Inspector vira um passo de desfazer (UndoHistory::PushAction, ligado pelo
     // EditorApp). `playing`: no Play essas edições não são gravadas e voltam ao parar (RevertPlayAssetEdits).
     std::function<void(std::function<void()> undo, std::function<void()> redo)> pushAssetUndo;
+    // O mesmo para o que é salvo com a cena sem estar nos componentes (alturas do terreno): marca "não salvo".
+    std::function<void(std::function<void()> undo, std::function<void()> redo)> pushSceneUndo;
     bool playing = false;
+
+    // Pincel do terreno (Fase 28): escolhido no Inspector do Terreno e usado no Viewport sobre o terreno selecionado.
+    // `active` false: o clique no Viewport seleciona, como sempre.
+    struct TerrainBrushState {
+        bool active = false;
+        motor::TerrainBrush brush;
+        // Pincelada em andamento: o EditorApp não remonta os estáticos a cada quadro (a cena troca só os blocos).
+        bool stroking = false;
+    };
+    TerrainBrushState terrainBrush;
+    // Pincelada terminada (viewport ou MCP): vira um passo de desfazer (pushSceneUndo). Nada se não mudou nada.
+    void PushTerrainStroke(const motor::TerrainStroke& stroke);
 
     // Prefabs do projeto (.mprefab) e o asset mostrado no Inspector quando nenhuma entidade está
     // selecionada (material ou prefab clicado no painel Projeto).
@@ -123,6 +139,9 @@ struct EditorContext {
                                        const char* extension) const;
 
 private:
+    // Terreno novo (Primitive::Terrain): grava um .mterrain plano em Assets/Terrenos e o liga a `e`.
+    void CreateTerrainFile(motor::Entity& e);
+
     std::filesystem::path m_prefabRoot;  // projeto do cache de prefabs (trocou = limpa o cache)
     bool m_forgetAllAngles = false;
     std::vector<EntityId> m_forgottenAngles;

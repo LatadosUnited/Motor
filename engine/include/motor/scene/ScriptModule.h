@@ -55,9 +55,23 @@ namespace motor {
 // 21: entrada v2: Script::GetVector e TextInput; InputAction e InputBinding com campos novos (tipo, part, with);
 //     vários controles (pad e device nas funções de entrada, GamepadCount, LastInputDevice...); contextos
 //     (SetInputContext...), IsPointerOverUi; segurar, toque, toque duplo e buffer (WasActionHeld...).
-// 22: Interface em documentos: UiElement mudou (estilo, controles, follow, eventos) e o UiSystem ganhou Q, Query,
+// 22: Fase 28: MeshRenderer::isStatic e os estáticos guardados na Scene (MarkRenderDirty) mudam os tamanhos; a Mesh
+//     guarda onde está na GPU (Mesh::Gpu) no lugar do VAO próprio; componentes e entidades em blocos por tipo
+//     (ComponentRegistry::Register constrói na memória do BlockPool).
+// 23: Fase 28: componente Terrain; os estáticos guardados na Scene ganham a origem de cada objeto (malha e matriz, para
+//     o Raycast) e a versão dos terrenos, mudando o tamanho de Scene (MarkRenderDirty é inline).
+// 24: Fase 28: pintura do terreno; Material ganhou `terrain` (camadas) e Texture2D os pixels da textura adiada.
+// 25: Fase 28: Terrain ganhou os campos da física (collision, friction, layer).
+// 26: Fase 28: componente Water; o Renderer ganhou a água (SubmitWater, membros novos).
+// 27: Fase 28: os pesos do terreno numa textura só (TerrainLayers::weights é TerrainWeights, sem `block`), sombra do
+//     terreno pelas faces de costas (ShadowParams::backFacesOnly), variantes da água no Renderer.
+// 28: Fase 28: os estáticos guardados na Scene sabem de qual bloco de terreno vieram (raio pela grade), Scene::
+//     RaycastWater, PhysicsStats::terrainBlocksBuilt, SaveTerrains com descarte, Renderer::SetWaterTime.
+// 29: Fase 28: os blocos de terreno dos estáticos guardam a versão e o terreno de onde vieram (a pincelada troca só
+//     os mudados), mudando o tamanho de Scene.
+// 30: Interface em documentos: UiElement mudou (estilo, controles, follow, eventos) e o UiSystem ganhou Q, Query,
 //     OnClick, OnChange, OnHover e foco; RuntimeSystem::OnScriptsForgotten e SceneRuntime::RunningScript.
-inline constexpr int kScriptApiVersion = 22;
+inline constexpr int kScriptApiVersion = 30;
 
 // Nomes das funções exportadas pela DLL de scripts (o ponto de entrada é gerado pelo editor).
 inline constexpr const char* kScriptApiVersionSymbol = "MotorScriptApiVersion";

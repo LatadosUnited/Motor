@@ -22,3 +22,5 @@
 #include "motor/scene/NavMeshAgentAnimation.h"
 #include "motor/scene/Perception.h"
 #include "motor/scene/PerceptionTarget.h"
+#include "motor/scene/Terrain.h"
+#include "motor/scene/Water.h"

@@ -8,28 +8,14 @@ in VS_OUT {
     vec3 worldPos;
     vec3 normal;
     vec2 uv;
+#ifdef TERRAIN
+    flat vec2 corner;
+#endif
 } fs;
 
 #include "frame.glsl"
 #include "pbr.glsl"
-
-// Mesmo tamanho que kMaxLights (motor/renderer/Light.h).
-const int kMaxLights = 32;
-const int kDirectional = 0;
-const int kPoint = 1;
-const int kSpot = 2;
-
-struct LightData {
-    vec4 positionRange;  // xyz = posição, w = alcance
-    vec4 directionType;  // xyz = direção (normalizada), w = tipo
-    vec4 color;          // rgb = cor * intensidade
-    vec4 cone;           // x = cos(ângulo interno), y = cos(ângulo externo), z = camada do cubo de sombra (-1 = sem), w = 1: usa as cascatas
-};
-
-layout(std140, binding = 1) uniform Lights {
-    ivec4 uLightCount;  // x = número de luzes
-    LightData uLights[kMaxLights];
-};
+#include "lights.glsl"
 
 // Igual ao ShadowData do Renderer.cpp.
 layout(std140, binding = 3) uniform Shadows {
@@ -54,6 +40,41 @@ layout(binding = 5) uniform sampler2DArrayShadow uCascades;
 layout(binding = 6) uniform samplerCubeArrayShadow uPointShadows;
 layout(binding = 7) uniform samplerCube uPrefiltered;
 layout(binding = 8) uniform sampler2D uBrdfLut;
+
+#ifdef TERRAIN
+// Terreno com camadas (Fase 28, motor::TerrainLayers): pesos RGBA de todos os blocos (uma camada do array por bloco,
+// uma amostra por vértice), o índice bloco -> camada e as 4 texturas. fs.uv são os metros do terreno.
+layout(binding = 9) uniform sampler2DArray uTerrainWeights;  // linear
+layout(binding = 10) uniform sampler2D uLayer0;              // sRGB
+layout(binding = 11) uniform sampler2D uLayer1;
+layout(binding = 12) uniform sampler2D uLayer2;
+layout(binding = 13) uniform sampler2D uLayer3;
+layout(binding = 14) uniform sampler2D uTerrainIndex;        // R = camada do bloco (-1 = sem pesos)
+uniform mat4 uLayerColors;   // coluna i = cor (sRGB) da camada i
+uniform vec4 uLayerTiling;   // metros por repetição da textura de cada camada
+uniform vec4 uTerrainGrid;   // x = tamanho do bloco (metros), y = amostras por lado, zw = primeiro bloco do índice
+
+vec3 LayerColor(int i, vec4 texel) {
+    return pow(uLayerColors[i].rgb, vec3(2.2)) * texel.rgb;
+}
+
+vec3 TerrainAlbedo() {
+    // O bloco do triângulo pelo canto (igual nos 3 vértices) e a camada dele no array.
+    ivec2 key = ivec2(round(fs.corner / uTerrainGrid.x));
+    ivec2 cell = clamp(key - ivec2(uTerrainGrid.zw), ivec2(0), textureSize(uTerrainIndex, 0) - 1);
+    float layer = texelFetch(uTerrainIndex, cell, 0).r;
+    // A amostra j do bloco fica no centro do texel j: (j + 0,5) / amostras. A leitura sai sempre (sem if: as derivadas
+    // do mipmap); bloco sem camada fica com a camada 1.
+    vec2 local = (fs.uv - fs.corner) / uTerrainGrid.x * (uTerrainGrid.y - 1.0);
+    vec4 w = texture(uTerrainWeights, vec3((local + 0.5) / uTerrainGrid.y, max(layer, 0.0)));
+    if (layer < 0.0) w = vec4(1.0, 0.0, 0.0, 0.0);
+    w /= max(dot(w, vec4(1.0)), 1e-4);
+    // As 4 leituras sempre: um if pelo peso deixaria a escolha do mipmap indefinida (derivadas em fluxo divergente).
+    vec4 tiling = max(uLayerTiling, vec4(1e-3));
+    return w.x * LayerColor(0, texture(uLayer0, fs.uv / tiling.x)) + w.y * LayerColor(1, texture(uLayer1, fs.uv / tiling.y)) +
+           w.z * LayerColor(2, texture(uLayer2, fs.uv / tiling.z)) + w.w * LayerColor(3, texture(uLayer3, fs.uv / tiling.w));
+}
+#endif
 
 uniform vec4 uColor;     // sRGB
 uniform vec4 uPbr;       // x = metal, y = rugosidade, z = specular, w = força do mapa de normal (0 = sem mapa)
@@ -159,7 +180,16 @@ void main() {
     int maps = int(uAlphaMode.z + 0.5);
     vec4 tint = vec4(pow(uColor.rgb, vec3(2.2)), uColor.a);
     vec4 albedo = tint;
-#ifndef NO_MAPS
+#ifdef TERRAIN
+    albedo = vec4(TerrainAlbedo(), 1.0);  // a cor e a textura do material já são a camada 1
+    // Longe, a neblina já cobre o terreno: sem a luz (num terreno de 1 km é uma faixa grande da tela). Depois daqui só
+    // há leituras sem mipmap (sombra, tabela da BRDF) ou com o nível dado: o return fora de ordem não as atrapalha.
+    float fogDistance = length(uCameraPosition.xyz - fs.worldPos);
+    if (exp(-pow(fogDistance * uFog.a, 2.0)) < 0.002) {
+        oColor = vec4(uFog.rgb, 1.0);
+        return;
+    }
+#elif !defined(NO_MAPS)
     if ((maps & kMapAlbedo) != 0) albedo *= texture(uAlbedo, fs.uv);
 #endif
     if (uAlphaMode.x == 1.0 && albedo.a < uAlphaMode.y) discard;  // recorte (folhas, grades)
@@ -222,6 +252,12 @@ void main() {
         }
         if (attenuation <= 0.0) continue;
 
+#ifdef TERRAIN
+        // Terreno: só a parte difusa da luz direta. O brilho do GGX num chão fosco quase não aparece e custava ~1,6 ms
+        // no terreno de 1 km da HD 530; o reflexo do céu (abaixo) continua.
+        direct += diffuseColor * light.color.rgb * attenuation * NdotL;
+        continue;
+#endif
         vec3 H = normalize(L + V);
         float NdotH = max(dot(N, H), 0.0);
         vec3 F = FresnelSchlick(max(dot(V, H), 0.0), f0);

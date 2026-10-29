@@ -322,6 +322,8 @@ private:
                 camera.LookAt({0.0f, 0.0f, 0.0f});
             }
             camera.aspect = window.AspectRatio();
+            // As ondas da água andam com o tempo do jogo (param com a pausa).
+            renderer.SetWaterTime(m_runtime ? std::optional<double>(m_runtime->Time().elapsed) : std::nullopt);
             renderer.BeginScene(camera, scene.CollectLights(), scene.environment);
             scene.SubmitTo(renderer);
             renderer.EndScene();
@@ -476,6 +478,9 @@ int main(int argc, char** argv) {
         desc.window.width = gameOptions.width;
         desc.window.height = gameOptions.height;
         desc.window.vsync = gameOptions.vsync;
+        // A cena tem o próprio alvo com MSAA (a opção do jogador); a janela só recebe o pós e o HUD (texto suavizado
+        // pelo SDF). Com 4 amostras ali, o tone mapping que escreve nela custava 1,3 ms em vez de 0,8 na HD 530.
+        desc.window.msaaSamples = 0;
         desc.window.visible = false;  // aparece já com a tela de carregamento (ShowLoadingScreen)
         desc.statsInTitle = options.stats;
         Player player(std::move(*project), options, gameOptions, desc);

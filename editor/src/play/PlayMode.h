@@ -40,6 +40,7 @@ public:
     int ScenesLoaded() const { return m_scenesLoaded; }  // trocas feitas neste Play
 
     motor::SceneRuntime* Runtime() { return m_runtime.get(); }
+    const motor::SceneRuntime* Runtime() const { return m_runtime.get(); }
     // No Play, as outras cenas com scripts além da cena do editor: a guardada (volta ao parar) e os prefabs
     // carregados pelo jogo. Para a recarga da DLL de scripts.
     void ForEachScene(const std::function<void(motor::Scene&)>& fn);

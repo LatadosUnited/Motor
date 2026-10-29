@@ -58,8 +58,9 @@ public:
 
     // Passo que não é da cena (material ou prefab editado no Inspector): entra na mesma fila do desfazer, com as
     // funções que voltam e refazem a mudança. Registra antes uma mudança da cena que ainda não virou passo.
+    // `unsaved`: a mudança é salva com a cena (alturas do terreno): o passo muda a Version, e desfazê-lo a devolve.
     void PushAction(const motor::Scene& scene, motor::EntityId selected, const std::vector<motor::EntityId>* selection,
-                    std::function<void()> undo, std::function<void()> redo);
+                    std::function<void()> undo, std::function<void()> redo, bool unsaved = false);
 
     // Todas as fotos guardadas, cada uma montada como cena (a recarga dos scripts e os prefabs precisam trocar os
     // componentes delas também). Caro com cena grande e histórico longo: cada foto vira uma cópia da cena.
@@ -77,6 +78,7 @@ private:
         // Passo de fora da cena (PushAction): a foto acima não é usada.
         struct Action {
             std::function<void()> undo, redo;
+            uint64_t versionBefore = 0, versionAfter = 0;  // Version antes e depois do passo (iguais sem `unsaved`)
         };
         std::shared_ptr<Action> action;
     };

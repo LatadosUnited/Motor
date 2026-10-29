@@ -1,4 +1,5 @@
 #include "motor/renderer/Renderer.h"
+#include "motor/renderer/RenderWorld.h"
 
 #include "motor/core/EngineAssets.h"
 #include "motor/core/JobSystem.h"
@@ -65,15 +66,18 @@ constexpr GLuint kShadowsBinding = 3;  // lit.frag
 // Unidades de textura do lit.frag.
 constexpr GLuint kUnitAlbedo = 0, kUnitNormal = 1, kUnitMetalRough = 2, kUnitOcclusion = 3, kUnitEmissive = 4;
 constexpr GLuint kUnitCascades = 5, kUnitCubes = 6, kUnitPrefiltered = 7, kUnitBrdf = 8;
+constexpr GLuint kUnitTerrainWeights = 9, kUnitTerrainLayers = 10;  // 10 a 13: as 4 camadas (lit.frag com TERRAIN)
+constexpr uint32_t kTerrainShaderKey = 3;  // DrawKey.shader do terreno com camadas (PrepareItems)
+constexpr GLuint kUnitTerrainIndex = 14;  // bloco -> camada do array de pesos (a água usa a 14 depois, com outro shader)
 
-LightData Pack(const Light& light, int cubeLayer, bool cascades) {
+LightData Pack(const Light& light, int cubeLayer, bool cascades, const glm::vec3& origin) {
     const float len = glm::length(light.direction);
     const glm::vec3 direction = len > 1e-6f ? light.direction / len : glm::vec3(0.0f, -1.0f, 0.0f);
     // Ângulos limitados para o cone não degenerar (externo > interno, abaixo de 90°).
     const float outer = glm::clamp(light.outerAngle, 1.0f, 89.0f);
     const float inner = glm::clamp(light.innerAngle, 0.0f, outer - 0.5f);
     return {
-        glm::vec4(light.position, glm::max(light.range, 0.01f)),
+        glm::vec4(light.position - origin, glm::max(light.range, 0.01f)),  // relativa à câmera (Fase 28)
         glm::vec4(direction, static_cast<float>(light.type)),
         glm::vec4(light.color * glm::max(light.intensity, 0.0f), 1.0f),
         glm::vec4(std::cos(glm::radians(inner)), std::cos(glm::radians(outer)), static_cast<float>(cubeLayer),
@@ -119,7 +123,18 @@ Renderer::Renderer() {
     m_unlitShader = Shader::FromFiles(dir / "lit.vert", dir / "unlit.frag", "#define SINGLE_MODEL\n");
     m_unlitModel = m_unlitShader->Uniform("uModel");
     m_unlitColor = m_unlitShader->Uniform("uColor");
+    m_waterShaders[0] = Shader::FromFiles(dir / "water.vert", dir / "water.frag");
+    m_waterShaders[1] = Shader::FromFiles(dir / "water.vert", dir / "water.frag", "#define SCENE_MSAA\n");
+    for (int i = 0; i < 2; ++i) {
+        Shader& s = *m_waterShaders[i];
+        m_waterUniforms[i] = {s.Uniform("uModel"), s.Uniform("uWave"), s.Uniform("uTime"),
+                              s.Uniform("uShallow"), s.Uniform("uDeep"), s.Uniform("uWater")};
+    }
+    m_waterDepthShader = Shader::FromFiles(dir / "water.vert", dir / "water_depth.frag");
+    m_waterDepthUniforms = {m_waterDepthShader->Uniform("uModel"), m_waterDepthShader->Uniform("uWave"),
+                            m_waterDepthShader->Uniform("uTime")};
     m_whiteTexture = Texture2D::CreateSolid({255, 255, 255, 255});
+    m_noTerrainWeights = std::make_unique<TerrainWeights>(2);
     m_instances = std::make_unique<InstanceBuffers>();
     m_post = std::make_unique<PostProcess>(dir);
     m_shadows = std::make_unique<ShadowRenderer>(dir);
@@ -157,13 +172,18 @@ void Renderer::LoadLitShaders(ShadowQuality cascadeFilter) {
     // Materiais sem nenhum mapa (o comum): sem as leituras de textura no shader. Um if pela uniform não basta (o
     // driver da Intel lê as texturas assim mesmo): ~4 ms por quadro na referência.
     m_litPlainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define NO_MAPS\n");
-    auto findLitUniforms = [](Shader& shader) {
-        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uDrawBase"), shader.Uniform("uColor"),
-                           shader.Uniform("uPbr"), shader.Uniform("uEmissive")};
+    m_terrainShader = Shader::FromFiles(dir / "lit.vert", dir / "lit.frag", filter + "#define TERRAIN\n");
+    // As uniforms das camadas só existem na variante TERRAIN: nas outras ficam -1 (sem o aviso de "não encontrado").
+    auto findLitUniforms = [](Shader& shader, bool terrain) {
+        return LitUniforms{shader.Uniform("uAlphaMode"), shader.Uniform("uColor"),
+                           shader.Uniform("uPbr"), shader.Uniform("uEmissive"),
+                           terrain ? shader.Uniform("uLayerColors") : -1, terrain ? shader.Uniform("uLayerTiling") : -1,
+                           terrain ? shader.Uniform("uTerrainGrid") : -1};
     };
-    m_litUniforms = findLitUniforms(*m_litShader);
-    m_skinnedUniforms = findLitUniforms(*m_skinnedShader);
-    m_litPlainUniforms = findLitUniforms(*m_litPlainShader);
+    m_litUniforms = findLitUniforms(*m_litShader, false);
+    m_skinnedUniforms = findLitUniforms(*m_skinnedShader, false);
+    m_litPlainUniforms = findLitUniforms(*m_litPlainShader, false);
+    m_terrainUniforms = findLitUniforms(*m_terrainShader, true);
     m_litShadowFilter = cascadeFilter;
 }
 
@@ -200,6 +220,8 @@ void Renderer::BeginScene(const Camera& camera, std::span<const Light> lights, c
     m_items.clear();
     m_joints.clear();
     m_wires.clear();
+    m_waters.clear();
+    m_worlds.clear();
     // m_objects não é esvaziado: vale até 2 * m_items.size(). Refazer 20 000 matrizes (o construtor do glm escreve a
     // identidade) custava ~0,7 ms por quadro com 10 000 objetos.
     m_materialIds.Clear();
@@ -309,6 +331,70 @@ void Renderer::SubmitMany(size_t count, const SubmitFill& fill) {
     m_items.resize(slot);
 }
 
+void Renderer::SubmitWorld(const RenderWorld& world) {
+    MOTOR_ASSERT(m_inScene, "SubmitWorld fora de BeginScene/EndScene");
+    if (world.Count() > 0) m_worlds.push_back(&world);
+}
+
+void Renderer::AppendWorlds(const Frustum& view) {
+    MOTOR_PROFILE_STAT("Render: recortar os guardados");
+    JobSystem& jobs = JobSystem::Get();
+    for (const RenderWorld* world : m_worlds) {
+        const size_t count = world->m_entries.size();
+        // Os números de material do mundo viram os do quadro uma vez por material diferente, não por objeto.
+        m_worldMaterials.resize(world->m_materials.Size());
+        for (uint32_t i = 0; i < m_worldMaterials.size(); ++i) {
+            m_worldMaterials[i] = m_materialIds.Id(world->m_materials[i]);
+        }
+        m_worldShadows.resize(world->m_shadows.Size());
+        for (uint32_t i = 0; i < m_worldShadows.size(); ++i) m_worldShadows[i] = m_shadowIds.Id(world->m_shadows[i]);
+
+        // Recorte pela grade (Fase 28): a câmera e cada passada de sombra perguntam à grade quem elas veem. Só entram
+        // no quadro os objetos que alguém vê; os outros nem são lidos.
+        m_worldCamera.assign(count, 0);
+        m_worldMasks.assign(count, 0);
+        m_worldHits.clear();
+        world->QueryEntries(view, m_worldHits);
+        for (const uint32_t e : m_worldHits) m_worldCamera[e] = 1;
+        for (size_t p = 0; p < m_shadows->PassCount(); ++p) {
+            const Frustum* frustum = m_shadows->PassFrustum(p);
+            if (!frustum) continue;
+            m_worldHits.clear();
+            world->QueryEntries(*frustum, m_worldHits);
+            for (const uint32_t e : m_worldHits) m_worldMasks[e] |= 1u << p;
+        }
+        m_worldHits.clear();
+        for (uint32_t e = 0; e < count; ++e) {
+            if (m_worldCamera[e] || m_worldMasks[e]) m_worldHits.push_back(e);
+        }
+        m_stats.culled += static_cast<uint32_t>(count - m_worldHits.size());  // os de fora de tudo
+
+        const size_t base = m_items.size(), selected = m_worldHits.size();
+        m_items.resize(base + selected);
+        if (m_objects.size() < 2 * (base + selected)) m_objects.resize(2 * (base + selected));
+        jobs.ParallelFor(selected, 1024, [&](size_t begin, size_t end) {
+            for (size_t i = begin; i < end; ++i) {
+                const uint32_t e = m_worldHits[i];
+                const RenderWorld::Entry& entry = world->m_entries[e];
+                DrawItem& item = m_items[base + i];
+                item = DrawItem{};
+                item.mesh = entry.mesh.get();
+                item.material = entry.material.get();
+                item.bounds = entry.bounds;
+                item.materialId = m_worldMaterials[entry.materialId];
+                item.shadowId = m_worldShadows[entry.shadowId];
+                item.transparent = entry.transparent;
+                item.shadows = entry.shadows;
+                item.retained = true;
+                item.cameraVisible = m_worldCamera[e] != 0;
+                item.shadowMask = m_worldMasks[e];
+                m_objects[2 * (base + i)] = world->m_objects[2 * e];
+                m_objects[2 * (base + i) + 1] = world->m_objects[2 * e + 1];
+            }
+        });
+    }
+}
+
 void Renderer::SubmitWireframe(const Mesh& mesh, const glm::mat4& model, const glm::vec4& color) {
     MOTOR_ASSERT(m_inScene, "SubmitWireframe fora de BeginScene/EndScene");
     m_wires.push_back({&mesh, model, color});
@@ -340,15 +426,19 @@ void Renderer::PrepareItems(const Frustum& view) {
         for (size_t i = begin; i < end; ++i) {
             DrawItem& item = m_items[i];
             const glm::mat4& model = m_objects[2 * i];
-            m_objects[2 * i + 1] = glm::mat4(NormalMatrix(model));
             const glm::vec3 min = item.mesh->BoundsMin(), max = item.mesh->BoundsMax();
             if (item.skinned) {
                 // A pose animada sai da caixa de repouso: folga de 50% (e meio metro) para o recorte não sumir com ela.
+                m_objects[2 * i + 1] = glm::mat4(NormalMatrix(model));
                 const glm::vec3 center = (min + max) * 0.5f;
                 const glm::vec3 half = (max - min) * 0.75f + glm::vec3(0.5f);
                 item.bounds = TransformAabb({center - half, center + half}, model);
             } else {
-                item.bounds = TransformAabb({min, max}, model);
+                // Os do RenderWorld (Fase 28) já trazem a caixa e a matriz da normal.
+                if (!item.retained) {
+                    m_objects[2 * i + 1] = glm::mat4(NormalMatrix(model));
+                    item.bounds = TransformAabb({min, max}, model);
+                }
                 if (!item.mesh->Lods().empty()) {
                     // Nível de detalhe pelo tamanho na tela (Fase 24): diâmetro da caixa no mundo sobre a altura vista
                     // na distância dela. A caixa continua a da malha base (os níveis têm os mesmos limites).
@@ -359,13 +449,16 @@ void Renderer::PrepareItems(const Frustum& view) {
                 }
             }
             // Ordem de desenho: (shader, material, malha) para a cena e (shader, recorte/alfa, malha) para as sombras.
-            // Shader: 0 = lit, 1 = com pele, 2 = lit sem mapas.
+            // Shader: 0 = lit, 1 = com pele, 2 = lit sem mapas, 3 = terreno com camadas.
             const MaterialParams& params = m_materialIds[item.materialId].params;
             const bool plain = params.alphaMode.z == 0.0f && params.pbr.w == 0.0f;
-            const uint32_t shader = item.skinned ? 1u : plain ? 2u : 0u;
+            const uint32_t shader = item.skinned ? 1u : params.terrain ? kTerrainShaderKey : plain ? 2u : 0u;
             m_sceneKeys[i] = {shader, item.materialId, item.mesh};
             m_shadowKeys[i] = {shader, item.shadowId, item.mesh};
-            m_visible[i] = item.shadows != ShadowCasting::ShadowsOnly && view.Intersects(item.bounds);
+            const bool inView = item.retained ? item.cameraVisible : view.Intersects(item.bounds);
+            m_visible[i] = item.shadows != ShadowCasting::ShadowsOnly && inView;
+            // Para a GPU, relativa à câmera (Fase 28): a caixa e o LOD acima já saíram no mundo.
+            m_objects[2 * i] = ModelRelativeToOrigin(model, m_camera.position);
         }
     });
 }
@@ -422,22 +515,29 @@ void Renderer::EndScene() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, m_windowWidth, m_windowHeight);
     m_target = nullptr;
+    m_instances->Fence();  // objetos, índices e comandos desta cena: o anel só os reescreve depois da GPU
 }
 
 void Renderer::DrawScene() {
     const JointUploader uploadJoints = [this](const DrawItem& item) { UploadJoints(item); };
 
-    // 0) Ordem de desenho (SortDrawOrder).
-    const glm::mat4 view = m_camera.View();
+    // 0) Ordem de desenho (SortDrawOrder). O recorte é no mundo; a GPU recebe tudo relativo à câmera (Fase 28):
+    //    a vista sem translação, os objetos, as luzes e as sombras menos a posição dela.
+    //    Antes, as passadas de sombra e os objetos guardados que a câmera ou elas veem (pela grade).
+    const glm::vec3 origin = m_camera.position;
     const glm::mat4 projection = m_camera.Projection();
-    SortDrawOrder(Frustum::FromMatrix(projection * view));
+    const Frustum viewFrustum = Frustum::FromMatrix(projection * m_camera.View());
+    m_shadows->Plan(m_camera, m_lights, m_environment);
+    AppendWorlds(viewFrustum);
+    SortDrawOrder(viewFrustum);
+    const glm::mat4 view = m_camera.ViewRotation();
 
     // 1) Mapas de sombra. Antes, os objetos de todos os itens (as passadas desenham por índice neles).
     m_instances->UploadObjects(std::span(m_objects.data(), 2 * m_items.size()));
     const ShadowRenderer::Result shadows = [&] {
         MOTOR_PROFILE_GPU("Sombras");
-        return m_shadows->Render(m_camera, m_lights, m_environment, m_items, *m_instances,
-                                 {m_shadowOrder, m_shadowKeys, &m_shadowIds}, uploadJoints, m_stats);
+        return m_shadows->Render(origin, m_items, *m_instances, {m_shadowOrder, m_shadowKeys, &m_shadowIds},
+                                 uploadJoints, m_stats);
     }();
 
     // 2) Blocos de dados do quadro.
@@ -445,7 +545,8 @@ void Renderer::DrawScene() {
     LightsData lightsData{};
     lightsData.count = glm::ivec4(static_cast<int>(m_lights.size()), 0, 0, 0);
     for (size_t i = 0; i < m_lights.size(); ++i) {
-        lightsData.lights[i] = Pack(m_lights[i], shadows.cubeLayer[i], shadows.cascadeLight == static_cast<int>(i));
+        const bool cascades = shadows.cascadeLight == static_cast<int>(i);
+        lightsData.lights[i] = Pack(m_lights[i], shadows.cubeLayer[i], cascades, origin);
     }
     // Só o cabeçalho e as luzes usadas: o resto do bloco o shader não lê.
     glNamedBufferSubData(m_lightsUbo, 0, static_cast<GLsizeiptr>(sizeof(glm::ivec4) + m_lights.size() * sizeof(LightData)), &lightsData);
@@ -472,11 +573,13 @@ void Renderer::DrawScene() {
     std::vector<uint32_t> indices;
     std::vector<DrawBatch> batches;
     const size_t opaqueBatches = CollectSceneBatches(indices, batches);
-    m_instances->UploadIndices(indices);
-    DrawSceneBatches(std::span(batches).first(opaqueBatches));
+    m_instances->UploadPass(indices, batches);
+    DrawSceneBatches(std::span(batches).first(opaqueBatches), 0);
 
-    // 4) Céu ao fundo, onde não há nada.
+    // 4) Céu ao fundo, onde não há nada. Depois a água, que lê a cópia de tudo isso (e grava profundidade: os
+    //    transparentes atrás dela ficam escondidos).
     m_sky->DrawBackground(*m_post);
+    if (!m_waters.empty()) DrawWater(viewFrustum, batches.size() > opaqueBatches || !m_wires.empty() || m_keepSceneDepth);
 
     // 5) Transparentes: misturados com o que já está na imagem, sem gravar profundidade (o que está atrás de um
     //    vidro continua aparecendo pelo vidro seguinte).
@@ -489,7 +592,7 @@ void Renderer::DrawScene() {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
-        DrawSceneBatches(std::span(batches).subspan(opaqueBatches));  // o céu trocou o shader e as texturas
+        DrawSceneBatches(std::span(batches).subspan(opaqueBatches), opaqueBatches);  // o céu trocou o shader e as texturas
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
         m_stats.transparent += static_cast<uint32_t>(batches.size() - opaqueBatches);
@@ -519,7 +622,7 @@ void Renderer::UploadFrameData(const glm::mat4& view, const glm::mat4& projectio
     FrameData frame{};
     frame.view = view;
     frame.projection = projection;
-    frame.cameraPosition = glm::vec4(m_camera.position, 1.0f);
+    frame.cameraPosition = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);  // a câmera é a origem do que a GPU recebe (Fase 28)
     frame.ambient = glm::vec4(env.ambient, 1.0f);
     frame.fog = glm::vec4(m_sky->HorizonColor() * skyIntensity, std::max(env.fogDensity, 0.0f));
     frame.invViewProjection = glm::inverse(projection * view);
@@ -563,30 +666,71 @@ size_t Renderer::CollectSceneBatches(std::vector<uint32_t>& indices, std::vector
         add(i, true);
     }
     const size_t opaqueBatches = batches.size();
+    // Blocos de um terreno (mesmo material, um lote por bloco) da frente para trás: num chão com morros, o que fica
+    // atrás de um morro perto é descartado pela profundidade antes do pixel (~0,5 ms no terreno de 1 km da HD 530).
+    // Os lotes vão no draw indireto na ordem da lista.
+    for (size_t i = 0; i < opaqueBatches;) {
+        const DrawKey& key = m_sceneKeys[batches[i].firstIndex];
+        size_t end = i + 1;
+        while (end < opaqueBatches && m_sceneKeys[batches[end].firstIndex].shader == key.shader &&
+               m_sceneKeys[batches[end].firstIndex].material == key.material) {
+            ++end;
+        }
+        if (key.shader == kTerrainShaderKey && end - i > 1) {
+            auto distance = [this](const DrawBatch& b) {
+                const glm::vec3 center = (b.first->bounds.min + b.first->bounds.max) * 0.5f;
+                const glm::vec3 d = center - m_camera.position;
+                return glm::dot(d, d);
+            };
+            std::sort(batches.begin() + static_cast<std::ptrdiff_t>(i), batches.begin() + static_cast<std::ptrdiff_t>(end),
+                      [&](const DrawBatch& a, const DrawBatch& b) { return distance(a) < distance(b); });
+        }
+        i = end;
+    }
     // Transparentes ordenados pelo centro: do mais longe ao mais perto.
     std::stable_sort(transparent.begin(), transparent.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
     for (const auto& [distance, index] : transparent) add(index, false);
     return opaqueBatches;
 }
 
-void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches) {
+void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches, size_t first) {
     const Shader* bound = nullptr;
     // Material e texturas do lote anterior: lotes seguidos com o mesmo material não reenviam nada disso. Os
     // uniforms são de cada programa, por isso a lembrança vale para um shader só.
     const Shader* paramsShader = nullptr;
     const MaterialParams* lastParams = nullptr;
-    GLuint lastTexture[5] = {0, 0, 0, 0, 0};
+    GLuint lastTexture[kUnitTerrainIndex + 1] = {};
     auto bindTexture = [&](GLuint unit, GLuint texture) {
         if (lastTexture[unit] == texture) return;
         lastTexture[unit] = texture;
         glBindTextureUnit(unit, texture);
     };
     const Texture2D& white = *m_whiteTexture;
-    for (const DrawBatch& batch : batches) {
+    // Lotes seguidos com a mesma chave de shader e material, sem pele e no mesmo VAO (todas as malhas sem pele dividem
+    // um) saem num draw indireto só (Fase 28), mesmo com malhas diferentes. Transparentes também: os comandos de um
+    // draw são desenhados na ordem.
+    auto vao = [](const DrawBatch& b) { return b.first->mesh->Gpu().vao; };
+    for (size_t i = 0; i < batches.size();) {
+        const DrawBatch& batch = batches[i];
         const DrawItem& item = *batch.first;
-        const uint32_t variant = m_sceneKeys[batch.firstIndex].shader;
-        Shader& shader = variant == 1 ? *m_skinnedShader : variant == 2 ? *m_litPlainShader : *m_litShader;
-        const LitUniforms& u = variant == 1 ? m_skinnedUniforms : variant == 2 ? m_litPlainUniforms : m_litUniforms;
+        const DrawKey& key = m_sceneKeys[batch.firstIndex];
+        size_t end = i + 1;
+        if (!item.skinned) {
+            while (end < batches.size() && !batches[end].first->skinned && vao(batches[end]) == vao(batch)) {
+                const DrawKey& next = m_sceneKeys[batches[end].firstIndex];
+                if (next.shader != key.shader || next.material != key.material) break;
+                ++end;
+            }
+        }
+        const uint32_t variant = key.shader;
+        Shader& shader = variant == 1   ? *m_skinnedShader
+                         : variant == 2 ? *m_litPlainShader
+                         : variant == 3 ? *m_terrainShader
+                                        : *m_litShader;
+        const LitUniforms& u = variant == 1   ? m_skinnedUniforms
+                               : variant == 2 ? m_litPlainUniforms
+                               : variant == 3 ? m_terrainUniforms
+                                              : m_litUniforms;
         if (bound != &shader) {
             shader.Bind();
             bound = &shader;
@@ -606,14 +750,29 @@ void Renderer::DrawSceneBatches(std::span<const DrawBatch> batches) {
             bindTexture(kUnitMetalRough, (params.metallicRoughnessMap ? *params.metallicRoughnessMap : white).LinearHandle());
             bindTexture(kUnitOcclusion, (params.occlusionMap ? *params.occlusionMap : white).LinearHandle());
             bindTexture(kUnitEmissive, (params.emissiveMap ? *params.emissiveMap : white).NativeHandle());
+            if (const TerrainLayers* layers = params.terrain) {
+                const glm::mat4 colors(layers->color[0], layers->color[1], layers->color[2], layers->color[3]);
+                shader.SetMat4(u.layerColors, colors);
+                shader.SetVec4(u.layerTiling, layers->tiling);
+                // Sem pesos (não deveria acontecer): o array vazio, com o índice todo -1 (camada 1 em tudo).
+                const TerrainWeights& weights = layers->weights ? *layers->weights : *m_noTerrainWeights;
+                bindTexture(kUnitTerrainWeights, weights.ArrayHandle());
+                bindTexture(kUnitTerrainIndex, weights.IndexHandle());
+                const glm::ivec4 rect = weights.IndexRect();
+                shader.SetVec4(u.terrainGrid, {layers->blockSize, static_cast<float>(weights.Resolution()),
+                                               static_cast<float>(rect.x), static_cast<float>(rect.y)});
+                for (GLuint i = 0; i < 4; ++i) {
+                    bindTexture(kUnitTerrainLayers + i, (layers->albedo[i] ? *layers->albedo[i] : white).NativeHandle());
+                }
+            }
             lastParams = &params;
             paramsShader = &shader;
         }
-        shader.SetInt(u.drawBase, static_cast<int>(batch.start));
-        item.mesh->DrawInstanced(batch.count);
+        m_instances->Draw(first + i, end - i);
         if (doubleSided) glEnable(GL_CULL_FACE);
         ++m_stats.drawCalls;
-        m_stats.triangles += item.mesh->IndexCount() / 3 * batch.count;
+        for (size_t b = i; b < end; ++b) m_stats.triangles += batches[b].first->mesh->IndexCount() / 3 * batches[b].count;
+        i = end;
     }
 }
 
@@ -626,7 +785,7 @@ void Renderer::DrawWireframes() {
     m_unlitShader->Bind();
     glBindTextureUnit(0, m_post->SceneDepth());
     for (const WireItem& wire : m_wires) {
-        m_unlitShader->SetMat4(m_unlitModel, wire.model);
+        m_unlitShader->SetMat4(m_unlitModel, ModelRelativeToOrigin(wire.model, m_camera.position));
         m_unlitShader->SetVec4(m_unlitColor, wire.color);
         wire.mesh->Draw();
         ++m_stats.drawCalls;

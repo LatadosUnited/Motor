@@ -37,6 +37,10 @@ std::filesystem::path UniqueDestination(const std::filesystem::path& source, con
 // Depois de renomear/mover um arquivo, leva o .meta junto para o asset manter o GUID.
 // (Pastas não precisam: os .meta de dentro vão com elas.)
 void MoveMetaAlong(const std::filesystem::path& from, const std::filesystem::path& to);
+// Companheiros do asset (motor::AssetCompanions: a pasta dos blocos do terreno), com o nome tirado do novo nome do
+// asset: "Ilha.blocos" de "Ilha.mterrain" vira "Mar.blocos" de "Mar.mterrain". CopyCompanions copia; MoveMetaAlong
+// também os leva.
+void CopyCompanions(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& ec);
 
 // Reduz a imagem (média de blocos) para caber num quadrado de `maxSide`.
 motor::ImageData Downscale(const motor::ImageData& src, int maxSide);
